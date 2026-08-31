@@ -37,7 +37,11 @@ Change or remove this demo account before any real deployment.
 - `GET /api/clearance-applications` (authenticated)
 - `POST /api/clearance-applications` (authenticated)
 - `POST /api/clearance-applications/{id}/approve` (authenticated)
+- `GET /api/crime-cases` (authenticated)
+- `POST /api/crime-cases` (authenticated)
+- `GET /api/suspect-alerts` (authenticated)
+- `POST /api/suspect-alerts` (authenticated)
 
-The API enforces the central-person rule: Airport and Fingerprint records must reference an existing central `person_id`, and National ID is unique.
+The API enforces the central-person rule: Airport, Fingerprint and CID records must reference an existing central `person_id`, and National ID is unique. Suspect alerts must reference an existing CID case, and only one active alert can link a person to a case.
 
 This is a development foundation, not an operational police deployment. Authentication, database, encryption, roles and audit controls need a production hardening pass before use with real data.

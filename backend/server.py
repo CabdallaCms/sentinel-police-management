@@ -46,6 +46,20 @@ def init_db():
       certificate_number TEXT, created_by INTEGER REFERENCES users(id),
       created_at TEXT DEFAULT CURRENT_TIMESTAMP, reviewed_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS crime_cases(
+      id INTEGER PRIMARY KEY, case_id TEXT UNIQUE NOT NULL,
+      category TEXT NOT NULL, location TEXT, status TEXT NOT NULL DEFAULT 'Reported',
+      notes TEXT, created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS suspect_alerts(
+      id INTEGER PRIMARY KEY, alert_id TEXT UNIQUE NOT NULL,
+      person_id INTEGER NOT NULL REFERENCES persons(id),
+      case_id INTEGER NOT NULL REFERENCES crime_cases(id),
+      alert_status TEXT NOT NULL DEFAULT 'Active alert',
+      notes TEXT, created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS audit_events(
       id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id),
       action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT,
@@ -60,9 +74,22 @@ def init_db():
                   ('P-0001','Ayaan Cabdi Xasan','10012345','1997-04-18','+252 63 555 0199'))
         c.execute('INSERT INTO persons(person_id,full_name,national_id,date_of_birth,phone) VALUES(?,?,?,?,?)',
                   ('P-0002','Maxamed Nuur Cali','10067890','1989-11-02','+252 63 555 0188'))
+        c.execute('INSERT INTO persons(person_id,full_name,national_id,date_of_birth,phone) VALUES(?,?,?,?,?)',
+                  ('P-0003','Sahra Yuusuf','10024680','2001-02-26','+252 63 555 0144'))
         pid = c.execute("SELECT id FROM persons WHERE person_id='P-0001'").fetchone()[0]
         c.execute('INSERT INTO airport_passengers(record_id,person_id,movement,travel_date,flight_number,route) VALUES(?,?,?,?,?,?)',
                   ('AR-1001',pid,'Arrival','2026-07-18','HL-118','Berbera / Hargeisa'))
+        fp_pid = c.execute("SELECT id FROM persons WHERE person_id='P-0003'").fetchone()[0]
+        c.execute('INSERT INTO clearance_applications(application_id,person_id,purpose,status) VALUES(?,?,?,?)',
+                  ('FP-2026-0042',fp_pid,'Education','Pending Review'))
+        c.execute('INSERT INTO crime_cases(case_id,category,location,status) VALUES(?,?,?,?)',
+                  ('CID-2026-008','Property crime','Hargeisa Central','Under Investigation'))
+        c.execute('INSERT INTO crime_cases(case_id,category,location,status) VALUES(?,?,?,?)',
+                  ('CID-2026-009','Fraud','Jigjiga Yar','Submitted for Prosecution'))
+        susp_pid = c.execute("SELECT id FROM persons WHERE person_id='P-0002'").fetchone()[0]
+        susp_case = c.execute("SELECT id FROM crime_cases WHERE case_id='CID-2026-008'").fetchone()[0]
+        c.execute('INSERT INTO suspect_alerts(alert_id,person_id,case_id,alert_status) VALUES(?,?,?,?)',
+                  ('AL-'+str(int(time.time()*1000))[-8:],susp_pid,susp_case,'Active alert'))
     c.commit(); c.close()
 
 def password_hash(value): return hashlib.sha256(value.encode()).hexdigest()
@@ -105,6 +132,10 @@ class API(BaseHTTPRequestHandler):
                 rows=c.execute('''SELECT a.record_id,a.movement,a.travel_date,a.flight_number,a.route,a.notes,p.person_id,p.full_name,p.national_id FROM airport_passengers a JOIN persons p ON p.id=a.person_id ORDER BY a.id DESC''').fetchall(); result={'items':[rowdict(r) for r in rows]}
             elif p.path=='/api/clearance-applications':
                 rows=c.execute('''SELECT a.*,p.person_id,p.full_name,p.national_id FROM clearance_applications a JOIN persons p ON p.id=a.person_id ORDER BY a.id DESC''').fetchall(); result={'items':[rowdict(r) for r in rows]}
+            elif p.path=='/api/crime-cases':
+                rows=c.execute('''SELECT cc.*, COUNT(sa.id) AS alert_count FROM crime_cases cc LEFT JOIN suspect_alerts sa ON sa.case_id=cc.id GROUP BY cc.id ORDER BY cc.id DESC''').fetchall(); result={'items':[rowdict(r) for r in rows]}
+            elif p.path=='/api/suspect-alerts':
+                rows=c.execute('''SELECT sa.alert_id,sa.alert_status,sa.notes,p.person_id,p.full_name,p.national_id,cc.case_id,cc.category,cc.status AS case_status FROM suspect_alerts sa JOIN persons p ON p.id=sa.person_id JOIN crime_cases cc ON cc.id=sa.case_id ORDER BY sa.id DESC''').fetchall(); result={'items':[rowdict(r) for r in rows]}
             else: self.send_json(404,{'error':'Not found'}); return
             c.close(); self.send_json(200,result)
         except PermissionError as e: self.send_json(401,{'error':str(e)})
@@ -134,6 +165,19 @@ class API(BaseHTTPRequestHandler):
                 aid='FP-'+str(int(time.time()*1000))[-8:]; c.execute('INSERT INTO clearance_applications(application_id,person_id,purpose,guardian_name,guardian_relationship,legal_document_ref,notes,created_by) VALUES(?,?,?,?,?,?,?,?)',(aid,pid['id'],data['purpose'],data.get('guardian_name',''),data.get('guardian_relationship',''),data.get('legal_document_ref',''),data.get('notes',''),user['id'])); audit(c,user,'CREATE','clearance_application',aid); c.commit(); result={'application_id':aid}
             elif p.path.startswith('/api/clearance-applications/') and p.path.endswith('/approve'):
                 aid=p.path.split('/')[3]; cert='CL-'+str(int(time.time()*1000))[-8:]; c.execute("UPDATE clearance_applications SET status='Approved',certificate_number=?,reviewed_at=CURRENT_TIMESTAMP WHERE application_id=?",(cert,aid)); audit(c,user,'APPROVE','clearance_application',aid,cert); c.commit(); result={'application_id':aid,'certificate_number':cert,'status':'Approved'}
+            elif p.path=='/api/crime-cases':
+                if not data.get('category'): raise ValueError('category is required')
+                nxt=c.execute('SELECT COUNT(*) FROM crime_cases').fetchone()[0]+8; case_id='CID-2026-'+str(nxt).zfill(3)
+                c.execute('INSERT INTO crime_cases(case_id,category,location,status,notes,created_by) VALUES(?,?,?,?,?,?)',(case_id,data['category'],data.get('location','Not specified'),data.get('status','Reported'),data.get('notes',''),user['id'])); audit(c,user,'CREATE','crime_case',case_id); c.commit(); result={'case_id':case_id,'category':data['category'],'location':data.get('location','Not specified'),'status':data.get('status','Reported')}
+            elif p.path=='/api/suspect-alerts':
+                pid=c.execute('SELECT id FROM persons WHERE person_id=?',(data.get('person_id'),)).fetchone()
+                if not pid: raise ValueError('person_id must refer to a central person')
+                case=c.execute('SELECT id FROM crime_cases WHERE case_id=?',(data.get('case_id'),)).fetchone()
+                if not case: raise ValueError('case_id must refer to an existing CID case')
+                duplicate=c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id=? AND alert_status=?',(pid['id'],case['id'],'Active alert')).fetchone()
+                if duplicate: self.send_json(409,{'error':'An active alert already links this person to that case','alert_id':duplicate['alert_id']}); c.close(); return
+                alert_id='AL-'+str(int(time.time()*1000))[-8:]
+                c.execute('INSERT INTO suspect_alerts(alert_id,person_id,case_id,alert_status,notes,created_by) VALUES(?,?,?,?,?,?)',(alert_id,pid['id'],case['id'],'Active alert',data.get('notes',''),user['id'])); audit(c,user,'CREATE','suspect_alert',alert_id,data.get('case_id','')); c.commit(); result={'alert_id':alert_id,'case_id':data.get('case_id'),'person_id':data.get('person_id'),'alert_status':'Active alert'}
             else: self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201,result)
         except PermissionError as e: self.send_json(401,{'error':str(e)})
