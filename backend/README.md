@@ -45,10 +45,18 @@ Change or remove this demo account before any real deployment.
 - `PATCH /api/crime-cases/{case_id}` (authenticated — update status, category, location, summary, notes)
 - `POST /api/crime-cases/{case_id}/evidence` (authenticated, `multipart/form-data` — evidence file + caption/type)
 - `GET /api/suspect-alerts` / `POST /api/suspect-alerts` (authenticated — participants carry a role: Suspect/Victim/Witness/Complainant)
-- `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated — checkpoint stop linked to a central person; screening result is computed server-side against active suspect alerts and sets the action to `Supervisor contacted` or `Cleared`)
+- `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated — legacy minimal checkpoint stop linked to a central person; screening result is computed server-side against active suspect alerts)
+- `GET /api/checkpoint-stops` (authenticated — list traveler screening stops)
+- `GET /api/checkpoint-stops/{stop_id}` (authenticated — full stop detail incl. traveler, guardian and documents)
+- `POST /api/checkpoint-stops` (authenticated, `multipart/form-data` — the full traveler screening form: traveler name/mother/DOB/POB, current & permanent address, purpose of visit, optional passport & National ID, optional real-time photo, 2 traveler document slots with **at least 1 required**, guardian name/relationship/contact/address/occupation, optional guardian NID & passport, 2 guardian document slots with **at least 1 required**; creates/updates the central person and screens against the active suspect list)
+- `GET /api/guardian-search?q=...` (authenticated — searches saved guardians across checkpoint stops, clearance applications and the central registry for duplicate-check auto-fill)
+- `GET /api/alert-notifications` (authenticated — list instant alerts raised by suspect matches)
+- `POST /api/alert-notifications/{id}/acknowledge` (authenticated — mark an alert notification acknowledged)
 
 Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval).
 
-The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoint records must reference an existing central `person_id`, and National ID is unique. Person records are merged (never duplicated) when a matching National ID or passport is found; only newly provided fields are updated. Suspect alerts must reference an existing CID case, and only one active alert can link a person to a case. Checkpoint events are screened server-side: a person with an active `Suspect` alert yields `Flagged match` / `Supervisor contacted`; otherwise `No active alert` / `Cleared`.
+The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoint records must reference an existing central `person_id`, and National ID is unique. Person records are merged (never duplicated) when a matching National ID or passport is found; only newly provided fields are updated. Suspect alerts must reference an existing CID case, and only one active alert can link a person to a case.
+
+Checkpoint stops are screened server-side: a traveler with an active `Suspect` alert yields `Flagged match` / `Supervisor contacted` **and an alert notification is written immediately**; otherwise the result is `No active alert` / `Cleared`. Travelers may arrive with no National ID or passport — the checkpoint flow still records them in the central registry (matched by name, mother's name and date of birth) with a nullable National ID.
 
 This is a development foundation, not an operational police deployment. Authentication, database, encryption, roles, file-upload validation and audit controls need a production hardening pass before use with real data.
