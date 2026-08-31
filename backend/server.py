@@ -2,9 +2,9 @@
 """Sentinel backend.
 Development-only API using the Python standard library + SQLite.
 Supports central persons (with identity merge/updates), airport records,
-fingerprint clearance applications (with file attachments), and CID crime
-cases (participants + evidence). Replace SQLite and demo authentication
-before any operational deployment.
+fingerprint clearance applications (with file attachments), CID crime
+cases (participants + evidence), and checkpoint screening events.
+Replace SQLite and demo authentication before any operational deployment.
 """
 import hashlib, json, os, re, secrets, sqlite3, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -79,6 +79,14 @@ CREATE TABLE IF NOT EXISTS case_evidence(
   uploaded_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS checkpoint_events(
+  id INTEGER PRIMARY KEY, event_id TEXT UNIQUE NOT NULL,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  location TEXT NOT NULL, screening_result TEXT NOT NULL,
+  action_taken TEXT NOT NULL DEFAULT 'Cleared', notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS audit_events(
   id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id),
   action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT,
@@ -151,6 +159,11 @@ def init_db():
         susp_case = c.execute("SELECT id FROM crime_cases WHERE case_id='CID-2026-008'").fetchone()[0]
         c.execute('INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status) VALUES(?,?,?,?,?)',
                   ('AL-'+secrets.token_hex(4),susp_pid,susp_case,'Suspect','Active alert'))
+        admin_id = c.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
+        c.execute("""INSERT INTO checkpoint_events(event_id,person_id,location,screening_result,
+            action_taken,created_by,created_at) VALUES(?,?,?,?,?,?,?)""",
+                  ('CP-'+secrets.token_hex(4),susp_pid,'South','Flagged match',
+                   'Supervisor contacted',admin_id,'2026-08-30 08:42:00'))
     c.commit(); c.close()
 
 # ---- helpers ----------------------------------------------------------------
@@ -308,6 +321,8 @@ class API(BaseHTTPRequestHandler):
                 person['airport'] = [dict(r) for r in c.execute('SELECT record_id,movement,travel_date,flight_number,route FROM airport_passengers WHERE person_id=?',(person['id'],)).fetchall()]
                 person['clearance'] = [dict(r) for r in c.execute('SELECT application_id,purpose,status,certificate_number FROM clearance_applications WHERE person_id=?',(person['id'],)).fetchall()]
                 person['alerts'] = [dict(r) for r in c.execute('SELECT sa.alert_id,sa.role,sa.alert_status,cc.case_id FROM suspect_alerts sa JOIN crime_cases cc ON cc.id=sa.case_id WHERE sa.person_id=?',(person['id'],)).fetchall()]
+                person['checkpoints'] = [dict(r) for r in c.execute('''SELECT event_id,location,screening_result,action_taken,notes,created_at
+                    FROM checkpoint_events WHERE person_id=? ORDER BY id DESC''',(person['id'],)).fetchall()]
                 result = person
             elif p.path == '/api/airport-records':
                 rows = c.execute('''SELECT a.record_id,a.movement,a.travel_date,a.flight_number,a.route,a.notes,
@@ -346,6 +361,11 @@ class API(BaseHTTPRequestHandler):
                     p.national_id,cc.case_id,cc.category,cc.status AS case_status FROM suspect_alerts sa
                     JOIN persons p ON p.id=sa.person_id JOIN crime_cases cc ON cc.id=sa.case_id
                     ORDER BY sa.id DESC''').fetchall()
+                result = {'items':[rowdict(r) for r in rows]}
+            elif p.path == '/api/checkpoint-events':
+                rows = c.execute('''SELECT ce.event_id,ce.location,ce.screening_result,ce.action_taken,
+                    ce.notes,ce.created_at,p.person_id,p.full_name,p.national_id FROM checkpoint_events ce
+                    JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
@@ -462,6 +482,24 @@ class API(BaseHTTPRequestHandler):
                 audit(c,user,'CREATE','suspect_alert',alert_id,data.get('case_id','')); c.commit()
                 result = {'alert_id':alert_id,'case_id':data.get('case_id'),'person_id':data.get('person_id'),
                           'role':data.get('role','Suspect'),'alert_status':'Active alert'}
+            elif p.path == '/api/checkpoint-events':
+                data = body_json(self)
+                pid = c.execute('SELECT id FROM persons WHERE person_id=?',(data.get('person_id'),)).fetchone()
+                if not pid: raise ValueError('person_id must refer to a central person')
+                location = (data.get('location') or '').strip()
+                if not location: raise ValueError('location is required')
+                alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=? AND role='Suspect'
+                    AND alert_status='Active alert' LIMIT 1''',(pid['id'],)).fetchone()
+                screen = 'Flagged match' if alerted else 'No active alert'
+                action = 'Supervisor contacted' if alerted else 'Cleared'
+                event_id = 'CP-'+str(int(time.time()*1000))[-8:]
+                c.execute('''INSERT INTO checkpoint_events(event_id,person_id,location,screening_result,
+                    action_taken,notes,created_by) VALUES(?,?,?,?,?,?,?)''',
+                    (event_id,pid['id'],location,screen,action,(data.get('notes') or '').strip(),user['id']))
+                audit(c,user,'CREATE','checkpoint_event',event_id,
+                      f"{location}:{screen} for {data.get('person_id')}"); c.commit()
+                result = {'event_id':event_id,'person_id':data.get('person_id'),'location':location,
+                          'screening_result':screen,'action_taken':action,'alerted':bool(alerted)}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)

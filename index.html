@@ -446,9 +446,10 @@ function renderAll(){
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">No passenger records</td></tr>';
   renderCases();
   suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.case)}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active alerts</td></tr>';
-  cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td><td>${esc(x.action)}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No stops recorded</td></tr>';
+  cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td><td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No stops recorded</td></tr>';
   activity.innerHTML=`<div class="event"><span class="dot"></span><div><b>${db.fingerprint.length} clearance application(s)</b><small>${db.fingerprint.filter(x=>x.status==='Pending Review').length} pending review · Fingerprint Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--amber)"></span><div><b>${db.cases.filter(x=>x.status!=='Closed').length} open crime case(s)</b><small>CID Criminal Unit</small></div></div>
+   <div class="event"><span class="dot" style="background:var(--green)"></span><div><b>${db.checkpoints.length} checkpoint screening event(s)</b><small>${db.checkpoints.filter(x=>x.screen==='Flagged match').length} flagged match(es) · Checkpoint operations</small></div></div>
    <div class="event"><span class="dot" style="background:var(--cyan)"></span><div><b>${db.people.length} central identities</b><small>Unified across all units</small></div></div>`;
 }
 function renderCases(){
@@ -598,6 +599,7 @@ function openCheckpointDrawer(){
    <form class="form">
     <div class="field ac-wrap"><label>Find Central Person</label><input id="cpLookup" placeholder="Search name, National ID or passport" autocomplete="off"><div id="cpAc" class="autocomplete"></div><div id="cpPick" class="pickbar"><span class="mini" id="cpPickMini">●</span><div><b id="cpPickName"></b><small class="muted" id="cpPickId"></small></div></div></div>
     <div class="field"><label>Checkpoint</label><select id="cpLoc"><option>South</option><option>West</option><option>East</option></select></div>
+    <div class="field"><label>Notes (optional)</label><textarea id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></textarea></div>
     <div class="hint" id="cpScreenHint">Screening runs automatically against active suspect alerts.</div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
@@ -611,9 +613,17 @@ function openCheckpointDrawer(){
 async function submitCheckpoint(){
   const p=window._cpPicker&&window._cpPicker.chosen;if(!p){toast('Select a person first',true);return}
   const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
-  const now=new Date().toLocaleString([],{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-  db.checkpoints.unshift({time:now,location:cpLoc.value,person:p.id,screen:flagged?'Flagged match':'No active alert',action:flagged?'Supervisor contacted':'Cleared'});
-  persist();closeDrawer();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
+  try{
+    if(serverOn){
+      const r=await api('/api/checkpoint-events',{method:'POST',body:JSON.stringify({person_id:p.id,location:cpLoc.value,notes:cpNotes.value})});
+      closeDrawer();await syncServer();
+      toast(r.alerted?`⚠ ${r.location}: potential suspect match — supervisor notified`:'Person screened — no active alert');
+      return;
+    }
+    const now=new Date().toLocaleString([],{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    db.checkpoints.unshift({time:now,location:cpLoc.value,person:p.id,screen:flagged?'Flagged match':'No active alert',action:flagged?'Supervisor contacted':'Cleared',notes:cpNotes.value});
+    persist();closeDrawer();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
+  }catch(e){toast(e.message,true)}
 }
 
 // ============================ server sync ============================
@@ -622,13 +632,14 @@ async function syncServer(){
     const login=await api('/api/login',{method:'POST',body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
     apiToken=login.token;serverOn=true;
     document.getElementById('envBadge').innerHTML='Environment: <span style="color:#7fe3cf">central database</span>';
-    const [ps,ars,fps,ccs,sas]=await Promise.all([api('/api/persons'),api('/api/airport-records'),api('/api/clearance-applications'),api('/api/crime-cases'),api('/api/suspect-alerts')]);
+    const [ps,ars,fps,ccs,sas,cps]=await Promise.all([api('/api/persons'),api('/api/airport-records'),api('/api/clearance-applications'),api('/api/crime-cases'),api('/api/suspect-alerts'),api('/api/checkpoint-events')]);
     db.people=ps.items.map(mapPerson);
-    db.people.forEach(p=>{p.units=[];if(ars.items.some(x=>x.person_id===p.id))p.units.push('Airport');if(fps.items.some(x=>x.person_id===p.id))p.units.push('Fingerprint');if(sas.items.some(x=>x.person_id===p.id))p.units.push('CID');if(!p.units.length)p.units.push('Central')});
+    db.people.forEach(p=>{p.units=[];if(ars.items.some(x=>x.person_id===p.id))p.units.push('Airport');if(fps.items.some(x=>x.person_id===p.id))p.units.push('Fingerprint');if(sas.items.some(x=>x.person_id===p.id))p.units.push('CID');if(cps.items.some(x=>x.person_id===p.id))p.units.push('Checkpoint');if(!p.units.length)p.units.push('Central')});
     db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,route:x.route,notes:x.notes}));
     db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
     db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
     db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id,role:x.role||'Suspect',alert:x.alert_status}));
+    db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),location:x.location,person:x.person_id,screen:x.screening_result,action:x.action_taken,notes:x.notes}));
     renderAll();
   }catch(e){serverOn=false;apiToken='';document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">local demo (browser storage)</span>';console.warn('Local demo mode:',e.message)}
 }

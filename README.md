@@ -47,6 +47,8 @@ The system now has two parts:
 - **Frontend** — `index.html`, a single-page browser application.
 - **Central backend** — `backend/server.py`, a Python (standard library only) HTTP API backed by SQLite. It serves the frontend and a JSON REST API from the same origin, and enforces the central-person rule on the server.
 
+Airport, Fingerprint, CID and Checkpoint unit records are all written to the central database; checkpoint screening results (Flagged match / No active alert) are computed server-side from active suspect alerts, and the action follows automatically (Supervisor contacted / Cleared).
+
 The frontend automatically uses the central backend when it is loaded through `backend/server.py`. If it is opened as a static file with no server, it falls back to browser local-storage demo mode (a "Local demo mode" notice appears in the browser console).
 
 ## Run locally (full stack)
@@ -92,7 +94,7 @@ Open `http://localhost:8000`.
 4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
 6. Open **CID Criminal Unit**, click a case to open its workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert), and upload evidence (tab 3).
-7. Open **Checkpoints → Record stop**, search the suspect, and see the automatic "Flagged match" screening.
+7. Open **Checkpoints → Record stop**, search the suspect, and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 
