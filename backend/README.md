@@ -43,12 +43,22 @@ Change or remove this demo account before any real deployment.
 - `GET /api/crime-cases` / `POST /api/crime-cases` (authenticated)
 - `GET /api/crime-cases/{case_id}` (authenticated — incident summary, participants and evidence)
 - `PATCH /api/crime-cases/{case_id}` (authenticated — update status, category, location, summary, notes)
+- `POST /api/crime-cases/{case_id}/participants` (authenticated — add a participant to a case; **Suspect/Accused and other suspect-equivalent roles automatically create an `Active alert` in the central Suspect List**)
 - `POST /api/crime-cases/{case_id}/evidence` (authenticated, `multipart/form-data` — evidence file + caption/type)
-- `GET /api/suspect-alerts` / `POST /api/suspect-alerts` (authenticated — participants carry a role: Suspect/Victim/Witness/Complainant)
+- `GET /api/suspect-alerts` (authenticated — central Suspect List; returns `source_type`, `risk_level`, `reason`, linked case details, manual entries with `case_id=null`)
+- `POST /api/suspect-alerts` (authenticated — **manual suspect entry** with `person_id`, optional `source_type='manual'`, `reason`, `risk_level`, `alert_status`, `notes`; no crime case is required)
+- `PATCH /api/suspect-alerts/{alert_id}` (authenticated — update role, alert status, risk level, reason/notes)
 - `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated — checkpoint stop linked to a central person; screening result is computed server-side against active suspect alerts and sets the action to `Supervisor contacted` or `Cleared`)
 
 Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval).
 
-The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoint records must reference an existing central `person_id`, and National ID is unique. Person records are merged (never duplicated) when a matching National ID or passport is found; only newly provided fields are updated. Suspect alerts must reference an existing CID case, and only one active alert can link a person to a case. Checkpoint events are screened server-side: a person with an active `Suspect` alert yields `Flagged match` / `Supervisor contacted`; otherwise `No active alert` / `Cleared`.
+The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoint records must reference an existing central `person_id`, and National ID is unique. Person records are merged (never duplicated) when a matching National ID or passport is found; only newly provided fields are updated.
+
+The Suspect List supports two clean sources:
+
+- **Case-linked (`source_type='case'`)** — created automatically when a person is added as a participant with a suspect-equivalent role (`Suspect`, `Accused`, etc.). The row keeps the `case_id`, `role` and `alert_status='Active alert'`, and the same record is the participant shown in the case workspace.
+- **Manual (`source_type='manual'`)** — created from the Suspect List UI with `person_id`, `reason`/suspect details, `risk_level` and `alert_status`; `case_id` is `null`.
+
+One active alert can link a person to a case, and one active manual alert exists per person. Checkpoint events are screened server-side: a person with an active suspect-equivalent alert (case-linked or manual) yields `Flagged match` / `Supervisor contacted`; otherwise `No active alert` / `Cleared`.
 
 This is a development foundation, not an operational police deployment. Authentication, database, encryption, roles, file-upload validation and audit controls need a production hardening pass before use with real data.
