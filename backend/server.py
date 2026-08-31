@@ -66,9 +66,12 @@ CREATE TABLE IF NOT EXISTS crime_cases(
 CREATE TABLE IF NOT EXISTS suspect_alerts(
   id INTEGER PRIMARY KEY, alert_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id),
-  case_id INTEGER NOT NULL REFERENCES crime_cases(id),
+  case_id INTEGER REFERENCES crime_cases(id),
   role TEXT NOT NULL DEFAULT 'Suspect',
   alert_status TEXT NOT NULL DEFAULT 'Active alert',
+  source_type TEXT NOT NULL DEFAULT 'case',
+  risk_level TEXT NOT NULL DEFAULT 'High',
+  reason TEXT,
   notes TEXT, created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -118,6 +121,9 @@ ADDED_COLUMNS = {
     ],
     'suspect_alerts': [
         ('role', "ALTER TABLE suspect_alerts ADD COLUMN role TEXT NOT NULL DEFAULT 'Suspect'"),
+        ('source_type', "ALTER TABLE suspect_alerts ADD COLUMN source_type TEXT NOT NULL DEFAULT 'case'"),
+        ('risk_level', "ALTER TABLE suspect_alerts ADD COLUMN risk_level TEXT NOT NULL DEFAULT 'High'"),
+        ('reason', "ALTER TABLE suspect_alerts ADD COLUMN reason TEXT"),
     ],
 }
 
@@ -130,6 +136,39 @@ def migrate(c):
         for col, sql in cols:
             if col not in existing:
                 c.execute(sql)
+    migrate_suspect_alerts(c)
+
+def migrate_suspect_alerts(c):
+    """Rebuild suspect_alerts when the original NOT NULL case_id prevented
+    manual (case-independent) suspect entries. Existing rows keep their case link."""
+    tables = {r['name'] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if 'suspect_alerts' not in tables:
+        return
+    info = {r['name']: r for r in c.execute('PRAGMA table_info(suspect_alerts)')}
+    case_col = info.get('case_id')
+    if case_col is not None and case_col['notnull'] == 1:
+        c.execute('DROP TABLE IF EXISTS suspect_alerts_migrated')
+        c.executescript('''
+CREATE TABLE suspect_alerts_migrated(
+  id INTEGER PRIMARY KEY, alert_id TEXT UNIQUE NOT NULL,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  case_id INTEGER REFERENCES crime_cases(id),
+  role TEXT NOT NULL DEFAULT 'Suspect',
+  alert_status TEXT NOT NULL DEFAULT 'Active alert',
+  source_type TEXT NOT NULL DEFAULT 'case',
+  risk_level TEXT NOT NULL DEFAULT 'High',
+  reason TEXT,
+  notes TEXT, created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+''')
+        c.execute('''INSERT INTO suspect_alerts_migrated(id,alert_id,person_id,case_id,role,alert_status,
+            source_type,risk_level,reason,notes,created_by,created_at)
+            SELECT id,alert_id,person_id,case_id,role,alert_status,
+            COALESCE(source_type,'case'),COALESCE(risk_level,'High'),reason,notes,created_by,created_at
+            FROM suspect_alerts''')
+        c.execute('DROP TABLE suspect_alerts')
+        c.execute('ALTER TABLE suspect_alerts_migrated RENAME TO suspect_alerts')
 
 def init_db():
     c = db()
@@ -157,8 +196,10 @@ def init_db():
                   ('CID-2026-009','Fraud','Jigjiga Yar','Submitted for Prosecution','Advance-fee fraud reported by a local business owner.'))
         susp_pid = c.execute("SELECT id FROM persons WHERE person_id='P-0002'").fetchone()[0]
         susp_case = c.execute("SELECT id FROM crime_cases WHERE case_id='CID-2026-008'").fetchone()[0]
-        c.execute('INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status) VALUES(?,?,?,?,?)',
-                  ('AL-'+secrets.token_hex(4),susp_pid,susp_case,'Suspect','Active alert'))
+        c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,
+            source_type,risk_level,reason) VALUES(?,?,?,?,?,?,?,?)''',
+                  ('AL-'+secrets.token_hex(4),susp_pid,susp_case,'Suspect','Active alert',
+                   'case','High','Linked from CID-2026-008 shop burglary investigation'))
         admin_id = c.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
         c.execute("""INSERT INTO checkpoint_events(event_id,person_id,location,screening_result,
             action_taken,created_by,created_at) VALUES(?,?,?,?,?,?,?)""",
@@ -259,6 +300,92 @@ def upsert_person(c, data, photo_path=None):
                passport_id, photo_path))
     return rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (person_id,)).fetchone())
 
+# ---- suspect alerts ---------------------------------------------------------
+SUSPECT_ROLE_ALIASES = {
+    'suspect', 'accused', 'accused person', 'known suspect',
+    'primary suspect', 'person of interest', 'suspected person'
+}
+RISK_LEVELS = ('High', 'Medium', 'Low')
+
+def is_suspect_role(role):
+    return (role or '').strip().lower() in SUSPECT_ROLE_ALIASES
+
+class _DuplicateAlert(Exception):
+    def __init__(self, message, alert_id):
+        super().__init__(message)
+        self.alert_id = alert_id
+
+def insert_suspect_alert(c, user, data, forced_source=None):
+    """Create a suspect alert / case participant row.
+
+    case-linked rows (source_type='case') are used by the CID participant list and by
+    checkpoint/airport screening. manual rows (source_type='manual', no case) are direct
+    Suspect List entries. Suspect-equivalent roles automatically receive an Active alert.
+    """
+    pid = c.execute('SELECT id FROM persons WHERE person_id=?',(data.get('person_id'),)).fetchone()
+    if not pid:
+        raise ValueError('person_id must refer to a central person')
+    requested = str(data.get('source_type') or '').strip().lower()
+    if forced_source:
+        source_type = forced_source
+    elif requested:
+        source_type = requested
+    else:
+        source_type = 'case' if data.get('case_id') else 'manual'
+    if source_type not in ('case', 'manual'):
+        raise ValueError('source_type must be "case" or "manual"')
+
+    case_id, case_number = None, None
+    if source_type == 'manual':
+        if data.get('case_id'):
+            raise ValueError('Manual suspect entries must not be linked to a crime case')
+    else:
+        if not data.get('case_id'):
+            raise ValueError('case_id is required for case-linked suspect entries')
+        case = c.execute('SELECT id,case_id,category FROM crime_cases WHERE case_id=?',(data.get('case_id'),)).fetchone()
+        if not case:
+            raise ValueError('case_id must refer to an existing CID case')
+        case_id, case_number = case['id'], case['case_id']
+
+    role = str(data.get('role') or '').strip() or ('Suspect' if source_type == 'manual' else '')
+    role = role or 'Suspect'
+    if source_type == 'manual' and not is_suspect_role(role):
+        role = 'Suspect'
+    suspect = is_suspect_role(role) or source_type == 'manual'
+    alert_status = str(data.get('alert_status') or '').strip()
+    if suspect and not alert_status:
+        alert_status = 'Active alert'
+    if not suspect and not alert_status:
+        alert_status = 'None'
+
+    risk_level = str(data.get('risk_level') or 'High').strip().title()
+    if risk_level not in RISK_LEVELS:
+        risk_level = 'High'
+    reason = str(data.get('reason') or '').strip()
+    notes = str(data.get('notes') or '').strip()
+
+    if source_type == 'manual':
+        dup = c.execute('''SELECT alert_id FROM suspect_alerts WHERE person_id=? AND source_type='manual'
+            AND alert_status='Active alert' LIMIT 1''',(pid['id'],)).fetchone()
+        if dup:
+            raise _DuplicateAlert('An active manual suspect alert already exists for this person', dup['alert_id'])
+    else:
+        dup = c.execute('''SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id=?
+            AND alert_status='Active alert' LIMIT 1''',(pid['id'],case_id)).fetchone()
+        if dup:
+            raise _DuplicateAlert('An active alert already links this person to that case', dup['alert_id'])
+
+    alert_id = 'AL-'+secrets.token_hex(4)
+    c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,
+        source_type,risk_level,reason,notes,created_by)
+        VALUES(?,?,?,?,?,?,?,?,?,?)''',
+        (alert_id,pid['id'],case_id,role,alert_status,source_type,
+         risk_level,reason,notes,user['id']))
+    audit(c,user,'CREATE','suspect_alert',alert_id,case_number or 'manual')
+    return {'alert_id':alert_id,'person_id':data.get('person_id'),'role':role,
+            'alert_status':alert_status,'source_type':source_type,'risk_level':risk_level,
+            'reason':reason,'case_id':case_number,'notes':notes}
+
 class API(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args): print('%s - %s' % (self.address_string(), fmt % args))
 
@@ -320,7 +447,9 @@ class API(BaseHTTPRequestHandler):
                 if not person: self.send_json(404,{'error':'Person not found'}); c.close(); return
                 person['airport'] = [dict(r) for r in c.execute('SELECT record_id,movement,travel_date,flight_number,route FROM airport_passengers WHERE person_id=?',(person['id'],)).fetchall()]
                 person['clearance'] = [dict(r) for r in c.execute('SELECT application_id,purpose,status,certificate_number FROM clearance_applications WHERE person_id=?',(person['id'],)).fetchall()]
-                person['alerts'] = [dict(r) for r in c.execute('SELECT sa.alert_id,sa.role,sa.alert_status,cc.case_id FROM suspect_alerts sa JOIN crime_cases cc ON cc.id=sa.case_id WHERE sa.person_id=?',(person['id'],)).fetchall()]
+                person['alerts'] = [dict(r) for r in c.execute('''SELECT sa.alert_id,sa.role,sa.alert_status,sa.risk_level,
+                    sa.reason,sa.source_type,cc.case_id FROM suspect_alerts sa
+                    LEFT JOIN crime_cases cc ON cc.id=sa.case_id WHERE sa.person_id=? ORDER BY sa.id DESC''',(person['id'],)).fetchall()]
                 person['checkpoints'] = [dict(r) for r in c.execute('''SELECT event_id,location,screening_result,action_taken,notes,created_at
                     FROM checkpoint_events WHERE person_id=? ORDER BY id DESC''',(person['id'],)).fetchall()]
                 result = person
@@ -351,15 +480,17 @@ class API(BaseHTTPRequestHandler):
                 case = rowdict(c.execute('SELECT * FROM crime_cases WHERE case_id=?',(cid,)).fetchone())
                 if not case: self.send_json(404,{'error':'Case not found'}); c.close(); return
                 case['participants'] = [dict(r) for r in c.execute('''SELECT sa.alert_id,sa.role,sa.notes,sa.alert_status,
-                    p.person_id,p.full_name,p.national_id,p.phone FROM suspect_alerts sa
-                    JOIN persons p ON p.id=sa.person_id WHERE sa.case_id=? ORDER BY sa.id''',(case['id'],)).fetchall()]
+                    sa.risk_level,sa.reason,sa.source_type,p.person_id,p.full_name,p.national_id,p.phone
+                    FROM suspect_alerts sa JOIN persons p ON p.id=sa.person_id
+                    WHERE sa.case_id=? ORDER BY sa.id''',(case['id'],)).fetchall()]
                 case['evidence'] = [dict(r) for r in c.execute('''SELECT evidence_id,caption,file_path,file_name,file_type,created_at
                     FROM case_evidence WHERE case_id=? ORDER BY id DESC''',(case['id'],)).fetchall()]
                 result = case
             elif p.path == '/api/suspect-alerts':
-                rows = c.execute('''SELECT sa.alert_id,sa.role,sa.alert_status,sa.notes,p.person_id,p.full_name,
-                    p.national_id,cc.case_id,cc.category,cc.status AS case_status FROM suspect_alerts sa
-                    JOIN persons p ON p.id=sa.person_id JOIN crime_cases cc ON cc.id=sa.case_id
+                rows = c.execute('''SELECT sa.alert_id,sa.role,sa.alert_status,sa.risk_level,sa.reason,
+                    sa.notes,sa.source_type,sa.created_at,p.person_id,p.full_name,p.national_id,p.passport_id,
+                    cc.case_id,cc.category,cc.status AS case_status FROM suspect_alerts sa
+                    JOIN persons p ON p.id=sa.person_id LEFT JOIN crime_cases cc ON cc.id=sa.case_id
                     ORDER BY sa.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path == '/api/checkpoint-events':
@@ -465,31 +596,33 @@ class API(BaseHTTPRequestHandler):
                     meta['name'],fields.get('file_type','Evidence'),user['id']))
                 audit(c,user,'UPLOAD','evidence',eid,cid); c.commit()
                 result = {'evidence_id':eid,'file_path':meta['path']}
+            elif p.path.startswith('/api/crime-cases/') and p.path.endswith('/participants'):
+                cid = p.path.split('/')[3]
+                data = body_json(self)
+                data['case_id'] = cid
+                data['source_type'] = 'case'
+                try:
+                    result = insert_suspect_alert(c,user,data,forced_source='case')
+                except _DuplicateAlert as e:
+                    self.send_json(409,{'error':str(e),'alert_id':e.alert_id}); c.close(); return
+                c.commit()
             elif p.path == '/api/suspect-alerts':
                 data = body_json(self)
-                pid = c.execute('SELECT id FROM persons WHERE person_id=?',(data.get('person_id'),)).fetchone()
-                if not pid: raise ValueError('person_id must refer to a central person')
-                case = c.execute('SELECT id FROM crime_cases WHERE case_id=?',(data.get('case_id'),)).fetchone()
-                if not case: raise ValueError('case_id must refer to an existing CID case')
-                dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id=? AND alert_status=?',
-                                (pid['id'],case['id'],'Active alert')).fetchone()
-                if dup:
-                    self.send_json(409,{'error':'An active alert already links this person to that case','alert_id':dup['alert_id']}); c.close(); return
-                alert_id = 'AL-'+secrets.token_hex(4)
-                c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,notes,created_by)
-                    VALUES(?,?,?,?,?,?,?)''',(alert_id,pid['id'],case['id'],data.get('role','Suspect'),
-                    'Active alert',data.get('notes',''),user['id']))
-                audit(c,user,'CREATE','suspect_alert',alert_id,data.get('case_id','')); c.commit()
-                result = {'alert_id':alert_id,'case_id':data.get('case_id'),'person_id':data.get('person_id'),
-                          'role':data.get('role','Suspect'),'alert_status':'Active alert'}
+                try:
+                    result = insert_suspect_alert(c,user,data)
+                except _DuplicateAlert as e:
+                    self.send_json(409,{'error':str(e),'alert_id':e.alert_id}); c.close(); return
+                c.commit()
             elif p.path == '/api/checkpoint-events':
                 data = body_json(self)
                 pid = c.execute('SELECT id FROM persons WHERE person_id=?',(data.get('person_id'),)).fetchone()
                 if not pid: raise ValueError('person_id must refer to a central person')
                 location = (data.get('location') or '').strip()
                 if not location: raise ValueError('location is required')
-                alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=? AND role='Suspect'
-                    AND alert_status='Active alert' LIMIT 1''',(pid['id'],)).fetchone()
+                alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=? AND alert_status='Active alert'
+                    AND (source_type='manual' OR lower(role) IN
+                    ('suspect','accused','accused person','known suspect','primary suspect',
+                     'person of interest','suspected person')) LIMIT 1''',(pid['id'],)).fetchone()
                 screen = 'Flagged match' if alerted else 'No active alert'
                 action = 'Supervisor contacted' if alerted else 'Cleared'
                 event_id = 'CP-'+str(int(time.time()*1000))[-8:]
@@ -513,7 +646,30 @@ class API(BaseHTTPRequestHandler):
         try:
             p = urlparse(self.path)
             user = require_auth(self); data = body_json(self); c = db()
-            if p.path.startswith('/api/persons/'):
+            if p.path.startswith('/api/suspect-alerts/'):
+                alert_id = p.path.split('/')[3]
+                row = c.execute('SELECT * FROM suspect_alerts WHERE alert_id=?',(alert_id,)).fetchone()
+                if not row:
+                    self.send_json(404,{'error':'Suspect alert not found'}); c.close(); return
+                updates, params = [], []
+                for f in ('role','alert_status','risk_level','reason','notes'):
+                    if f not in data:
+                        continue
+                    val = data.get(f)
+                    if f == 'risk_level':
+                        risk = str(val).strip().title()
+                        if risk not in RISK_LEVELS:
+                            raise ValueError('risk_level must be High, Medium or Low')
+                        val = risk
+                    updates.append(f'{f}=?')
+                    params.append(str(val).strip() if val is not None else '')
+                if updates:
+                    params.append(row['id'])
+                    c.execute(f"UPDATE suspect_alerts SET {', '.join(updates)} WHERE id=?", params)
+                    audit(c,user,'UPDATE','suspect_alert',alert_id)
+                c.commit()
+                result = {'alert_id':alert_id,'updated':bool(updates)}
+            elif p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 row = c.execute('SELECT * FROM persons WHERE person_id=?',(pid,)).fetchone()
                 if not row: self.send_json(404,{'error':'Person not found'}); c.close(); return

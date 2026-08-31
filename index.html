@@ -226,9 +226,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th></tr></thead><tbody id="caseTable"></tbody></table></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport</div></div></div>
-<div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case</th><th>Role</th><th>Alert</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
+<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Central suspect list · automatic crime-case integration and manual entries</div></div><button class="btn" onclick="openManualSuspectDrawer()">+ Add suspect</button></div>
+<div class="hint">Case-linked suspects are created automatically when a participant with a suspect role (e.g. <b>Accused</b>, <b>Suspect</b>) is added to a CID case and receive an <b>Active alert</b>. Manual entries alert checkpoints without requiring an open crime case.</div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Origin / source</th><th>Role</th><th>Risk</th><th>Alert status</th><th>Reason / suspect details</th><th></th></tr></thead><tbody id="suspectTable"></tbody></table></div>
 </div>
 </section>
 
@@ -258,9 +258,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 </div>
 <div class="tabpane" id="cw-participants">
 <div class="panel" style="margin-top:0;box-shadow:none;border:1px solid var(--line)">
-<div class="panel-head"><div><h2>Link a participant</h2><div class="sub">Add a suspect (creates a checkpoint/airport alert), victim, witness or complainant</div></div></div>
+<div class="panel-head"><div><h2>Link a participant</h2><div class="sub">Suspect / Accused roles automatically create an <b>Active alert</b> in the Suspect List; victim, witness or complainant are recorded without alerting</div></div></div>
 <div class="form" style="max-width:680px">
-<div class="role-select"><label class="muted" style="font-weight:700">Role</label><select id="cwRole"><option>Suspect</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
+<div class="role-select"><label class="muted" style="font-weight:700">Role</label><select id="cwRole"><option>Suspect</option><option>Accused</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
 <div class="field ac-wrap"><label>Find Central Person</label><input id="cwLookup" placeholder="Search name, National ID or passport" autocomplete="off"><div id="cwAc" class="autocomplete"></div><div id="cwPick" class="pickbar"><span class="mini" id="cwPickMini">●</span><div><b id="cwPickName"></b><small class="muted" id="cwPickId"></small></div><button type="button" class="x" onclick="clearCwPick()">✕</button></div></div>
 <div class="field"><label>Note (optional)</label><input id="cwPartNote" placeholder="e.g. last seen, relationship to incident"></div>
 <div class="form-actions"><button class="btn danger" onclick="addParticipant()">Link participant</button></div>
@@ -310,7 +310,7 @@ airport:[{id:'AR-1001',person:'P-0001',move:'Arrival',date:'2026-07-18',flight:'
 fingerprint:[{id:'FP-2026-0042',person:'P-0003',purpose:'Education',status:'Pending Review',guardian:'Yuusuf Axmed'}],
 cases:[{id:'CID-2026-008',category:'Property crime',location:'Hargeisa Central',status:'Under Investigation',summary:'Shop burglary overnight; cash and goods reported missing.',participants:[{person:'P-0002',role:'Suspect',note:''}],evidence:[]},
 {id:'CID-2026-009',category:'Fraud',location:'Jigjiga Yar',status:'Submitted for Prosecution',summary:'Advance-fee fraud reported by a local business owner.',participants:[],evidence:[]}],
-suspects:[{person:'P-0002',case:'CID-2026-008',role:'Suspect',alert:'Active alert'}],
+suspects:[{id:'AL-1001',person:'P-0002',case:'CID-2026-008',caseNo:'CID-2026-008',source:'case',role:'Suspect',alert:'Active alert',risk:'High',reason:'Linked from CID-2026-008 shop burglary investigation'}],
 checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted'}]};
 let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
@@ -319,6 +319,13 @@ function person(id){return db.people.find(p=>p.id===id)}
 function initials(n){return (n||'?').split(' ').map(x=>x[0]).slice(0,2).join('')}
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function toast(s,err){let t=document.getElementById('toast');t.textContent=s;t.className='toast'+(err?' err':'');t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3200)}
+
+// ============================ suspect helpers ============================
+const SUSPECT_ROLE_ALIASES=['suspect','accused','accused person','known suspect','primary suspect','person of interest','suspected person'];
+function isSuspectRole(role){return SUSPECT_ROLE_ALIASES.includes(String(role||'').trim().toLowerCase())}
+function isActiveSuspect(s){const active=String(s.alert||s.alert_status||'').toLowerCase()==='active alert';return active&&(s.source==='manual'||s.sourceType==='manual'||isSuspectRole(s.role))}
+function sourceLabel(s){return (s.source==='manual'||s.sourceType==='manual')?'Manual Entry':'Crime Case: #'+(s.caseNo||s.case||'—')}
+function riskBadgeCls(r){return r==='Medium'?'amber':(r==='Low'?'green':'red')}
 
 // ============================ api ============================
 async function api(path,options={}){options.headers={...(options.headers||{})};if(!(options.body instanceof FormData))options.headers['Content-Type']='application/json';if(apiToken)options.headers.Authorization='Bearer '+apiToken;let r=await fetch(path,options);let data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Server request failed');return data}
@@ -434,7 +441,7 @@ function renderAll(){
   mPeople.textContent=db.people.length;
   mCases.textContent=db.cases.filter(x=>x.status!=='Closed').length;
   mClear.textContent=db.fingerprint.filter(x=>x.status==='Pending Review').length;
-  mSuspects.textContent=db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length;
+  mSuspects.textContent=db.suspects.filter(isActiveSuspect).length;
   renderPeople();
   fpTable.innerHTML=db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
@@ -445,7 +452,7 @@ function renderAll(){
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">No passenger records</td></tr>';
   renderCases();
-  suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.case)}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active alerts</td></tr>';
+  renderSuspects();
   cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td><td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No stops recorded</td></tr>';
   activity.innerHTML=`<div class="event"><span class="dot"></span><div><b>${db.fingerprint.length} clearance application(s)</b><small>${db.fingerprint.filter(x=>x.status==='Pending Review').length} pending review · Fingerprint Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--amber)"></span><div><b>${db.cases.filter(x=>x.status!=='Closed').length} open crime case(s)</b><small>CID Criminal Unit</small></div></div>
@@ -455,8 +462,24 @@ function renderAll(){
 function renderCases(){
   if(!window.caseTable)return;
   caseTable.innerHTML=db.cases.map(c=>{
-    const parts=c.participants?c.participants.length:(db.suspects.filter(s=>s.case===c.id).length);
+    const parts=c.participants?c.participants.length:db.suspects.filter(s=>s.source==='case'&&(s.caseNo||s.case)===c.id).length;
     return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No cases yet</td></tr>';
+}
+function renderSuspects(){
+  const rows=db.suspects.filter(s=>s.source==='manual'||s.sourceType==='manual'||isSuspectRole(s.role)).map(s=>{
+    const p=person(s.person),idx=db.suspects.indexOf(s);
+    const sourceCls=(s.source==='manual'||s.sourceType==='manual')?'blue':'amber';
+    const alertCls=String(s.alert||'').toLowerCase()==='active alert'?'red':'gray';
+    return `<tr>
+     <td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(s.person)}</small></td>
+     <td><span class="badge ${sourceCls}">${esc(sourceLabel(s))}</span>${s.caseStatus?`<br><small class="muted">${esc(s.caseStatus)}</small>`:''}</td>
+     <td><span class="badge ${isSuspectRole(s.role)?'red':'gray'}">${esc(s.role||'Suspect')}</span></td>
+     <td><span class="badge ${riskBadgeCls(s.risk||'High')}">${esc(s.risk||'High')}</span></td>
+     <td><span class="badge ${alertCls}">${esc(s.alert||'Active alert')}</span></td>
+     <td style="max-width:300px"><small>${esc(s.reason||s.notes||'—')}</small></td>
+     <td><button class="btn secondary small" onclick="openSuspectEditor('${esc(s.id||'')}',${idx})">Edit</button></td></tr>`;
+  }).join('');
+  suspectTable.innerHTML=rows||'<tr><td colspan="7" class="empty">No suspects listed yet</td></tr>';
 }
 
 // ============================ fingerprint ============================
@@ -517,6 +540,79 @@ async function saveAirport(e){
   }catch(err){toast(err.message,true)}
 }
 
+// ============================ Suspect list (manual entry & edit) ============================
+let suspectPicker=null,editingSuspect={};
+function openManualSuspectDrawer(prefill,isEdit){
+  const editing=Boolean(prefill&&prefill.id)||Boolean(isEdit);
+  const p=prefill?person(prefill.person):null;
+  editingSuspect=prefill||{};
+  const personBlock=editing?`<div class="hint" style="margin-bottom:14px">Editing alert for <b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(p?.nationalId||'')} · ${esc(p?.id||'')}${p?.passportId?' · Passport '+esc(p.passportId):''} · ${esc(sourceLabel(prefill))}</small></div>`:`
+   <div class="field ac-wrap"><label>Search Central Person (name / National ID / passport) *</label>
+    <input id="smLookup" placeholder="Type a name e.g. Ayaan — existing person auto-fills; new person opens a form" autocomplete="off">
+    <div id="smAc" class="autocomplete"></div>
+    <div id="smPick" class="pickbar"><span class="mini" id="smPickMini">●</span><div><b id="smPickName"></b><small class="muted" id="smPickId"></small></div></div>
+    <div id="smDetail" class="muted" style="font-size:11px;margin-top:6px"></div>
+   </div>`;
+  const body=`
+   <div class="hint" style="margin-bottom:14px">${editing?'Update the risk level, alert status, reason or notes for this suspect entry.':'Add a person to the central suspect list without requiring an open crime case. The alert is immediately available to checkpoint/airport screening.'}</div>
+   <form class="form">${personBlock}
+    <div class="field"><label>Reason for alert / suspect details *</label><textarea id="smReason" placeholder="Why is this person on the suspect list? e.g. linked incident, modus operandi, intelligence…">${esc(prefill?.reason||'')}</textarea></div>
+    <div class="grid2">
+     <div class="field"><label>Risk level</label><select id="smRisk"><option>High</option><option>Medium</option><option>Low</option></select></div>
+     <div class="field"><label>Alert status</label><select id="smStatus"><option>Active alert</option><option>Under review</option><option>Resolved</option><option>Closed</option></select></div>
+    </div>
+    <div class="field"><label>Notes (optional)</label><textarea id="smNotes" placeholder="Additional operational notes">${esc(prefill?.notes||'')}</textarea></div>
+   </form>`;
+  openDrawer(editing?'Edit suspect alert':'Add manual suspect',body,
+   `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn ${editing?'secondary':'danger'}" onclick="${editing?'submitSuspectEditor()':'submitManualSuspect()'}">${editing?'Save changes':'Add suspect'}</button>`);
+  setTimeout(()=>{
+    if(editing){
+      document.getElementById('smRisk').value=prefill.risk||'High';
+      document.getElementById('smStatus').value=prefill.alert||'Active alert';
+      return;
+    }
+    suspectPicker=attachPicker('smLookup','smAc',p=>{pickBar('smPick','smPickMini','smPickName','smPickId',p);document.getElementById('smDetail').textContent='Passport: '+(p.passportId||'—')+(p.phone?' · Phone: '+p.phone:'')+(p.motherName?' · Mother: '+p.motherName:'');});
+  },30);
+}
+function openSuspectEditor(id,idx){
+  const s=db.suspects[idx];
+  if(!s){toast('Suspect entry not found',true);return}
+  if(serverOn&&!s.id){toast('Reload the suspect list before editing (missing alert ID in this browser copy)',true);return}
+  openManualSuspectDrawer(s,true);
+}
+async function submitManualSuspect(){
+  const p=suspectPicker&&suspectPicker.chosen;
+  if(!p){toast('Search and select a central person first',true);return}
+  const reason=val('smReason'),risk=val('smRisk'),status=val('smStatus'),notes=val('smNotes');
+  if(!reason){toast('Reason for alert / suspect details is required',true);return}
+  try{
+    if(serverOn){
+      const r=await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({person_id:p.id,source_type:'manual',role:'Suspect',risk_level:risk,alert_status:status,reason,notes})});
+      closeDrawer();await syncServer();toast('Manual suspect '+r.alert_id+' added to the central suspect list');
+    }else{
+      if(db.suspects.some(s=>s.person===p.id&&(s.source==='manual'||s.sourceType==='manual')&&String(s.alert||'').toLowerCase()==='active alert')){toast('This person already has an active manual suspect alert',true);return}
+      db.suspects.unshift({id:'AL-'+Date.now().toString().slice(-6),person:p.id,source:'manual',caseNo:null,case:'',role:'Suspect',alert:status,risk,reason,notes});
+      persist();closeDrawer();renderAll();toast('Manual suspect added to the suspect list');
+    }
+  }catch(e){toast(e.message,true)}
+}
+async function submitSuspectEditor(){
+  const s=editingSuspect;
+  if(!s){toast('Suspect entry not found',true);return}
+  const reason=val('smReason'),risk=val('smRisk'),status=val('smStatus'),notes=val('smNotes');
+  if(!reason){toast('Reason for alert / suspect details is required',true);return}
+  try{
+    if(serverOn){
+      if(!s.id){toast('Unable to update this entry (missing alert ID); reload the suspect list',true);return}
+      await api('/api/suspect-alerts/'+encodeURIComponent(s.id),{method:'PATCH',body:JSON.stringify({reason,risk_level:risk,alert_status:status,notes})});
+      closeDrawer();await syncServer();toast('Suspect alert updated');
+    }else{
+      Object.assign(s,{reason,risk,alert:status,notes});
+      persist();closeDrawer();renderAll();toast('Suspect alert updated');
+    }
+  }catch(e){toast(e.message,true)}
+}
+
 // ============================ CID case workspace ============================
 let cwCase=null,cwSelected=null;
 function openCaseDrawer(){
@@ -558,7 +654,10 @@ async function openCase(caseId){
   }
 }
 function renderCwParticipants(list){
-  cwPartTable.innerHTML=(list||[]).map(x=>`<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.role==='Suspect'?'red':'gray'}">${esc(x.role)}</span></td><td>${esc(x.note||'')}</td><td>${x.role==='Suspect'?'<span class="badge red">Active alert</span>':'<span class="muted">—</span>'}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No participants linked yet</td></tr>';
+  cwPartTable.innerHTML=(list||[]).map(x=>{
+    const active=(x.alert_status||x.alert||'').toLowerCase()==='active alert';
+    return `<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${isSuspectRole(x.role)?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td>${esc(x.note||x.reason||'')}</td><td>${active?'<span class="badge red">Active alert</span>':'<span class="muted">'+esc(x.alert_status||'—')+'</span>'}</td></tr>`;
+  }).join('')||'<tr><td colspan="4" class="empty">No participants linked yet</td></tr>';
 }
 function renderCwEvidence(list){
   cwEvidGrid.innerHTML=(list||[]).map(x=>{
@@ -571,9 +670,18 @@ async function addParticipant(){
   const p=cwPicker.chosen,role=cwRole.value,note=cwPartNote.value.trim();
   if(!p){toast('Search and select a central person first',true);return}
   try{
-    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({person_id:p.id,case_id:cwCase,role,notes:note})});
-    else{const c=db.cases.find(x=>x.id===cwCase);if(c){if(!c.participants)c.participants=[];c.participants.push({person:p.id,role,note});if(role==='Suspect')db.suspects.unshift({person:p.id,case:cwCase,role,alert:'Active alert'});persist()}}
-    cwPartNote.value='';clearCwPick();toast(role+' linked to '+cwCase);openCase(cwCase);
+    if(serverOn)await api('/api/crime-cases/'+encodeURIComponent(cwCase)+'/participants',{method:'POST',body:JSON.stringify({person_id:p.id,role,notes:note})});
+    else{
+      const c=db.cases.find(x=>x.id===cwCase);
+      if(c){
+        if(!c.participants)c.participants=[];
+        c.participants.push({person:p.id,role,note});
+        const alert=isSuspectRole(role)?'Active alert':'None';
+        db.suspects.unshift({id:'AL-'+Date.now().toString().slice(-6),person:p.id,case:cwCase,caseNo:cwCase,source:'case',role,alert,risk:'High',reason:isSuspectRole(role)?(note||'Case-linked suspect'):''});
+        persist();
+      }
+    }
+    cwPartNote.value='';clearCwPick();toast((isSuspectRole(role)?'Suspect role':'Participant')+' '+role+' linked to '+cwCase+(isSuspectRole(role)?' — Active alert created':''));openCase(cwCase);
   }catch(e){toast(e.message,true)}
 }
 async function saveCaseDetails(){
@@ -605,14 +713,14 @@ function openCheckpointDrawer(){
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
   setTimeout(()=>{
     const pk=attachPicker('cpLookup','cpAc',p=>{pickBar('cpPick','cpPickMini','cpPickName','cpPickId',p);
-      const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
+      const flagged=db.suspects.some(s=>s.person===p.id&&isActiveSuspect(s));
       document.getElementById('cpScreenHint').innerHTML=flagged?'<b style="color:var(--red)">⚠ Active suspect alert match — supervisor must be contacted.</b>':'No active alert for this person.'});
     window._cpPicker=pk;
   },30);
 }
 async function submitCheckpoint(){
   const p=window._cpPicker&&window._cpPicker.chosen;if(!p){toast('Select a person first',true);return}
-  const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
+  const flagged=db.suspects.some(s=>s.person===p.id&&isActiveSuspect(s));
   try{
     if(serverOn){
       const r=await api('/api/checkpoint-events',{method:'POST',body:JSON.stringify({person_id:p.id,location:cpLoc.value,notes:cpNotes.value})});
@@ -638,7 +746,7 @@ async function syncServer(){
     db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,route:x.route,notes:x.notes}));
     db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
     db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
-    db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id,role:x.role||'Suspect',alert:x.alert_status}));
+    db.suspects=sas.items.map(x=>({id:x.alert_id,person:x.person_id,caseNo:x.case_id||null,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status||'Active alert',source:x.source_type||(x.case_id?'case':'manual'),risk:x.risk_level||'High',reason:x.reason||'',notes:x.notes||'',caseStatus:x.case_status||''}));
     db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),location:x.location,person:x.person_id,screen:x.screening_result,action:x.action_taken,notes:x.notes}));
     renderAll();
   }catch(e){serverOn=false;apiToken='';document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">local demo (browser storage)</span>';console.warn('Local demo mode:',e.message)}

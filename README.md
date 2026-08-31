@@ -38,7 +38,9 @@ The interface uses **no browser dialogs**. All create/edit actions happen in **d
 
 ### CID case workspace
 
-Each case opens in a full-page workspace with three tabs: **1) Case Details & Incident Summary**, **2) Participants & Suspect List Linkage** (suspect/victim/witness/complainant, with suspects creating checkpoint/airport alerts), and **3) Evidence & Media Storage** (file uploads with captions).
+Each case opens in a full-page workspace with three tabs: **1) Case Details & Incident Summary**, **2) Participants & Suspect List Linkage** (suspect/accused/victim/witness/complainant, with suspect-equivalent roles automatically creating an **Active alert** in the Suspect List and checkpoint/airport alerts), and **3) Evidence & Media Storage** (file uploads with captions).
+
+The **Suspect List** is a central alert list shared with Checkpoints/Airport. It clearly shows the origin of each entry: **`Crime Case: #CID-...`** for automatic case-linked suspects or **`Manual Entry`** for suspects added without an open case. Manual entries capture the person, reason/suspect details, risk level and alert status. Case-linked and manual entries are both screened by Checkpoints.
 
 ## Architecture
 
@@ -93,7 +95,7 @@ Open `http://localhost:8000`.
 3. Complete clearance reason, guardian details, and attach **at least 2 applicant and 2 guardian documents** (plus an optional photo), then save.
 4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
-6. Open **CID Criminal Unit**, click a case to open its workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert), and upload evidence (tab 3).
+6. Open **CID Criminal Unit**, click a case to open its workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* or *Accused* automatically creates an Active alert in the Suspect List and raises a checkpoint/airport alert), and upload evidence (tab 3).
 7. Open **Checkpoints → Record stop**, search the suspect, and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
