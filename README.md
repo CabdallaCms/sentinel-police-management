@@ -26,6 +26,8 @@ Every person receives one central `Person ID` (`P-0001`, etc.). Unit registers s
 
 Every unit form has a **global search autocomplete**: typing a name, National ID, passport or phone queries the Central Person Registry. Selecting a match **auto-fills** the person's saved details (name, mother's name, DOB/POB, residence, occupation, passport, phone, photo) and links the new unit record to the existing identity — no duplicate is created. Submitting new or corrected details **appends/updates** the central profile (server-side merge by National ID/passport). When no match exists, the "create/update person" entry opens a side-panel form.
 
+The CID participant form and the Suspect List **"+ Add suspect"** action go one step further: a new person who is **not yet in the central database** can be typed directly into the same form (full name, mother's name, DOB, National ID/passport, address, occupation, phone). On submit the central person record is **created first** (merged automatically if the National ID or passport already exists), then the case participant and shared Suspect List entry are linked to it — so a suspect never has to pre-exist in the registry.
+
 ### No popups — pages and side panels
 
 The interface uses **no browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **slide-in side panels** (new person, new case, checkpoint stop).
@@ -39,6 +41,8 @@ The interface uses **no browser dialogs**. All create/edit actions happen in **d
 ### CID case workspace
 
 Each case opens in a full-page workspace with three tabs: **1) Case Details & Incident Summary**, **2) Participants & Suspect List Linkage** (suspect/victim/witness/complainant, with suspects creating checkpoint/airport alerts), and **3) Evidence & Media Storage** (file uploads with captions).
+
+Participants — suspects in particular — can be linked either by searching an existing central person, or by entering a brand-new person's details inline; the server creates the central person first and then links the participant and Suspect List entry to it.
 
 ## Architecture
 

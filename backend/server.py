@@ -225,6 +225,58 @@ def audit(c, user, action, entity, entity_id, details=''):
 PERSON_FIELDS = ('full_name','national_id','date_of_birth','phone','mother_name',
                  'place_of_birth','residence','occupation','passport_id','photo_path')
 
+# Friendly aliases accepted in nested new-person payloads (camelCase etc.).
+PERSON_ALIASES = {
+    'name': 'full_name', 'fullName': 'full_name',
+    'nationalId': 'national_id',
+    'motherName': 'mother_name',
+    'dateOfBirth': 'date_of_birth', 'dob': 'date_of_birth',
+    'placeOfBirth': 'place_of_birth', 'pob': 'place_of_birth',
+    'passportId': 'passport_id',
+    'address': 'residence',
+}
+
+def resolve_person(c, data):
+    """Resolve the central person a unit record should link to.
+
+    Accepts either:
+      * `person_id` — an existing central person, or
+      * `person` / `new_person` (nested object) or flat person fields for a
+        brand-new person. The central record is created first (merged by
+        National ID / passport if the identity already exists), so a unit
+        entry never needs the person to pre-exist.
+
+    Returns (person_row, person_created).
+    """
+    if data.get('person_id'):
+        row = c.execute('SELECT * FROM persons WHERE person_id=?', (data.get('person_id'),)).fetchone()
+        if not row: raise ValueError('person_id must refer to a central person')
+        return rowdict(row), False
+    if isinstance(data.get('person'), dict) and data['person']:
+        raw = data['person']
+    elif isinstance(data.get('new_person'), dict) and data['new_person']:
+        raw = data['new_person']
+    elif data.get('full_name') or data.get('fullName'):
+        raw = data
+    else:
+        raise ValueError('Provide an existing person_id, or the details (full_name, '
+                         'national_id, ...) of a new person to register first')
+    fields = {}
+    for key, val in raw.items():
+        fields[PERSON_ALIASES.get(key, key)] = val
+    fields = {k: v for k, v in fields.items() if k in PERSON_FIELDS}
+    if not str(fields.get('full_name') or '').strip():
+        raise ValueError('full_name is required to register a new person')
+    national_id = str(fields.get('national_id') or '').strip()
+    passport_id = str(fields.get('passport_id') or '').strip()
+    if not national_id:
+        raise ValueError('national_id is required to register a new person')
+    existed = c.execute('SELECT id FROM persons WHERE national_id=?', (national_id,)).fetchone()
+    if not existed and passport_id:
+        existed = c.execute('SELECT id FROM persons WHERE passport_id=?', (passport_id,)).fetchone()
+    person = upsert_person(c, fields)
+    return person, not existed
+
 def upsert_person(c, data, photo_path=None):
     """Find a person by national_id (or passport_id) and merge in any new
     non-empty fields; create the person if they do not exist. Returns the row."""
@@ -467,21 +519,27 @@ class API(BaseHTTPRequestHandler):
                 result = {'evidence_id':eid,'file_path':meta['path']}
             elif p.path == '/api/suspect-alerts':
                 data = body_json(self)
-                pid = c.execute('SELECT id FROM persons WHERE person_id=?',(data.get('person_id'),)).fetchone()
-                if not pid: raise ValueError('person_id must refer to a central person')
+                # Accepts an existing person_id OR a nested person object for a
+                # brand-new person: the central record is created/merged first,
+                # then the case participant + suspect-list entry links to it.
+                person, person_created = resolve_person(c, data)
                 case = c.execute('SELECT id FROM crime_cases WHERE case_id=?',(data.get('case_id'),)).fetchone()
                 if not case: raise ValueError('case_id must refer to an existing CID case')
                 dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id=? AND alert_status=?',
-                                (pid['id'],case['id'],'Active alert')).fetchone()
+                                (person['id'],case['id'],'Active alert')).fetchone()
                 if dup:
                     self.send_json(409,{'error':'An active alert already links this person to that case','alert_id':dup['alert_id']}); c.close(); return
                 alert_id = 'AL-'+secrets.token_hex(4)
                 c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,notes,created_by)
-                    VALUES(?,?,?,?,?,?,?)''',(alert_id,pid['id'],case['id'],data.get('role','Suspect'),
+                    VALUES(?,?,?,?,?,?,?)''',(alert_id,person['id'],case['id'],data.get('role','Suspect'),
                     'Active alert',data.get('notes',''),user['id']))
+                if person_created:
+                    audit(c,user,'CREATE','person',person['person_id'],
+                          'central person created with suspect list entry for '+str(data.get('case_id','')))
                 audit(c,user,'CREATE','suspect_alert',alert_id,data.get('case_id','')); c.commit()
-                result = {'alert_id':alert_id,'case_id':data.get('case_id'),'person_id':data.get('person_id'),
-                          'role':data.get('role','Suspect'),'alert_status':'Active alert'}
+                result = {'alert_id':alert_id,'case_id':data.get('case_id'),'person_id':person['person_id'],
+                          'person_created':person_created,
+                          'role':data.get('role','Suspect'),'alert_status':'Active alert','person':person}
             elif p.path == '/api/checkpoint-events':
                 data = body_json(self)
                 pid = c.execute('SELECT id FROM persons WHERE person_id=?',(data.get('person_id'),)).fetchone()
