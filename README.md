@@ -22,9 +22,17 @@ Every person receives one central `Person ID` (`P-0001`, etc.). Unit registers s
 - CID: case participants and case references
 - Checkpoint: screening events and actions taken
 
-### Global search, auto-fill and merging
+### Smart identity resolution (single unified form)
 
-Every unit form has a **global search autocomplete**: typing a name, National ID, passport or phone queries the Central Person Registry. Selecting a match **auto-fills** the person's saved details (name, mother's name, DOB/POB, residence, occupation, passport, phone, photo) and links the new unit record to the existing identity — no duplicate is created. Submitting new or corrected details **appends/updates** the central profile (server-side merge by National ID/passport). When no match exists, the "create/update person" entry opens a side-panel form.
+There is **one unified person entry form** used everywhere (Central Persons, Add Suspect, Airport, Fingerprint, Checkpoint and CID participants). It captures the **4-part full name (first, second, third, fourth), date of birth, National ID / Passport, mother's name and address** — there is no manual "existing person vs new person" toggle.
+
+As the officer types, the form performs **real-time background matching** against the Central Person Registry:
+
+- **Exact match** (National ID/passport, or 4-part name + DOB) → success banner **"Matched Central Record: [ID] - [Name]"** and the existing data auto-populates.
+- **No match** → the form shows a notice and submission **auto-creates the Central Person first**, then attaches the unit/suspect record.
+- **Fuzzy 3-part name + mother's name** → amber warning prompt listing candidate records; the officer confirms before linking (Tier 3 is never an automatic merge).
+
+The same matching engine (Tier 1 exact ID/passport auto-merge, Tier 2 exact 4-part name + DOB high-confidence link, Tier 3 fuzzy warning) is applied across **Checkpoints, Airport Control, Fingerprint Unit and CID**.
 
 ### No popups — pages and side panels
 
@@ -36,9 +44,11 @@ The interface uses **no browser dialogs**. All create/edit actions happen in **d
 - **`application.html`** — a printable Day-1 review summary the applicant verifies, with an **Approve Application** action for authorized officers.
 - **`certificate.html`** — the official Day-2 clearance certificate. It is **locked until an officer approves** the application, then unlocks for printing.
 
-### CID case workspace
+### CID case workspace and optional case linking
 
 Each case opens in a full-page workspace with three tabs: **1) Case Details & Incident Summary**, **2) Participants & Suspect List Linkage** (suspect/victim/witness/complainant, with suspects creating checkpoint/airport alerts), and **3) Evidence & Media Storage** (file uploads with captions).
+
+The **Add Suspect** drawer makes the **linked case strictly optional**: a suspect can be listed with a case, or without one, in which case the origin is recorded as **"Direct Intelligence Listing"** or **"Manual Entry"**. The suspect endpoints (`POST /api/suspect-alerts`) accept an optional `case_id` and store the origin server-side.
 
 ## Architecture
 
@@ -88,13 +98,14 @@ Open `http://localhost:8000`.
 
 ## Demo workflow
 
-1. Open **Airport** and type `Ayaan` (or `10012345`) in the search box — the global autocomplete finds central person `P-0001`; select it to auto-fill.
-2. Open **Fingerprint Unit** and search the same person. Select the match to auto-fill the applicant fields.
+1. Open **Airport** and type `Ayaan / Cabdi / Xasan / Axmed`, DOB `1997-04-18` and `10012345` — the unified identity form matches central person `P-0001` in real time and auto-fills the existing data.
+2. Open **Fingerprint Unit** and type the same identity; an exact match auto-fills the applicant fields.
 3. Complete clearance reason, guardian details, and attach **at least 2 applicant and 2 guardian documents** (plus an optional photo), then save.
 4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
-6. Open **CID Criminal Unit**, click a case to open its workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert), and upload evidence (tab 3).
-7. Open **Checkpoints → Record stop**, search the suspect, and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts.
+6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. Submitting with an exact match reuses the existing central record.
+7. Open a case workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert; the case is optional), and upload evidence (tab 3).
+8. Open **Checkpoints → Record stop** for a listed suspect and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 

@@ -62,14 +62,16 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .event b{font-size:13px}.event small{display:block;color:var(--muted);margin-top:3px}
 .toast{position:fixed;right:28px;bottom:25px;background:#132642;color:white;padding:13px 17px;border-radius:10px;box-shadow:var(--shadow);display:none;font-size:13px;z-index:2000;max-width:340px}
 .toast.err{background:#7a2330}
-/* autocomplete */
-.ac-wrap{position:relative}.autocomplete{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);z-index:600;overflow:hidden;display:none;max-height:260px;overflow-y:auto}
-.autocomplete .ac-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0f3f8}.autocomplete .ac-item:hover{background:#f4f8ff}
-.autocomplete .ac-item b{font-size:13px}.autocomplete .ac-item small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
-.autocomplete .ac-new{padding:11px 12px;cursor:pointer;color:var(--blue);font-weight:700;font-size:13px;background:#f7f9ff}
-.autocomplete .ac-new:hover{background:#eef3ff}
-.pickbar{display:none;align-items:center;gap:10px;background:#f1fcf9;border:1px solid #bfe9df;border-radius:10px;padding:10px 12px;margin-top:8px}
-.pickbar.on{display:flex}.pickbar .x{margin-left:auto;background:none;color:var(--muted);font-size:16px}
+/* unified identity form + real-time match banners */
+.match-banner{border-radius:10px;padding:12px 14px;font-size:13px;font-weight:600;line-height:1.55;display:none;margin-bottom:4px}
+.match-banner.show{display:block}
+.match-banner.ok{background:#e8f8f2;border:1px solid #b7e6d6;color:#12614f}
+.match-banner.warn{background:#fff7e6;border:1px solid #f0dcae;color:#7a5b17}
+.match-banner.info{background:#eef4ff;border:1px solid #d3e0fb;color:#264d8a}
+.match-banner b{display:block;margin-bottom:2px}
+.match-banner small{font-weight:500}
+.match-banner .actions{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+.id-form .section-label{margin-top:2px}
 /* drawer */
 .overlay{position:fixed;inset:0;background:#0d1b31aa;z-index:1100;display:none}
 .overlay.on{display:block}
@@ -148,24 +150,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div id="fpNotice" class="notice"></div>
 <div class="record-type">Unit-specific record: guardian, clearance reason and supporting legal documents are stored here — the applicant’s identity is matched/updated in the Central Person Registry.</div>
 <form class="form" id="fpForm" onsubmit="saveFingerprint(event)">
-<div class="section-label">Applicant</div>
-<div class="field ac-wrap"><label>Search Central Persons by name, National ID or passport *</label>
-<input id="fpLookup" required placeholder="Type a name e.g. Ayaan — matches auto-fill below" autocomplete="off">
-<div id="fpAc" class="autocomplete"></div>
-<div id="fpPick" class="pickbar"><span class="mini" id="fpPickMini">●</span><div><b id="fpPickName"></b><small class="muted" id="fpPickId"></small></div><button type="button" class="x" onclick="clearFpPick()">✕</button></div>
-</div>
-<div class="grid2">
-<div class="field"><label>Full name *</label><input id="fpName" required placeholder="Full legal name"></div>
-<div class="field"><label>National ID *</label><input id="fpNational" required placeholder="National ID number"></div>
-<div class="field"><label>Mother's name</label><input id="fpMother" placeholder="Mother's full name"></div>
-<div class="field"><label>Date of birth</label><input id="fpDob" type="date"></div>
-<div class="field"><label>Place of birth</label><input id="fpPob" placeholder="City / town"></div>
-<div class="field"><label>Residence</label><input id="fpResidence" placeholder="Current address"></div>
-<div class="field"><label>Occupation</label><input id="fpOccupation" placeholder="Occupation"></div>
-<div class="field"><label>Passport ID</label><input id="fpPassport" placeholder="Passport number (if any)"></div>
-<div class="field"><label>Phone</label><input id="fpPhone" placeholder="Contact number"></div>
-<div class="field"><label>Photo</label><input id="fpPhoto" type="file" accept="image/*"></div>
-</div>
+<div class="section-label">Applicant identity — Central Person Registry</div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>: an exact match (National ID/passport or 4-part name + DOB) auto-fills the existing record; if no match exists a new Central Person is created automatically on save.</div>
+<div id="fpIdentity"></div>
 <div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Travel</option><option>Education</option><option>Employment</option><option>Residence</option><option>Other</option></select></div>
 <div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs"></div></div>
 <div class="section-label">Guardian / next of kin</div>
@@ -197,11 +184,10 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="panel-head"><div><h2>Register airport passenger</h2><div class="sub">Hargeisa Local Airport · Passenger register</div></div></div>
 <div id="airNotice" class="notice"></div>
 <form class="form" id="airForm" onsubmit="saveAirport(event)">
-<div class="field ac-wrap"><label>Find Central Person by National ID, name or passport *</label>
-<input id="airLookup" required placeholder="Search — existing person auto-fills; new person opens a form" autocomplete="off">
-<div id="airAc" class="autocomplete"></div>
-<div id="airPick" class="pickbar"><span class="mini" id="airPickMini">●</span><div><b id="airPickName"></b><small class="muted" id="airPickId"></small></div><button type="button" class="x" onclick="clearAirPick()">✕</button></div>
-</div>
+<div class="section-label">Passenger identity — Central Person Registry</div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
+<div id="airIdentity"></div>
+<div class="section-label">Travel</div>
 <div class="grid2">
 <div class="field"><label>Movement</label><select id="airMove"><option>Arrival</option><option>Departure</option></select></div>
 <div class="field"><label>Travel date</label><input id="airDate" type="date" value="2026-09-01"></div>
@@ -226,9 +212,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th></tr></thead><tbody id="caseTable"></tbody></table></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport</div></div></div>
-<div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case</th><th>Role</th><th>Alert</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
+<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><button class="btn" onclick="openAddSuspect()">＋ Add suspect</button></div>
+<div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes. Suspects listed without a case are recorded with a <b>Direct Intelligence Listing</b> or <b>Manual Entry</b> origin.</div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
 </div>
 </section>
 
@@ -258,10 +244,15 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 </div>
 <div class="tabpane" id="cw-participants">
 <div class="panel" style="margin-top:0;box-shadow:none;border:1px solid var(--line)">
-<div class="panel-head"><div><h2>Link a participant</h2><div class="sub">Add a suspect (creates a checkpoint/airport alert), victim, witness or complainant</div></div></div>
+<div class="panel-head"><div><h2>Link a participant</h2><div class="sub">Add a suspect (creates a checkpoint/airport alert), victim, witness or complainant — the linked case is optional</div></div></div>
 <div class="form" style="max-width:680px">
+<div class="section-label">Identity — Central Person Registry</div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
+<div id="cwIdentity"></div>
+<div class="grid2">
 <div class="role-select"><label class="muted" style="font-weight:700">Role</label><select id="cwRole"><option>Suspect</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
-<div class="field ac-wrap"><label>Find Central Person</label><input id="cwLookup" placeholder="Search name, National ID or passport" autocomplete="off"><div id="cwAc" class="autocomplete"></div><div id="cwPick" class="pickbar"><span class="mini" id="cwPickMini">●</span><div><b id="cwPickName"></b><small class="muted" id="cwPickId"></small></div><button type="button" class="x" onclick="clearCwPick()">✕</button></div></div>
+<div class="field"><label>Linked case (optional)</label><select id="cwCaseSel"></select></div>
+</div>
 <div class="field"><label>Note (optional)</label><input id="cwPartNote" placeholder="e.g. last seen, relationship to incident"></div>
 <div class="form-actions"><button class="btn danger" onclick="addParticipant()">Link participant</button></div>
 </div>
@@ -303,64 +294,193 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <script>
 // ============================ state ============================
 const seed={people:[
-{id:'P-0001',name:'Ayaan Cabdi Xasan',nationalId:'10012345',passportId:'P0011223',dob:'1997-04-18',pob:'Hargeisa',motherName:'Faadumo Cali',residence:'Hargeisa, Jigjiga Yar',occupation:'Civil servant',phone:'+252 63 555 0199',units:['Airport'],updated:'Jul 18, 2026'},
-{id:'P-0002',name:'Maxamed Nuur Cali',nationalId:'10067890',passportId:'',dob:'1989-11-02',pob:'Burao',motherName:'Khadra Jaamac',residence:'Hargeisa Central',occupation:'Trader',phone:'+252 63 555 0188',units:['CID'],updated:'Aug 12, 2026'},
-{id:'P-0003',name:'Sahra Yuusuf',nationalId:'10024680',passportId:'',dob:'2001-02-26',pob:'Hargeisa',motherName:'Amina Maxamed',residence:'Hargeisa, 26 June',occupation:'Student',phone:'+252 63 555 0144',units:['Fingerprint'],updated:'Aug 28, 2026'}],
+{id:'P-0001',name:'Ayaan Cabdi Xasan Axmed',first:'Ayaan',second:'Cabdi',third:'Xasan',fourth:'Axmed',nationalId:'10012345',passportId:'P0011223',dob:'1997-04-18',pob:'Hargeisa',motherName:'Faadumo Cali',residence:'Hargeisa, Jigjiga Yar',occupation:'Civil servant',phone:'+252 63 555 0199',units:['Airport'],updated:'Jul 18, 2026'},
+{id:'P-0002',name:'Maxamed Nuur Cali Awil',first:'Maxamed',second:'Nuur',third:'Cali',fourth:'Awil',nationalId:'10067890',passportId:'',dob:'1989-11-02',pob:'Burao',motherName:'Khadra Jaamac',residence:'Hargeisa Central',occupation:'Trader',phone:'+252 63 555 0188',units:['CID'],updated:'Aug 12, 2026'},
+{id:'P-0003',name:'Sahra Yuusuf Axmed Aadan',first:'Sahra',second:'Yuusuf',third:'Axmed',fourth:'Aadan',nationalId:'10024680',passportId:'',dob:'2001-02-26',pob:'Hargeisa',motherName:'Amina Maxamed',residence:'Hargeisa, 26 June',occupation:'Student',phone:'+252 63 555 0144',units:['Fingerprint'],updated:'Aug 28, 2026'}],
 airport:[{id:'AR-1001',person:'P-0001',move:'Arrival',date:'2026-07-18',flight:'HL-118',route:'Berbera / Hargeisa'}],
 fingerprint:[{id:'FP-2026-0042',person:'P-0003',purpose:'Education',status:'Pending Review',guardian:'Yuusuf Axmed'}],
 cases:[{id:'CID-2026-008',category:'Property crime',location:'Hargeisa Central',status:'Under Investigation',summary:'Shop burglary overnight; cash and goods reported missing.',participants:[{person:'P-0002',role:'Suspect',note:''}],evidence:[]},
 {id:'CID-2026-009',category:'Fraud',location:'Jigjiga Yar',status:'Submitted for Prosecution',summary:'Advance-fee fraud reported by a local business owner.',participants:[],evidence:[]}],
-suspects:[{person:'P-0002',case:'CID-2026-008',role:'Suspect',alert:'Active alert'}],
+suspects:[{person:'P-0002',case:'CID-2026-008',role:'Suspect',alert:'Active alert',origin:'Case Link'}],
 checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted'}]};
 let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
 let apiToken='', serverOn=false;
 function person(id){return db.people.find(p=>p.id===id)}
 function initials(n){return (n||'?').split(' ').map(x=>x[0]).slice(0,2).join('')}
-function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]))}
+function normTxt(s){return String(s??'').replace(/\s+/g,' ').trim().toLowerCase()}
 function toast(s,err){let t=document.getElementById('toast');t.textContent=s;t.className='toast'+(err?' err':'');t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3200)}
 
 // ============================ api ============================
 async function api(path,options={}){options.headers={...(options.headers||{})};if(!(options.body instanceof FormData))options.headers['Content-Type']='application/json';if(apiToken)options.headers.Authorization='Bearer '+apiToken;let r=await fetch(path,options);let data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Server request failed');return data}
-function mapPerson(p){return{...p,id:p.person_id,name:p.full_name,nationalId:p.national_id,passportId:p.passport_id||'',dob:p.date_of_birth||'',pob:p.place_of_birth||'',motherName:p.mother_name||'',residence:p.residence||'',occupation:p.occupation||'',phone:p.phone||'',photoPath:p.photo_path||'',updated:(p.updated_at||'').slice(0,10)}}
+function mapPerson(p){
+  const raw=[p.first_name,p.second_name,p.third_name,p.fourth_name].map(x=>x||'');
+  const hasParts=raw.some(Boolean);
+  const split=(p.full_name||p.name||'').split(/\s+/).filter(Boolean);
+  const parts=hasParts?raw:split;
+  return {...p,id:p.person_id||p.id,name:p.full_name||p.name||parts.join(' '),first:parts[0]||'',second:parts[1]||'',third:parts[2]||'',fourth:parts[3]||'',
+    nationalId:p.national_id||'',passportId:p.passport_id||'',dob:p.date_of_birth||'',pob:p.place_of_birth||'',
+    motherName:p.mother_name||'',residence:p.residence||'',occupation:p.occupation||'',phone:p.phone||'',
+    photoPath:p.photo_path||'',updated:(p.updated_at||'').slice(0,10)}}
+function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),
+  first_name:d.first||'',second_name:d.second||'',third_name:d.third||'',fourth_name:d.fourth||'',
+  national_id:d.nationalId||'',passport_id:d.passportId||'',date_of_birth:d.dob||'',phone:d.phone||'',
+  mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
 const TITLES={dashboard:'Operations dashboard',people:'Central person registry',fingerprint:'Fingerprint Unit',airport:'Airport passenger register',cid:'CID Criminal Unit',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint operations'};
 function go(page){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById(page).classList.add('active');document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===page));document.getElementById('pageTitle').textContent=TITLES[page]||'';if(page==='cid')renderCases();renderAll()}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.page));
 
-// ============================ global person search ============================
-function localSearch(q){q=q.trim().toLowerCase();if(!q)return[];return db.people.filter(p=>JSON.stringify([p.name,p.nationalId,p.id,p.passportId,p.phone,p.motherName]).toLowerCase().includes(q))}
-async function searchPersons(q){if(serverOn){try{let r=await api('/api/persons?q='+encodeURIComponent(q.trim()));return r.items.map(mapPerson)}catch(e){return localSearch(q)}}return localSearch(q)}
+// ============================ identity: unified matching ============================
+function identityServer(d){return{full_name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),
+  first_name:d.first,second_name:d.second,third_name:d.third,fourth_name:d.fourth,date_of_birth:d.dob,
+  national_id:d.national,passport_id:d.passport,mother_name:d.mother,residence:d.address,
+  place_of_birth:d.pob,phone:d.phone,occupation:d.occupation}}
+function localNameParts(p){return normTxt([p.first,p.second,p.third,p.fourth].join(' ')).split(' ').filter(Boolean)}
+function localResolveIdentity(d){
+  const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob);
+  const parts=[normTxt(d.first),normTxt(d.second),normTxt(d.third),normTxt(d.fourth)];
+  let p=db.people.find(x=>nat&&normTxt(x.nationalId)===nat)||db.people.find(x=>pass&&normTxt(x.passportId)===pass);
+  if(p)return{matched:true,tier:1,person:p,reason:'Exact National ID / Passport match'};
+  if(parts.every(x=>x)&&dob){
+    p=db.people.find(x=>normTxt(localNameParts(x).join(' '))===parts.join(' ')&&normTxt(x.dob)===dob);
+    if(p)return{matched:true,tier:2,person:p,reason:'Exact 4-part name + date of birth match'};
+  }
+  if(mom&&parts.filter(x=>x).length>=3){
+    const entered=parts.filter(Boolean);
+    const cands=db.people.filter(x=>normTxt(x.motherName)===mom&&entered.filter(t=>localNameParts(x).includes(t)).length>=3);
+    if(cands.length)return{matched:true,tier:3,person:cands[0],candidates:cands,reason:'Fuzzy 3-part name + mother\u2019s name match \u2014 '+cands.length+' candidate(s); officer confirmation required'};
+  }
+  return{matched:false,tier:0,reason:'No exact central record found \u2014 a new Central Person record will be created automatically on save.'};
+}
+async function resolveIdentity(d){
+  if(serverOn){try{return await api('/api/persons/resolve',{method:'POST',body:JSON.stringify(identityServer(d))})}catch(e){return{tier:-1,matched:false,reason:'Identity lookup unavailable: '+e.message}}}
+  return localResolveIdentity(d);
+}
+function identityFormHTML(prefix,opts={}){
+  return `
+  <div class="id-form">
+   <div id="${prefix}-match" class="match-banner"></div>
+   <div class="grid2">
+    <div class="field"><label>First name *</label><input id="${prefix}-first" placeholder="e.g. Ayaan" autocomplete="off"></div>
+    <div class="field"><label>Second name *</label><input id="${prefix}-second" placeholder="e.g. Cabdi" autocomplete="off"></div>
+    <div class="field"><label>Third name *</label><input id="${prefix}-third" placeholder="e.g. Xasan" autocomplete="off"></div>
+    <div class="field"><label>Fourth name *</label><input id="${prefix}-fourth" placeholder="e.g. Axmed" autocomplete="off"></div>
+    <div class="field"><label>Date of birth *</label><input id="${prefix}-dob" type="date"></div>
+    <div class="field"><label>National ID</label><input id="${prefix}-national" placeholder="National ID number" autocomplete="off"></div>
+    <div class="field"><label>Passport ID</label><input id="${prefix}-passport" placeholder="Passport number" autocomplete="off"></div>
+    <div class="field"><label>Mother's name *</label><input id="${prefix}-mother" placeholder="Mother's full name" autocomplete="off"></div>
+    <div class="field"><label>Address (residence) *</label><input id="${prefix}-address" placeholder="Street, district, town" autocomplete="off"></div>
+    <div class="field"><label>Phone</label><input id="${prefix}-phone" placeholder="Contact number" autocomplete="off"></div>
+    <div class="field"><label>Place of birth</label><input id="${prefix}-pob" placeholder="City / town"></div>
+    <div class="field"><label>Occupation</label><input id="${prefix}-occupation" placeholder="Occupation"></div>
+    ${opts.photo?`<div class="field"><label>Photo</label><input id="${prefix}-photo" type="file" accept="image/*"></div>`:''}
+   </div>
+  </div>`;
+}
+function readIdentity(prefix){
+  const g=id=>document.getElementById(id)?.value.trim()||'';
+  return{first:g(prefix+'-first'),second:g(prefix+'-second'),third:g(prefix+'-third'),fourth:g(prefix+'-fourth'),
+    dob:g(prefix+'-dob'),national:g(prefix+'-national'),passport:g(prefix+'-passport'),mother:g(prefix+'-mother'),
+    address:g(prefix+'-address'),phone:g(prefix+'-phone'),pob:g(prefix+'-pob'),occupation:g(prefix+'-occupation')};
+}
+function fillIdentity(prefix,p){
+  const map={first:'first',second:'second',third:'third',fourth:'fourth',dob:'dob',national:'nationalId',
+    passport:'passportId',mother:'motherName',address:'residence',phone:'phone',pob:'pob',occupation:'occupation'};
+  Object.entries(map).forEach(([k,key])=>{const el=document.getElementById(prefix+'-'+k);if(el&&p[key]!=null)el.value=p[key]||''});
+}
+function clearIdentity(prefix,p){
+  ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{const el=document.getElementById(prefix+'-'+k);if(el)el.value=''});
+  const ph=document.getElementById(prefix+'-photo');if(ph)ph.value='';
+  setMatch(prefix,null);
+}
+function validateIdentity(d){
+  if(!d.first||!d.second||!d.third||!d.fourth)return{ok:false,msg:'Enter the full 4-part name (first, second, third and fourth names)'};
+  if(!d.dob)return{ok:false,msg:'Date of birth is required'};
+  if(!d.national&&!d.passport)return{ok:false,msg:'National ID or Passport ID is required'};
+  if(!d.mother)return{ok:false,msg:"Mother's name is required"};
+  if(!d.address)return{ok:false,msg:'Address is required'};
+  return{ok:true};
+}
+function setMatch(prefix,res){
+  const box=document.getElementById(prefix+'-match');if(!box)return;
+  window._identityMatches=window._identityMatches||{};
+  if(!res){box.className='match-banner';box.innerHTML='';return}
+  if(res.ok){
+    window._identityMatches[prefix]=res.person.id;
+    box.className='match-banner ok show';
+    box.innerHTML=`<b>✓ Matched Central Record: ${esc(res.person.id)} - ${esc(res.person.name)}</b><small>${esc(res.reason||'')} · existing Central Person registry data auto-populated.</small>`;
+  }else if(res.warn){
+    const cands=res.candidates||[];
+    window._identityMatches[prefix]=null;
+    window._identityWarnCands=window._identityWarnCands||{};window._identityWarnCands[prefix]=cands;
+    box.className='match-banner warn show';
+    box.innerHTML=`<b>⚠ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')} — this is a fuzzy warning, not an automatic match. Confirm identity before linking.</small><div class="actions"><button type="button" class="btn small" onclick="useWarnMatch('${prefix}','${esc(res.person.id)}')">Use this record</button><button type="button" class="btn ghost small" onclick="dismissWarnMatch('${prefix}')">Continue as new person</button></div>`;
+  }else if(res.info){
+    window._identityMatches[prefix]=null;
+    box.className='match-banner info show';
+    box.innerHTML=`<b>ℹ No exact central record</b><small>${esc(res.reason||'')}</small>`;
+  }else if(res.tier===-1){
+    box.className='match-banner info show';
+    box.innerHTML=`<small>${esc(res.reason||'')}</small>`;
+  }
+}
+function useWarnMatch(prefix,pid){
+  const cands=(window._identityWarnCands&&window._identityWarnCands[prefix])||[];
+  const p=cands.find(x=>x.id===pid);if(!p)return;
+  const ctl=window._identityWires&&window._identityWires[prefix];if(ctl)ctl.fill(p);
+  setMatch(prefix,{ok:true,person:p,reason:'Tier 3 fuzzy match accepted by officer'});
+}
+function dismissWarnMatch(prefix){
+  window._identitySkip=window._identitySkip||{};window._identitySkip[prefix]=true;
+  setMatch(prefix,null);
+}
+function wireIdentity(prefix){
+  window._identityWires=window._identityWires||{};
+  window._identitySkip=window._identitySkip||{};
+  let t,seq=0;
+  async function run(){
+    const my=++seq;
+    const d=readIdentity(prefix);
+    if(!(d.first||d.second||d.third||d.fourth||d.national||d.passport||d.mother)){setMatch(prefix,null);return}
+    let res;try{res=await resolveIdentity(d)}catch(e){if(my!==seq)return;setMatch(prefix,{tier:-1,reason:'Identity lookup unavailable: '+e.message});return}
+    if(my!==seq)return; // a newer search is already running — ignore stale response
+    const now=readIdentity(prefix);
+    if(JSON.stringify(identityServer(d))!==JSON.stringify(identityServer(now)))return; // officer edited while matching
+    if(res&&res.matched&&res.tier<=2){
+      const p=mapPerson(res.person);
+      fillIdentity(prefix,p);
+      setMatch(prefix,{ok:true,tier:res.tier,reason:res.reason,person:p});
+    }else if(res&&res.tier===3){
+      if(window._identitySkip[prefix])return;
+      setMatch(prefix,{warn:true,tier:3,reason:res.reason,person:mapPerson(res.person),candidates:(res.candidates||[]).map(mapPerson)});
+    }else if(res&&res.tier===0){
+      setMatch(prefix,{info:true,reason:res.reason});
+    }else setMatch(prefix,null);
+  }
+  ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{
+    const el=document.getElementById(prefix+'-'+k);
+    if(el)el.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(run,320);window._identitySkip[prefix]=false});
+  });
+  run();
+  const ctl={read:()=>readIdentity(prefix),fill:p=>fillIdentity(prefix,p),clear:()=>clearIdentity(prefix),refresh:run};
+  window._identityWires[prefix]=ctl;return ctl;
+}
 async function upsertPerson(data){
   if(serverOn){let r=await api('/api/persons/upsert',{method:'POST',body:JSON.stringify(stripServer(data))});return mapPerson(r.person)}
-  let p=db.people.find(x=>x.nationalId===data.nationalId||(data.passportId&&x.passportId===data.passportId));
-  if(p){Object.keys(data).forEach(k=>{if(data[k]&&String(data[k]).trim())p[k]=data[k]});p.updated='today';persist();return p}
-  let np={id:'P-'+String(db.people.length+1).padStart(4,'0'),units:['Central'],updated:'today',...data};db.people.push(np);persist();return np;
+  let p=db.people.find(x=>data.nationalId&&normTxt(x.nationalId)===normTxt(data.nationalId))||db.people.find(x=>data.passportId&&normTxt(x.passportId)===normTxt(data.passportId));
+  if(p){Object.keys(data).forEach(k=>{if(data[k]&&String(data[k]).trim())p[k]=data[k]});p.name=[data.first,data.second,data.third,data.fourth].filter(Boolean).join(' ')||p.name;p.updated='today';persist();return p}
+  const np={id:'P-'+String(db.people.length+1).padStart(4,'0'),units:['Central'],updated:'today',...data};
+  np.name=[np.first,np.second,np.third,np.fourth].filter(Boolean).join(' ');
+  db.people.push(np);persist();return np;
 }
-function stripServer(d){return{full_name:d.name,national_id:d.nationalId,date_of_birth:d.dob||'',phone:d.phone||'',mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||'',passport_id:d.passportId||''}}
-
-// ============================ autocomplete widget ============================
-function attachPicker(inputId,boxId,onPick){
-  const input=document.getElementById(inputId),box=document.getElementById(boxId);let t,chosen=null;
-  input.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(async()=>{
-    const q=input.value.trim();if(q.length<2){box.style.display='none';return}
-    const items=await searchPersons(q);
-    box.innerHTML=items.map(p=>`<div class="ac-item" data-id="${esc(p.id)}"><b>${esc(p.name)}</b><small>${esc(p.nationalId)} · ${esc(p.id)}${p.passportId?' · Passport '+esc(p.passportId):''}</small></div>`).join('')
-      +`<div class="ac-new">＋ Create / update person "${esc(q)}"</div>`;
-    box.style.display='block';
-    box.querySelectorAll('.ac-item').forEach(el=>el.onclick=()=>{const p=items.find(x=>x.id===el.dataset.id);box.style.display='none';input.value=p.name;chosen=p;onPick(p)});
-    box.querySelector('.ac-new').onclick=()=>{box.style.display='none';openPersonDrawer({name:q},saved=>{box.style.display='none';input.value=saved.name;chosen=saved;onPick(saved)})};
-  },180)});
-  document.addEventListener('click',e=>{if(!box.contains(e.target)&&e.target!==input)box.style.display='none'});
-  return {get chosen(){return chosen},clear(){chosen=null}};
-}
-function pickBar(barId,miniId,nameId,idId,p){
-  document.getElementById(barId).classList.add('on');
-  document.getElementById(nameId).textContent=p.name;
-  document.getElementById(idId).textContent=p.nationalId+' · '+p.id;
-  const mini=document.getElementById(miniId);
-  if(p.photoPath||p.photoUrl){mini.innerHTML=`<img src="${p.photoPath||p.photoUrl}">`}else mini.textContent=initials(p.name);
+async function ensureLocalIdentity(d){
+  const m=localResolveIdentity(d);
+  if(m.matched&&m.tier<=2)return m.person;
+  return upsertPerson({first:d.first,second:d.second,third:d.third,fourth:d.fourth,nationalId:d.national,
+    passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation});
 }
 
 // ============================ drawer ============================
@@ -368,36 +488,29 @@ function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitl
 function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on')}
 function val(id){return document.getElementById(id).value.trim()}
 
-// ---- person drawer (create / view & update) ----
+// ---- unified central person drawer (create / view & update) ----
 function openPersonDrawer(prefill,onSaved){
   const p=prefill&&prefill.id?prefill:null;
   const body=`
-  <div class="hint" style="margin-bottom:14px">${p?'Append or correct details for this existing identity — saving updates the central profile, it never duplicates it.':'Enter the person’s identity. If the National ID already exists, the record is updated/merged automatically.'}</div>
-  <form class="form" id="personDrawerForm">
-  <div class="grid2">
-   <div class="field"><label>Full name *</label><input id="pdName" value="${esc(p?.name||prefill?.name||'')}"></div>
-   <div class="field"><label>National ID *</label><input id="pdNational" value="${esc(p?.nationalId||'')}"></div>
-   <div class="field"><label>Mother's name</label><input id="pdMother" value="${esc(p?.motherName||'')}"></div>
-   <div class="field"><label>Date of birth</label><input id="pdDob" type="date" value="${esc(p?.dob||'')}"></div>
-   <div class="field"><label>Place of birth</label><input id="pdPob" value="${esc(p?.pob||'')}"></div>
-   <div class="field"><label>Residence</label><input id="pdResidence" value="${esc(p?.residence||'')}"></div>
-   <div class="field"><label>Occupation</label><input id="pdOccupation" value="${esc(p?.occupation||'')}"></div>
-   <div class="field"><label>Passport ID</label><input id="pdPassport" value="${esc(p?.passportId||'')}"></div>
-   <div class="field"><label>Phone</label><input id="pdPhone" value="${esc(p?.phone||'')}"></div>
-  </div></form>`;
+  <div class="hint" style="margin-bottom:14px">${p?'Edit or append to this existing identity — the Central Person Registry is matched in real time and the profile is merged, never duplicated.':'Enter the identity below. The Central Person Registry is matched <b>in real time</b>; an exact match auto-fills existing data, otherwise a new Central Person record is created on save.'}</div>
+  <form class="form" id="personDrawerForm">${identityFormHTML('pd')}</form>`;
   openDrawer(p?'Update identity profile':'New central person',body,
     `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitPersonDrawer(${p?`'${p.id}'`:'null'})">${p?'Save updates':'Save person'}</button>`);
+  if(p)fillIdentity('pd',p);
+  wireIdentity('pd');
   window._personDrawerCb=onSaved||null;
 }
 async function submitPersonDrawer(existingId){
-  const data={name:val('pdName'),nationalId:val('pdNational'),motherName:val('pdMother'),dob:val('pdDob'),pob:val('pdPob'),residence:val('pdResidence'),occupation:val('pdOccupation'),passportId:val('pdPassport'),phone:val('pdPhone')};
-  if(!data.name||!data.nationalId){toast('Full name and National ID are required',true);return}
+  const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  const data={name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),first:d.first,second:d.second,third:d.third,fourth:d.fourth,
+    nationalId:d.national,passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation};
+  if(!data.nationalId&&!data.passportId){toast('National ID or Passport ID is required',true);return}
   try{
     let saved;
     if(serverOn){
       if(existingId){await api('/api/persons/'+existingId,{method:'PATCH',body:JSON.stringify(stripServer(data))});saved=mapPerson((await api('/api/persons/'+existingId)))}
       else saved=await upsertPerson(data);
-    }else{saved=await upsertPerson(data)}
+    }else saved=await upsertPerson(data);
     closeDrawer();renderAll();toast(existingId?'Identity profile updated':'Person saved to central registry');
     if(window._personDrawerCb)window._personDrawerCb(saved);
   }catch(e){toast(e.message,true)}
@@ -409,14 +522,56 @@ function openPersonView(id){
   openDrawer('Identity profile · '+p.id,`
    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
      <span class="mini" style="width:54px;height:54px;font-size:17px">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`:esc(initials(p.name))}</span>
-     <div><b style="font-size:16px">${esc(p.name)}</b><div class="muted">${esc(p.nationalId)}${p.passportId?' · Passport '+esc(p.passportId):''}</div></div></div>
+     <div><b style="font-size:16px">${esc(p.name)}</b><div class="muted">${esc(p.nationalId||p.passportId||'—')}${p.passportId?' · Passport '+esc(p.passportId):''}</div></div></div>
    <div class="grid2" style="font-size:13px;line-height:1.9">
      <div><b>Mother:</b> ${esc(p.motherName||'—')}</div><div><b>DOB:</b> ${esc(p.dob||'—')}</div>
      <div><b>POB:</b> ${esc(p.pob||'—')}</div><div><b>Phone:</b> ${esc(p.phone||'—')}</div>
-     <div><b>Residence:</b> ${esc(p.residence||'—')}</div><div><b>Occupation:</b> ${esc(p.occupation||'—')}</div>
+     <div><b>Address:</b> ${esc(p.residence||'—')}</div><div><b>Occupation:</b> ${esc(p.occupation||'—')}</div>
    </div>
    <div style="margin:14px 0"><b>Linked unit records:</b><div style="margin-top:6px">${units||'<span class="muted">Central only</span>'}</div></div>`,
    `<button class="btn ghost" onclick="closeDrawer()">Close</button><button class="btn secondary" onclick="closeDrawer();openPersonDrawer(window._viewingPerson)">Edit / append details</button>`);
+}
+
+// ---- add suspect (optional linked case) ----
+function caseOptions(selected){
+  const opts=db.cases.map(c=>`<option value="${esc(c.id)}"${c.id===selected?' selected':''}>${esc(c.id)} · ${esc(c.category)}</option>`).join('');
+  return `<option value="">No linked case — direct intelligence / manual entry</option>${opts}`;
+}
+function openAddSuspect(){
+  openDrawer('Add suspect',`
+   <div class="hint" style="margin-bottom:14px">Type the identity below — the Central Person Registry is matched <b>in real time</b>. An exact match auto-fills the existing record; if no match exists, a new Central Person is created automatically before the suspect record is attached. The linked case is <b>optional</b>.</div>
+   <form class="form" id="addSuspectForm">
+    ${identityFormHTML('sp')}
+    <div class="section-label">Suspect record</div>
+    <div class="grid2">
+      <div class="field"><label>Linked case (optional)</label><select id="spCase">${caseOptions('')}</select></div>
+      <div class="role-select"><label class="muted" style="font-weight:700">Origin / reference</label><select id="spOrigin"><option>Direct Intelligence Listing</option><option>Manual Entry</option></select></div>
+    </div>
+    <div class="field"><label>Note (optional)</label><textarea id="spNote" placeholder="Source of intelligence, last known location, description…"></textarea></div>
+   </form>`,
+   `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitAddSuspect()">Add suspect</button>`);
+  const sc=document.getElementById('spCase');
+  sc.onchange=()=>{spOrigin.disabled=!!sc.value};
+  wireIdentity('sp');
+}
+async function submitAddSuspect(){
+  const d=window._identityWires.sp.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  const caseId=val('spCase'),origin=caseId?'Case Link':val('spOrigin');
+  const payload={...identityServer(d),case_id:caseId||null,role:'Suspect',origin,notes:val('spNote')};
+  try{
+    let msg;
+    if(serverOn){
+      const r=await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify(payload)});
+      msg='Suspect '+r.person_id+(r.case_id?' linked to '+r.case_id:' listed without a case — '+r.origin);
+    }else{
+      const p=await ensureLocalIdentity(d);
+      const dup=db.suspects.find(s=>s.person===p.id&&(s.case||'')===(caseId||'')&&s.alert==='Active alert');
+      if(dup)throw new Error('An active alert already lists this person'+(caseId?' for '+caseId:' without a linked case'));
+      db.suspects.unshift({person:p.id,case:caseId||'',role:'Suspect',alert:'Active alert',origin});
+      persist();msg='Suspect '+p.id+(caseId?' linked to '+caseId:' listed without a case — '+origin)+' (local demo)';
+    }
+    closeDrawer();await syncServer();toast(msg);
+  }catch(e){toast(e.message,true)}
 }
 
 // ============================ render ============================
@@ -425,7 +580,7 @@ function renderPeople(){
   const rows=db.people.filter(p=>JSON.stringify(p).toLowerCase().includes(q)).map(p=>`
    <tr class="clickable" onclick="openPersonView('${esc(p.id)}')">
     <td><div class="person"><span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span><b>${esc(p.name)}</b></div></td>
-    <td>${esc(p.id)}</td><td>${esc(p.nationalId)}</td><td>${esc(p.passportId||'—')}</td>
+    <td>${esc(p.id)}</td><td>${esc(p.nationalId||'—')}</td><td>${esc(p.passportId||'—')}</td>
     <td>${(p.units||[]).map(u=>'<span class="badge blue">'+esc(u)+'</span>').join(' ')}</td>
     <td><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">Open</button></td></tr>`).join('');
   peopleTable.innerHTML=rows||'<tr><td colspan="6" class="empty">No people found</td></tr>';
@@ -445,7 +600,7 @@ function renderAll(){
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">No passenger records</td></tr>';
   renderCases();
-  suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.case)}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active alerts</td></tr>';
+  suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?esc(x.case):'<span class="badge amber">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active alerts</td></tr>';
   cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td><td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No stops recorded</td></tr>';
   activity.innerHTML=`<div class="event"><span class="dot"></span><div><b>${db.fingerprint.length} clearance application(s)</b><small>${db.fingerprint.filter(x=>x.status==='Pending Review').length} pending review · Fingerprint Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--amber)"></span><div><b>${db.cases.filter(x=>x.status!=='Closed').length} open crime case(s)</b><small>CID Criminal Unit</small></div></div>
@@ -460,37 +615,31 @@ function renderCases(){
 }
 
 // ============================ fingerprint ============================
-let fpPicker,airPicker,cwPicker;
 function buildFileSlots(containerId,prefix,count,labels){
   const el=document.getElementById(containerId);
   el.innerHTML=Array.from({length:count},(_,i)=>`<div class="fileslot" id="${prefix}${i}"><input type="file" data-slot="${prefix}${i}"><small class="muted">${labels[i]}</small></div>`).join('');
   el.querySelectorAll('input[type=file]').forEach(inp=>inp.addEventListener('change',()=>{document.getElementById(prefix+inp.dataset.slot.slice(-1)).classList.toggle('filled',!!inp.files[0])}));
 }
 function collectFiles(prefix,count){const out=[];for(let i=0;i<count;i++){const inp=document.querySelector(`input[data-slot="${prefix}${i}"]`);if(inp&&inp.files[0])out.push(inp.files[0])}return out}
-function fillFpForm(p){
-  fpName.value=p.name||'';fpNational.value=p.nationalId||'';fpMother.value=p.motherName||'';fpDob.value=p.dob||'';fpPob.value=p.pob||'';fpResidence.value=p.residence||'';fpOccupation.value=p.occupation||'';fpPassport.value=p.passportId||'';fpPhone.value=p.phone||'';
-}
-function clearFpPick(){fpPicker.clear();fpLookup.value='';fpPick.classList.remove('on');['fpName','fpNational','fpMother','fpPob','fpResidence','fpOccupation','fpPassport','fpPhone'].forEach(i=>document.getElementById(i).value='')}
-function resetFpForm(){fpForm.reset();clearFpPick();[...document.querySelectorAll('.fileslot')].forEach(f=>f.classList.remove('filled'));fpNotice.style.display='none'}
+function resetFpForm(){fpForm.reset();window._identityWires.fp.clear();[...document.querySelectorAll('.fileslot')].forEach(f=>f.classList.remove('filled'));fpNotice.style.display='none'}
 async function saveFingerprint(e){
   e.preventDefault();
+  const d=window._identityWires.fp.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
   const appDocs=collectFiles('appDoc',4),guardDocs=collectFiles('guardDoc',3);
-  if(!fpName.value.trim()||!fpNational.value.trim()){toast('Applicant full name and National ID are required',true);return}
   if(!gName.value.trim()){toast('Guardian full name is required',true);return}
   if(appDocs.length<2){toast('Attach at least 2 applicant documents',true);return}
   if(guardDocs.length<2){toast('Attach at least 2 guardian documents',true);return}
-  const data={name:fpName.value.trim(),nationalId:fpNational.value.trim(),motherName:fpMother.value.trim(),dob:fpDob.value,pob:fpPob.value.trim(),residence:fpResidence.value.trim(),occupation:fpOccupation.value.trim(),passportId:fpPassport.value.trim(),phone:fpPhone.value.trim()};
   try{
     if(serverOn){
-      const photo=fpPhoto.files[0];
+      const photo=document.getElementById('fp-photo').files[0];
       const fd=new FormData();
-      Object.entries({full_name:data.name,national_id:data.nationalId,mother_name:data.motherName,date_of_birth:data.dob,place_of_birth:data.pob,residence:data.residence,occupation:data.occupation,passport_id:data.passportId,phone:data.phone,purpose:fpPurpose.value,guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
+      Object.entries({...identityServer(d),purpose:fpPurpose.value,guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
       appDocs.forEach((f,i)=>fd.append('doc_app_'+i,f));guardDocs.forEach((f,i)=>fd.append('doc_guard_'+i,f));if(photo)fd.append('photo',photo);
       const r=await api('/api/clearance-applications',{method:'POST',body:fd});
-      fpNotice.textContent='Application '+r.application_id+' saved and linked to '+r.person_id+'.';
+      const m=r.identity&&r.identity.matched?'matched to existing central record '+r.identity.person_id:'new central person '+r.person_id+' created';
+      fpNotice.textContent='Application '+r.application_id+' saved — identity '+m+'.';
     }else{
-      const person=await upsertPerson(data);
-      const read=f=>f?{name:f.name}:null;
+      const person=await ensureLocalIdentity(d);
       db.fingerprint.unshift({id:'FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0'),person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim()});
       persist();fpNotice.textContent='Application saved (local demo) and linked to '+person.id+'.';
     }
@@ -504,21 +653,27 @@ async function approveFP(id){
 }
 
 // ============================ airport ============================
-let airSelected=null;
-function clearAirPick(){airPicker.clear();airSelected=null;airLookup.value='';airPick.classList.remove('on')}
 async function saveAirport(e){
-  e.preventDefault();const p=airPicker.chosen;
-  if(!p){toast('Select an existing person or create one from the search',true);return}
+  e.preventDefault();
+  const d=window._identityWires.air.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
   try{
-    if(serverOn)await api('/api/airport-records',{method:'POST',body:JSON.stringify({person_id:p.id,movement:airMove.value,travel_date:airDate.value,flight_number:airFlight.value,route:airRoute.value,notes:airNotes.value})});
-    else{db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p.id,move:airMove.value,date:airDate.value,flight:airFlight.value,route:airRoute.value,notes:airNotes.value});persist()}
-    airNotice.textContent='Passenger saved and linked to '+p.id+' in the Central Person Registry.';airNotice.style.display='block';
-    airForm.reset();clearAirPick();airDate.value='2026-09-01';await syncServer();toast('Airport unit record saved');
+    let p;
+    if(serverOn){
+      const r=await api('/api/airport-records',{method:'POST',body:JSON.stringify({...identityServer(d),movement:airMove.value,travel_date:airDate.value,flight_number:airFlight.value,route:airRoute.value,notes:airNotes.value})});
+      p=r.identity&&r.identity.matched?r.identity.person_id:null;
+      airNotice.textContent='Passenger saved — '+(r.identity&&r.identity.matched?'matched and linked to existing Central Person '+r.identity.person_id:'new Central Person '+r.identity.person_id+' created and linked')+'.';
+    }else{
+      p=(await ensureLocalIdentity(d)).id;
+      db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p,move:airMove.value,date:airDate.value,flight:airFlight.value,route:airRoute.value,notes:airNotes.value});persist();
+      airNotice.textContent='Passenger saved and linked to '+p+' in the Central Person Registry (local demo).';
+    }
+    airNotice.style.display='block';
+    airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';await syncServer();toast('Airport unit record saved');
   }catch(err){toast(err.message,true)}
 }
 
 // ============================ CID case workspace ============================
-let cwCase=null,cwSelected=null;
+let cwCase=null;
 function openCaseDrawer(){
   openDrawer('New crime case',`
    <form class="form" id="caseDrawerForm">
@@ -542,12 +697,13 @@ async function submitCaseDrawer(){
 function cwTab(t){document.querySelectorAll('[data-cwtab]').forEach(b=>b.classList.toggle('active',b.dataset.cwtab===t));document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));document.getElementById('cw-'+t).classList.add('active')}
 async function openCase(caseId){
   go('caseworkspace');cwCase=caseId;
+  document.getElementById('cwCaseSel').innerHTML=caseOptions(caseId);
   let detail;
   if(serverOn){try{detail=await api('/api/crime-cases/'+caseId)}catch(e){detail=null}}
   if(detail){
     cwTitle.textContent=caseId+' · '+detail.category;cwSub.textContent=detail.location+' · '+detail.status;
     cwCaseId.value=caseId;cwStatus.value=detail.status;cwCategory.value=detail.category;cwLocation.value=detail.location||'';cwSummary.value=detail.incident_summary||'';cwNotes.value=detail.notes||'';
-    db._detail=detail;renderCwParticipants(detail.participants.map(x=>({person:x.person_id,name:x.full_name,role:x.role,note:x.notes,alert:x.alert_status})));
+    db._detail=detail;renderCwParticipants(detail.participants.map(x=>({person:x.person_id,name:x.full_name,role:x.role,note:x.notes,alert:x.alert_status,origin:x.origin,case_id:x.case_id})));
     renderCwEvidence(detail.evidence);
   }else{
     const c=db.cases.find(x=>x.id===caseId);
@@ -558,7 +714,7 @@ async function openCase(caseId){
   }
 }
 function renderCwParticipants(list){
-  cwPartTable.innerHTML=(list||[]).map(x=>`<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.role==='Suspect'?'red':'gray'}">${esc(x.role)}</span></td><td>${esc(x.note||'')}</td><td>${x.role==='Suspect'?'<span class="badge red">Active alert</span>':'<span class="muted">—</span>'}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No participants linked yet</td></tr>';
+  cwPartTable.innerHTML=(list||[]).map(x=>`<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.role==='Suspect'?'red':'gray'}">${esc(x.role)}</span>${x.origin&&!x.case_id?`<br><small class="muted">${esc(x.origin)}</small>`:''}</td><td>${esc(x.note||'')}</td><td>${x.role==='Suspect'?'<span class="badge red">Active alert</span>':'<span class="muted">—</span>'}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No participants linked yet</td></tr>';
 }
 function renderCwEvidence(list){
   cwEvidGrid.innerHTML=(list||[]).map(x=>{
@@ -566,14 +722,16 @@ function renderCwEvidence(list){
     return `<div class="evid-card">${img&&src?`<img src="${esc(src)}">`:`<div style="height:120px;display:grid;place-items:center;background:#eef1f6;font-size:30px">📄</div>`}
       <div class="ev-body"><b>${esc(x.caption||x.file_name||'Evidence')}</b><small>${esc(x.file_type||'')} ${src?`· <a href="${esc(src)}" target="_blank">open</a>`:''}</small></div></div>`}).join('')||'<div class="empty">No evidence uploaded yet</div>';
 }
-function clearCwPick(){cwPicker.clear();cwSelected=null;cwLookup.value='';cwPick.classList.remove('on')}
 async function addParticipant(){
-  const p=cwPicker.chosen,role=cwRole.value,note=cwPartNote.value.trim();
-  if(!p){toast('Search and select a central person first',true);return}
+  const d=window._identityWires.cw.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  const role=cwRole.value,note=cwPartNote.value.trim(),caseId=val('cwCaseSel')||null;
   try{
-    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({person_id:p.id,case_id:cwCase,role,notes:note})});
-    else{const c=db.cases.find(x=>x.id===cwCase);if(c){if(!c.participants)c.participants=[];c.participants.push({person:p.id,role,note});if(role==='Suspect')db.suspects.unshift({person:p.id,case:cwCase,role,alert:'Active alert'});persist()}}
-    cwPartNote.value='';clearCwPick();toast(role+' linked to '+cwCase);openCase(cwCase);
+    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({...identityServer(d),case_id:caseId,role,notes:note,origin:caseId?'Case Link':'Direct Intelligence Listing'})});
+    else{const c=db.cases.find(x=>x.id===cwCase);const p=await ensureLocalIdentity(d);
+      if(c){if(!c.participants)c.participants=[];c.participants.push({person:p.id,role,note});}
+      if(role==='Suspect')db.suspects.unshift({person:p.id,case:caseId||'',role,alert:'Active alert',origin:caseId?'Case Link':'Direct Intelligence Listing'});
+      persist()}
+    cwPartNote.value='';window._identityWires.cw.clear();toast(role+' linked'+(caseId?' to '+caseId:' without a linked case'));openCase(cwCase);
   }catch(e){toast(e.message,true)}
 }
 async function saveCaseDetails(){
@@ -596,30 +754,30 @@ async function uploadEvidence(){
 // ============================ checkpoints ============================
 function openCheckpointDrawer(){
   openDrawer('Record checkpoint stop',`
+   <div class="hint" style="margin-bottom:14px">Type the identity below — the Central Person Registry is matched <b>in real time</b>. If no exact match exists a new Central Person is created automatically on save.</div>
    <form class="form">
-    <div class="field ac-wrap"><label>Find Central Person</label><input id="cpLookup" placeholder="Search name, National ID or passport" autocomplete="off"><div id="cpAc" class="autocomplete"></div><div id="cpPick" class="pickbar"><span class="mini" id="cpPickMini">●</span><div><b id="cpPickName"></b><small class="muted" id="cpPickId"></small></div></div></div>
-    <div class="field"><label>Checkpoint</label><select id="cpLoc"><option>South</option><option>West</option><option>East</option></select></div>
-    <div class="field"><label>Notes (optional)</label><textarea id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></textarea></div>
+    ${identityFormHTML('cp')}
+    <div class="section-label">Screening</div>
+    <div class="grid2">
+     <div class="field"><label>Checkpoint</label><select id="cpLoc"><option>South</option><option>West</option><option>East</option></select></div>
+     <div class="field"><label>Notes (optional)</label><input id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></div>
+    </div>
     <div class="hint" id="cpScreenHint">Screening runs automatically against active suspect alerts.</div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
-  setTimeout(()=>{
-    const pk=attachPicker('cpLookup','cpAc',p=>{pickBar('cpPick','cpPickMini','cpPickName','cpPickId',p);
-      const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
-      document.getElementById('cpScreenHint').innerHTML=flagged?'<b style="color:var(--red)">⚠ Active suspect alert match — supervisor must be contacted.</b>':'No active alert for this person.'});
-    window._cpPicker=pk;
-  },30);
+  wireIdentity('cp');
 }
 async function submitCheckpoint(){
-  const p=window._cpPicker&&window._cpPicker.chosen;if(!p){toast('Select a person first',true);return}
-  const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
+  const d=window._identityWires.cp.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
   try{
     if(serverOn){
-      const r=await api('/api/checkpoint-events',{method:'POST',body:JSON.stringify({person_id:p.id,location:cpLoc.value,notes:cpNotes.value})});
+      const r=await api('/api/checkpoint-events',{method:'POST',body:JSON.stringify({...identityServer(d),location:cpLoc.value,notes:cpNotes.value})});
       closeDrawer();await syncServer();
       toast(r.alerted?`⚠ ${r.location}: potential suspect match — supervisor notified`:'Person screened — no active alert');
       return;
     }
+    const p=await ensureLocalIdentity(d);
+    const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
     const now=new Date().toLocaleString([],{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     db.checkpoints.unshift({time:now,location:cpLoc.value,person:p.id,screen:flagged?'Flagged match':'No active alert',action:flagged?'Supervisor contacted':'Cleared',notes:cpNotes.value});
     persist();closeDrawer();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
@@ -638,7 +796,7 @@ async function syncServer(){
     db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,route:x.route,notes:x.notes}));
     db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
     db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
-    db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id,role:x.role||'Suspect',alert:x.alert_status}));
+    db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),location:x.location,person:x.person_id,screen:x.screening_result,action:x.action_taken,notes:x.notes}));
     renderAll();
   }catch(e){serverOn=false;apiToken='';document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">local demo (browser storage)</span>';console.warn('Local demo mode:',e.message)}
@@ -647,9 +805,9 @@ async function syncServer(){
 // ============================ init ============================
 buildFileSlots('appDocs','appDoc',4,['Document 1 (ID) *','Document 2 *','Document 3 (optional)','Document 4 (optional)']);
 buildFileSlots('guardDocs','guardDoc',3,['Document 1 (ID) *','Document 2 *','Document 3 (optional)']);
-fpPicker=attachPicker('fpLookup','fpAc',p=>{pickBar('fpPick','fpPickMini','fpPickName','fpPickId',p);fillFpForm(p)});
-airPicker=attachPicker('airLookup','airAc',p=>{pickBar('airPick','airPickMini','airPickName','airPickId',p);airSelected=p});
-cwPicker=attachPicker('cwLookup','cwAc',p=>{pickBar('cwPick','cwPickMini','cwPickName','cwPickId',p);cwSelected=p});
+document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:true});wireIdentity('fp');
+document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
+document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
 renderAll();syncServer();
 </script>
 </body></html>
