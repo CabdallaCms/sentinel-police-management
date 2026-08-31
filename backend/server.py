@@ -3,7 +3,9 @@
 Development-only API using the Python standard library + SQLite.
 Supports central persons (with identity merge/updates), airport records,
 fingerprint clearance applications (with file attachments), CID crime
-cases (participants + evidence), and checkpoint screening events.
+cases (participants + evidence), checkpoint traveler-screening stops
+(with guardian details, document uploads and instant suspect alerts),
+and alert notifications.
 Replace SQLite and demo authentication before any operational deployment.
 """
 import hashlib, json, os, re, secrets, sqlite3, time
@@ -33,10 +35,11 @@ CREATE TABLE IF NOT EXISTS users(
 );
 CREATE TABLE IF NOT EXISTS persons(
   id INTEGER PRIMARY KEY, person_id TEXT UNIQUE NOT NULL,
-  full_name TEXT NOT NULL, national_id TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL, national_id TEXT UNIQUE,
   date_of_birth TEXT, phone TEXT,
   mother_name TEXT, place_of_birth TEXT, residence TEXT,
   occupation TEXT, passport_id TEXT, photo_path TEXT,
+  permanent_address TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS airport_passengers(
@@ -87,6 +90,28 @@ CREATE TABLE IF NOT EXISTS checkpoint_events(
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS checkpoint_stops(
+  id INTEGER PRIMARY KEY, stop_id TEXT UNIQUE NOT NULL,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  location TEXT NOT NULL, purpose_of_visit TEXT,
+  current_address TEXT, permanent_address TEXT,
+  traveler_photo TEXT, traveler_docs TEXT,
+  guardian_name TEXT, guardian_relationship TEXT, guardian_contact TEXT,
+  guardian_address TEXT, guardian_occupation TEXT,
+  guardian_nid TEXT, guardian_passport TEXT, guardian_docs TEXT,
+  screening_result TEXT NOT NULL, action_taken TEXT NOT NULL DEFAULT 'Cleared',
+  alerted INTEGER NOT NULL DEFAULT 0, notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS alert_notifications(
+  id INTEGER PRIMARY KEY, notification_id TEXT UNIQUE NOT NULL,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  stop_id TEXT, alert_id TEXT, case_id TEXT,
+  message TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS audit_events(
   id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id),
   action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT,
@@ -103,6 +128,7 @@ ADDED_COLUMNS = {
         ('occupation', "ALTER TABLE persons ADD COLUMN occupation TEXT"),
         ('passport_id', "ALTER TABLE persons ADD COLUMN passport_id TEXT"),
         ('photo_path', "ALTER TABLE persons ADD COLUMN photo_path TEXT"),
+        ('permanent_address', "ALTER TABLE persons ADD COLUMN permanent_address TEXT"),
     ],
     'clearance_applications': [
         ('guardian_id', "ALTER TABLE clearance_applications ADD COLUMN guardian_id TEXT"),
@@ -130,6 +156,27 @@ def migrate(c):
         for col, sql in cols:
             if col not in existing:
                 c.execute(sql)
+    # Traveler screening forms allow travelers without a National ID, so the
+    # central registry must accept NULL national_id. Rebuild the table for
+    # databases created before this change.
+    if 'persons' in tables:
+        info = {r['name']: r for r in c.execute('PRAGMA table_info(persons)')}
+        if info.get('national_id') and info['national_id']['notnull']:
+            cols = [r['name'] for r in c.execute('PRAGMA table_info(persons)')]
+            colcsv = ', '.join(cols)
+            c.execute('PRAGMA foreign_keys=OFF')
+            c.execute('BEGIN')
+            c.execute('''CREATE TABLE persons__new(
+                id INTEGER PRIMARY KEY, person_id TEXT UNIQUE NOT NULL, full_name TEXT NOT NULL,
+                national_id TEXT UNIQUE, date_of_birth TEXT, phone TEXT, mother_name TEXT,
+                place_of_birth TEXT, residence TEXT, occupation TEXT, passport_id TEXT,
+                photo_path TEXT, permanent_address TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)''')
+            c.execute(f'INSERT INTO persons__new({colcsv}) SELECT {colcsv} FROM persons')
+            c.execute('DROP TABLE persons')
+            c.execute('ALTER TABLE persons__new RENAME TO persons')
+            c.execute('COMMIT')
+            c.execute('PRAGMA foreign_keys=ON')
 
 def init_db():
     c = db()
@@ -157,13 +204,23 @@ def init_db():
                   ('CID-2026-009','Fraud','Jigjiga Yar','Submitted for Prosecution','Advance-fee fraud reported by a local business owner.'))
         susp_pid = c.execute("SELECT id FROM persons WHERE person_id='P-0002'").fetchone()[0]
         susp_case = c.execute("SELECT id FROM crime_cases WHERE case_id='CID-2026-008'").fetchone()[0]
+        susp_alert = 'AL-'+secrets.token_hex(4)
         c.execute('INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status) VALUES(?,?,?,?,?)',
-                  ('AL-'+secrets.token_hex(4),susp_pid,susp_case,'Suspect','Active alert'))
+                  (susp_alert,susp_pid,susp_case,'Suspect','Active alert'))
         admin_id = c.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
-        c.execute("""INSERT INTO checkpoint_events(event_id,person_id,location,screening_result,
-            action_taken,created_by,created_at) VALUES(?,?,?,?,?,?,?)""",
-                  ('CP-'+secrets.token_hex(4),susp_pid,'South','Flagged match',
-                   'Supervisor contacted',admin_id,'2026-08-30 08:42:00'))
+        c.execute("""INSERT INTO checkpoint_stops(stop_id,person_id,location,purpose_of_visit,
+            current_address,permanent_address,guardian_name,guardian_relationship,guardian_contact,
+            guardian_address,guardian_occupation,screening_result,action_taken,alerted,notes,
+            created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  ('CP-'+secrets.token_hex(4),susp_pid,'South','Transit',
+                   'Hargeisa Central','Hargeisa Central','Khadra Jaamac','Mother','+252 63 555 0200',
+                   'Hargeisa Central','Homemaker','Flagged match','Supervisor contacted',1,
+                   'Seed: matched an active suspect alert',admin_id,'2026-08-30 08:42:00'))
+        c.execute("""INSERT INTO alert_notifications(notification_id,person_id,stop_id,alert_id,case_id,
+            message,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)""",
+                  ('NT-'+secrets.token_hex(4),susp_pid,'CP-SEED',susp_alert,'CID-2026-008',
+                   'Checkpoint South: potential suspect match for Maxamed Nuur Cali',admin_id,
+                   '2026-08-30 08:42:00'))
     c.commit(); c.close()
 
 # ---- helpers ----------------------------------------------------------------
@@ -250,13 +307,58 @@ def upsert_person(c, data, photo_path=None):
         return rowdict(c.execute('SELECT * FROM persons WHERE id=?', (pid,)).fetchone())
     person_id = 'P-' + str(int(time.time()*1000))[-8:]
     c.execute('''INSERT INTO persons(person_id,full_name,national_id,date_of_birth,phone,
-                 mother_name,place_of_birth,residence,occupation,passport_id,photo_path)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                 mother_name,place_of_birth,residence,occupation,passport_id,photo_path,permanent_address)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
               (person_id, data.get('full_name','').strip(), national_id,
                data.get('date_of_birth',''), data.get('phone',''),
                data.get('mother_name',''), data.get('place_of_birth',''),
                data.get('residence',''), data.get('occupation',''),
-               passport_id, photo_path))
+               passport_id, photo_path, data.get('permanent_address','')))
+    return rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (person_id,)).fetchone())
+
+def upsert_checkpoint_person(c, data, photo_path=None):
+    """Find a person by national_id, passport_id, or a full-name/mother/DOB match
+    and merge in any new non-empty fields. Unlike upsert_person this accepts a
+    traveler with no National ID (checkpoint screening may collect IDs later)."""
+    full_name = (data.get('full_name') or '').strip()
+    national_id = (data.get('national_id') or '').strip()
+    passport_id = (data.get('passport_id') or '').strip()
+    if not full_name:
+        raise ValueError('full_name is required')
+    row = None
+    if national_id:
+        row = c.execute('SELECT * FROM persons WHERE national_id=?', (national_id,)).fetchone()
+    if not row and passport_id:
+        row = c.execute('SELECT * FROM persons WHERE passport_id=?', (passport_id,)).fetchone()
+    if not row:
+        mother = (data.get('mother_name') or '').strip()
+        dob = (data.get('date_of_birth') or '').strip()
+        row = c.execute('''SELECT * FROM persons WHERE full_name=? AND mother_name=? AND date_of_birth=?
+                           LIMIT 1''', (full_name, mother, dob)).fetchone()
+    if row:
+        pid = row['id']
+        updates, params = [], []
+        for f in ('full_name','national_id','date_of_birth','phone','mother_name',
+                  'place_of_birth','residence','occupation','passport_id','permanent_address'):
+            val = data.get(f)
+            if val is not None and str(val).strip() != '' and str(val).strip() != str(row[f] if f in row.keys() else ''):
+                updates.append(f'{f}=?'); params.append(str(val).strip())
+        if photo_path and photo_path != (row['photo_path'] or ''):
+            updates.append('photo_path=?'); params.append(photo_path)
+        if updates:
+            updates.append("updated_at=CURRENT_TIMESTAMP")
+            params.append(pid)
+            c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=?", params)
+        return rowdict(c.execute('SELECT * FROM persons WHERE id=?', (pid,)).fetchone())
+    person_id = 'P-' + str(int(time.time()*1000))[-8:]
+    c.execute('''INSERT INTO persons(person_id,full_name,national_id,date_of_birth,phone,
+                 mother_name,place_of_birth,residence,occupation,passport_id,photo_path,permanent_address)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+              (person_id, full_name, national_id or None,
+               data.get('date_of_birth',''), data.get('phone',''),
+               data.get('mother_name',''), data.get('place_of_birth',''),
+               data.get('residence',''), data.get('occupation',''),
+               passport_id or None, photo_path, data.get('permanent_address','')))
     return rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (person_id,)).fetchone())
 
 class API(BaseHTTPRequestHandler):
@@ -366,6 +468,58 @@ class API(BaseHTTPRequestHandler):
                 rows = c.execute('''SELECT ce.event_id,ce.location,ce.screening_result,ce.action_taken,
                     ce.notes,ce.created_at,p.person_id,p.full_name,p.national_id FROM checkpoint_events ce
                     JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC''').fetchall()
+                result = {'items':[rowdict(r) for r in rows]}
+            elif p.path == '/api/checkpoint-stops':
+                rows = c.execute('''SELECT cs.stop_id,cs.location,cs.purpose_of_visit,cs.screening_result,
+                    cs.action_taken,cs.alerted,cs.notes,cs.created_at,cs.guardian_name,
+                    cs.traveler_photo,cs.traveler_docs,cs.guardian_docs,
+                    p.person_id,p.full_name,p.national_id,p.passport_id
+                    FROM checkpoint_stops cs JOIN persons p ON p.id=cs.person_id
+                    ORDER BY cs.id DESC''').fetchall()
+                result = {'items':[rowdict(r) for r in rows]}
+            elif p.path.startswith('/api/checkpoint-stops/'):
+                sid = p.path.split('/')[3]
+                s = rowdict(c.execute('''SELECT cs.*,p.person_id,p.full_name,p.national_id,p.passport_id,
+                    p.date_of_birth,p.mother_name,p.place_of_birth,p.occupation,p.photo_path
+                    FROM checkpoint_stops cs JOIN persons p ON p.id=cs.person_id
+                    WHERE cs.stop_id=?''',(sid,)).fetchone())
+                if not s: self.send_json(404,{'error':'Checkpoint stop not found'}); c.close(); return
+                result = s
+            elif p.path == '/api/guardian-search':
+                q = parse_qs(p.query).get('q',[''])[0].strip(); like = f'%{q}%'
+                items, seen = [], set()
+                def add_guardian(name, relationship, contact, address, occupation, nid, passport, source):
+                    key = (name or '').strip().lower()
+                    if not name or key in seen: return
+                    seen.add(key)
+                    items.append({'name':name,'relationship':relationship,'contact':contact,
+                                  'address':address,'occupation':occupation,'nid':nid,
+                                  'passport':passport,'source':source})
+                for r in c.execute('''SELECT guardian_name,guardian_relationship,guardian_contact,
+                    guardian_address,guardian_occupation,guardian_nid,guardian_passport,MAX(created_at) AS last_seen
+                    FROM checkpoint_stops
+                    WHERE guardian_name LIKE ? OR guardian_nid LIKE ? OR guardian_passport LIKE ?
+                    GROUP BY lower(guardian_name) ORDER BY last_seen DESC''',(like,like,like)).fetchall():
+                    add_guardian(r['guardian_name'],r['guardian_relationship'],r['guardian_contact'],
+                                 r['guardian_address'],r['guardian_occupation'],r['guardian_nid'],
+                                 r['guardian_passport'],'checkpoint')
+                for r in c.execute('''SELECT guardian_name,guardian_relationship,guardian_phone,guardian_address,
+                    guardian_occupation,guardian_id,MAX(created_at) AS last_seen
+                    FROM clearance_applications
+                    WHERE guardian_name LIKE ? OR guardian_id LIKE ?
+                    GROUP BY lower(guardian_name) ORDER BY last_seen DESC''',(like,like)).fetchall():
+                    add_guardian(r['guardian_name'],r['guardian_relationship'],r['guardian_phone'],
+                                 r['guardian_address'],r['guardian_occupation'],r['guardian_id'],'','clearance')
+                for r in c.execute('''SELECT full_name,phone,residence,occupation,national_id,passport_id
+                    FROM persons WHERE full_name LIKE ? ORDER BY id DESC LIMIT 10''',(like,)).fetchall():
+                    add_guardian(r['full_name'],'',r['phone'],r['residence'],r['occupation'],
+                                 r['national_id'],r['passport_id'],'person')
+                result = {'items':items}
+            elif p.path == '/api/alert-notifications':
+                rows = c.execute('''SELECT an.notification_id,an.stop_id,an.alert_id,an.case_id,an.message,
+                    an.acknowledged,an.created_at,p.person_id,p.full_name
+                    FROM alert_notifications an JOIN persons p ON p.id=an.person_id
+                    ORDER BY an.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
@@ -500,6 +654,76 @@ class API(BaseHTTPRequestHandler):
                       f"{location}:{screen} for {data.get('person_id')}"); c.commit()
                 result = {'event_id':event_id,'person_id':data.get('person_id'),'location':location,
                           'screening_result':screen,'action_taken':action,'alerted':bool(alerted)}
+            elif p.path == '/api/checkpoint-stops':
+                ctype = self.headers.get('Content-Type','')
+                if ctype.startswith('multipart/form-data'):
+                    fields, files = parse_multipart(self)
+                else:
+                    fields, files = body_json(self), {}
+                if not fields.get('full_name'): raise ValueError('Traveler full name is required')
+                location = (fields.get('location') or '').strip()
+                if not location: raise ValueError('Checkpoint location is required')
+                trav_docs = [save_upload(files[k]) for k in sorted(files) if k.startswith('doc_trav_')]
+                guard_docs = [save_upload(files[k]) for k in sorted(files) if k.startswith('doc_guard_')]
+                if len(trav_docs) < 1: raise ValueError('At least 1 traveler document is required')
+                if not fields.get('guardian_name'): raise ValueError('Guardian full name is required')
+                if len(guard_docs) < 1: raise ValueError('At least 1 guardian document is required')
+                photo = save_upload(files['photo']) if 'photo' in files else None
+                person = upsert_checkpoint_person(c, {
+                    'full_name': fields.get('full_name',''),
+                    'national_id': fields.get('national_id',''),
+                    'passport_id': fields.get('passport_id',''),
+                    'mother_name': fields.get('mother_name',''),
+                    'date_of_birth': fields.get('date_of_birth',''),
+                    'place_of_birth': fields.get('place_of_birth',''),
+                    'residence': fields.get('current_address',''),
+                    'permanent_address': fields.get('permanent_address',''),
+                }, photo_path=(photo['path'] if photo else None))
+                alerts = c.execute('''SELECT sa.alert_id, cc.case_id, cc.category
+                    FROM suspect_alerts sa JOIN crime_cases cc ON cc.id=sa.case_id
+                    WHERE sa.person_id=? AND sa.role='Suspect' AND sa.alert_status='Active alert'
+                    ORDER BY sa.id''',(person['id'],)).fetchall()
+                alerted = bool(alerts)
+                screen = 'Flagged match' if alerted else 'No active alert'
+                action = 'Supervisor contacted' if alerted else 'Cleared'
+                stop_id = 'CP-'+str(int(time.time()*1000))[-8:]
+                c.execute('''INSERT INTO checkpoint_stops(stop_id,person_id,location,purpose_of_visit,
+                    current_address,permanent_address,traveler_photo,traveler_docs,
+                    guardian_name,guardian_relationship,guardian_contact,guardian_address,
+                    guardian_occupation,guardian_nid,guardian_passport,guardian_docs,
+                    screening_result,action_taken,alerted,notes,created_by)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (stop_id,person['id'],location,fields.get('purpose_of_visit',''),
+                     fields.get('current_address',''),fields.get('permanent_address',''),
+                     photo['path'] if photo else None,json.dumps(trav_docs),
+                     fields.get('guardian_name',''),fields.get('guardian_relationship',''),
+                     fields.get('guardian_contact',''),fields.get('guardian_address',''),
+                     fields.get('guardian_occupation',''),fields.get('guardian_nid',''),
+                     fields.get('guardian_passport',''),json.dumps(guard_docs),
+                     screen,action,1 if alerted else 0,fields.get('notes',''),user['id']))
+                notification_id = None
+                if alerted:
+                    notification_id = 'NT-'+secrets.token_hex(4)
+                    c.execute('''INSERT INTO alert_notifications(notification_id,person_id,stop_id,
+                        alert_id,case_id,message,created_by) VALUES(?,?,?,?,?,?,?)''',
+                        (notification_id,person['id'],stop_id,alerts[0]['alert_id'],
+                         alerts[0]['case_id'],
+                         f"Checkpoint {location}: potential suspect match for {person['full_name']}",
+                         user['id']))
+                audit(c,user,'CREATE','checkpoint_stop',stop_id,
+                      f"{location}:{screen} for {person['person_id']}")
+                c.commit()
+                result = {'stop_id':stop_id,'person_id':person['person_id'],'location':location,
+                          'purpose_of_visit':fields.get('purpose_of_visit',''),
+                          'screening_result':screen,'action_taken':action,'alerted':alerted,
+                          'alerts':[{'alert_id':a['alert_id'],'case_id':a['case_id'],
+                                     'category':a['category']} for a in alerts],
+                          'notification_id':notification_id}
+            elif p.path.startswith('/api/alert-notifications/') and p.path.endswith('/acknowledge'):
+                nid = p.path.split('/')[3]
+                c.execute("UPDATE alert_notifications SET acknowledged=1 WHERE notification_id=?",(nid,))
+                audit(c,user,'ACKNOWLEDGE','alert_notification',nid); c.commit()
+                result = {'notification_id':nid,'acknowledged':True}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)

@@ -20,7 +20,7 @@ Every person receives one central `Person ID` (`P-0001`, etc.). Unit registers s
 - Airport: movement, travel date, flight, origin/destination and travel notes
 - Fingerprint: clearance purpose, guardian, relationship, legal document references and review status
 - CID: case participants and case references
-- Checkpoint: screening events and actions taken
+- Checkpoint: traveler screening stops — traveler and guardian details, IDs, documents, purpose of visit, screening result and action taken (with instant suspect-match alerts)
 
 ### Global search, auto-fill and merging
 
@@ -28,7 +28,7 @@ Every unit form has a **global search autocomplete**: typing a name, National ID
 
 ### No popups — pages and side panels
 
-The interface uses **no browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **slide-in side panels** (new person, new case, checkpoint stop).
+The interface uses **no browser dialogs**. Create/edit actions happen in **dedicated full-page workspaces** (the CID case workspace and the Checkpoint traveler screening form) or **slide-in side panels** (new person, new case). The checkpoint stop is a **full-page traveler screening form** — traveler info, IDs, documents, guardian info and the automatic suspect screening all happen on one page.
 
 ### Fingerprint application, review and certificate
 
@@ -47,7 +47,7 @@ The system now has two parts:
 - **Frontend** — `index.html`, a single-page browser application.
 - **Central backend** — `backend/server.py`, a Python (standard library only) HTTP API backed by SQLite. It serves the frontend and a JSON REST API from the same origin, and enforces the central-person rule on the server.
 
-Airport, Fingerprint, CID and Checkpoint unit records are all written to the central database; checkpoint screening results (Flagged match / No active alert) are computed server-side from active suspect alerts, and the action follows automatically (Supervisor contacted / Cleared).
+Airport, Fingerprint, CID and Checkpoint unit records are all written to the central database. The Checkpoint module is a **full-page traveler screening form**: typing a name or ID performs a duplicate check against the Central Person Registry and auto-fills saved traveler details, and a guardian search auto-fills saved guardian details. On submission, the traveler is screened server-side against the Crime Unit suspect list — a match raises an **instant alert flag** (a persisted notification plus a red banner) and sets the action to `Supervisor contacted`; otherwise the traveler is `Cleared`.
 
 The frontend automatically uses the central backend when it is loaded through `backend/server.py`. If it is opened as a static file with no server, it falls back to browser local-storage demo mode (a "Local demo mode" notice appears in the browser console).
 
@@ -94,7 +94,7 @@ Open `http://localhost:8000`.
 4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
 6. Open **CID Criminal Unit**, click a case to open its workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert), and upload evidence (tab 3).
-7. Open **Checkpoints → Record stop**, search the suspect, and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts.
+7. Open **Checkpoints → Traveler screening form**, search the suspect (e.g. `Maxamed` or `10067890`) to auto-fill the traveler, complete guardian details and attach at least one traveler and one guardian document, then **Submit screening** — the automatic "Flagged match" screening raises an instant alert (red banner + notification) and the stop is saved to the central database.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 
