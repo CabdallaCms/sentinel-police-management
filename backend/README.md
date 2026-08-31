@@ -45,9 +45,10 @@ Change or remove this demo account before any real deployment.
 - `PATCH /api/crime-cases/{case_id}` (authenticated — update status, category, location, summary, notes)
 - `POST /api/crime-cases/{case_id}/evidence` (authenticated, `multipart/form-data` — evidence file + caption/type)
 - `GET /api/suspect-alerts` / `POST /api/suspect-alerts` (authenticated — participants carry a role: Suspect/Victim/Witness/Complainant)
+- `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated — checkpoint stop linked to a central person; screening result is computed server-side against active suspect alerts and sets the action to `Supervisor contacted` or `Cleared`)
 
 Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval).
 
-The API enforces the central-person rule: Airport, Fingerprint and CID records must reference an existing central `person_id`, and National ID is unique. Person records are merged (never duplicated) when a matching National ID or passport is found; only newly provided fields are updated. Suspect alerts must reference an existing CID case, and only one active alert can link a person to a case.
+The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoint records must reference an existing central `person_id`, and National ID is unique. Person records are merged (never duplicated) when a matching National ID or passport is found; only newly provided fields are updated. Suspect alerts must reference an existing CID case, and only one active alert can link a person to a case. Checkpoint events are screened server-side: a person with an active `Suspect` alert yields `Flagged match` / `Supervisor contacted`; otherwise `No active alert` / `Cleared`.
 
 This is a development foundation, not an operational police deployment. Authentication, database, encryption, roles, file-upload validation and audit controls need a production hardening pass before use with real data.
