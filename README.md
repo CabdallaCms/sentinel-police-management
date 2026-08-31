@@ -22,7 +22,23 @@ Every person receives one central `Person ID` (`P-0001`, etc.). Unit registers s
 - CID: case participants and case references
 - Checkpoint: screening events and actions taken
 
-When a unit searches by National ID, Person ID, name or phone, the application reuses an existing central person. It does not create a duplicate. When no exact match exists, the user is prompted to create a central identity before saving the unit record.
+### Global search, auto-fill and merging
+
+Every unit form has a **global search autocomplete**: typing a name, National ID, passport or phone queries the Central Person Registry. Selecting a match **auto-fills** the person's saved details (name, mother's name, DOB/POB, residence, occupation, passport, phone, photo) and links the new unit record to the existing identity — no duplicate is created. Submitting new or corrected details **appends/updates** the central profile (server-side merge by National ID/passport). When no match exists, the "create/update person" entry opens a side-panel form.
+
+### No popups — pages and side panels
+
+The interface uses **no browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **slide-in side panels** (new person, new case, checkpoint stop).
+
+### Fingerprint application, review and certificate
+
+- The expanded clearance application captures applicant data (full name, mother's name, DOB/POB, residence, occupation, passport, National ID, photo, clearance reason) plus **4 applicant file slots (≥2 required)** and guardian data (name, relationship, ID, occupation, address, contact) with **3 guardian file slots (≥2 required)**.
+- **`application.html`** — a printable Day-1 review summary the applicant verifies, with an **Approve Application** action for authorized officers.
+- **`certificate.html`** — the official Day-2 clearance certificate. It is **locked until an officer approves** the application, then unlocks for printing.
+
+### CID case workspace
+
+Each case opens in a full-page workspace with three tabs: **1) Case Details & Incident Summary**, **2) Participants & Suspect List Linkage** (suspect/victim/witness/complainant, with suspects creating checkpoint/airport alerts), and **3) Evidence & Media Storage** (file uploads with captions).
 
 ## Architecture
 
@@ -70,13 +86,15 @@ Open `http://localhost:8000`.
 
 ## Demo workflow
 
-1. Open **Airport** and search `10012345` or `Ayaan Cabdi Xasan`.
-2. The application identifies existing central person `P-0001`, originally registered at the airport in July 2026.
-3. Open **Fingerprint Unit** and search the same ID.
-4. Enter purpose, guardian and legal document details.
-5. Save the application. A Fingerprint record is added, while Airport data stays in the Airport register.
-6. Use **Approve** in the Fingerprint register to move the application to Approved and generate a certificate reference.
-7. Use **CID Criminal Unit** to add a suspect alert and test the Checkpoint screening workflow.
+1. Open **Airport** and type `Ayaan` (or `10012345`) in the search box — the global autocomplete finds central person `P-0001`; select it to auto-fill.
+2. Open **Fingerprint Unit** and search the same person. Select the match to auto-fill the applicant fields.
+3. Complete clearance reason, guardian details, and attach **at least 2 applicant and 2 guardian documents** (plus an optional photo), then save.
+4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**.
+5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
+6. Open **CID Criminal Unit**, click a case to open its workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert), and upload evidence (tab 3).
+7. Open **Checkpoints → Record stop**, search the suspect, and see the automatic "Flagged match" screening.
+
+Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 
 ## Important implementation note — development only, not for operational police data
 

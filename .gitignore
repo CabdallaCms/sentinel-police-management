@@ -1,4 +1,8 @@
 backend/sentinel.db
+backend/sentinel.db-wal
+backend/sentinel.db-shm
+backend/uploads/
+!backend/uploads/.gitkeep
 __pycache__/
 *.pyc
 .env
