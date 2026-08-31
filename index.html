@@ -226,7 +226,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th></tr></thead><tbody id="caseTable"></tbody></table></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport</div></div></div>
+<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport</div></div><button class="btn danger" onclick="openSuspectDrawer()">+ Add suspect</button></div>
 <div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case</th><th>Role</th><th>Alert</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
 </div>
@@ -258,12 +258,14 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 </div>
 <div class="tabpane" id="cw-participants">
 <div class="panel" style="margin-top:0;box-shadow:none;border:1px solid var(--line)">
-<div class="panel-head"><div><h2>Link a participant</h2><div class="sub">Add a suspect (creates a checkpoint/airport alert), victim, witness or complainant</div></div></div>
+<div class="panel-head"><div><h2>Link a participant</h2><div class="sub">Add a suspect (creates a checkpoint/airport alert), victim, witness or complainant — pick an existing person or register a new one</div></div></div>
 <div class="form" style="max-width:680px">
-<div class="role-select"><label class="muted" style="font-weight:700">Role</label><select id="cwRole"><option>Suspect</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
-<div class="field ac-wrap"><label>Find Central Person</label><input id="cwLookup" placeholder="Search name, National ID or passport" autocomplete="off"><div id="cwAc" class="autocomplete"></div><div id="cwPick" class="pickbar"><span class="mini" id="cwPickMini">●</span><div><b id="cwPickName"></b><small class="muted" id="cwPickId"></small></div><button type="button" class="x" onclick="clearCwPick()">✕</button></div></div>
+<div class="role-select"><label class="muted" style="font-weight:700">Role</label><select id="cwRole" onchange="cwPartBtn.textContent=this.value==='Suspect'?'Add suspect':'Link participant'"><option>Suspect</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
+<div class="field ac-wrap"><label>Find Central Person</label><input id="cwLookup" placeholder="Search name, National ID or passport" autocomplete="off"><div id="cwAc" class="autocomplete"></div><div id="cwPick" class="pickbar"><span class="mini" id="cwPickMini">●</span><div><b id="cwPickName"></b><small class="muted" id="cwPickId"></small></div><button type="button" class="x" onclick="clearCwPick()">✕</button></div>
+<div class="hint" style="margin-top:8px">Person not in the registry yet? <a href="#" onclick="toggleCwNewPerson(event)" id="cwNewLink">Enter a new person manually</a> — the central record is created on submit.</div></div>
+<div id="cwNewPerson" style="display:none"></div>
 <div class="field"><label>Note (optional)</label><input id="cwPartNote" placeholder="e.g. last seen, relationship to incident"></div>
-<div class="form-actions"><button class="btn danger" onclick="addParticipant()">Link participant</button></div>
+<div class="form-actions"><button class="btn danger" id="cwPartBtn" onclick="addParticipant()">Add suspect</button></div>
 </div>
 </div>
 <div class="panel" style="box-shadow:none;border:1px solid var(--line)"><div class="panel-head"><div><h2>Linked participants</h2></div></div>
@@ -341,16 +343,18 @@ async function upsertPerson(data){
 function stripServer(d){return{full_name:d.name,national_id:d.nationalId,date_of_birth:d.dob||'',phone:d.phone||'',mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||'',passport_id:d.passportId||''}}
 
 // ============================ autocomplete widget ============================
-function attachPicker(inputId,boxId,onPick){
+function attachPicker(inputId,boxId,onPick,opts){
+  const allowCreate=!opts||opts.allowCreate!==false;
   const input=document.getElementById(inputId),box=document.getElementById(boxId);let t,chosen=null;
   input.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(async()=>{
     const q=input.value.trim();if(q.length<2){box.style.display='none';return}
     const items=await searchPersons(q);
     box.innerHTML=items.map(p=>`<div class="ac-item" data-id="${esc(p.id)}"><b>${esc(p.name)}</b><small>${esc(p.nationalId)} · ${esc(p.id)}${p.passportId?' · Passport '+esc(p.passportId):''}</small></div>`).join('')
-      +`<div class="ac-new">＋ Create / update person "${esc(q)}"</div>`;
+      +(allowCreate?`<div class="ac-new">＋ Create / update person "${esc(q)}"</div>`:'')
+      +(!items.length&&!allowCreate?`<div class="ac-item" style="cursor:default;color:var(--muted)"><b>No central person matches "${esc(q)}"</b><small>Use the manual entry below to register them as a new person.</small></div>`:'');
     box.style.display='block';
-    box.querySelectorAll('.ac-item').forEach(el=>el.onclick=()=>{const p=items.find(x=>x.id===el.dataset.id);box.style.display='none';input.value=p.name;chosen=p;onPick(p)});
-    box.querySelector('.ac-new').onclick=()=>{box.style.display='none';openPersonDrawer({name:q},saved=>{box.style.display='none';input.value=saved.name;chosen=saved;onPick(saved)})};
+    box.querySelectorAll('.ac-item[data-id]').forEach(el=>el.onclick=()=>{const p=items.find(x=>x.id===el.dataset.id);box.style.display='none';input.value=p.name;chosen=p;onPick(p)});
+    const nw=box.querySelector('.ac-new');if(nw)nw.onclick=()=>{box.style.display='none';openPersonDrawer({name:q},saved=>{box.style.display='none';input.value=saved.name;chosen=saved;onPick(saved)})};
   },180)});
   document.addEventListener('click',e=>{if(!box.contains(e.target)&&e.target!==input)box.style.display='none'});
   return {get chosen(){return chosen},clear(){chosen=null}};
@@ -567,13 +571,113 @@ function renderCwEvidence(list){
       <div class="ev-body"><b>${esc(x.caption||x.file_name||'Evidence')}</b><small>${esc(x.file_type||'')} ${src?`· <a href="${esc(src)}" target="_blank">open</a>`:''}</small></div></div>`}).join('')||'<div class="empty">No evidence uploaded yet</div>';
 }
 function clearCwPick(){cwPicker.clear();cwSelected=null;cwLookup.value='';cwPick.classList.remove('on')}
+// ---- shared "new person" manual-entry block (used by the case participant form and the Add-suspect drawer) ----
+function newPersonFieldsHtml(px){
+  return `<div class="grid2">
+   <div class="field"><label>Full name *</label><input id="${px}Name" placeholder="e.g. Xasan Maxamed Jaamac"></div>
+   <div class="field"><label>National ID *</label><input id="${px}National" placeholder="National ID number"></div>
+   <div class="field"><label>Mother's name</label><input id="${px}Mother" placeholder="Mother's full name"></div>
+   <div class="field"><label>Date of birth</label><input type="date" id="${px}Dob"></div>
+   <div class="field"><label>Passport ID</label><input id="${px}Passport" placeholder="Passport number (optional)"></div>
+   <div class="field"><label>Place of birth</label><input id="${px}Pob" placeholder="City / town"></div>
+   <div class="field"><label>Address / residence</label><input id="${px}Residence" placeholder="District, city"></div>
+   <div class="field"><label>Occupation</label><input id="${px}Occupation" placeholder="Occupation"></div>
+   <div class="field"><label>Phone</label><input id="${px}Phone" placeholder="+252 63 …"></div>
+  </div>
+  <div class="hint">Saving registers this person in the Central Person Registry first (merged automatically if the National ID or passport already exists), then links them to the case and the shared Suspect List.</div>`;
+}
+function collectNewPerson(px){
+  const f=s=>{const el=document.getElementById(px+'Np'+s);return el?el.value.trim():''};
+  return {name:f('Name'),nationalId:f('National'),motherName:f('Mother'),dob:f('Dob'),passportId:f('Passport'),pob:f('Pob'),residence:f('Residence'),occupation:f('Occupation'),phone:f('Phone')};
+}
+function validateNewPerson(px){
+  const d=collectNewPerson(px);
+  if(!d.name){toast('Enter the new person’s full name',true);return null}
+  if(!d.nationalId){toast('National ID is required to register the new person',true);return null}
+  return d;
+}
+function clearNewPersonFields(px){['Name','National','Mother','Dob','Passport','Pob','Residence','Occupation','Phone'].forEach(s=>{const el=document.getElementById(px+'Np'+s);if(el)el.value=''})}
+function toggleNewPersonSection(px,e,hooks){
+  if(e&&e.preventDefault)e.preventDefault();
+  const box=document.getElementById(px+'NewPerson'),link=document.getElementById(px+'NewLink');
+  if(!box)return;
+  const show=box.style.display==='none';
+  box.style.display=show?'block':'none';
+  if(link)link.textContent=show?'Use an existing central person instead':'Enter a new person manually';
+  if(show){if(hooks&&hooks.onShow)hooks.onShow();setTimeout(()=>{const f=document.getElementById(px+'NpName');if(f)f.focus()},30)}
+  else{if(hooks&&hooks.onHide)hooks.onHide();const l=document.getElementById(px+'Lookup');if(l)l.focus()}
+}
+function toggleCwNewPerson(e){toggleNewPersonSection('cw',e,{onShow:()=>{clearCwPick()},onHide:()=>{clearNewPersonFields('cw')}})}
+function cwNewPersonOpen(){const b=document.getElementById('cwNewPerson');return !!b&&b.style.display!=='none'}
+// ---- one shared submit path: existing person OR create-the-person-first, then the suspect/participant link ----
+async function linkSuspectRecord({person,personData,caseId,role,notes}){
+  if(serverOn){
+    const body={case_id:caseId,role:role||'Suspect',notes:notes||''};
+    if(person)body.person_id=person.id;else body.person=stripServer(personData);
+    return await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify(body)});
+  }
+  let target=person,created=!!person;
+  if(!target){
+    const existed=!!db.people.find(x=>x.nationalId===personData.nationalId||(personData.passportId&&x.passportId===personData.passportId));
+    target=await upsertPerson(personData);created=!existed;
+  }
+  const cse=db.cases.find(x=>x.id===caseId);
+  if(cse){if(!cse.participants)cse.participants=[];cse.participants.push({person:target.id,role:role||'Suspect',note:notes||''})}
+  if((role||'Suspect')==='Suspect')db.suspects.unshift({person:target.id,case:caseId,role:role||'Suspect',alert:'Active alert'});
+  persist();
+  return {person_id:target.id,person_created:created};
+}
 async function addParticipant(){
-  const p=cwPicker.chosen,role=cwRole.value,note=cwPartNote.value.trim();
-  if(!p){toast('Search and select a central person first',true);return}
+  const role=cwRole.value,note=cwPartNote.value.trim();
+  const existing=cwPicker.chosen;
+  if(!existing&&!cwNewPersonOpen()){toast('Search and select a central person — or choose “Enter a new person manually” to register someone new',true);return}
+  let personData=null;
+  if(!existing){personData=validateNewPerson('cw');if(!personData)return}
   try{
-    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({person_id:p.id,case_id:cwCase,role,notes:note})});
-    else{const c=db.cases.find(x=>x.id===cwCase);if(c){if(!c.participants)c.participants=[];c.participants.push({person:p.id,role,note});if(role==='Suspect')db.suspects.unshift({person:p.id,case:cwCase,role,alert:'Active alert'});persist()}}
-    cwPartNote.value='';clearCwPick();toast(role+' linked to '+cwCase);openCase(cwCase);
+    const r=await linkSuspectRecord({person:existing,personData,caseId:cwCase,role,notes:note});
+    cwPartNote.value='';clearCwPick();
+    if(cwNewPersonOpen())toggleCwNewPerson();else clearNewPersonFields('cw');
+    if(serverOn)await syncServer();
+    toast(r&&r.person_created?`New person ${r.person_id} registered — linked as ${role} in ${cwCase}`:`${role} linked to ${cwCase}${r&&r.person_id?' · '+r.person_id:''}`);
+    openCase(cwCase);
+  }catch(e){toast(e.message,true)}
+}
+// ---- "Add suspect" drawer on the shared Suspect List (existing person OR brand-new person) ----
+function clearAsPick(){if(window._asPicker)window._asPicker.clear();window._asChosen=null;const l=document.getElementById('asLookup');if(l)l.value='';const b=document.getElementById('asPick');if(b)b.classList.remove('on')}
+function toggleAsNewPerson(e){toggleNewPersonSection('as',e,{onShow:()=>{clearAsPick()},onHide:()=>{clearNewPersonFields('as')}})}
+function openSuspectDrawer(){
+  if(!db.cases.length){toast('Create a crime case first — suspect entries are linked to a case',true);return}
+  const caseOpts=db.cases.map(x=>`<option value="${esc(x.id)}"${x.id===cwCase?' selected':''}>${esc(x.id)} · ${esc(x.category)}</option>`).join('');
+  openDrawer('Add suspect',`
+   <form class="form" id="suspectDrawerForm">
+    <div class="hint" style="margin-bottom:2px">Pick an existing central person, or enter a new one — the central record is created first, then an active alert is added to the shared Suspect List for checkpoints and the airport.</div>
+    <div class="field"><label>Linked case *</label><select id="asCase">${caseOpts}</select></div>
+    <div class="field ac-wrap"><label>Find Central Person</label><input id="asLookup" placeholder="Search name, National ID or passport" autocomplete="off"><div id="asAc" class="autocomplete"></div><div id="asPick" class="pickbar"><span class="mini" id="asPickMini">●</span><div><b id="asPickName"></b><small class="muted" id="asPickId"></small></div><button type="button" class="x" onclick="clearAsPick()">✕</button></div>
+    <div class="hint" style="margin-top:8px">Person not in the registry yet? <a href="#" onclick="toggleAsNewPerson(event)" id="asNewLink">Enter a new person manually</a></div></div>
+    <div id="asNewPerson" style="display:none">${newPersonFieldsHtml('asNp')}</div>
+    <div class="field"><label>Suspect details / reason</label><textarea id="asNotes" placeholder="Why this person is on the list — aliases, last known address…"></textarea></div>
+   </form>`,
+   `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn danger" onclick="submitSuspectDrawer()">Add suspect</button>`);
+  setTimeout(()=>{
+    window._asPicker=attachPicker('asLookup','asAc',p=>{pickBar('asPick','asPickMini','asPickName','asPickId',p);window._asChosen=p;const b=document.getElementById('asNewPerson');if(b&&b.style.display!=='none')toggleAsNewPerson()},{allowCreate:false});
+    window._asChosen=null;
+  },30);
+}
+async function submitSuspectDrawer(){
+  const caseId=document.getElementById('asCase')?.value;
+  if(!caseId){toast('Choose the case this suspect belongs to',true);return}
+  const existing=window._asChosen;
+  const box=document.getElementById('asNewPerson');
+  const manualOpen=!!box&&box.style.display!=='none';
+  if(!existing&&!manualOpen){toast('Select an existing person — or choose “Enter a new person manually” to register someone new',true);return}
+  let personData=null;
+  if(!existing){personData=validateNewPerson('as');if(!personData)return}
+  try{
+    const r=await linkSuspectRecord({person:existing,personData,caseId,role:'Suspect',notes:(document.getElementById('asNotes')?.value||'').trim()});
+    closeDrawer();
+    if(serverOn)await syncServer();
+    toast(r&&r.person_created?`New person ${r.person_id} registered — active suspect alert added to ${caseId}`:`Active suspect alert added to ${caseId}${r&&r.person_id?' · '+r.person_id:''}`);
+    renderAll();
   }catch(e){toast(e.message,true)}
 }
 async function saveCaseDetails(){
@@ -649,7 +753,8 @@ buildFileSlots('appDocs','appDoc',4,['Document 1 (ID) *','Document 2 *','Documen
 buildFileSlots('guardDocs','guardDoc',3,['Document 1 (ID) *','Document 2 *','Document 3 (optional)']);
 fpPicker=attachPicker('fpLookup','fpAc',p=>{pickBar('fpPick','fpPickMini','fpPickName','fpPickId',p);fillFpForm(p)});
 airPicker=attachPicker('airLookup','airAc',p=>{pickBar('airPick','airPickMini','airPickName','airPickId',p);airSelected=p});
-cwPicker=attachPicker('cwLookup','cwAc',p=>{pickBar('cwPick','cwPickMini','cwPickName','cwPickId',p);cwSelected=p});
+document.getElementById('cwNewPerson').innerHTML=newPersonFieldsHtml('cwNp');
+cwPicker=attachPicker('cwLookup','cwAc',p=>{pickBar('cwPick','cwPickMini','cwPickName','cwPickId',p);cwSelected=p;if(cwNewPersonOpen())toggleCwNewPerson()});
 renderAll();syncServer();
 </script>
 </body></html>
