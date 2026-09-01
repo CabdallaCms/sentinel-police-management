@@ -268,6 +268,66 @@ def main():
             'residence': 'X', 'case_id': 'CID-9999'})
         assert s == 400, s
 
+        # ---- Central Person enrichment on linked unit records ----
+        # New central person (no mother/phone/IDs) created via a checkpoint stop
+        cp_enrich = {'first_name': 'Nuradin', 'second_name': 'Cali', 'third_name': 'Faarax',
+                     'fourth_name': 'Axmed', 'date_of_birth': '1992-03-03',
+                     'current_address': 'Hargeisa 5', 'permanent_address': 'Burao Rd',
+                     'purpose_of_visit': 'Business', 'location': 'South',
+                     'guardian_first_name': 'Cabdi', 'guardian_second_name': 'Faarax',
+                     'guardian_third_name': 'Cali', 'guardian_fourth_name': 'Awil',
+                     'guardian_relationship': 'Relative', 'guardian_phone': '+252 63 555 0500',
+                     'guardian_address': 'Burao Rd', 'guardian_occupation': 'Driver'}
+        cp_enrich_files = {'doc_tr_0': ('t.pdf', b'%PDF-t'),
+                           'doc_gd_0': ('g.pdf', b'%PDF-g'),
+                           'photo': ('p.jpg', b'\xff\xd8\xff\xe0x')}
+        s, r = multipart_request(base, '/api/checkpoint-events', token, cp_enrich, cp_enrich_files)
+        assert s == 201, r
+        enrich_pid = r['person_id']
+        s, p = request(base, 'GET', '/api/persons/' + enrich_pid, token)
+        assert s == 200 and not p.get('mother_name') and not p.get('phone'), p
+
+        # Airport links to that person_id and fills missing Mother's name + phone + flight fields
+        s, r = request(base, 'POST', '/api/airport-records', token, {
+            'person_id': enrich_pid, 'first_name': 'Nuradin', 'second_name': 'Cali',
+            'third_name': 'Faarax', 'fourth_name': 'Axmed', 'date_of_birth': '1992-03-03',
+            'mother_name': 'Hawa Cali', 'phone': '+252 63 555 0678', 'residence': 'Hargeisa 5',
+            'movement': 'Departure', 'travel_date': '2026-09-05', 'flight_number': 'HL-410',
+            'airline': 'Sentinel Air', 'origin_city': 'Hargeisa', 'destination_city': 'Bosaso'})
+        assert s == 201, r
+        s, p = request(base, 'GET', '/api/persons/' + enrich_pid, token)
+        assert s == 200 and p.get('mother_name') == 'Hawa Cali', p
+        assert p.get('phone') == '+252 63 555 0678', p
+
+        # Airport record persists the module-specific travel fields
+        s, ar = request(base, 'GET', '/api/airport-records', token)
+        item = next(x for x in ar['items'] if x['person_id'] == enrich_pid)
+        assert item['airline'] == 'Sentinel Air' and item['origin_city'] == 'Hargeisa', item
+        assert item['destination_city'] == 'Bosaso' and item['movement'] == 'Departure', item
+
+        # Enrichment also works when the unit record resolves by identity (no person_id):
+        # a checkpoint person without passport is enriched via the upsert merge path.
+        cp_enrich2 = dict(cp_enrich)
+        cp_enrich2.update({'first_name': 'Ubax', 'second_name': 'Xasan',
+                           'third_name': 'Aadan', 'fourth_name': 'Cali',
+                           'date_of_birth': '1988-08-08', 'location': 'West'})
+        cp_enrich_files2 = {'doc_tr_0': ('t2.pdf', b'%PDF-t2'),
+                            'doc_gd_0': ('g2.pdf', b'%PDF-g2'),
+                            'photo': ('p2.jpg', b'\xff\xd8\xff\xe0y')}
+        s, r = multipart_request(base, '/api/checkpoint-events', token, cp_enrich2, cp_enrich_files2)
+        assert s == 201, r
+        enrich_pid2 = r['person_id']
+        s, r = request(base, 'POST', '/api/airport-records', token, {
+            'first_name': 'Ubax', 'second_name': 'Xasan', 'third_name': 'Aadan',
+            'fourth_name': 'Cali', 'date_of_birth': '1988-08-08', 'mother_name': 'Maryan',
+            'passport_id': 'P0004567', 'occupation': 'Nurse', 'residence': 'Hargeisa Centre',
+            'movement': 'Arrival', 'travel_date': '2026-09-06', 'flight_number': 'HL-515',
+            'route': 'Bosaso / Hargeisa'})
+        assert s == 201, r
+        s, p = request(base, 'GET', '/api/persons/' + enrich_pid2, token)
+        assert s == 200 and p.get('passport_id') == 'P0004567', p
+        assert p.get('occupation') == 'Nurse', p
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:

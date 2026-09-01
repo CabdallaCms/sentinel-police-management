@@ -17,7 +17,7 @@ A working browser-based prototype for a central police management platform. It i
 
 Every person receives one central `Person ID` (`P-0001`, etc.). Unit registers store their own records and reference this ID:
 
-- Airport: movement, travel date, flight, origin/destination and travel notes
+- Airport: movement type, travel date, flight number, airline/carrier, origin city, destination city and travel notes
 - Fingerprint: clearance purpose, guardian, relationship, legal document references and review status
 - CID: case participants and case references
 - Checkpoint: screening events and actions taken
@@ -34,6 +34,12 @@ As the officer types, the form performs **real-time background matching** agains
 - **No match** → the form shows a notice and submission **auto-creates the Central Person first**, then attaches the unit/suspect record.
 
 The same interactive matching engine (Tier 1 exact ID/passport auto-merge, Tier 2 exact 4-part name + DOB high-confidence link, Tier 3 fuzzy warning, Tier 4 partial-name dropdown) is applied across **Checkpoints, Airport Control, Fingerprint Unit and CID**.
+
+### Central Person enrichment on submission
+
+When a unit record (Airport, Checkpoint, Fingerprint or CID/suspect) links to an **existing Central Person ID**, the backend checks the incoming submission for any values that are still **null/empty** in the person's profile (e.g. Mother's name, Phone, Occupation, Address, Passport ID, photo). It **automatically enriches** the SQLite `persons` record with those non-empty new values **without overwriting existing non-null data** — so an officer can complete a partially-filled profile (e.g. the blank "Mother's name" in the Airport form) and the central record is updated on save.
+
+The same fill-only enrichment applies to the identity-merge path (`/api/persons/upsert` and the unit routes' auto-resolve): matched records never get overwritten, only missing fields are filled. The frontend keeps empty matched fields as editable inputs so the officer can enter the missing details.
 
 ### No popups — pages and centered modals
 

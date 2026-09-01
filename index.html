@@ -229,10 +229,12 @@ body.modal-open{overflow:hidden}
 <div id="airIdentity"></div>
 <div class="section-label">Travel</div>
 <div class="grid2">
-<div class="field"><label>Movement</label><select id="airMove"><option>Arrival</option><option>Departure</option></select></div>
+<div class="field"><label>Movement type</label><select id="airMove"><option>Arrival</option><option>Departure</option></select></div>
 <div class="field"><label>Travel date</label><input id="airDate" type="date" value="2026-09-01"></div>
 <div class="field"><label>Flight / transport number *</label><input id="airFlight" required placeholder="e.g. HL-204"></div>
-<div class="field"><label>Origin / destination *</label><input id="airRoute" required placeholder="Berbera / Hargeisa"></div>
+<div class="field"><label>Airline / carrier</label><input id="airAirline" placeholder="e.g. Sentinel Air"></div>
+<div class="field"><label>Origin city *</label><input id="airOrigin" required placeholder="e.g. Berbera"></div>
+<div class="field"><label>Destination city *</label><input id="airDest" required placeholder="e.g. Hargeisa"></div>
 </div>
 <div class="field"><label>Travel notes</label><textarea id="airNotes"></textarea></div>
 <div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">Save passenger</button></div>
@@ -338,7 +340,7 @@ const seed={people:[
 {id:'P-0001',name:'Ayaan Cabdi Xasan Axmed',first:'Ayaan',second:'Cabdi',third:'Xasan',fourth:'Axmed',nationalId:'10012345',passportId:'P0011223',dob:'1997-04-18',pob:'Hargeisa',motherName:'Faadumo Cali',residence:'Hargeisa, Jigjiga Yar',occupation:'Civil servant',phone:'+252 63 555 0199',units:['Airport'],updated:'Jul 18, 2026'},
 {id:'P-0002',name:'Maxamed Nuur Cali Awil',first:'Maxamed',second:'Nuur',third:'Cali',fourth:'Awil',nationalId:'10067890',passportId:'',dob:'1989-11-02',pob:'Burao',motherName:'Khadra Jaamac',residence:'Hargeisa Central',occupation:'Trader',phone:'+252 63 555 0188',units:['CID'],updated:'Aug 12, 2026'},
 {id:'P-0003',name:'Sahra Yuusuf Axmed Aadan',first:'Sahra',second:'Yuusuf',third:'Axmed',fourth:'Aadan',nationalId:'10024680',passportId:'',dob:'2001-02-26',pob:'Hargeisa',motherName:'Amina Maxamed',residence:'Hargeisa, 26 June',occupation:'Student',phone:'+252 63 555 0144',units:['Fingerprint'],updated:'Aug 28, 2026'}],
-airport:[{id:'AR-1001',person:'P-0001',move:'Arrival',date:'2026-07-18',flight:'HL-118',route:'Berbera / Hargeisa'}],
+airport:[{id:'AR-1001',person:'P-0001',move:'Arrival',date:'2026-07-18',flight:'HL-118',airline:'Sentinel Air',origin:'Berbera',dest:'Hargeisa',route:'Berbera / Hargeisa'}],
 fingerprint:[{id:'FP-2026-0042',person:'P-0003',purpose:'Education',status:'Pending Review',guardian:'Yuusuf Axmed'}],
 cases:[{id:'CID-2026-008',category:'Property crime',location:'Hargeisa Central',status:'Under Investigation',summary:'Shop burglary overnight; cash and goods reported missing.',participants:[{person:'P-0002',role:'Suspect',note:''}],evidence:[]},
 {id:'CID-2026-009',category:'Fraud',location:'Jigjiga Yar',status:'Submitted for Prosecution',summary:'Advance-fee fraud reported by a local business owner.',participants:[],evidence:[]}],
@@ -468,6 +470,7 @@ function identityFormHTML(prefix,opts={}){
    </div>
   </div>`;
 }
+function matchedPersonId(prefix){return (window._identityMatches&&window._identityMatches[prefix])||''}
 function readIdentity(prefix){
   const g=id=>document.getElementById(id)?.value.trim()||'';
   return{first:g(prefix+'-first'),second:g(prefix+'-second'),third:g(prefix+'-third'),fourth:g(prefix+'-fourth'),
@@ -665,9 +668,21 @@ async function upsertPerson(data){
   np.name=[np.first,np.second,np.third,np.fourth].filter(Boolean).join(' ');
   db.people.push(np);persist();return np;
 }
+function enrichLocal(p,d){
+  let changed=false;
+  const fills={motherName:d.mother,residence:d.address,phone:d.phone,pob:d.pob,occupation:d.occupation,
+    nationalId:d.national,passportId:d.passport,dob:d.dob};
+  Object.entries(fills).forEach(([k,v])=>{if(v&&!p[k]){p[k]=v;changed=true}});
+  [['first','first'],['second','second'],['third','third'],['fourth','fourth']].forEach(([src,key])=>{
+    if(d[src]&&!p[key]){p[key]=d[src];changed=true}
+  });
+  if(!p.name&&!p.full_name){const n=[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' ');if(n){p.name=n;p.full_name=n;changed=true}}
+  if(changed){p.updated='today';persist()}
+  return p;
+}
 async function ensureLocalIdentity(d){
   const m=localResolveIdentity(d);
-  if(m.matched&&m.tier<=2)return m.person;
+  if(m.matched&&m.tier<=2)return enrichLocal(m.person,d);
   return upsertPerson({first:d.first,second:d.second,third:d.third,fourth:d.fourth,nationalId:d.national,
     passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation});
 }
@@ -761,7 +776,7 @@ async function submitAddSuspect(){
   const caseId=val('spCase'),origin=caseId?'Case Link':val('spOrigin');
   const reason=val('spNote');
   if(!caseId&&!reason){showFormError('Suspect reason / alert details is required for unlinked suspects.',{prefix:'sp',names:['note'],title:'Unable to Save'});return}
-  const payload={...identityServer(d),case_id:caseId||null,role:'Suspect',origin,notes:reason};
+  const payload={...identityServer(d),person_id:matchedPersonId('sp'),case_id:caseId||null,role:'Suspect',origin,notes:reason};
   try{
     let msg;
     if(serverOn){
@@ -805,7 +820,7 @@ function renderAll(){
      <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
      ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`:`<button class="btn small" onclick="approveFP('${esc(x.id)}')">Approve</button>`}
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
-  airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
+  airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
   suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No active alerts</td></tr>';
   cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td>
@@ -846,7 +861,7 @@ async function saveFingerprint(e){
     if(serverOn){
       const photo=document.getElementById('fp-photo').files[0];
       const fd=new FormData();
-      Object.entries({...identityServer(d),purpose:fpPurpose.value,guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
+      Object.entries({...identityServer(d),person_id:matchedPersonId('fp'),purpose:fpPurpose.value,guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
       appDocs.forEach((f,i)=>fd.append('doc_app_'+i,f));guardDocs.forEach((f,i)=>fd.append('doc_guard_'+i,f));if(photo)fd.append('photo',photo);
       const r=await api('/api/clearance-applications',{method:'POST',body:fd});
       const m=r.identity&&r.identity.matched?'matched to existing central record '+r.identity.person_id:'new central person '+r.person_id+' created';
@@ -870,15 +885,22 @@ async function saveAirport(e){
   e.preventDefault();
   clearInvalid();
   const d=window._identityWires.air.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'air',names:['first','second','third','fourth','dob','mother','address'],notice:'airNotice'});return}
+  const origin=airOrigin.value.trim()||'',dest=airDest.value.trim()||'';
+  const route=[origin,dest].filter(Boolean).join(' / ');
+  const airline=airAirline.value.trim();
   try{
     let p;
     if(serverOn){
-      const r=await api('/api/airport-records',{method:'POST',body:JSON.stringify({...identityServer(d),movement:airMove.value,travel_date:airDate.value,flight_number:airFlight.value,route:airRoute.value,notes:airNotes.value})});
+      const payload={...identityServer(d),person_id:matchedPersonId('air'),movement:airMove.value,
+        travel_date:airDate.value,flight_number:airFlight.value.trim(),airline,
+        origin_city:origin,destination_city:dest,route:route,notes:airNotes.value};
+      const r=await api('/api/airport-records',{method:'POST',body:JSON.stringify(payload)});
       p=r.identity&&r.identity.matched?r.identity.person_id:null;
       airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved — '+(r.identity&&r.identity.matched?'matched and linked to existing Central Person '+r.identity.person_id:'new Central Person '+r.identity.person_id+' created and linked')+'.';
     }else{
-      p=(await ensureLocalIdentity(d)).id;
-      db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p,move:airMove.value,date:airDate.value,flight:airFlight.value,route:airRoute.value,notes:airNotes.value});persist();
+      const person=await ensureLocalIdentity(d);
+      p=person.id;
+      db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p,move:airMove.value,date:airDate.value,flight:airFlight.value.trim(),airline,origin,dest,route,notes:airNotes.value});persist();
       airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved and linked to '+p+' in the Central Person Registry (local demo).';
     }
     airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';await syncServer();toast('Airport unit record saved');
@@ -942,7 +964,7 @@ async function addParticipant(){
   const role=cwRole.value,note=cwPartNote.value.trim(),caseId=val('cwCaseSel')||null;
   if(!caseId&&!note){showFormError('Participant note / reason is required when no case is linked.',{names:['cwPartNote'],notice:'cwAlert'});return}
   try{
-    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({...identityServer(d),case_id:caseId,role,notes:note,origin:caseId?'Case Link':'Direct Intelligence Listing'})});
+    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({...identityServer(d),person_id:matchedPersonId('cw'),case_id:caseId,role,notes:note,origin:caseId?'Case Link':'Direct Intelligence Listing'})});
     else{const c=db.cases.find(x=>x.id===cwCase);const p=await ensureLocalIdentity(d);
       if(c){if(!c.participants)c.participants=[];c.participants.push({person:p.id,role,note});}
       if(role==='Suspect')db.suspects.unshift({person:p.id,case:caseId||'',role,alert:'Active alert',origin:caseId?'Case Link':'Direct Intelligence Listing'});
@@ -1009,7 +1031,7 @@ async function submitCheckpoint(){
   try{
     if(serverOn){
       const fd=new FormData();
-      const fields={...identityServer(d),current_address:d.address,permanent_address:d.permanent,
+      const fields={...identityServer(d),person_id:matchedPersonId('cp'),current_address:d.address,permanent_address:d.permanent,
         purpose_of_visit:d.purpose,location:cpLoc.value,notes:cpNotes.value,
         guardian_first_name:gd.first,guardian_second_name:gd.second,guardian_third_name:gd.third,
         guardian_fourth_name:gd.fourth,guardian_name:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
@@ -1046,7 +1068,7 @@ async function syncServer(){
     const [ps,ars,fps,ccs,sas,cps]=await Promise.all([api('/api/persons'),api('/api/airport-records'),api('/api/clearance-applications'),api('/api/crime-cases'),api('/api/suspect-alerts'),api('/api/checkpoint-events')]);
     db.people=ps.items.map(mapPerson);
     db.people.forEach(p=>{p.units=[];if(ars.items.some(x=>x.person_id===p.id))p.units.push('Airport');if(fps.items.some(x=>x.person_id===p.id))p.units.push('Fingerprint');if(sas.items.some(x=>x.person_id===p.id))p.units.push('CID');if(cps.items.some(x=>x.person_id===p.id))p.units.push('Checkpoint');if(!p.units.length)p.units.push('Central')});
-    db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,route:x.route,notes:x.notes}));
+    db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,notes:x.notes}));
     db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
     db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
     db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));

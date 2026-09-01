@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS airport_passengers(
   id INTEGER PRIMARY KEY, record_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id), movement TEXT NOT NULL,
   travel_date TEXT NOT NULL, flight_number TEXT NOT NULL,
+  airline TEXT, origin_city TEXT, destination_city TEXT,
   route TEXT NOT NULL, notes TEXT, created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -121,6 +122,11 @@ ADDED_COLUMNS = {
         ('occupation', "ALTER TABLE persons ADD COLUMN occupation TEXT"),
         ('passport_id', "ALTER TABLE persons ADD COLUMN passport_id TEXT"),
         ('photo_path', "ALTER TABLE persons ADD COLUMN photo_path TEXT"),
+    ],
+    'airport_passengers': [
+        ('airline', "ALTER TABLE airport_passengers ADD COLUMN airline TEXT"),
+        ('origin_city', "ALTER TABLE airport_passengers ADD COLUMN origin_city TEXT"),
+        ('destination_city', "ALTER TABLE airport_passengers ADD COLUMN destination_city TEXT"),
     ],
     'clearance_applications': [
         ('guardian_id', "ALTER TABLE clearance_applications ADD COLUMN guardian_id TEXT"),
@@ -288,8 +294,9 @@ def init_db():
                    '10024680','2001-02-26','+252 63 555 0144','Amina Maxamed',
                    'Hargeisa, 26 June','Student'))
         pid = c.execute("SELECT id FROM persons WHERE person_id='P-0001'").fetchone()[0]
-        c.execute('INSERT INTO airport_passengers(record_id,person_id,movement,travel_date,flight_number,route) VALUES(?,?,?,?,?,?)',
-                  ('AR-1001',pid,'Arrival','2026-07-18','HL-118','Berbera / Hargeisa'))
+        c.execute('''INSERT INTO airport_passengers(record_id,person_id,movement,travel_date,flight_number,
+            airline,origin_city,destination_city,route) VALUES(?,?,?,?,?,?,?,?,?)''',
+                  ('AR-1001',pid,'Arrival','2026-07-18','HL-118','Sentinel Air','Berbera','Hargeisa','Berbera / Hargeisa'))
         fp_pid = c.execute("SELECT id FROM persons WHERE person_id='P-0003'").fetchone()[0]
         c.execute("INSERT INTO clearance_applications(application_id,person_id,purpose,guardian_name,guardian_relationship,guardian_phone,status) VALUES(?,?,?,?,?,?,?)",
                   ('FP-2026-0042',fp_pid,'Education','Yuusuf Axmed','Father','+252 63 555 0200','Pending Review'))
@@ -519,8 +526,8 @@ def create_person(c, data, photo_path=None, allow_no_id=False):
     full_name = build_full_name(data)
     if not full_name:
         raise ValueError('Full name is required')
-    national_id = (data.get('national_id') or '').strip().upper()
-    passport_id = (data.get('passport_id') or '').strip().upper()
+    national_id = (data.get('national_id') or '').strip().upper() or None
+    passport_id = (data.get('passport_id') or '').strip().upper() or None
     if not national_id and not passport_id and not allow_no_id:
         raise ValueError('National ID or Passport ID is required')
     a, b, d, e = raw_parts(full_name)
@@ -535,39 +542,61 @@ def create_person(c, data, photo_path=None, allow_no_id=False):
                passport_id, photo_path))
     return rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (pid,)).fetchone()), True
 
+def enrich_person(c, data, person, photo_path=None):
+    """Fill any empty/null central-person fields from incoming unit request data.
+
+    Never overwrites existing non-null values. This lets an officer complete
+    missing profile details (mother's name, phone, occupation, address,
+    passport, photo, etc.) while recording a unit event, and enriches the
+    linked Central Person record in SQLite. Returns (updated_row, changed).
+    """
+    updates, params = [], []
+    for f in PERSON_FIELDS:
+        if f == 'photo_path':
+            incoming = photo_path or ''
+        else:
+            raw = data.get(f)
+            incoming = str(raw or '').strip() if raw is not None else ''
+        if f in ('national_id', 'passport_id'):
+            incoming = incoming.upper()
+        stored = str(person.get(f) or '').strip()
+        if incoming and not stored:
+            updates.append(f'{f}=?'); params.append(incoming)
+    if updates:
+        updates.append('updated_at=CURRENT_TIMESTAMP')
+        params.append(person['id'])
+        c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=?", params)
+        return rowdict(c.execute('SELECT * FROM persons WHERE id=?', (person['id'],)).fetchone()), True
+    return person, False
+
 def upsert_person(c, data, photo_path=None, allow_no_id=False):
     """Smart identity resolution + merge.
 
     Tier 1 (exact ID/passport) and Tier 2 (exact 4-part name + DOB) records are
-    merged automatically; otherwise a new Central Person is created.
+    merged automatically, enriching any empty fields without overwriting
+    existing non-null data; otherwise a new Central Person is created.
     Returns (row, created).
     """
     row, tier = find_by_id(c, data)
     if not row:
         row, tier, _, _ = resolve_person(c, data)
     if row and tier in (1, 2):
-        pid = row['id']
-        updates, params = [], []
-        for f in PERSON_FIELDS:
-            val = data.get(f)
-            if f == 'photo_path': val = photo_path or row.get('photo_path')
-            if f in ('national_id', 'passport_id'): val = str(val or '').strip().upper()
-            if val is not None and str(val).strip() != '' and str(val).strip() != str(row.get(f) or '').strip():
-                updates.append(f'{f}=?'); params.append(str(val).strip())
-        if updates:
-            updates.append('updated_at=CURRENT_TIMESTAMP')
-            params.append(pid)
-            c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=?", params)
-        return rowdict(c.execute('SELECT * FROM persons WHERE id=?', (pid,)).fetchone()), False
+        row, _ = enrich_person(c, data, row, photo_path)
+        return row, False
     return create_person(c, data, photo_path, allow_no_id)
 
 def ensure_person(c, data, photo_path=None, allow_no_id=False):
     """Resolve an existing person_id or auto-create the Central Person record
-    from the identity fields carried by a unit request. Returns (row, created)."""
+    from the identity fields carried by a unit request. When a unit record links
+    to an existing Central Person ID, any non-empty incoming values for fields
+    that are still null/empty are used to enrich the profile (never overwriting
+    existing non-null data). Returns (row, created)."""
     pid = norm(data.get('person_id'))
     if pid:
         row = rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (pid,)).fetchone())
-        if row: return row, False
+        if row:
+            row, _ = enrich_person(c, data, row, photo_path)
+            return row, False
     identity_present = any(str(data.get(k) or '').strip() for k in
                            ('first_name','second_name','third_name','fourth_name','full_name',
                             'national_id','passport_id','mother_name'))
@@ -653,7 +682,8 @@ class API(BaseHTTPRequestHandler):
                     FROM checkpoint_events WHERE person_id=? ORDER BY id DESC''',(person['id'],)).fetchall()]
                 result = person
             elif p.path == '/api/airport-records':
-                rows = c.execute('''SELECT a.record_id,a.movement,a.travel_date,a.flight_number,a.route,a.notes,
+                rows = c.execute('''SELECT a.record_id,a.movement,a.travel_date,a.flight_number,a.airline,
+                    a.origin_city,a.destination_city,a.route,a.notes,
                     p.person_id,p.full_name,p.national_id FROM airport_passengers a
                     JOIN persons p ON p.id=a.person_id ORDER BY a.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
@@ -748,11 +778,19 @@ class API(BaseHTTPRequestHandler):
                 person, created = ensure_person(c, data)
                 if created:
                     audit(c,user,'CREATE','person',person['person_id'],'auto-created from airport register')
+                else:
+                    audit(c,user,'ENRICH','person',person['person_id'],'airport register filled missing details')
+                origin = (data.get('origin_city') or data.get('origin') or '').strip()
+                destination = (data.get('destination_city') or data.get('destination') or '').strip()
+                route = (data.get('route') or '').strip()
+                if not route and (origin or destination):
+                    route = (origin + ' / ' + destination) if origin and destination else (origin or destination)
                 rid = 'AR-'+str(int(time.time()*1000))[-8:]
                 c.execute('''INSERT INTO airport_passengers(record_id,person_id,movement,travel_date,
-                    flight_number,route,notes,created_by) VALUES(?,?,?,?,?,?,?,?)''',
+                    flight_number,airline,origin_city,destination_city,route,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
                     (rid,person['id'],data.get('movement','Arrival'),data.get('travel_date',''),
-                     data.get('flight_number',''),data.get('route',''),data.get('notes',''),user['id']))
+                     data.get('flight_number',''),data.get('airline',''),origin,destination,
+                     route,data.get('notes',''),user['id']))
                 audit(c,user,'CREATE','airport_record',rid,person['person_id']); c.commit()
                 result = {'record_id':rid,'identity':identity_result(c,data,person)}
             elif p.path == '/api/clearance-applications':
@@ -769,6 +807,8 @@ class API(BaseHTTPRequestHandler):
                 person, created = ensure_person(c, fields, photo_path=(photo['path'] if photo else None))
                 if created:
                     audit(c,user,'CREATE','person',person['person_id'],'auto-created from clearance application')
+                else:
+                    audit(c,user,'ENRICH','person',person['person_id'],'clearance application filled missing details')
                 app_docs = [save_upload(files[k]) for k in sorted(files) if k.startswith('doc_app_')]
                 guard_docs = [save_upload(files[k]) for k in sorted(files) if k.startswith('doc_guard_')]
                 if len(app_docs) < 2: raise ValueError('At least 2 applicant documents are required')
@@ -837,6 +877,8 @@ class API(BaseHTTPRequestHandler):
                 person, created = ensure_person(c, data)
                 if created:
                     audit(c,user,'CREATE','person',person['person_id'],'auto-created from suspect listing')
+                else:
+                    audit(c,user,'ENRICH','person',person['person_id'],'suspect listing filled missing details')
                 if case:
                     dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id=? AND alert_status=?',
                                     (person['id'],case['id'],'Active alert')).fetchone()
@@ -894,6 +936,8 @@ class API(BaseHTTPRequestHandler):
                 person, created = ensure_person(c, data, photo_path=photo['path'], allow_no_id=True)
                 if created:
                     audit(c,user,'CREATE','person',person['person_id'],'auto-created from checkpoint stop')
+                else:
+                    audit(c,user,'ENRICH','person',person['person_id'],'checkpoint stop filled missing details')
                 tr_docs = [save_upload(files[k]) for k in tr_keys]
                 gd_docs = [save_upload(files[k]) for k in gd_keys]
                 gd_identity = {'national_id': data.get('guardian_national_id'),
