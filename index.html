@@ -268,7 +268,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="role-select"><label class="muted" style="font-weight:700">Role</label><select id="cwRole"><option>Suspect</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
 <div class="field"><label>Linked case (optional)</label><select id="cwCaseSel"></select></div>
 </div>
-<div class="field"><label>Note (optional)</label><input id="cwPartNote" placeholder="e.g. last seen, relationship to incident"></div>
+<div class="field"><label>Participant note <span id="cwNoteReq" style="color:var(--red)">(required when no case)</span></label><input id="cwPartNote" placeholder="e.g. last seen, relationship to incident, reason for listing"></div>
 <div class="form-actions"><button class="btn danger" onclick="addParticipant()">Link participant</button></div>
 </div>
 </div>
@@ -297,7 +297,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="panel">
 <div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div>
 <div class="grid3" style="margin-bottom:20px"><div class="card"><b>South Checkpoint</b><div class="sub">Computer 01 · Active</div></div><div class="card"><b>West Checkpoint</b><div class="sub">Computer 02 · Active</div></div><div class="card"><b>East Checkpoint</b><div class="sub">Computer 03 · Active</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Person / ID</th><th>Suspect screening</th><th>Action</th></tr></thead><tbody id="cpTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Action</th></tr></thead><tbody id="cpTable"></tbody></table></div>
 </div>
 </section>
 </main></div>
@@ -432,7 +432,8 @@ function readIdentity(prefix){
   const g=id=>document.getElementById(id)?.value.trim()||'';
   return{first:g(prefix+'-first'),second:g(prefix+'-second'),third:g(prefix+'-third'),fourth:g(prefix+'-fourth'),
     dob:g(prefix+'-dob'),national:g(prefix+'-national'),passport:g(prefix+'-passport'),mother:g(prefix+'-mother'),
-    address:g(prefix+'-address'),phone:g(prefix+'-phone'),pob:g(prefix+'-pob'),occupation:g(prefix+'-occupation')};
+    address:g(prefix+'-address'),phone:g(prefix+'-phone'),pob:g(prefix+'-pob'),occupation:g(prefix+'-occupation'),
+    permanent:g(prefix+'-permanent'),purpose:g(prefix+'-purpose'),relationship:g(prefix+'-relationship')};
 }
 function fillIdentity(prefix,p){
   const map={first:'first',second:'second',third:'third',fourth:'fourth',dob:'dob',national:'nationalId',
@@ -507,8 +508,78 @@ function dismissMatches(prefix){
   renderMatchList(prefix,null);
   setMatch(prefix,{info:true,reason:'No central record selected \u2014 a new Central Person record will be created automatically on save.'});
 }
-function wireIdentity(prefix){
+// ---- checkpoint traveler + guardian structured forms ----
+function travelerFormHTML(prefix){
+  return `
+  <div class="id-form">
+   <div class="grid2">
+    <div class="field"><label>First name *</label><input id="${prefix}-first" placeholder="e.g. Ayaan" autocomplete="off"></div>
+    <div class="field"><label>Second name *</label><input id="${prefix}-second" placeholder="e.g. Cabdi" autocomplete="off"></div>
+    <div class="field"><label>Third name *</label><input id="${prefix}-third" placeholder="e.g. Xasan" autocomplete="off"></div>
+    <div class="field"><label>Fourth name *</label><input id="${prefix}-fourth" placeholder="e.g. Axmed" autocomplete="off"></div>
+    <div class="field"><label>Date of birth *</label><input id="${prefix}-dob" type="date"></div>
+    <div class="field"><label>Place of birth</label><input id="${prefix}-pob" placeholder="City / town"></div>
+    <div class="field"><label>National ID (optional)</label><input id="${prefix}-national" placeholder="National ID number" autocomplete="off"></div>
+    <div class="field"><label>Passport ID (optional)</label><input id="${prefix}-passport" placeholder="Passport number" autocomplete="off"></div>
+    <div class="field"><label>Mother's name (optional)</label><input id="${prefix}-mother" placeholder="Mother's full name" autocomplete="off"></div>
+    <div class="field"><label>Current address *</label><input id="${prefix}-address" placeholder="Street, district, town"></div>
+    <div class="field"><label>Permanent address *</label><input id="${prefix}-permanent" placeholder="Home address in country of origin"></div>
+    <div class="field"><label>Purpose of visit *</label><input id="${prefix}-purpose" placeholder="Family visit, business, medical…"></div>
+    <div class="field"><label>Real-time photo *</label><input id="${prefix}-photo" type="file" accept="image/*"><img id="${prefix}-photoPrev" class="m-photoprev" alt="traveler photo"></div>
+   </div>
+   <div id="${prefix}-matchlist" class="m-matchlist"></div>
+   <div id="${prefix}-match" class="match-banner"></div>
+   <div class="field"><label>Traveler documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs"></div></div>
+  </div>`;
+}
+function guardianFormHTML(prefix){
+  return `
+  <div class="id-form">
+   <div class="grid2">
+    <div class="field"><label>Guardian first name *</label><input id="${prefix}-first" placeholder="e.g. Cabdi" autocomplete="off"></div>
+    <div class="field"><label>Guardian second name *</label><input id="${prefix}-second" placeholder="e.g. Faarax" autocomplete="off"></div>
+    <div class="field"><label>Guardian third name *</label><input id="${prefix}-third" placeholder="e.g. Cali" autocomplete="off"></div>
+    <div class="field"><label>Guardian fourth name *</label><input id="${prefix}-fourth" placeholder="e.g. Axmed" autocomplete="off"></div>
+    <div class="field"><label>Relationship *</label><select id="${prefix}-relationship"><option value="">— select —</option><option>Parent</option><option>Spouse</option><option>Legal Guardian</option><option>Sibling</option><option>Relative</option><option>Employer</option><option>Other</option></select></div>
+    <div class="field"><label>Contact number *</label><input id="${prefix}-phone" placeholder="+252 …" autocomplete="off"></div>
+    <div class="field"><label>Permanent address *</label><input id="${prefix}-permanent" placeholder="Guardian home address"></div>
+    <div class="field"><label>Occupation *</label><input id="${prefix}-occupation" placeholder="Occupation"></div>
+    <div class="field"><label>National ID (optional)</label><input id="${prefix}-national" placeholder="Guardian NID" autocomplete="off"></div>
+    <div class="field"><label>Passport ID (optional)</label><input id="${prefix}-passport" placeholder="Guardian passport" autocomplete="off"></div>
+   </div>
+   <div id="${prefix}-matchlist" class="m-matchlist"></div>
+   <div id="${prefix}-match" class="match-banner"></div>
+   <div class="field"><label>Guardian documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs"></div></div>
+  </div>`;
+}
+function fillGuardian(prefix,p){
+  fillIdentity(prefix,p);
+  const per=document.getElementById(prefix+'-permanent');
+  if(per&&p.residence!=null)per.value=p.residence||'';
+  const ph=document.getElementById(prefix+'-phone');
+  if(ph&&!ph.value&&p.phone)ph.value=p.phone;
+  const oc=document.getElementById(prefix+'-occupation');
+  if(oc&&!oc.value&&p.occupation)oc.value=p.occupation;
+}
+function validateTraveler(d){
+  if(!d.first||!d.second||!d.third||!d.fourth)return{ok:false,msg:'Enter the traveler full name (first, second, third and fourth names)'};
+  if(!d.dob)return{ok:false,msg:'Traveler date of birth is required'};
+  if(!d.address)return{ok:false,msg:'Traveler current address is required'};
+  if(!d.permanent)return{ok:false,msg:'Traveler permanent address is required'};
+  if(!d.purpose)return{ok:false,msg:'Purpose of visit is required'};
+  return{ok:true};
+}
+function validateGuardian(d){
+  if(!d.first||!d.second||!d.third||!d.fourth)return{ok:false,msg:'Enter the guardian full name (first, second, third and fourth names)'};
+  if(!d.relationship)return{ok:false,msg:'Guardian relationship is required'};
+  if(!d.phone)return{ok:false,msg:'Guardian contact number is required'};
+  if(!d.permanent)return{ok:false,msg:'Guardian permanent address is required'};
+  if(!d.occupation)return{ok:false,msg:'Guardian occupation is required'};
+  return{ok:true};
+}
+function wireIdentity(prefix,opts={}){
   window._identityWires=window._identityWires||{};
+  const fill=opts.filler||fillIdentity;
   let t,seq=0;
   async function run(){
     const my=++seq;
@@ -521,7 +592,7 @@ function wireIdentity(prefix){
     const sugg=(res&&res.suggestions||[]).map(mapPerson);
     if(res&&res.matched&&res.tier<=2){
       const p=mapPerson(res.person);
-      fillIdentity(prefix,p);
+      fill(prefix,p);
       renderMatchList(prefix,null);
       setMatch(prefix,{ok:true,tier:res.tier,reason:res.reason,person:p});
     }else if(res&&res.tier===3){
@@ -538,12 +609,12 @@ function wireIdentity(prefix){
       setMatch(prefix,{info:true,reason:res.reason});
     }else setMatch(prefix,null);
   }
-  ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{
+  ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation','permanent','purpose','relationship'].forEach(k=>{
     const el=document.getElementById(prefix+'-'+k);
     if(el)el.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(run,220)});
   });
   run();
-  const ctl={read:()=>readIdentity(prefix),fill:p=>fillIdentity(prefix,p),clear:()=>clearIdentity(prefix),refresh:run,pick:p=>{renderMatchList(prefix,null);fillIdentity(prefix,p);setMatch(prefix,{ok:true,person:p,reason:'Matched Central Person selected'})}};
+  const ctl={read:()=>readIdentity(prefix),fill:p=>fill(prefix,p),clear:()=>clearIdentity(prefix),refresh:run,pick:p=>{renderMatchList(prefix,null);fill(prefix,p);setMatch(prefix,{ok:true,person:p,reason:'Matched Central Person selected'})}};
   window._identityWires[prefix]=ctl;return ctl;
 }
 async function upsertPerson(data){
@@ -625,17 +696,29 @@ function openAddSuspect(){
       <div class="field"><label>Linked case (optional)</label><select id="spCase">${caseOptions('')}</select></div>
       <div class="role-select"><label class="muted" style="font-weight:700">Origin / reference</label><select id="spOrigin"><option>Direct Intelligence Listing</option><option>Manual Entry</option></select></div>
     </div>
-    <div class="field"><label>Note (optional)</label><textarea id="spNote" placeholder="Source of intelligence, last known location, description…"></textarea></div>
+    <div class="field"><label>Suspect reason / alert details <span id="spReasonReq" style="color:var(--red)">(required)</span></label><textarea id="spNote" placeholder="Reason for listing, source of intelligence, last known location, description…"></textarea></div>
+    <div class="hint" id="spReasonHint" style="margin-top:-4px">Required when no crime case is linked. When a case <b>is</b> linked it defaults to the case details.</div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitAddSuspect()">Add suspect</button>`);
   const sc=document.getElementById('spCase');
-  sc.onchange=()=>{spOrigin.disabled=!!sc.value};
+  function refreshReason(){spOrigin.disabled=!!sc.value;
+    document.getElementById('spReasonReq').textContent=sc.value?'(optional — defaults to case details)':'(required)';
+    document.getElementById('spReasonHint').textContent=sc.value?'When a case is linked, an empty reason is filled automatically with the case details.':'Required when no crime case is linked — the reason / alert details are mandatory.';
+    if(sc.value&&!document.getElementById('spNote').value){
+      const c=db.cases.find(x=>x.id===sc.value);
+      document.getElementById('spNote').placeholder=c?`Defaults to: Linked to CID case ${c.id} — ${c.category}`:'';
+    }
+  }
+  sc.onchange=refreshReason;
+  refreshReason();
   wireIdentity('sp');
 }
 async function submitAddSuspect(){
   const d=window._identityWires.sp.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
   const caseId=val('spCase'),origin=caseId?'Case Link':val('spOrigin');
-  const payload={...identityServer(d),case_id:caseId||null,role:'Suspect',origin,notes:val('spNote')};
+  const reason=val('spNote');
+  if(!caseId&&!reason){toast('Suspect reason / alert details is required for unlinked suspects',true);return}
+  const payload={...identityServer(d),case_id:caseId||null,role:'Suspect',origin,notes:reason};
   try{
     let msg;
     if(serverOn){
@@ -645,7 +728,10 @@ async function submitAddSuspect(){
       const p=await ensureLocalIdentity(d);
       const dup=db.suspects.find(s=>s.person===p.id&&(s.case||'')===(caseId||'')&&s.alert==='Active alert');
       if(dup)throw new Error('An active alert already lists this person'+(caseId?' for '+caseId:' without a linked case'));
-      db.suspects.unshift({person:p.id,case:caseId||'',role:'Suspect',alert:'Active alert',origin});
+      if(!caseId&&!reason)throw new Error('Suspect reason / alert details is required for unlinked suspects');
+      const cCase=caseId?(db.cases.find(x=>x.id===caseId)||db.cases.find(x=>x.code===caseId)):null;
+      const finalReason=reason||(cCase?('Linked to CID case '+(cCase.code||caseId)+' — '+(cCase.category||'')):reason);
+      db.suspects.unshift({person:p.id,case:caseId||'',role:'Suspect',alert:'Active alert',origin,reason:finalReason});
       persist();msg='Suspect '+p.id+(caseId?' linked to '+caseId:' listed without a case — '+origin)+' (local demo)';
     }
     closeDrawer();await syncServer();toast(msg);
@@ -679,7 +765,11 @@ function renderAll(){
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">No passenger records</td></tr>';
   renderCases();
   suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?esc(x.case):'<span class="badge amber">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active alerts</td></tr>';
-  cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td><td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">No stops recorded</td></tr>';
+  cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td>
+    <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
+    <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
+    <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
+    <td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No stops recorded</td></tr>';
   activity.innerHTML=`<div class="event"><span class="dot"></span><div><b>${db.fingerprint.length} clearance application(s)</b><small>${db.fingerprint.filter(x=>x.status==='Pending Review').length} pending review · Fingerprint Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--amber)"></span><div><b>${db.cases.filter(x=>x.status!=='Closed').length} open crime case(s)</b><small>CID Criminal Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--green)"></span><div><b>${db.checkpoints.length} checkpoint screening event(s)</b><small>${db.checkpoints.filter(x=>x.screen==='Flagged match').length} flagged match(es) · Checkpoint operations</small></div></div>
@@ -803,6 +893,7 @@ function renderCwEvidence(list){
 async function addParticipant(){
   const d=window._identityWires.cw.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
   const role=cwRole.value,note=cwPartNote.value.trim(),caseId=val('cwCaseSel')||null;
+  if(!caseId&&!note){toast('Participant note / reason is required when no case is linked',true);return}
   try{
     if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({...identityServer(d),case_id:caseId,role,notes:note,origin:caseId?'Case Link':'Direct Intelligence Listing'})});
     else{const c=db.cases.find(x=>x.id===cwCase);const p=await ensureLocalIdentity(d);
@@ -832,24 +923,55 @@ async function uploadEvidence(){
 // ============================ checkpoints ============================
 function openCheckpointDrawer(){
   openDrawer('Record checkpoint stop',`
-   <div class="hint" style="margin-bottom:14px">Type the identity below — the Central Person Registry is matched <b>in real time</b>. If no exact match exists a new Central Person is created automatically on save.</div>
-   <form class="form">
-    ${identityFormHTML('cp')}
-    <div class="section-label">Screening</div>
+   <div class="hint" style="margin-bottom:14px">Structured screening: both the <b>traveler</b> and the <b>guardian</b> are matched against the Central Person Registry <b>in real time</b> — select a match to auto-fill, or type a new identity.</div>
+   <form class="form" id="cpForm">
+    <div class="section-label">Traveler — screening &amp; identity</div>
+    ${travelerFormHTML('cp')}
+    <div class="section-label">Guardian — next of kin / companion</div>
+    ${guardianFormHTML('gd')}
+    <div class="section-label">Checkpoint screening</div>
     <div class="grid2">
      <div class="field"><label>Checkpoint</label><select id="cpLoc"><option>South</option><option>West</option><option>East</option></select></div>
-     <div class="field"><label>Notes (optional)</label><input id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></div>
+     <div class="field"><label>Officer notes (optional)</label><input id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></div>
     </div>
     <div class="hint" id="cpScreenHint">Screening runs automatically against active suspect alerts.</div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
+  buildFileSlots('cpDocs','tdoc',2,['Traveler document 1 *','Traveler document 2 (optional)']);
+  buildFileSlots('gdDocs','gdoc',2,['Guardian document 1 *','Guardian document 2 (optional)']);
   wireIdentity('cp');
+  wireIdentity('gd',{filler:fillGuardian});
+  const ph=document.getElementById('cp-photo');
+  if(ph)ph.addEventListener('change',()=>{
+    const f=ph.files[0],pv=document.getElementById('cp-photoPrev');
+    if(f&&pv){try{const r=new FileReader();r.onload=()=>{pv.src=r.result;pv.style.display='block'};r.readAsDataURL(f)}catch(e){pv.style.display='none'}}
+    else if(pv)pv.style.display='none';
+  });
 }
 async function submitCheckpoint(){
-  const d=window._identityWires.cp.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  const d=window._identityWires.cp.read(),v=validateTraveler(d);if(!v.ok){toast(v.msg,true);return}
+  const gd=window._identityWires.gd.read(),gv=validateGuardian(gd);if(!gv.ok){toast(gv.msg,true);return}
+  const trDocs=collectFiles('tdoc',2),gdDocs=collectFiles('gdoc',2);
+  if(trDocs.length<1){toast('Attach at least 1 traveler document',true);return}
+  if(gdDocs.length<1){toast('Attach at least 1 guardian document',true);return}
+  const photo=document.getElementById('cp-photo').files[0];
+  if(!photo){toast('Real-time traveler photo is required',true);return}
+  const gmatched=(window._identityMatches&&window._identityMatches.gd)||null;
   try{
     if(serverOn){
-      const r=await api('/api/checkpoint-events',{method:'POST',body:JSON.stringify({...identityServer(d),location:cpLoc.value,notes:cpNotes.value})});
+      const fd=new FormData();
+      const fields={...identityServer(d),current_address:d.address,permanent_address:d.permanent,
+        purpose_of_visit:d.purpose,location:cpLoc.value,notes:cpNotes.value,
+        guardian_first_name:gd.first,guardian_second_name:gd.second,guardian_third_name:gd.third,
+        guardian_fourth_name:gd.fourth,guardian_name:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
+        guardian_relationship:gd.relationship,guardian_phone:gd.phone,guardian_address:gd.permanent,
+        guardian_occupation:gd.occupation,guardian_national_id:gd.national,guardian_passport_id:gd.passport,
+        guardian_person_id:gmatched||''};
+      Object.entries(fields).forEach(([k,v])=>fd.append(k,String(v??'')));
+      trDocs.forEach((f,i)=>fd.append('doc_tr_'+i,f));
+      gdDocs.forEach((f,i)=>fd.append('doc_gd_'+i,f));
+      fd.append('photo',photo);
+      const r=await api('/api/checkpoint-events',{method:'POST',body:fd});
       closeDrawer();await syncServer();
       toast(r.alerted?`⚠ ${r.location}: potential suspect match — supervisor notified`:'Person screened — no active alert');
       return;
@@ -857,7 +979,11 @@ async function submitCheckpoint(){
     const p=await ensureLocalIdentity(d);
     const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
     const now=new Date().toLocaleString([],{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-    db.checkpoints.unshift({time:now,location:cpLoc.value,person:p.id,screen:flagged?'Flagged match':'No active alert',action:flagged?'Supervisor contacted':'Cleared',notes:cpNotes.value});
+    db.checkpoints.unshift({time:now,location:cpLoc.value,person:p.id,screen:flagged?'Flagged match':'No active alert',
+      action:flagged?'Supervisor contacted':'Cleared',notes:cpNotes.value,purpose:d.purpose,currentAddress:d.address,
+      permanentAddress:d.permanent,guardianName:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
+      guardianRelationship:gd.relationship,guardianPhone:gd.phone,guardianAddress:gd.permanent,guardianOccupation:gd.occupation,
+      travelerDocs:trDocs.length,guardianDocs:gdDocs.length,photoName:photo.name});
     persist();closeDrawer();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
   }catch(e){toast(e.message,true)}
 }
@@ -875,7 +1001,13 @@ async function syncServer(){
     db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
     db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
     db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
-    db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),location:x.location,person:x.person_id,screen:x.screening_result,action:x.action_taken,notes:x.notes}));
+    const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
+    db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),location:x.location,person:x.person_id,
+      screen:x.screening_result,action:x.action_taken,notes:x.notes,purpose:x.purpose_of_visit,
+      currentAddress:x.current_address,permanentAddress:x.permanent_address,photo:x.traveler_photo,
+      travelerDocs:parseDocs(x.traveler_docs).length,guardianDocs:parseDocs(x.guardian_docs).length,
+      guardianName:x.guardian_name,guardianRelationship:x.guardian_relationship,guardianPhone:x.guardian_phone,
+      guardianAddress:x.guardian_address,guardianOccupation:x.guardian_occupation,guardianPerson:x.guardian_person_id}));
     renderAll();
   }catch(e){serverOn=false;apiToken='';document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">local demo (browser storage)</span>';console.warn('Local demo mode:',e.message)}
 }

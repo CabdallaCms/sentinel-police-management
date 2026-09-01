@@ -92,6 +92,12 @@ CREATE TABLE IF NOT EXISTS checkpoint_events(
   person_id INTEGER NOT NULL REFERENCES persons(id),
   location TEXT NOT NULL, screening_result TEXT NOT NULL,
   action_taken TEXT NOT NULL DEFAULT 'Cleared', notes TEXT,
+  purpose_of_visit TEXT, current_address TEXT, permanent_address TEXT,
+  traveler_photo TEXT, traveler_docs TEXT,
+  guardian_person_id INTEGER REFERENCES persons(id),
+  guardian_name TEXT, guardian_relationship TEXT, guardian_phone TEXT,
+  guardian_address TEXT, guardian_occupation TEXT,
+  guardian_national_id TEXT, guardian_passport_id TEXT, guardian_docs TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -131,6 +137,22 @@ ADDED_COLUMNS = {
     'suspect_alerts': [
         ('role', "ALTER TABLE suspect_alerts ADD COLUMN role TEXT NOT NULL DEFAULT 'Suspect'"),
         ('origin', "ALTER TABLE suspect_alerts ADD COLUMN origin TEXT NOT NULL DEFAULT 'Direct Intelligence Listing'"),
+    ],
+    'checkpoint_events': [
+        ('purpose_of_visit', "ALTER TABLE checkpoint_events ADD COLUMN purpose_of_visit TEXT"),
+        ('current_address', "ALTER TABLE checkpoint_events ADD COLUMN current_address TEXT"),
+        ('permanent_address', "ALTER TABLE checkpoint_events ADD COLUMN permanent_address TEXT"),
+        ('traveler_photo', "ALTER TABLE checkpoint_events ADD COLUMN traveler_photo TEXT"),
+        ('traveler_docs', "ALTER TABLE checkpoint_events ADD COLUMN traveler_docs TEXT"),
+        ('guardian_person_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_person_id INTEGER REFERENCES persons(id)"),
+        ('guardian_name', "ALTER TABLE checkpoint_events ADD COLUMN guardian_name TEXT"),
+        ('guardian_relationship', "ALTER TABLE checkpoint_events ADD COLUMN guardian_relationship TEXT"),
+        ('guardian_phone', "ALTER TABLE checkpoint_events ADD COLUMN guardian_phone TEXT"),
+        ('guardian_address', "ALTER TABLE checkpoint_events ADD COLUMN guardian_address TEXT"),
+        ('guardian_occupation', "ALTER TABLE checkpoint_events ADD COLUMN guardian_occupation TEXT"),
+        ('guardian_national_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_national_id TEXT"),
+        ('guardian_passport_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_passport_id TEXT"),
+        ('guardian_docs', "ALTER TABLE checkpoint_events ADD COLUMN guardian_docs TEXT"),
     ],
 }
 
@@ -492,14 +514,14 @@ def resolve_identity(c, data):
         'auto_merge': tier in (1, 2),
     }
 
-def create_person(c, data, photo_path=None):
+def create_person(c, data, photo_path=None, allow_no_id=False):
     """Create a new central person record. Returns (row, True)."""
     full_name = build_full_name(data)
     if not full_name:
         raise ValueError('Full name is required')
     national_id = (data.get('national_id') or '').strip().upper()
     passport_id = (data.get('passport_id') or '').strip().upper()
-    if not national_id and not passport_id:
+    if not national_id and not passport_id and not allow_no_id:
         raise ValueError('National ID or Passport ID is required')
     a, b, d, e = raw_parts(full_name)
     pid = new_person_id(c)
@@ -513,7 +535,7 @@ def create_person(c, data, photo_path=None):
                passport_id, photo_path))
     return rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (pid,)).fetchone()), True
 
-def upsert_person(c, data, photo_path=None):
+def upsert_person(c, data, photo_path=None, allow_no_id=False):
     """Smart identity resolution + merge.
 
     Tier 1 (exact ID/passport) and Tier 2 (exact 4-part name + DOB) records are
@@ -537,9 +559,9 @@ def upsert_person(c, data, photo_path=None):
             params.append(pid)
             c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=?", params)
         return rowdict(c.execute('SELECT * FROM persons WHERE id=?', (pid,)).fetchone()), False
-    return create_person(c, data, photo_path)
+    return create_person(c, data, photo_path, allow_no_id)
 
-def ensure_person(c, data, photo_path=None):
+def ensure_person(c, data, photo_path=None, allow_no_id=False):
     """Resolve an existing person_id or auto-create the Central Person record
     from the identity fields carried by a unit request. Returns (row, created)."""
     pid = norm(data.get('person_id'))
@@ -550,7 +572,7 @@ def ensure_person(c, data, photo_path=None):
                            ('first_name','second_name','third_name','fourth_name','full_name',
                             'national_id','passport_id','mother_name'))
     if identity_present:
-        return upsert_person(c, data, photo_path)
+        return upsert_person(c, data, photo_path, allow_no_id)
     raise ValueError('A person_id or person identity fields are required')
 
 def identity_result(c, data, person):
@@ -603,6 +625,7 @@ class API(BaseHTTPRequestHandler):
     # ---- GET ----------------------------------------------------------------
     def do_GET(self):
         if self.serve_static(self.path) is not None: return
+        c = None
         try:
             p = urlparse(self.path)
             if p.path == '/api/health':
@@ -673,17 +696,26 @@ class API(BaseHTTPRequestHandler):
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path == '/api/checkpoint-events':
                 rows = c.execute('''SELECT ce.event_id,ce.location,ce.screening_result,ce.action_taken,
-                    ce.notes,ce.created_at,p.person_id,p.full_name,p.national_id FROM checkpoint_events ce
+                    ce.notes,ce.created_at,ce.purpose_of_visit,ce.current_address,ce.permanent_address,
+                    ce.traveler_photo,ce.traveler_docs,ce.guardian_person_id,ce.guardian_name,
+                    ce.guardian_relationship,ce.guardian_phone,ce.guardian_address,ce.guardian_occupation,
+                    ce.guardian_national_id,ce.guardian_passport_id,ce.guardian_docs,
+                    p.person_id,p.full_name,p.national_id,p.passport_id FROM checkpoint_events ce
                     JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
-        except PermissionError as e: self.send_json(401,{'error':str(e)})
-        except Exception as e: self.send_json(500,{'error':str(e)})
+        except PermissionError as e:
+            if c: c.close()
+            self.send_json(401,{'error':str(e)})
+        except Exception as e:
+            if c: c.close()
+            self.send_json(500,{'error':str(e)})
 
     # ---- POST ---------------------------------------------------------------
     def do_POST(self):
+        c = None
         try:
             p = urlparse(self.path)
             if p.path == '/api/login':
@@ -788,16 +820,23 @@ class API(BaseHTTPRequestHandler):
                 result = {'evidence_id':eid,'file_path':meta['path']}
             elif p.path == '/api/suspect-alerts':
                 data = body_json(self)
-                person, created = ensure_person(c, data)
-                if created:
-                    audit(c,user,'CREATE','person',person['person_id'],'auto-created from suspect listing')
                 case = None
                 case_id = (data.get('case_id') or '').strip()
                 if case_id:
-                    case = c.execute('SELECT id,case_id FROM crime_cases WHERE case_id=?',(case_id,)).fetchone()
+                    case = c.execute('SELECT id,case_id,category FROM crime_cases WHERE case_id=?',(case_id,)).fetchone()
                     if not case: raise ValueError('case_id must refer to an existing CID case')
+                reason = (data.get('notes') or data.get('reason') or '').strip()
+                if case and not reason:
+                    # Case-linked suspects default the reason to the case details.
+                    reason = f'Linked to CID case {case["case_id"]} \u2014 {case["category"]}'
+                elif not case and not reason:
+                    raise ValueError('Suspect reason / alert details is required for unlinked suspects '
+                                     '(Direct Intelligence Listing / Manual Entry)')
                 origin = (data.get('origin') or '').strip()
                 if not origin: origin = 'Case Link' if case else 'Direct Intelligence Listing'
+                person, created = ensure_person(c, data)
+                if created:
+                    audit(c,user,'CREATE','person',person['person_id'],'auto-created from suspect listing')
                 if case:
                     dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id=? AND alert_status=?',
                                     (person['id'],case['id'],'Active alert')).fetchone()
@@ -811,17 +850,65 @@ class API(BaseHTTPRequestHandler):
                 alert_id = 'AL-'+secrets.token_hex(4)
                 c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,origin,notes,created_by)
                     VALUES(?,?,?,?,?,?,?,?)''',(alert_id,person['id'], case['id'] if case else None,
-                    data.get('role','Suspect'),'Active alert',origin,data.get('notes',''),user['id']))
+                    data.get('role','Suspect'),'Active alert',origin,reason,user['id']))
                 audit(c,user,'CREATE','suspect_alert',alert_id,
                       data.get('case_id','') or ('no case - '+origin)); c.commit()
                 result = {'alert_id':alert_id,'case_id':case_id or None,'person_id':person['person_id'],
                           'role':data.get('role','Suspect'),'alert_status':'Active alert',
-                          'origin':origin,'identity':identity_result(c,data,person)}
+                          'origin':origin,'reason':reason,'identity':identity_result(c,data,person)}
             elif p.path == '/api/checkpoint-events':
-                data = body_json(self)
-                person, created = ensure_person(c, data)
+                ctype = self.headers.get('Content-Type','')
+                if ctype.startswith('multipart/form-data'):
+                    data, files = parse_multipart(self)
+                else:
+                    data, files = body_json(self), {}
+                # ---- validate everything before any person/file writes ----
+                if not build_full_name(data):
+                    raise ValueError('Traveler full name (4-part) is required')
+                if not (data.get('date_of_birth') or '').strip():
+                    raise ValueError('Traveler date of birth is required')
+                purpose = (data.get('purpose_of_visit') or '').strip()
+                if not purpose: raise ValueError('Purpose of visit is required')
+                current_addr = (data.get('current_address') or data.get('residence') or '').strip()
+                if not current_addr: raise ValueError('Traveler current address is required')
+                tr_keys = sorted(k for k in files if k.startswith('doc_tr_'))
+                gd_keys = sorted(k for k in files if k.startswith('doc_gd_'))
+                if len(tr_keys) < 1: raise ValueError('At least 1 traveler document is required')
+                if 'photo' not in files: raise ValueError('Traveler real-time photo is required')
+                guardian_parts = [str(data.get('guardian_'+k) or '').strip() for k in
+                                  ('first_name','second_name','third_name','fourth_name')]
+                guardian_name = ' '.join(p for p in guardian_parts if p) or (data.get('guardian_name') or '').strip()
+                if not guardian_name:
+                    raise ValueError('Guardian full name is required')
+                if not (data.get('guardian_relationship') or '').strip():
+                    raise ValueError('Guardian relationship is required')
+                if not (data.get('guardian_phone') or '').strip():
+                    raise ValueError('Guardian contact number is required')
+                if not (data.get('guardian_address') or '').strip():
+                    raise ValueError('Guardian permanent address is required')
+                if not (data.get('guardian_occupation') or '').strip():
+                    raise ValueError('Guardian occupation is required')
+                if len(gd_keys) < 1: raise ValueError('At least 1 guardian document is required')
+                # ---- traveler identity (auto-create/merge, IDs optional) ----
+                photo = save_upload(files['photo'])
+                person, created = ensure_person(c, data, photo_path=photo['path'], allow_no_id=True)
                 if created:
                     audit(c,user,'CREATE','person',person['person_id'],'auto-created from checkpoint stop')
+                tr_docs = [save_upload(files[k]) for k in tr_keys]
+                gd_docs = [save_upload(files[k]) for k in gd_keys]
+                gd_identity = {'national_id': data.get('guardian_national_id'),
+                               'passport_id': data.get('guardian_passport_id'),
+                               'first_name': data.get('guardian_first_name'),
+                               'second_name': data.get('guardian_second_name'),
+                               'third_name': data.get('guardian_third_name'),
+                               'fourth_name': data.get('guardian_fourth_name')}
+                guardian_person = None
+                gd_pid = (data.get('guardian_person_id') or '').strip()
+                if gd_pid:
+                    guardian_person = c.execute('SELECT id FROM persons WHERE person_id=?',(gd_pid,)).fetchone()
+                if not guardian_person:
+                    match, _ = find_by_id(c, gd_identity)
+                    guardian_person = c.execute('SELECT id FROM persons WHERE id=?',(match['id'],)).fetchone() if match else None
                 location = (data.get('location') or '').strip()
                 if not location: raise ValueError('location is required')
                 alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=? AND role='Suspect'
@@ -830,23 +917,47 @@ class API(BaseHTTPRequestHandler):
                 action = 'Supervisor contacted' if alerted else 'Cleared'
                 event_id = 'CP-'+str(int(time.time()*1000))[-8:]
                 c.execute('''INSERT INTO checkpoint_events(event_id,person_id,location,screening_result,
-                    action_taken,notes,created_by) VALUES(?,?,?,?,?,?,?)''',
-                    (event_id,person['id'],location,screen,action,(data.get('notes') or '').strip(),user['id']))
+                    action_taken,notes,purpose_of_visit,current_address,permanent_address,traveler_photo,
+                    traveler_docs,guardian_person_id,guardian_name,guardian_relationship,guardian_phone,
+                    guardian_address,guardian_occupation,guardian_national_id,guardian_passport_id,
+                    guardian_docs,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (event_id,person['id'],location,screen,action,(data.get('notes') or '').strip(),
+                     purpose,current_addr,(data.get('permanent_address') or '').strip(),
+                     photo['path'],json.dumps(tr_docs),
+                     guardian_person['id'] if guardian_person else None,
+                     guardian_name,(data.get('guardian_relationship') or '').strip(),
+                     (data.get('guardian_phone') or '').strip(),
+                     (data.get('guardian_address') or '').strip(),
+                     (data.get('guardian_occupation') or '').strip(),
+                     (data.get('guardian_national_id') or '').strip().upper(),
+                     (data.get('guardian_passport_id') or '').strip().upper(),
+                     json.dumps(gd_docs),user['id']))
                 audit(c,user,'CREATE','checkpoint_event',event_id,
                       f"{location}:{screen} for {person['person_id']}"); c.commit()
                 result = {'event_id':event_id,'person_id':person['person_id'],'location':location,
                           'screening_result':screen,'action_taken':action,'alerted':bool(alerted),
+                          'guardian_person_id':guardian_person['person_id'] if guardian_person else None,
+                          'traveler_docs':len(tr_docs),'guardian_docs':len(gd_docs),
                           'identity':identity_result(c,data,person)}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)
-        except PermissionError as e: self.send_json(401,{'error':str(e)})
-        except ValueError as e: self.send_json(400,{'error':str(e)})
-        except sqlite3.IntegrityError as e: self.send_json(409,{'error':'Database constraint failed','details':str(e)})
-        except Exception as e: self.send_json(500,{'error':str(e)})
+        except PermissionError as e:
+            if c: c.close()
+            self.send_json(401,{'error':str(e)})
+        except ValueError as e:
+            if c: c.close()
+            self.send_json(400,{'error':str(e)})
+        except sqlite3.IntegrityError as e:
+            if c: c.close()
+            self.send_json(409,{'error':'Database constraint failed','details':str(e)})
+        except Exception as e:
+            if c: c.close()
+            self.send_json(500,{'error':str(e)})
 
     # ---- PATCH (profile updates / dynamic record updates) --------------------
     def do_PATCH(self):
+        c = None
         try:
             p = urlparse(self.path)
             user = require_auth(self); data = body_json(self); c = db()
@@ -881,9 +992,15 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
-        except PermissionError as e: self.send_json(401,{'error':str(e)})
-        except ValueError as e: self.send_json(400,{'error':str(e)})
-        except Exception as e: self.send_json(500,{'error':str(e)})
+        except PermissionError as e:
+            if c: c.close()
+            self.send_json(401,{'error':str(e)})
+        except ValueError as e:
+            if c: c.close()
+            self.send_json(400,{'error':str(e)})
+        except Exception as e:
+            if c: c.close()
+            self.send_json(500,{'error':str(e)})
 
 if __name__ == '__main__':
     init_db()

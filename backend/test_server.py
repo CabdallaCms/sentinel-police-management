@@ -43,6 +43,29 @@ def request(base, method, path, token=None, body=None):
         return e.code, json.loads(e.read().decode())
 
 
+def multipart_request(base, path, token=None, fields=None, files=None):
+    """POST a multipart/form-data request (fields: {name: value}, files: {name: (filename, bytes)})."""
+    boundary = '----sentinel-test-boundary'
+    lines = []
+    for k, v in (fields or {}).items():
+        lines.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n')
+    for k, (fn, content) in (files or {}).items():
+        lines.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"; filename="{fn}"\r\n'
+                     f'Content-Type: application/octet-stream\r\n\r\n')
+        lines.append(content)
+    lines.append(f'--{boundary}--\r\n')
+    body = b''.join(l.encode('utf-8') if isinstance(l, str) else l for l in lines)
+    req = urllib.request.Request(base + path, data=body, method='POST')
+    req.add_header('Content-Type', f'multipart/form-data; boundary={boundary}')
+    if token:
+        req.add_header('Authorization', 'Bearer ' + token)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
+
+
 def main():
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-test-')
@@ -122,29 +145,39 @@ def main():
                      'fourth_name': 'Aadan'})
         assert r['matched'] and r['tier'] == 4 and r['person']['person_id'] == 'P-0003', r
 
-        # Suspect WITHOUT a case -> origin recorded, person auto-created
+        # Suspect WITHOUT a case and WITHOUT a reason -> 400 (mandatory reason)
+        s, r = request(base, 'POST', '/api/suspect-alerts', token, {
+            'first_name': 'Zakariye', 'second_name': 'Xasan', 'third_name': 'Cali',
+            'fourth_name': 'Axmed', 'date_of_birth': '2000-01-01', 'national_id': '90909090',
+            'mother_name': 'Maryan Cali', 'residence': 'Hargeisa 1', 'origin': 'Manual Entry'})
+        assert s == 400 and 'reason' in r['error'].lower(), r
+
+        # Suspect WITHOUT a case WITH a reason -> origin recorded, person auto-created
         s, r = request(base, 'POST', '/api/suspect-alerts', token, {
             'first_name': 'Zakariye', 'second_name': 'Xasan', 'third_name': 'Cali',
             'fourth_name': 'Axmed', 'date_of_birth': '2000-01-01', 'national_id': '90909090',
             'mother_name': 'Maryan Cali', 'residence': 'Hargeisa 1',
             'origin': 'Direct Intelligence Listing', 'notes': 'market sighting'})
-        assert s == 201 and r['case_id'] is None and r['origin'] == 'Direct Intelligence Listing', r
+        assert s == 201 and r['case_id'] is None and r['origin'] == 'Direct Intelligence Listing' \
+            and r['reason'] == 'market sighting', r
         zak_pid = r['person_id']
 
         # Duplicate no-case suspect -> 409
         s2, _ = request(base, 'POST', '/api/suspect-alerts', token, {
             'first_name': 'Zakariye', 'second_name': 'Xasan', 'third_name': 'Cali',
             'fourth_name': 'Axmed', 'date_of_birth': '2000-01-01', 'national_id': '90909090',
-            'mother_name': 'Maryan Cali', 'residence': 'Hargeisa 1', 'origin': 'Manual Entry'})
+            'mother_name': 'Maryan Cali', 'residence': 'Hargeisa 1', 'origin': 'Manual Entry',
+            'notes': 'duplicate listing'})
         assert s2 == 409, s2
 
-        # Suspect linked to a case -> Case Link origin
+        # Suspect linked to a case without a reason -> reason defaults to case details
         s, r = request(base, 'POST', '/api/suspect-alerts', token, {
             'first_name': 'Ayaan', 'second_name': 'Cabdi', 'third_name': 'Xasan',
             'fourth_name': 'Axmed', 'date_of_birth': '1997-04-18', 'national_id': '10012345',
             'mother_name': 'Faadumo Cali', 'residence': 'Hargeisa, Jigjiga Yar',
             'case_id': 'CID-2026-009', 'role': 'Suspect'})
-        assert s == 201 and r['case_id'] == 'CID-2026-009' and r['origin'] == 'Case Link', r
+        assert s == 201 and r['case_id'] == 'CID-2026-009' and r['origin'] == 'Case Link' \
+            and r['reason'] == 'Linked to CID case CID-2026-009 \u2014 Fraud', r
 
         # Suspect list exposes the case code (or null) for no-case listings
         s, r = request(base, 'GET', '/api/suspect-alerts', token)
@@ -154,14 +187,60 @@ def main():
         assert any(x['person_id'] == zak_pid and x['case_id'] is None
                    and x['origin'] == 'Direct Intelligence Listing' for x in items), items
 
-        # Checkpoint stop for a direct-listed suspect -> Flagged match
-        s, r = request(base, 'POST', '/api/checkpoint-events', token, {
+        # Checkpoint stop: full traveler + guardian multipart (direct-listed suspect -> Flagged)
+        cp_fields = {
             'first_name': 'Zakariye', 'second_name': 'Xasan', 'third_name': 'Cali',
             'fourth_name': 'Axmed', 'date_of_birth': '2000-01-01', 'national_id': '90909090',
-            'mother_name': 'Maryan Cali', 'residence': 'Hargeisa 1',
-            'location': 'West', 'notes': 'pickup truck'})
-        assert s == 201 and r['screening_result'] == 'Flagged match' \
-            and r['action_taken'] == 'Supervisor contacted', r
+            'mother_name': 'Maryan Cali', 'current_address': 'Hargeisa 1', 'permanent_address': 'Burao, Road 4',
+            'purpose_of_visit': 'Family visit', 'location': 'West', 'notes': 'pickup truck',
+            'guardian_first_name': 'Cabdi', 'guardian_second_name': 'Faarax', 'guardian_third_name': 'Cali',
+            'guardian_fourth_name': 'Axmed', 'guardian_relationship': 'Legal Guardian',
+            'guardian_phone': '+252 63 555 0777', 'guardian_address': 'Burao, Road 4',
+            'guardian_occupation': 'Farmer', 'guardian_national_id': '80808080',
+        }
+        cp_files = {
+            'doc_tr_0': ('ticket.pdf', b'%PDF-traveler'),
+            'doc_tr_1': ('hotel.pdf', b'%PDF-hotel'),
+            'doc_gd_0': ('guardian_id.pdf', b'%PDF-guardian'),
+            'photo': ('traveler.jpg', b'\xff\xd8\xff\xe0fakejpeg'),
+        }
+        s, r = multipart_request(base, '/api/checkpoint-events', token, cp_fields, cp_files)
+        assert s == 201, r
+        assert r['screening_result'] == 'Flagged match' and r['action_taken'] == 'Supervisor contacted', r
+        assert r['traveler_docs'] == 2 and r['guardian_docs'] == 1, r
+        assert r['guardian_person_id'] is None, r  # guardian is stored event-scoped unless centrally known
+
+        # Checkpoint stop: traveler WITHOUT any ID auto-creates a central person
+        cp_fields2 = dict(cp_fields)
+        cp_fields2['first_name'] = 'Fadumo'; cp_fields2['second_name'] = 'Cali'
+        cp_fields2['third_name'] = 'Xasan'; cp_fields2['fourth_name'] = 'Axmed'
+        cp_fields2['date_of_birth'] = '1994-09-09'; cp_fields2.pop('national_id', None)
+        cp_fields2['current_address'] = 'Hargeisa, Airport Rd'; cp_fields2['location'] = 'East'
+        cp_files2 = {'doc_tr_0': ('ticket2.pdf', b'%PDF-traveler2'),
+                     'doc_gd_0': ('guardian2.pdf', b'%PDF-guardian2'),
+                     'doc_gd_1': ('guardian3.pdf', b'%PDF-guardian3'),
+                     'photo': ('traveler2.jpg', b'\xff\xd8\xff\xe0fakejpeg2')}
+        s, r2 = multipart_request(base, '/api/checkpoint-events', token, cp_fields2, cp_files2)
+        assert s == 201 and r2['identity']['person_id'], r2
+        noid_pid = r2['identity']['person_id']
+        s, r2 = request(base, 'GET', '/api/persons/' + noid_pid, token)
+        assert s == 200 and not r2.get('national_id') and r2['full_name'] == 'Fadumo Cali Xasan Axmed', r2
+
+        # Missing traveler doc / guardian doc / photo -> 400
+        s, r = multipart_request(base, '/api/checkpoint-events', token, cp_fields,
+                                 {'photo': ('p.jpg', b'x')})
+        assert s == 400, r
+        s, r = multipart_request(base, '/api/checkpoint-events', token, cp_fields,
+                                 {'doc_tr_0': ('t.pdf', b'x'), 'photo': ('p.jpg', b'x')})
+        assert s == 400, r
+
+        # Stored checkpoint item exposes traveler + guardian + docs
+        s, r = request(base, 'GET', '/api/checkpoint-events', token)
+        assert s == 200, r
+        item = next(x for x in r['items'] if x['person_id'] == zak_pid)
+        assert item['purpose_of_visit'] == 'Family visit' and item['guardian_name'] == 'Cabdi Faarax Cali Axmed', item
+        assert item['guardian_relationship'] == 'Legal Guardian' and len(json.loads(item['guardian_docs'])) == 1, item
+        assert len(json.loads(item['traveler_docs'])) == 2 and item['traveler_photo'], item
 
         # Airport record auto-creates the central person
         s, r = request(base, 'POST', '/api/airport-records', token, {
