@@ -1,0 +1,12 @@
+{
+  "name": "sentinel-ui-smoke",
+  "private": true,
+  "description": "Optional browser-level smoke tests for the Sentinel UI (jsdom). The dependency-free gate is `python3 test_ui.py` at the repo root.",
+  "scripts": {
+    "test:local": "node smoke.local.cjs",
+    "test:server": "node smoke.server.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}
