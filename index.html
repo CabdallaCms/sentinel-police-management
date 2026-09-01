@@ -95,6 +95,11 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .id-form .section-label{margin-top:2px}
 .m-bannerrow{display:flex;gap:10px;align-items:center}
 .m-face{width:34px;height:34px;border-radius:8px;object-fit:cover;background:#eaf0ff;flex:none}
+/* locked (read-only) auto-filled identity fields — only non-empty values lock; blank stay editable */
+.field input.locked,.field select.locked,.field textarea.locked{background:#f3f6fb;color:#42506b;cursor:not-allowed;border-color:#e3e9f2}
+.field input.locked:focus,.field select.locked:focus,.field textarea.locked:focus{border-color:#e3e9f2;box-shadow:none}
+/* incomplete-matched-profile info tag */
+.m-incomplete{display:block;margin-top:8px;padding:7px 10px;border-radius:8px;background:#fff7e6;border:1px solid #f0dcae;color:#7a5b17;font-weight:600;font-size:12px}
 /* interactive matching dropdown */
 .m-matchlist{border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);background:#fff;overflow:hidden;margin-bottom:10px;display:none}
 .m-matchlist.show{display:block}
@@ -478,15 +483,32 @@ function readIdentity(prefix){
     address:g(prefix+'-address'),phone:g(prefix+'-phone'),pob:g(prefix+'-pob'),occupation:g(prefix+'-occupation'),
     permanent:g(prefix+'-permanent'),purpose:g(prefix+'-purpose'),relationship:g(prefix+'-relationship')};
 }
+function setLocked(el,val){
+  if(!el)return;
+  const t=String(val==null?'':val).trim();
+  el.readOnly=!!t;
+  el.classList.toggle('locked',!!t);
+}
+// Fill the identity form from a matched central person. Fields with actual non-empty
+// content are locked (read-only); fields that are blank/null stay fully editable so the
+// officer can complete missing profile data. Officer-entered input is never clobbered.
 function fillIdentity(prefix,p){
   const map={first:'first',second:'second',third:'third',fourth:'fourth',dob:'dob',national:'nationalId',
     passport:'passportId',mother:'motherName',address:'residence',phone:'phone',pob:'pob',occupation:'occupation'};
-  Object.entries(map).forEach(([k,key])=>{const el=document.getElementById(prefix+'-'+k);if(el&&p[key]!=null)el.value=p[key]||''});
+  Object.entries(map).forEach(([k,key])=>{
+    const el=document.getElementById(prefix+'-'+k);if(!el)return;
+    const val=p[key]!=null?String(p[key]):'';
+    // Preserve officer-entered input: skip any field they have changed since it was last auto-filled.
+    if(el.dataset.auto!==undefined && el.value!==el.dataset.auto && val!==el.value)return;
+    el.value=val;el.dataset.auto=val;setLocked(el,val);
+  });
   const pv=document.getElementById(prefix+'-photoPrev');
   if(pv){const src=p.photoPath||p.photoUrl||'';if(src){pv.src=src;pv.style.display='block'}else pv.style.display='none'}
 }
 function clearIdentity(prefix,p){
-  ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{const el=document.getElementById(prefix+'-'+k);if(el)el.value=''});
+  ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{
+    const el=document.getElementById(prefix+'-'+k);if(el){el.value='';delete el.dataset.auto;setLocked(el,'')}
+  });
   const ph=document.getElementById(prefix+'-photo');if(ph)ph.value='';
   const pv=document.getElementById(prefix+'-photoPrev');if(pv)pv.style.display='none';
   renderMatchList(prefix,null);
@@ -501,6 +523,16 @@ function validateIdentity(d){
   return{ok:true};
 }
 function identityAvatar(p){return (p.photoPath||p.photoUrl)?`<img class="m-face" src="${esc(p.photoPath||p.photoUrl)}" alt="person photo">`:''}
+// Fields that may arrive blank/null on a matched record and are worth completing.
+function missingProfileFields(p){
+  const checks=[['motherName',"Mother's Name"],['occupation','Occupation'],['phone','Contact Number'],
+    ['residence','Address'],['passportId','Passport ID'],['pob','Place of Birth']];
+  return checks.filter(([k])=>!String(p[k]==null?'':p[k]).trim()).map(([,label])=>label);
+}
+function incompleteTag(p){
+  const missing=missingProfileFields(p);if(!missing.length)return '';
+  return `<div class="m-incomplete">ℹ️ Matched Profile: ${esc(p.id)}. Some details (${esc(missing.join(', '))}) are incomplete — fill them in to enrich this central record.</div>`;
+}
 function setMatch(prefix,res){
   const box=document.getElementById(prefix+'-match');if(!box)return;
   window._identityMatches=window._identityMatches||{};
@@ -508,15 +540,15 @@ function setMatch(prefix,res){
   if(res.ok){
     window._identityMatches[prefix]=res.person.id;
     box.className='match-banner ok show';
-    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>✓ Matched Central Record: ${esc(res.person.id)} - ${esc(res.person.name)}</b><small>${esc(res.reason||'')} · existing Central Person registry data auto-populated.</small></div></div>`;
+    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>✓ Matched Central Record: ${esc(res.person.id)} - ${esc(res.person.name)}</b><small>${esc(res.reason||'')} · existing Central Person registry data auto-populated.</small>${incompleteTag(res.person)}</div></div>`;
   }else if(res.warn){
     window._identityMatches[prefix]=null;
     box.className='match-banner warn show';
-    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>⚠ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')} — this is a fuzzy warning, not an automatic match. Select the record below to confirm.</small></div></div>`;
+    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>⚠ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')} — this is a fuzzy warning, not an automatic match. Select the record below to confirm.</small>${incompleteTag(res.person)}</div></div>`;
   }else if(res.suggest){
     window._identityMatches[prefix]=null;
     box.className='match-banner info show';
-    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>ℹ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')}</small></div></div>`;
+    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>ℹ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')}</small>${incompleteTag(res.person)}</div></div>`;
   }else if(res.info){
     window._identityMatches[prefix]=null;
     box.className='match-banner info show';
@@ -597,12 +629,12 @@ function guardianFormHTML(prefix){
 }
 function fillGuardian(prefix,p){
   fillIdentity(prefix,p);
-  const per=document.getElementById(prefix+'-permanent');
-  if(per&&p.residence!=null)per.value=p.residence||'';
-  const ph=document.getElementById(prefix+'-phone');
-  if(ph&&!ph.value&&p.phone)ph.value=p.phone;
-  const oc=document.getElementById(prefix+'-occupation');
-  if(oc&&!oc.value&&p.occupation)oc.value=p.occupation;
+  const set=(id,val)=>{const el=document.getElementById(id);if(!el)return;const t=String(val==null?'':val);
+    if(el.dataset.auto!==undefined&&el.value!==el.dataset.auto&&t!==el.value)return;
+    el.value=t;el.dataset.auto=t;setLocked(el,t)};
+  set(prefix+'-permanent',p.residence||'');
+  set(prefix+'-phone',p.phone||'');
+  set(prefix+'-occupation',p.occupation||'');
 }
 function validateTraveler(d){
   if(!d.first||!d.second||!d.third||!d.fourth)return{ok:false,msg:'Enter the traveler full name (first, second, third and fourth names)'};

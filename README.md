@@ -39,7 +39,11 @@ The same interactive matching engine (Tier 1 exact ID/passport auto-merge, Tier 
 
 When a unit record (Airport, Checkpoint, Fingerprint or CID/suspect) links to an **existing Central Person ID**, the backend checks the incoming submission for any values that are still **null/empty** in the person's profile (e.g. Mother's name, Phone, Occupation, Address, Passport ID, photo). It **automatically enriches** the SQLite `persons` record with those non-empty new values **without overwriting existing non-null data** — so an officer can complete a partially-filled profile (e.g. the blank "Mother's name" in the Airport form) and the central record is updated on save.
 
-The same fill-only enrichment applies to the identity-merge path (`/api/persons/upsert` and the unit routes' auto-resolve): matched records never get overwritten, only missing fields are filled. The frontend keeps empty matched fields as editable inputs so the officer can enter the missing details.
+The same fill-only enrichment applies to the identity-merge path (`/api/persons/upsert` and the unit routes' auto-resolve): matched records never get overwritten, only missing fields are filled.
+
+**Locked auto-filled fields (partial-profile completion):** when a Central Person is matched and auto-filled, only the fields with **actual non-empty text** are set to read-only (greyed out). Any field that came back **blank/`null`** (e.g. Mother's name, Occupation, Contact Number, Address) is left **fully editable and active**, so the officer can complete the missing profile data — and the value is enriched into the central record on save. Officer-entered input into those blanks is never clobbered by the live re-match.
+
+When a matched profile is incomplete, an **info tag** appears under the match banner: *"ℹ️ Matched Profile: P-XXXX. Some details (e.g. Mother's Name) are incomplete — fill them in to enrich this central record."*
 
 ### No popups — pages and centered modals
 

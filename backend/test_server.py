@@ -328,6 +328,36 @@ def main():
         assert s == 200 and p.get('passport_id') == 'P0004567', p
         assert p.get('occupation') == 'Nurse', p
 
+        # ---- Name + Passport ONLY (no mother/occupation) -> Airport fills blanks ----
+        # Create a person with only the name parts and a passport id.
+        s, up = request(base, 'POST', '/api/persons/upsert', token, {
+            'first_name': 'Nuur', 'second_name': 'Cali', 'third_name': 'Aadan',
+            'fourth_name': 'Xasan', 'date_of_birth': '1987-07-07', 'passport_id': 'P5550011'})
+        assert s == 201, up
+        blank_pid = up['person']['person_id']
+        s, p = request(base, 'GET', '/api/persons/' + blank_pid, token)
+        assert s == 200 and not str(p.get('mother_name') or '').strip(), p
+        assert not str(p.get('occupation') or '').strip(), p
+
+        # Match in Airport Control (links by person_id + passport) and complete blanks.
+        s, r = request(base, 'POST', '/api/airport-records', token, {
+            'person_id': blank_pid, 'first_name': 'Nuur', 'second_name': 'Cali',
+            'third_name': 'Aadan', 'fourth_name': 'Xasan', 'date_of_birth': '1987-07-07',
+            'passport_id': 'P5550011', 'mother_name': 'Hawa Aadan', 'occupation': 'Nurse',
+            'residence': 'Hargeisa, Jigjiga Yar', 'movement': 'Departure',
+            'travel_date': '2026-09-10', 'flight_number': 'HL-707', 'airline': 'Sentinel Air',
+            'origin_city': 'Hargeisa', 'destination_city': 'Bosaso'})
+        assert s == 201 and r['identity'].get('matched') and r['identity']['person_id'] == blank_pid, r
+
+        # Central record is enriched with the newly completed blanks (never dup).
+        s, p = request(base, 'GET', '/api/persons/' + blank_pid, token)
+        assert s == 200 and p.get('mother_name') == 'Hawa Aadan', p
+        assert p.get('occupation') == 'Nurse', p
+        assert p.get('passport_id') == 'P5550011', p
+        s, ar = request(base, 'GET', '/api/airport-records', token)
+        item = next(x for x in ar['items'] if x['person_id'] == blank_pid)
+        assert item['airline'] == 'Sentinel Air' and item['flight_number'] == 'HL-707', item
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:
