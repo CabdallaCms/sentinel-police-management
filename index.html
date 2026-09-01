@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Sentinel Police Management</title>
 <style>
-:root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
+:root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--purple:#7048c4;--shadow:0 8px 28px #1020400d}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial;color:var(--ink);background:var(--bg)}
 button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
-.app{display:flex;min-height:100vh}.side{width:250px;background:var(--navy);color:#dce7f8;padding:24px 16px;position:fixed;height:100vh;overflow:auto}
+.app{display:flex;height:100vh;overflow:hidden}.side{width:250px;background:var(--navy);color:#dce7f8;padding:24px 16px;position:fixed;height:100vh;overflow:auto}
 .brand{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:800;letter-spacing:-.4px;padding:4px 10px 30px}
 .crest{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#3c83ff,#18c4ad);display:grid;place-items:center;color:white;font-weight:900}
 .side small{color:#88a0c2;text-transform:uppercase;font-size:10px;letter-spacing:1.5px;padding:0 12px}
@@ -16,7 +16,8 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .nav button{background:transparent;color:#b9cae4;text-align:left;padding:12px 13px;border-radius:10px;font-weight:600;display:flex;gap:12px;align-items:center;width:100%}
 .nav button.active,.nav button:hover{background:#233b63;color:#fff}.nav i{font-style:normal;width:20px;text-align:center}
 .side-footer{margin-top:26px;color:#8ea5c5;font-size:12px;line-height:1.6;padding:0 12px}
-.main{margin-left:250px;width:calc(100% - 250px);padding:28px 36px}
+.main{margin-left:250px;width:calc(100% - 250px);padding:28px 36px;height:100vh;overflow-y:auto;overscroll-behavior:contain}
+body.modal-open{overflow:hidden}body.modal-open .main{overflow:hidden}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
 .eyebrow{color:var(--blue);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px}
 .top h1{margin:5px 0 0;font-size:29px;letter-spacing:-1px}
@@ -42,16 +43,31 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .section-label{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--blue);margin:4px 0 2px;border-bottom:2px solid #eef3ff;padding-bottom:6px}
 .search{position:relative}.search input{width:100%;padding:12px 14px 12px 38px;border:1px solid var(--line);border-radius:9px}
 .search span{position:absolute;left:14px;top:10px;color:#8c99ad}
-.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;font-size:13px}
-.table th{text-align:left;color:#75839a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:11px 10px;border-bottom:1px solid var(--line)}
-.table td{padding:13px 10px;border-bottom:1px solid #edf1f6;vertical-align:middle}
-.table tr:last-child td{border-bottom:0}
+/* standardized table container card + sticky headers */
+.table-card{display:flex;flex-direction:column;min-height:0;flex:1}
+.table-wrap{overflow:auto;overflow-x:auto;max-height:calc(100vh - 280px);min-height:0;flex:1;border:1px solid var(--line);border-radius:12px;background:#fff;position:relative;overscroll-behavior:contain}
+.table-wrap.compact{max-height:calc(100vh - 420px)}
+.table-wrap,.table-wrap.compact{min-height:180px}
+.table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.table thead{position:sticky;top:0;z-index:5}
+.table th{position:sticky;top:0;z-index:5;text-align:left;color:#5b6a83;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:12px 10px;background:#f7f9fd;box-shadow:inset 0 -1px 0 var(--line);white-space:nowrap}
+.table th:first-child{border-top-left-radius:12px}.table th:last-child{border-top-right-radius:12px}
+.table th.col-actions,.table td.col-actions{text-align:right;white-space:nowrap}
+.table td{padding:13px 10px;border-bottom:1px solid #edf1f6;vertical-align:middle;background:#fff}
+.table tbody tr:last-child td{border-bottom:0}
 .table tr.clickable{cursor:pointer}.table tr.clickable:hover td{background:#f8faff}
+.table-foot{flex:none;padding:9px 4px 0;color:var(--muted);font-size:11.5px;display:flex;justify-content:space-between;gap:10px}
 .person{display:flex;align-items:center;gap:10px}.mini{width:30px;height:30px;border-radius:8px;background:#eaf0ff;color:var(--blue);display:grid;place-items:center;font-size:11px;font-weight:800;overflow:hidden}
 .mini img{width:100%;height:100%;object-fit:cover}
-.badge{display:inline-flex;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700}
-.badge.green{background:#e3f7f1;color:var(--green)}.badge.amber{background:#fff3d9;color:var(--amber)}
-.badge.red{background:#ffeaec;color:var(--red)}.badge.blue{background:#eaf0ff;color:var(--blue)}.badge.gray{background:#eef1f6;color:#5b6779}
+/* standardized status pill badges */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:99px;font-size:11px;font-weight:700;line-height:1.5;border:1px solid transparent;white-space:nowrap}
+.badge.green,.badge.cleared{background:#e3f7f1;color:var(--green);border-color:#bfe9dc}
+.badge.amber,.badge.pending{background:#fff3d9;color:var(--amber);border-color:#f2ddb0}
+.badge.red,.badge.alert{background:#ffeaec;color:var(--red);border-color:#f6ccd1}
+.badge.blue,.badge.manual{background:#eaf0ff;color:var(--blue);border-color:#cfdcfb}
+.badge.purple,.badge.linked{background:#f1ebff;color:var(--purple);border-color:#ded0fb}
+.badge.gray{background:#eef1f6;color:#5b6779;border-color:#e0e5ee}
+.badge+.badge{margin-left:4px}
 .hint{background:#edf7ff;border:1px solid #cfe7ff;color:#24527e;border-radius:9px;padding:12px;font-size:12px;line-height:1.5}
 .empty{text-align:center;color:var(--muted);padding:30px}
 .notice{padding:12px 14px;border-radius:9px;background:#edfaf7;color:#187b67;font-size:13px;font-weight:650;margin-bottom:15px;display:none}
@@ -87,14 +103,21 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .m-item .m-id{color:var(--blue);font-weight:800;font-size:11px;flex:none}
 .m-item.m-new{color:var(--blue);font-weight:700;font-size:12px;background:#f7f9ff}
 .m-photoprev{width:44px;height:44px;border-radius:8px;object-fit:cover;margin-top:6px;display:none}
-/* drawer */
-.overlay{position:fixed;inset:0;background:#0d1b31aa;z-index:1100;display:none}
-.overlay.on{display:block}
-.drawer{position:fixed;top:0;right:-520px;width:500px;max-width:94vw;height:100vh;background:#fff;z-index:1200;box-shadow:-10px 0 40px #10204022;transition:right .22s ease;display:flex;flex-direction:column}
-.drawer.on{right:0}
-.drawer-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
-.drawer-head h3{margin:0;font-size:17px}.drawer-body{padding:20px 22px;overflow-y:auto;flex:1}
-.drawer-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+/* centered modal dialog (replaces the legacy right-side drawer) */
+.overlay{position:fixed;inset:0;background:#0b1526cc;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:1100;display:none;opacity:0;transition:opacity .18s ease}
+.overlay.on{display:block;opacity:1}
+.modal-shell{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:24px}
+.modal-shell.on{display:flex}
+.modal{width:680px;max-width:96vw;max-height:90vh;background:#fff;border-radius:16px;box-shadow:0 26px 70px #0b152659;display:flex;flex-direction:column;overflow:hidden;transform:translateY(10px) scale(.985);opacity:0;transition:transform .18s ease,opacity .18s ease}
+.modal-shell.on .modal{transform:none;opacity:1}
+.modal.wide{width:900px}
+.modal-head{flex:none;padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;background:#fff}
+.modal-head h3{margin:0;font-size:17px;letter-spacing:-.2px}
+.modal-body{padding:20px 22px;overflow-y:auto;overscroll-behavior:contain;max-height:80vh;flex:1 1 auto;min-height:0}
+.modal-foot{flex:none;position:sticky;bottom:0;padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:#fff;box-shadow:0 -6px 18px #10204010}
+.modal-foot:empty{display:none}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:13px;line-height:1.85}
+@media(max-width:650px){.modal-shell{padding:10px}.modal{max-height:94vh}.modal-body{max-height:74vh}}
 .iconbtn{background:#eef1f6;border-radius:8px;width:34px;height:34px;font-size:16px;color:#526075}
 /* file slots */
 .fileslot{border:1.5px dashed #c4d0e3;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;background:#fafcff}
@@ -116,7 +139,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .role-select{display:flex;gap:8px;align-items:center}.role-select select{padding:8px;border-radius:8px;border:1px solid #dce4ef}
 @media(max-width:950px){.side{width:74px;padding:18px 9px}.brand{padding:4px 8px 30px}.brand span,.side small,.nav button span,.side-footer{display:none}.nav button{justify-content:center}.main{margin-left:74px;width:calc(100% - 74px);padding:22px}.cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:650px){.main{padding:16px}.cards,.grid2,.grid3,.docgrid{grid-template-columns:1fr}.top h1{font-size:23px}.user div:not(.avatar){display:none}}
-@media print{.side,.top,.btn,.form-actions,.tabs,.no-print{display:none!important}.main{margin:0;width:100%;padding:0}.panel{box-shadow:none;border:0}.page{display:block!important}}
+@media print{.side,.top,.btn,.form-actions,.tabs,.no-print,.overlay,.modal-shell{display:none!important}.app{height:auto;overflow:visible}.main{height:auto;overflow:visible}.table-wrap{max-height:none;overflow:visible;border:0}.main{margin:0;width:100%;padding:0}.panel{box-shadow:none;border:0}.page{display:block!important}}
 </style>
 </head>
 <body>
@@ -150,10 +173,10 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 
 <!-- PEOPLE -->
 <section id="people" class="page">
-<div class="panel"><div class="panel-head"><div><h2>Central Person Registry</h2><div class="sub">One identity record — unit data is appended, never duplicated</div></div><button class="btn" onclick="openPersonDrawer(null)">+ New / update person</button></div>
+<div class="panel"><div class="panel-head"><div><h2>Central Person Registry</h2><div class="sub">One identity record — unit data is appended, never duplicated</div></div><button class="btn" onclick="openPersonModal(null)">+ New / update person</button></div>
 <div class="hint" style="margin-bottom:16px">Central data stores identity and contact reference only. Airport, Fingerprint, CID and Checkpoint records stay in their own registers and link through Person ID. Open any person to append new details (e.g. Passport ID, Guardian, phone).</div>
 <div class="search"><span>⌕</span><input id="personSearch" placeholder="Search name, national ID, passport or Person ID..." oninput="renderPeople()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Linked unit records</th><th></th></tr></thead><tbody id="peopleTable"></tbody></table></div>
+<div class="table-card"><div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Linked unit records</th><th class="col-actions">View / Actions</th></tr></thead><tbody id="peopleTable"></tbody></table></div><div class="table-foot"><span>Central Person Registry</span><span id="peopleCount"></span></div></div>
 </div>
 </section>
 
@@ -187,7 +210,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="panel">
 <div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div></div>
 <div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
+<div class="table-card"><div class="table-wrap compact"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th class="col-actions">View / Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div><div class="table-foot"><span>Fingerprint records</span><span id="fpCount"></span></div></div>
 </div>
 </div>
 </section>
@@ -214,7 +237,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 </form>
 </div>
 <div class="panel"><div class="panel-head"><div><h2>Recent passenger records</h2><div class="sub">Airport unit register</div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th></tr></thead><tbody id="airTable"></tbody></table></div></div>
+<div class="table-card"><div class="table-wrap compact"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Screening</th><th class="col-actions">View / Actions</th></tr></thead><tbody id="airTable"></tbody></table></div><div class="table-foot"><span>Airport logs</span><span id="airCount"></span></div></div></div>
 </div>
 </div>
 </section>
@@ -222,14 +245,14 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <!-- CID -->
 <section id="cid" class="page">
 <div class="panel">
-<div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><button class="btn" onclick="openCaseDrawer()">+ New case</button></div>
+<div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><button class="btn" onclick="openCaseModal()">+ New case</button></div>
 <div class="hint" style="margin-bottom:14px">Open a case to access its three workspace tabs: <b>Details &amp; incident summary</b>, <b>Participants &amp; suspect linkage</b>, and <b>Evidence &amp; media</b>.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th></tr></thead><tbody id="caseTable"></tbody></table></div>
+<div class="table-card"><div class="table-wrap compact"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th><th class="col-actions">View / Actions</th></tr></thead><tbody id="caseTable"></tbody></table></div><div class="table-foot"><span>Crime cases</span><span id="caseCount"></span></div></div>
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><button class="btn" onclick="openAddSuspect()">＋ Add suspect</button></div>
 <div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes. Suspects listed without a case are recorded with a <b>Direct Intelligence Listing</b> or <b>Manual Entry</b> origin.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
+<div class="table-card"><div class="table-wrap compact"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th><th class="col-actions">View / Actions</th></tr></thead><tbody id="suspectTable"></tbody></table></div><div class="table-foot"><span>Suspect list</span><span id="suspectCount"></span></div></div>
 </div>
 </section>
 
@@ -273,7 +296,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 </div>
 </div>
 <div class="panel" style="box-shadow:none;border:1px solid var(--line)"><div class="panel-head"><div><h2>Linked participants</h2></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Role</th><th>Note</th><th>Alert</th></tr></thead><tbody id="cwPartTable"></tbody></table></div>
+<div class="table-card"><div class="table-wrap compact"><table class="table"><thead><tr><th>Person</th><th>Role</th><th>Note</th><th>Alert</th><th class="col-actions">View / Actions</th></tr></thead><tbody id="cwPartTable"></tbody></table></div></div>
 </div>
 </div>
 <div class="tabpane" id="cw-evidence">
@@ -295,16 +318,22 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <!-- CHECKPOINTS -->
 <section id="checkpoints" class="page">
 <div class="panel">
-<div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div>
+<div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><button class="btn" onclick="openCheckpointModal()">+ Record stop</button></div>
 <div class="grid3" style="margin-bottom:20px"><div class="card"><b>South Checkpoint</b><div class="sub">Computer 01 · Active</div></div><div class="card"><b>West Checkpoint</b><div class="sub">Computer 02 · Active</div></div><div class="card"><b>East Checkpoint</b><div class="sub">Computer 03 · Active</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Action</th></tr></thead><tbody id="cpTable"></tbody></table></div>
+<div class="table-card"><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Outcome</th><th class="col-actions">View / Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div><div class="table-foot"><span>Checkpoint register</span><span id="cpCount"></span></div></div>
 </div>
 </section>
 </main></div>
 
 <div class="toast" id="toast"></div>
-<div class="overlay" id="overlay" onclick="closeDrawer()"></div>
-<div class="drawer" id="drawer"><div class="drawer-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()">✕</button></div><div class="drawer-body" id="drawerBody"></div><div class="drawer-foot" id="drawerFoot"></div></div>
+<div class="overlay" id="overlay" onclick="closeModal()"></div>
+<div class="modal-shell" id="modalShell" role="dialog" aria-modal="true" aria-labelledby="modalTitle" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal">
+    <div class="modal-head"><h3 id="modalTitle">Panel</h3><button class="iconbtn" aria-label="Close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
 
 <script>
 // ============================ state ============================
@@ -632,24 +661,44 @@ async function ensureLocalIdentity(d){
     passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation});
 }
 
-// ============================ drawer ============================
-function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on')}
-function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on')}
+// ============================ centered modal ============================
+// Every panel in the platform (all modules) uses this single centered modal:
+// fixed header + internally scrollable body (max-height 80vh) + sticky footer.
+function openModal(title,bodyHtml,footHtml,opts={}){
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').innerHTML=bodyHtml;
+  document.getElementById('modalFoot').innerHTML=footHtml||'';
+  document.getElementById('modal').classList.toggle('wide',!!opts.wide);
+  document.getElementById('overlay').classList.add('on');
+  document.getElementById('modalShell').classList.add('on');
+  document.body.classList.add('modal-open');
+  document.getElementById('modalBody').scrollTop=0;
+  setTimeout(()=>{const f=document.querySelector('#modalBody input,#modalBody select,#modalBody textarea');if(f)f.focus()},60);
+}
+function closeModal(){
+  document.getElementById('overlay').classList.remove('on');
+  document.getElementById('modalShell').classList.remove('on');
+  document.body.classList.remove('modal-open');
+}
+function modalOpen(){return document.getElementById('modalShell').classList.contains('on')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modalOpen())closeModal()});
+// backwards-compatible aliases (legacy drawer API)
+const openDrawer=openModal, closeDrawer=closeModal;
 function val(id){return document.getElementById(id).value.trim()}
 
-// ---- unified central person drawer (create / view & update) ----
-function openPersonDrawer(prefill,onSaved){
+// ---- unified central person modal (create / view & update) ----
+function openPersonModal(prefill,onSaved){
   const p=prefill&&prefill.id?prefill:null;
   const body=`
   <div class="hint" style="margin-bottom:14px">${p?'Edit or append to this existing identity — the Central Person Registry is matched in real time and the profile is merged, never duplicated.':'Enter the identity below. The Central Person Registry is matched <b>in real time</b>; an exact match auto-fills existing data, otherwise a new Central Person record is created on save.'}</div>
-  <form class="form" id="personDrawerForm">${identityFormHTML('pd')}</form>`;
-  openDrawer(p?'Update identity profile':'New central person',body,
-    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitPersonDrawer(${p?`'${p.id}'`:'null'})">${p?'Save updates':'Save person'}</button>`);
+  <form class="form" id="personModalForm">${identityFormHTML('pd')}</form>`;
+  openModal(p?'Update identity profile':'New central person',body,
+    `<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitPersonModal(${p?`'${p.id}'`:'null'})">${p?'Save updates':'Save person'}</button>`);
   if(p)fillIdentity('pd',p);
   wireIdentity('pd');
-  window._personDrawerCb=onSaved||null;
+  window._personModalCb=onSaved||null;
 }
-async function submitPersonDrawer(existingId){
+async function submitPersonModal(existingId){
   const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
   const data={name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),first:d.first,second:d.second,third:d.third,fourth:d.fourth,
     nationalId:d.national,passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation};
@@ -660,15 +709,15 @@ async function submitPersonDrawer(existingId){
       if(existingId){await api('/api/persons/'+existingId,{method:'PATCH',body:JSON.stringify(stripServer(data))});saved=mapPerson((await api('/api/persons/'+existingId)))}
       else saved=await upsertPerson(data);
     }else saved=await upsertPerson(data);
-    closeDrawer();renderAll();toast(existingId?'Identity profile updated':'Person saved to central registry');
-    if(window._personDrawerCb)window._personDrawerCb(saved);
+    closeModal();renderAll();toast(existingId?'Identity profile updated':'Person saved to central registry');
+    if(window._personModalCb)window._personModalCb(saved);
   }catch(e){toast(e.message,true)}
 }
 window._viewingPerson=null;
 function openPersonView(id){
   const p=person(id);if(!p)return;window._viewingPerson=p;
   const units=(p.units||[]).map(u=>`<span class="badge blue">${esc(u)}</span>`).join(' ');
-  openDrawer('Identity profile · '+p.id,`
+  openModal('Identity profile · '+p.id,`
    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
      <span class="mini" style="width:54px;height:54px;font-size:17px">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`:esc(initials(p.name))}</span>
      <div><b style="font-size:16px">${esc(p.name)}</b><div class="muted">${esc(p.nationalId||p.passportId||'—')}${p.passportId?' · Passport '+esc(p.passportId):''}</div></div></div>
@@ -678,7 +727,53 @@ function openPersonView(id){
      <div><b>Address:</b> ${esc(p.residence||'—')}</div><div><b>Occupation:</b> ${esc(p.occupation||'—')}</div>
    </div>
    <div style="margin:14px 0"><b>Linked unit records:</b><div style="margin-top:6px">${units||'<span class="muted">Central only</span>'}</div></div>`,
-   `<button class="btn ghost" onclick="closeDrawer()">Close</button><button class="btn secondary" onclick="closeDrawer();openPersonDrawer(window._viewingPerson)">Edit / append details</button>`);
+   `<button class="btn ghost" onclick="closeModal()">Close</button><button class="btn secondary" onclick="closeModal();openPersonModal(window._viewingPerson)">Edit / append details</button>`);
+}
+
+// ---- record view modals (one centered modal for every module) ----
+function personLine(id){const p=person(id);return p?`<b>${esc(p.name)}</b> <span class="muted">· ${esc(id)}</span>`:esc(id||'Unknown')}
+function openSuspectView(i){
+  const x=db.suspects[i];if(!x)return;
+  openModal('Suspect alert · '+(person(x.person)?.name||x.person),`
+   <div style="margin-bottom:12px">${personLine(x.person)}</div>
+   <div style="margin-bottom:14px">${x.alert==='Active alert'?alertBadge(x.alert):clearBadge(x.alert||'Cleared')} ${x.case?linkedBadge(x.case):originBadge(x.origin)}</div>
+   <div class="kv">${kv('Role',x.role||'Suspect')}${kv('Linked case',x.case||'None — unlinked listing')}${kv('Origin',x.origin||'Direct Intelligence Listing')}${kv('Alert status',x.alert)}</div>
+   <div style="margin-top:14px"><b>Reason / alert details</b><div class="hint" style="margin-top:6px">${esc(x.reason||'No reason recorded')}</div></div>`,
+   `<button class="btn ghost" onclick="closeModal()">Close</button><button class="btn secondary" onclick="closeModal();openPersonView('${esc(x.person)}')">Open person profile</button>`);
+}
+function openCheckpointView(i){
+  const x=db.checkpoints[i];if(!x)return;
+  openModal('Checkpoint stop · '+esc(x.location||''),`
+   <div style="margin-bottom:12px">${personLine(x.person)}</div>
+   <div style="margin-bottom:14px">${screenBadge(x.screen)} ${badge('blue','Checkpoint '+(x.location||''))}</div>
+   <div class="section-label">Traveler</div>
+   <div class="kv">${kv('Time',x.time)}${kv('Purpose of visit',x.purpose)}${kv('Current address',x.currentAddress)}${kv('Permanent address',x.permanentAddress)}${kv('Documents attached',(x.travelerDocs||0)+' of 2')}${kv('Outcome',x.action)}</div>
+   <div class="section-label" style="margin-top:14px">Guardian / companion</div>
+   <div class="kv">${kv('Name',x.guardianName)}${kv('Relationship',x.guardianRelationship)}${kv('Phone',x.guardianPhone)}${kv('Address',x.guardianAddress)}${kv('Occupation',x.guardianOccupation)}${kv('Documents attached',(x.guardianDocs||0)+' of 2')}</div>
+   ${x.notes?`<div style="margin-top:14px"><b>Officer notes</b><div class="hint" style="margin-top:6px">${esc(x.notes)}</div></div>`:''}`,
+   `<button class="btn ghost" onclick="closeModal()">Close</button><button class="btn secondary" onclick="closeModal();openPersonView('${esc(x.person)}')">Open person profile</button>`);
+}
+function openAirportView(id){
+  const x=db.airport.find(a=>a.id===id);if(!x)return;
+  const flagged=db.suspects.some(sa=>sa.person===x.person&&(sa.role||'Suspect')==='Suspect'&&sa.alert==='Active alert');
+  openModal('Airport log · '+esc(x.id),`
+   <div style="margin-bottom:12px">${personLine(x.person)}</div>
+   <div style="margin-bottom:14px">${flagged?alertBadge('Flagged match'):clearBadge('Cleared')} ${badge('blue',x.move||'Movement')}</div>
+   <div class="kv">${kv('Record ID',x.id)}${kv('Movement',x.move)}${kv('Travel date',x.date)}${kv('Flight / transport',x.flight)}${kv('Origin / destination',x.route)}</div>
+   ${x.notes?`<div style="margin-top:14px"><b>Travel notes</b><div class="hint" style="margin-top:6px">${esc(x.notes)}</div></div>`:''}`,
+   `<button class="btn ghost" onclick="closeModal()">Close</button><button class="btn secondary" onclick="closeModal();openPersonView('${esc(x.person)}')">Open person profile</button>`);
+}
+function openFpView(id){
+  const x=db.fingerprint.find(f=>f.id===id);if(!x)return;
+  const approved=x.status==='Approved';
+  openModal('Clearance application · '+esc(x.id),`
+   <div style="margin-bottom:12px">${personLine(x.person)}</div>
+   <div style="margin-bottom:14px">${approved?clearBadge('Approved'):badge('amber',x.status||'Pending Review')}${x.certificate?' '+linkedBadge('Certificate '+x.certificate):''}</div>
+   <div class="kv">${kv('Application',x.id)}${kv('Purpose',x.purpose)}${kv('Guardian',x.guardian)}${kv('Status',x.status)}</div>
+   <div class="hint" style="margin-top:14px"><b>Day 1:</b> print the review summary for the applicant to verify. <b>Day 2:</b> once approved, the clearance certificate unlocks for printing.</div>`,
+   `<button class="btn ghost" onclick="closeModal()">Close</button>
+    <a class="btn secondary" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review / Print</a>
+    ${approved?`<a class="btn green" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`:`<button class="btn" onclick="closeModal();approveFP('${esc(x.id)}')">Approve</button>`}`);
 }
 
 // ---- add suspect (optional linked case) ----
@@ -687,7 +782,7 @@ function caseOptions(selected){
   return `<option value="">No linked case — direct intelligence / manual entry</option>${opts}`;
 }
 function openAddSuspect(){
-  openDrawer('Add suspect',`
+  openModal('Add suspect',`
    <div class="hint" style="margin-bottom:14px">Type the identity below — the Central Person Registry is matched <b>in real time</b>. An exact match auto-fills the existing record; if no match exists, a new Central Person is created automatically before the suspect record is attached. The linked case is <b>optional</b>.</div>
    <form class="form" id="addSuspectForm">
     ${identityFormHTML('sp')}
@@ -699,7 +794,7 @@ function openAddSuspect(){
     <div class="field"><label>Suspect reason / alert details <span id="spReasonReq" style="color:var(--red)">(required)</span></label><textarea id="spNote" placeholder="Reason for listing, source of intelligence, last known location, description…"></textarea></div>
     <div class="hint" id="spReasonHint" style="margin-top:-4px">Required when no crime case is linked. When a case <b>is</b> linked it defaults to the case details.</div>
    </form>`,
-   `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitAddSuspect()">Add suspect</button>`);
+   `<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitAddSuspect()">Add suspect</button>`);
   const sc=document.getElementById('spCase');
   function refreshReason(){spOrigin.disabled=!!sc.value;
     document.getElementById('spReasonReq').textContent=sc.value?'(optional — defaults to case details)':'(required)';
@@ -734,9 +829,30 @@ async function submitAddSuspect(){
       db.suspects.unshift({person:p.id,case:caseId||'',role:'Suspect',alert:'Active alert',origin,reason:finalReason});
       persist();msg='Suspect '+p.id+(caseId?' linked to '+caseId:' listed without a case — '+origin)+' (local demo)';
     }
-    closeDrawer();await syncServer();toast(msg);
+    closeModal();await syncServer();toast(msg);
   }catch(e){toast(e.message,true)}
 }
+
+// ============================ standardized status badges ============================
+// red = active alert / flagged match · green = cleared / normal
+// blue = manual entry / direct intelligence · purple = linked case
+function badge(kind,label){return `<span class="badge ${kind}">${esc(label)}</span>`}
+function alertBadge(text){return badge('red',text||'Active alert')}
+function clearBadge(text){return badge('green',text||'Cleared')}
+function manualBadge(text){return badge('blue',text||'Manual Entry')}
+function linkedBadge(text){return badge('purple',text||'Linked case')}
+function screenBadge(v){const t=String(v||'');return /flag|match|alert|hit/i.test(t)&&!/no active/i.test(t)?alertBadge(t):clearBadge(t||'No active alert')}
+function originBadge(o){const t=o||'Direct Intelligence Listing';return manualBadge(t)}
+function statusBadge(st){const t=String(st||'');
+  if(/closed|approved|cleared|complete/i.test(t))return clearBadge(t);
+  if(/pending|review/i.test(t))return badge('amber',t);
+  if(/prosecution|investigation|reported/i.test(t))return badge('blue',t);
+  return badge('gray',t||'—')}
+function actionsCell(html){return `<td class="col-actions">${html}</td>`}
+function viewBtn(fn,label){return `<button class="btn secondary small" onclick="event.stopPropagation();${fn}">${label||'View / Actions'}</button>`}
+function setCount(id,n,noun){const el=document.getElementById(id);if(el)el.textContent=n+' '+noun+(n===1?'':'s')}
+function rowsOrEmpty(html,cols,msg){return html||`<tr><td colspan="${cols}" class="empty">${msg}</td></tr>`}
+function kv(label,v){return `<div><b>${esc(label)}:</b> ${esc(v||'—')}</div>`}
 
 // ============================ render ============================
 function renderPeople(){
@@ -745,9 +861,10 @@ function renderPeople(){
    <tr class="clickable" onclick="openPersonView('${esc(p.id)}')">
     <td><div class="person"><span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span><b>${esc(p.name)}</b></div></td>
     <td>${esc(p.id)}</td><td>${esc(p.nationalId||'—')}</td><td>${esc(p.passportId||'—')}</td>
-    <td>${(p.units||[]).map(u=>'<span class="badge blue">'+esc(u)+'</span>').join(' ')}</td>
-    <td><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">Open</button></td></tr>`).join('');
-  peopleTable.innerHTML=rows||'<tr><td colspan="6" class="empty">No people found</td></tr>';
+    <td>${(p.units||[]).map(u=>linkedBadge(u)).join(' ')}</td>
+    ${actionsCell(viewBtn(`openPersonView('${esc(p.id)}')`))}</tr>`).join('');
+  peopleTable.innerHTML=rowsOrEmpty(rows,6,'No people found');
+  setCount('peopleCount',db.people.filter(p=>JSON.stringify(p).toLowerCase().includes(q)).length,'record');
 }
 function renderAll(){
   mPeople.textContent=db.people.length;
@@ -755,21 +872,32 @@ function renderAll(){
   mClear.textContent=db.fingerprint.filter(x=>x.status==='Pending Review').length;
   mSuspects.textContent=db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length;
   renderPeople();
-  fpTable.innerHTML=db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
-   return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
-   <td><span class="badge ${approved?'green':'amber'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
-   <td style="white-space:nowrap">
-     <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
-     ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`:`<button class="btn small" onclick="approveFP('${esc(x.id)}')">Approve</button>`}
-   </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
-  airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">No passenger records</td></tr>';
+  fpTable.innerHTML=rowsOrEmpty(db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
+   return `<tr class="clickable" onclick="openFpView('${esc(x.id)}')"><td><b>${esc(x.id)}</b></td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
+   <td>${approved?clearBadge('Approved'):badge('amber',x.status)}${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
+   ${actionsCell(viewBtn(`openFpView('${esc(x.id)}')`))}</tr>`}).join(''),5,'No applications yet');
+  setCount('fpCount',db.fingerprint.length,'application');
+  airTable.innerHTML=rowsOrEmpty(db.airport.map(x=>{let p=person(x.person);
+    const flagged=db.suspects.some(sa=>sa.person===x.person&&(sa.role||'Suspect')==='Suspect'&&sa.alert==='Active alert');
+    return `<tr class="clickable" onclick="openAirportView('${esc(x.id)}')"><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td>
+    <td>${badge('blue',x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td>
+    <td>${flagged?alertBadge('Flagged match'):clearBadge('Cleared')}</td>
+    ${actionsCell(viewBtn(`openAirportView('${esc(x.id)}')`))}</tr>`}).join(''),6,'No passenger records');
+  setCount('airCount',db.airport.length,'log');
   renderCases();
-  suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?esc(x.case):'<span class="badge amber">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active alerts</td></tr>';
-  cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td>
+  suspectTable.innerHTML=rowsOrEmpty(db.suspects.map((x,i)=>`<tr class="clickable" onclick="openSuspectView(${i})"><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td>
+    <td>${x.case?linkedBadge(x.case):originBadge(x.origin)}</td>
+    <td>${(x.role||'Suspect')==='Suspect'?alertBadge('Suspect'):badge('gray',x.role)}</td>
+    <td>${x.alert==='Active alert'?alertBadge(x.alert):clearBadge(x.alert||'Cleared')}</td>
+    ${actionsCell(viewBtn(`openSuspectView(${i})`))}</tr>`).join(''),5,'No active alerts');
+  setCount('suspectCount',db.suspects.length,'alert');
+  cpTable.innerHTML=rowsOrEmpty(db.checkpoints.map((x,i)=>`<tr class="clickable" onclick="openCheckpointView(${i})"><td>${esc(x.time)}</td><td>${esc(x.location)}</td>
     <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
     <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
-    <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
-    <td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No stops recorded</td></tr>';
+    <td>${screenBadge(x.screen)}</td>
+    <td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td>
+    ${actionsCell(viewBtn(`openCheckpointView(${i})`))}</tr>`).join(''),7,'No stops recorded');
+  setCount('cpCount',db.checkpoints.length,'stop');
   activity.innerHTML=`<div class="event"><span class="dot"></span><div><b>${db.fingerprint.length} clearance application(s)</b><small>${db.fingerprint.filter(x=>x.status==='Pending Review').length} pending review · Fingerprint Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--amber)"></span><div><b>${db.cases.filter(x=>x.status!=='Closed').length} open crime case(s)</b><small>CID Criminal Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--green)"></span><div><b>${db.checkpoints.length} checkpoint screening event(s)</b><small>${db.checkpoints.filter(x=>x.screen==='Flagged match').length} flagged match(es) · Checkpoint operations</small></div></div>
@@ -777,9 +905,11 @@ function renderAll(){
 }
 function renderCases(){
   if(!window.caseTable)return;
-  caseTable.innerHTML=db.cases.map(c=>{
+  caseTable.innerHTML=rowsOrEmpty(db.cases.map(c=>{
     const parts=c.participants?c.participants.length:(db.suspects.filter(s=>s.case===c.id).length);
-    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No cases yet</td></tr>';
+    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td>${statusBadge(c.status)}</td><td>${parts?linkedBadge(parts+' linked'):'<span class="muted">0</span>'}</td>
+    ${actionsCell(viewBtn(`openCase('${esc(c.id)}')`))}</tr>`}).join(''),6,'No cases yet');
+  setCount('caseCount',db.cases.length,'case');
 }
 
 // ============================ fingerprint ============================
@@ -842,24 +972,24 @@ async function saveAirport(e){
 
 // ============================ CID case workspace ============================
 let cwCase=null;
-function openCaseDrawer(){
-  openDrawer('New crime case',`
-   <form class="form" id="caseDrawerForm">
+function openCaseModal(){
+  openModal('New crime case',`
+   <form class="form" id="caseModalForm">
     <div class="grid2"><div class="field"><label>Category *</label><input id="cdCategory" placeholder="Theft, Fraud…"></div>
     <div class="field"><label>Location</label><input id="cdLocation" placeholder="Hargeisa"></div></div>
     <div class="field"><label>Status</label><select id="cdStatus"><option>Reported</option><option>Under Investigation</option><option>Submitted for Prosecution</option></select></div>
     <div class="field"><label>Incident summary</label><textarea id="cdSummary" placeholder="What happened, when, key facts…"></textarea></div>
    </form>`,
-   `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCaseDrawer()">Create case</button>`);
+   `<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitCaseModal()">Create case</button>`);
 }
-async function submitCaseDrawer(){
+async function submitCaseModal(){
   if(!val('cdCategory')){toast('Category is required',true);return}
   const payload={category:val('cdCategory'),location:val('cdLocation')||'Not specified',status:val('cdStatus'),incident_summary:val('cdSummary')};
   try{
     let id;
     if(serverOn){const r=await api('/api/crime-cases',{method:'POST',body:JSON.stringify(payload)});id=r.case_id}
     else{id='CID-2026-'+String(db.cases.length+8).padStart(3,'0');db.cases.unshift({id,category:payload.category,location:payload.location,status:payload.status,summary:payload.incident_summary,participants:[],evidence:[]});persist()}
-    closeDrawer();renderAll();toast('Case '+id+' created');openCase(id);
+    closeModal();renderAll();toast('Case '+id+' created');openCase(id);
   }catch(e){toast(e.message,true)}
 }
 function cwTab(t){document.querySelectorAll('[data-cwtab]').forEach(b=>b.classList.toggle('active',b.dataset.cwtab===t));document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));document.getElementById('cw-'+t).classList.add('active')}
@@ -882,7 +1012,10 @@ async function openCase(caseId){
   }
 }
 function renderCwParticipants(list){
-  cwPartTable.innerHTML=(list||[]).map(x=>`<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.role==='Suspect'?'red':'gray'}">${esc(x.role)}</span>${x.origin&&!x.case_id?`<br><small class="muted">${esc(x.origin)}</small>`:''}</td><td>${esc(x.note||'')}</td><td>${x.role==='Suspect'?'<span class="badge red">Active alert</span>':'<span class="muted">—</span>'}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No participants linked yet</td></tr>';
+  cwPartTable.innerHTML=rowsOrEmpty((list||[]).map(x=>`<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td>
+    <td>${x.role==='Suspect'?alertBadge('Suspect'):badge('gray',x.role)}${x.origin&&!x.case_id?`<br>${originBadge(x.origin)}`:''}${x.case_id?`<br>${linkedBadge(x.case_id)}`:''}</td>
+    <td>${esc(x.note||'')}</td><td>${x.role==='Suspect'?alertBadge('Active alert'):clearBadge('Normal')}</td>
+    ${actionsCell(viewBtn(`openPersonView('${esc(x.person)}')`))}</tr>`).join(''),5,'No participants linked yet');
 }
 function renderCwEvidence(list){
   cwEvidGrid.innerHTML=(list||[]).map(x=>{
@@ -921,8 +1054,8 @@ async function uploadEvidence(){
 }
 
 // ============================ checkpoints ============================
-function openCheckpointDrawer(){
-  openDrawer('Record checkpoint stop',`
+function openCheckpointModal(){
+  openModal('Record checkpoint stop',`
    <div class="hint" style="margin-bottom:14px">Structured screening: both the <b>traveler</b> and the <b>guardian</b> are matched against the Central Person Registry <b>in real time</b> — select a match to auto-fill, or type a new identity.</div>
    <form class="form" id="cpForm">
     <div class="section-label">Traveler — screening &amp; identity</div>
@@ -936,7 +1069,7 @@ function openCheckpointDrawer(){
     </div>
     <div class="hint" id="cpScreenHint">Screening runs automatically against active suspect alerts.</div>
    </form>`,
-   `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
+   `<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
   buildFileSlots('cpDocs','tdoc',2,['Traveler document 1 *','Traveler document 2 (optional)']);
   buildFileSlots('gdDocs','gdoc',2,['Guardian document 1 *','Guardian document 2 (optional)']);
   wireIdentity('cp');
@@ -972,7 +1105,7 @@ async function submitCheckpoint(){
       gdDocs.forEach((f,i)=>fd.append('doc_gd_'+i,f));
       fd.append('photo',photo);
       const r=await api('/api/checkpoint-events',{method:'POST',body:fd});
-      closeDrawer();await syncServer();
+      closeModal();await syncServer();
       toast(r.alerted?`⚠ ${r.location}: potential suspect match — supervisor notified`:'Person screened — no active alert');
       return;
     }
@@ -984,7 +1117,7 @@ async function submitCheckpoint(){
       permanentAddress:d.permanent,guardianName:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
       guardianRelationship:gd.relationship,guardianPhone:gd.phone,guardianAddress:gd.permanent,guardianOccupation:gd.occupation,
       travelerDocs:trDocs.length,guardianDocs:gdDocs.length,photoName:photo.name});
-    persist();closeDrawer();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
+    persist();closeModal();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
   }catch(e){toast(e.message,true)}
 }
 

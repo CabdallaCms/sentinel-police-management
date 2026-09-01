@@ -97,6 +97,46 @@ python3 -m http.server 8000 --bind 0.0.0.0
 
 Open `http://localhost:8000`.
 
+## Interface standard — centered modals & standardized tables
+
+The whole platform (Dashboard, Central Persons, Fingerprint Unit, CID Criminal Unit,
+Checkpoints, Airport) shares one interface standard.
+
+**Centered modal dialogs (no side drawers).** Every panel — new/update person, person
+profile, new crime case, add suspect, record checkpoint stop and all record views —
+opens through the single `openModal(title, body, footer)` host:
+
+- opens dead-centre over a dark backdrop with `backdrop-filter: blur(4px)`
+- **fixed header** with the title and a close (✕) button
+- **scrollable body** with internal scroll only (`max-height: 80vh; overflow-y: auto`)
+- **sticky footer** with the Cancel and Action/Submit buttons pinned to the bottom
+- closes on ✕, Cancel, backdrop click or `Esc` (`closeModal()`; the legacy
+  `openDrawer`/`closeDrawer` names remain as aliases)
+
+**Standardized tables.** Crime Cases, Suspect List, Checkpoint Register, Airport Logs,
+Fingerprint Records, Central Person Registry and Case Participants all use the same
+`.table-card > .table-wrap > table.table` container:
+
+- fixed container height (`max-height: calc(100vh - 280px)`, `calc(100vh - 420px)` for
+  paired panels) so the browser window itself never scrolls — rows scroll inside the card
+- `<thead>` / `<th>` are `position: sticky; top: 0` with a solid background, so column
+  titles stay frozen while scrolling
+- the application shell scrolls inside `.main`, not on `<body>`
+
+**Status badges & action column.** One pill-badge scale is used everywhere:
+
+| Colour | Meaning |
+|--------|---------|
+| Red | Active alerts / flagged matches |
+| Green | Cleared / normal |
+| Blue | Manual entry / direct intelligence |
+| Purple | Linked cases (and linked unit records) |
+| Amber | Pending review |
+
+Every table ends with a right-aligned **View / Actions** column whose button opens the
+matching record modal (person profile, suspect alert, checkpoint stop, airport log,
+clearance application, or the CID case workspace).
+
 ## Demo workflow
 
 1. Open **Airport** and type `Ayaan / Cabdi / Xasan / Axmed`, DOB `1997-04-18` and `10012345` — the unified identity form matches central person `P-0001` in real time and auto-fills the existing data.
