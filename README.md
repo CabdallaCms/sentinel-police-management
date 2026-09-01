@@ -35,9 +35,11 @@ As the officer types, the form performs **real-time background matching** agains
 
 The same interactive matching engine (Tier 1 exact ID/passport auto-merge, Tier 2 exact 4-part name + DOB high-confidence link, Tier 3 fuzzy warning, Tier 4 partial-name dropdown) is applied across **Checkpoints, Airport Control, Fingerprint Unit and CID**.
 
-### No popups — pages and side panels
+### No popups — pages and centered modals
 
-The interface uses **no browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **slide-in side panels** (new person, new case, checkpoint stop).
+The interface uses **no browser dialogs** and **no right-side slide-out drawers**. All create/edit/detail actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **centered modal dialogs** (new person, new case, add suspect, record stop, and every record's **View** detail).
+
+Every modal opens dead-center over a dark `backdrop-filter: blur(4px)` overlay and always has the same three parts: a **fixed header** (title + close ✕), a **body that scrolls internally** (`max-height: 80vh; overflow-y: auto`) and a **sticky footer** with Cancel + the action button. `Esc` and a click on the backdrop close it, and the page behind it cannot scroll while it is open.
 
 ### Fingerprint application, review and certificate
 
@@ -49,7 +51,34 @@ The interface uses **no browser dialogs**. All create/edit actions happen in **d
 
 Each case opens in a full-page workspace with three tabs: **1) Case Details & Incident Summary**, **2) Participants & Suspect List Linkage** (suspect/victim/witness/complainant, with suspects creating checkpoint/airport alerts), and **3) Evidence & Media Storage** (file uploads with captions).
 
-The **Add Suspect** drawer makes the **linked case strictly optional**: a suspect can be listed with a case, or without one, in which case the origin is recorded as **"Direct Intelligence Listing"** or **"Manual Entry"**. The suspect endpoints (`POST /api/suspect-alerts`) accept an optional `case_id` and store the origin server-side.
+The **Add Suspect** modal makes the **linked case strictly optional**: a suspect can be listed with a case, or without one, in which case the origin is recorded as **"Direct Intelligence Listing"** or **"Manual Entry"**. The suspect endpoints (`POST /api/suspect-alerts`) accept an optional `case_id` and store the origin server-side.
+
+## UI standards (all modules)
+
+The same layout rules are applied to every operational module — Dashboard, Central Persons, Fingerprint Unit, CID Criminal Unit, Checkpoints and Airport Control.
+
+### Tables
+
+Every register (Crime Cases, Suspect List, Checkpoint Register, Airport Logs, Fingerprint Records, Central Person Registry, case Participants) is a table inside a standardized container card:
+
+- The container has a **fixed `max-height: calc(100vh - 280px)`** and scrolls internally, so the browser window itself does not scroll down the page.
+- **`<thead>` is `position: sticky; top: 0`** with a solid background, so the column titles stay frozen while the rows scroll underneath.
+- The **rightmost column is always a standardized `Actions` column** with a clear **View** button (plus the module's own actions, e.g. `Review/Print`, `Approve`, `Certificate`). `View` opens the record's centered detail modal.
+
+### Status pills
+
+One shared pill component (`pill()` / `casePill()` / `originPill()` / `unitPill()`) renders every status, with a fixed meaning per colour:
+
+| Colour | Meaning | Examples |
+| --- | --- | --- |
+| **Red** | Active alerts / flagged matches | `Active alert`, `Flagged match`, `Suspect` |
+| **Green** | Cleared / normal | `Cleared`, `No active alert`, `Approved`, `Closed` |
+| **Blue** | Manual entry / direct intelligence | `Manual Entry`, `Direct Intelligence Listing`, `Reported` |
+| **Purple** | Linked cases | A linked `CID-…` case reference, `Submitted for Prosecution`, CID unit link |
+| Amber | Awaiting officer action | `Pending Review`, `Under Investigation`, `Supervisor contacted` |
+| Grey | Neutral / reference data | Record ids, `Central`-only records |
+
+The airport register derives its **Screening** pill from the suspect list, so a passenger carrying an active alert shows red in the Airport module as well as at a checkpoint.
 
 ## Architecture
 
@@ -97,6 +126,25 @@ python3 -m http.server 8000 --bind 0.0.0.0
 
 Open `http://localhost:8000`.
 
+### Tests
+
+Both suites use the Python standard library only:
+
+```bash
+python3 test_ui.py              # front-end UI contract: modals, sticky tables, pills, wiring
+python3 backend/test_server.py  # API, identity-resolution tiers and migrations
+```
+
+`test_ui.py` parses `index.html` and fails if a drawer comes back, if a modal loses its fixed header / 80vh scrolling body / sticky footer, if a table loses its sticky header or its `Actions` column, or if an inline handler or element id no longer resolves.
+
+There is also an **optional** browser-level suite that runs the real page in jsdom, clicks the real buttons and submits the real forms in both local demo and full-stack mode — including computed-style assertions for the sticky headers and modal layout. It needs Node:
+
+```bash
+cd tests/browser && npm install && npm run test:local && npm run test:server
+```
+
+See [`tests/browser/README.md`](tests/browser/README.md).
+
 ## Demo workflow
 
 1. Open **Airport** and type `Ayaan / Cabdi / Xasan / Axmed`, DOB `1997-04-18` and `10012345` — the unified identity form matches central person `P-0001` in real time and auto-fills the existing data.
@@ -106,7 +154,9 @@ Open `http://localhost:8000`.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
 6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. The **Suspect reason / alert details** field is **mandatory when no Crime Case is linked**; when a case IS linked it can be left empty and automatically defaults to `Linked to CID case {code} — {category}`. Submitting with an exact match reuses the existing central record.
 7. Open a case workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert; the case is optional, and a participant note is required when no case is linked), and upload evidence (tab 3).
-8. Open **Checkpoints → Record stop** for a listed suspect and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts. The checkpoint drawer is a **full traveler + guardian screening layout**: traveler (4-part name, DOB, place of birth, current/permanent address, purpose of visit, real-time photo, optional National ID/Passport, **≥1 of 2 document slots**), guardian (name, relationship, contact, permanent address, occupation, optional IDs, **≥1 of 2 document slots**). Smart identity resolution auto-fills **both** traveler and guardian, and all uploaded files are stored in `backend/uploads/` and referenced from the stored event.
+8. Open **Checkpoints → Record stop** for a listed suspect and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts. The checkpoint modal is a **full traveler + guardian screening layout**: traveler (4-part name, DOB, place of birth, current/permanent address, purpose of visit, real-time photo, optional National ID/Passport, **≥1 of 2 document slots**), guardian (name, relationship, contact, permanent address, occupation, optional IDs, **≥1 of 2 document slots**). Smart identity resolution auto-fills **both** traveler and guardian, and all uploaded files are stored in `backend/uploads/` and referenced from the stored event.
+
+9. In any register, use the rightmost **Actions → View** button to open that record in a centered modal — identity profile, clearance application, passenger record, suspect alert, checkpoint stop or case participant. Scroll a long register: the column headers stay frozen and the page itself does not scroll.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 
