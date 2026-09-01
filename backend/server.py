@@ -353,6 +353,7 @@ TIER_LABELS = {
     1: 'Tier 1 · Exact National ID / Passport match (auto merge / link)',
     2: 'Tier 2 · Exact 4-part name + date of birth match (high-confidence link)',
     3: 'Tier 3 · 3-part name + mother\u2019s name (fuzzy warning only)',
+    4: 'Tier 4 · Partial name match (2\u20134 parts) \u2014 select the record to auto-fill',
 }
 
 def find_by_id(c, data):
@@ -369,12 +370,73 @@ def find_by_id(c, data):
         if row: return rowdict(row), 1
     return None, 0
 
+def name_parts_of(row):
+    """Normalised name components of a stored person (4-part columns or legacy full_name)."""
+    parts = [str(row.get(k) or '').strip() for k in NAME_PART_FIELDS]
+    if any(parts):
+        return [norm(p) for p in parts if p]
+    return split_parts(row.get('full_name') or '')
+
+def person_suggestions(c, data, limit=8):
+    """Flexible, case-insensitive matching for the live dropdown.
+
+    Scores each central person against the entered name components (2, 3 or 4
+    parts must all be present in the stored name) and partial/exact National ID
+    or Passport values; returns the best matches ordered by score.
+    """
+    entered = [norm(data.get(k)) for k in NAME_PART_FIELDS]
+    entered = [p for p in entered if p]
+    nat = norm(data.get('national_id'))
+    pas = norm(data.get('passport_id'))
+    dob = norm(data.get('date_of_birth'))
+    mother = norm(data.get('mother_name'))
+    scored = []
+    for r in c.execute('SELECT * FROM persons'):
+        row = rowdict(r)
+        parts = name_parts_of(row)
+        partset = set(parts)
+        score = 0
+        if nat:
+            sid = norm(row.get('national_id'))
+            if sid == nat:
+                score += 60
+            elif len(nat) >= 2 and sid.startswith(nat):
+                score += 25
+        if pas:
+            spid = norm(row.get('passport_id'))
+            if spid == pas:
+                score += 60
+            elif len(pas) >= 2 and spid.startswith(pas):
+                score += 25
+        if len(entered) >= 2 and all(p in partset for p in entered):
+            score += len(entered) * 10
+            if parts[:len(entered)] == entered:
+                score += 8          # entered components are a prefix, in order
+            if dob and norm(row.get('date_of_birth')) == dob:
+                score += 12
+            if mother and norm(row.get('mother_name')) == mother:
+                score += 8
+        if score >= 18:
+            copied = dict(row)
+            copied['suggestion_score'] = score
+            scored.append(copied)
+    scored.sort(key=lambda x: (-x['suggestion_score'], x['person_id']))
+    out, seen = [], set()
+    for row in scored:
+        if row['person_id'] in seen:
+            continue
+        seen.add(row['person_id'])
+        out.append(row)
+        if len(out) >= limit:
+            break
+    return out
+
 def resolve_person(c, data):
     """Universal matching engine.
 
-    Returns (person_row_dict | None, tier, reason, candidates).
+    Returns (person_row_dict | None, tier, reason, suggestions).
     Tier 1 = exact ID/passport, Tier 2 = exact 4-part name + DOB,
-    Tier 3 = fuzzy 3-part name + mother's name (candidates returned for review).
+    Tier 3 = fuzzy 3-part name + mother's name, Tier 4 = partial name match.
     """
     rows = [rowdict(r) for r in c.execute('SELECT * FROM persons')]
     row, tier = find_by_id(c, data)
@@ -401,18 +463,32 @@ def resolve_person(c, data):
             reason = ('Fuzzy 3-part name + mother\u2019s name match \u2014 '
                       f'{len(candidates)} candidate(s); officer confirmation required')
             return candidates[0], 3, reason, candidates
+
+    suggestions = person_suggestions(c, data)
+    strong = [s for s in suggestions if s['suggestion_score'] >= 30]
+    if len(strong) == 1:
+        matched = strong[0]
+        n = len(entered) if entered else 0
+        reason = (f'Partial name match ({n}-part) \u2014 matching Central Person found; '
+                  'select it to auto-fill and link')
+        return matched, 4, reason, suggestions
+    if suggestions:
+        return None, 0, 'Possible matches found \u2014 select a record from the matching list', suggestions
     return None, 0, 'No exact central record found \u2014 a new Central Person record will be created on save.', []
 
 def resolve_identity(c, data):
     """JSON-safe response for /api/persons/resolve."""
-    row, tier, reason, candidates = resolve_person(c, data)
+    row, tier, reason, suggestions = resolve_person(c, data)
+    for s in suggestions:
+        s.pop('suggestion_score', None)
     return {
         'matched': row is not None,
         'tier': tier,
         'tier_label': TIER_LABELS.get(tier, 'No match'),
         'reason': reason,
         'person': row,
-        'candidates': [dict(x) for x in candidates],
+        'candidates': [dict(x) for x in suggestions],
+        'suggestions': [dict(x) for x in suggestions],
         'auto_merge': tier in (1, 2),
     }
 
@@ -534,7 +610,8 @@ class API(BaseHTTPRequestHandler):
             user = require_auth(self); c = db()
             if p.path == '/api/me': result = user
             elif p.path == '/api/persons':
-                q = parse_qs(p.query).get('q',[''])[0].strip(); like = f'%{q}%'
+                q = re.sub(r'\s+', ' ', parse_qs(p.query).get('q',[''])[0]).strip()
+                like = f'%{q}%'
                 rows = c.execute('''SELECT * FROM persons WHERE full_name LIKE ? OR person_id LIKE ?
                     OR national_id LIKE ? OR phone LIKE ? OR passport_id LIKE ? OR mother_name LIKE ?
                     OR first_name LIKE ? OR second_name LIKE ? OR third_name LIKE ? OR fourth_name LIKE ?

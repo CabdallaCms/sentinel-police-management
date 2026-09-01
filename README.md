@@ -26,13 +26,14 @@ Every person receives one central `Person ID` (`P-0001`, etc.). Unit registers s
 
 There is **one unified person entry form** used everywhere (Central Persons, Add Suspect, Airport, Fingerprint, Checkpoint and CID participants). It captures the **4-part full name (first, second, third, fourth), date of birth, National ID / Passport, mother's name and address** — there is no manual "existing person vs new person" toggle.
 
-As the officer types, the form performs **real-time background matching** against the Central Person Registry:
+As the officer types, the form performs **real-time background matching** against the Central Person Registry — case-insensitive and whitespace-trimmed:
 
 - **Exact match** (National ID/passport, or 4-part name + DOB) → success banner **"Matched Central Record: [ID] - [Name]"** and the existing data auto-populates.
-- **No match** → the form shows a notice and submission **auto-creates the Central Person first**, then attaches the unit/suspect record.
+- **Partial/full name match (2, 3 or 4 name components)** and partial ID/passport matches → a **live dropdown** lists the matching Central Persons (Full Name, NID/Passport, DOB). **Clicking a match instantly auto-fills all existing central data** (name, mother's name, DOB, National ID, Passport, address, phone, photo) and shows the green **"Matched Central Record: [ID] - [Name]"** banner.
 - **Fuzzy 3-part name + mother's name** → amber warning prompt listing candidate records; the officer confirms before linking (Tier 3 is never an automatic merge).
+- **No match** → the form shows a notice and submission **auto-creates the Central Person first**, then attaches the unit/suspect record.
 
-The same matching engine (Tier 1 exact ID/passport auto-merge, Tier 2 exact 4-part name + DOB high-confidence link, Tier 3 fuzzy warning) is applied across **Checkpoints, Airport Control, Fingerprint Unit and CID**.
+The same interactive matching engine (Tier 1 exact ID/passport auto-merge, Tier 2 exact 4-part name + DOB high-confidence link, Tier 3 fuzzy warning, Tier 4 partial-name dropdown) is applied across **Checkpoints, Airport Control, Fingerprint Unit and CID**.
 
 ### No popups — pages and side panels
 

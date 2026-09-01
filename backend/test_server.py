@@ -99,6 +99,29 @@ def main():
                      'national_id': '90909090', 'mother_name': 'Maryan Cali'})
         assert not r['matched'] and r['tier'] == 0, r
 
+        # Flexible matching: 3-part name only -> single strong partial match (Tier 4)
+        r = resolve({'first_name': 'Maxamed', 'second_name': 'Nuur', 'third_name': 'Cali'})
+        assert r['matched'] and r['tier'] == 4 and r['person']['person_id'] == 'P-0002', r
+        assert any(s['person_id'] == 'P-0002' for s in r['suggestions']), r
+
+        # Flexible matching: 2-part name only -> suggestions (no auto match)
+        r = resolve({'first_name': 'Ayaan', 'second_name': 'Cabdi'})
+        assert not r['matched'] and r['tier'] == 0, r
+        assert any(s['person_id'] == 'P-0001' for s in r['suggestions']), r
+
+        # Flexible matching: case-insensitive + whitespace trimmed
+        r = resolve({'first_name': '  ayaan  ', 'second_name': 'CABDI', 'third_name': ' xasan '})
+        assert r['matched'] and r['tier'] == 4 and r['person']['person_id'] == 'P-0001', r
+
+        # Flexible matching: partial passport prefix appears in suggestions
+        r = resolve({'passport_id': 'p0011'})
+        assert any(s['person_id'] == 'P-0001' for s in r['suggestions']), r
+
+        # 4-part name without DOB still surfaces the partial match
+        r = resolve({'first_name': 'Sahra', 'second_name': 'Yuusuf', 'third_name': 'Axmed',
+                     'fourth_name': 'Aadan'})
+        assert r['matched'] and r['tier'] == 4 and r['person']['person_id'] == 'P-0003', r
+
         # Suspect WITHOUT a case -> origin recorded, person auto-created
         s, r = request(base, 'POST', '/api/suspect-alerts', token, {
             'first_name': 'Zakariye', 'second_name': 'Xasan', 'third_name': 'Cali',

@@ -72,6 +72,21 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .match-banner small{font-weight:500}
 .match-banner .actions{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
 .id-form .section-label{margin-top:2px}
+.m-bannerrow{display:flex;gap:10px;align-items:center}
+.m-face{width:34px;height:34px;border-radius:8px;object-fit:cover;background:#eaf0ff;flex:none}
+/* interactive matching dropdown */
+.m-matchlist{border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);background:#fff;overflow:hidden;margin-bottom:10px;display:none}
+.m-matchlist.show{display:block}
+.m-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);padding:8px 12px;background:#f7f9ff;border-bottom:1px solid var(--line)}
+.m-item{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f3f8}
+.m-item:last-child{border-bottom:0}
+.m-item:hover{background:#f4f8ff}
+.m-item .m-body{flex:1;min-width:0}
+.m-item .m-body b{font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-item .m-body small{color:var(--muted);font-size:11px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-item .m-id{color:var(--blue);font-weight:800;font-size:11px;flex:none}
+.m-item.m-new{color:var(--blue);font-weight:700;font-size:12px;background:#f7f9ff}
+.m-photoprev{width:44px;height:44px;border-radius:8px;object-fit:cover;margin-top:6px;display:none}
 /* drawer */
 .overlay{position:fixed;inset:0;background:#0d1b31aa;z-index:1100;display:none}
 .overlay.on{display:block}
@@ -315,14 +330,15 @@ function toast(s,err){let t=document.getElementById('toast');t.textContent=s;t.c
 // ============================ api ============================
 async function api(path,options={}){options.headers={...(options.headers||{})};if(!(options.body instanceof FormData))options.headers['Content-Type']='application/json';if(apiToken)options.headers.Authorization='Bearer '+apiToken;let r=await fetch(path,options);let data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Server request failed');return data}
 function mapPerson(p){
-  const raw=[p.first_name,p.second_name,p.third_name,p.fourth_name].map(x=>x||'');
+  const raw=[p.first_name??p.first,p.second_name??p.second,p.third_name??p.third,p.fourth_name??p.fourth].map(x=>x||'');
   const hasParts=raw.some(Boolean);
   const split=(p.full_name||p.name||'').split(/\s+/).filter(Boolean);
   const parts=hasParts?raw:split;
   return {...p,id:p.person_id||p.id,name:p.full_name||p.name||parts.join(' '),first:parts[0]||'',second:parts[1]||'',third:parts[2]||'',fourth:parts[3]||'',
-    nationalId:p.national_id||'',passportId:p.passport_id||'',dob:p.date_of_birth||'',pob:p.place_of_birth||'',
-    motherName:p.mother_name||'',residence:p.residence||'',occupation:p.occupation||'',phone:p.phone||'',
-    photoPath:p.photo_path||'',updated:(p.updated_at||'').slice(0,10)}}
+    nationalId:(p.national_id??p.nationalId)||'',passportId:(p.passport_id??p.passportId)||'',dob:(p.date_of_birth??p.dob)||'',
+    pob:(p.place_of_birth??p.pob)||'',motherName:(p.mother_name??p.motherName)||'',residence:(p.residence??p.residence)||'',
+    occupation:(p.occupation??p.occupation)||'',phone:(p.phone??p.phone)||'',
+    photoPath:(p.photo_path??p.photoPath)||'',updated:(p.updated_at||'').slice(0,10)}}
 function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),
   first_name:d.first||'',second_name:d.second||'',third_name:d.third||'',fourth_name:d.fourth||'',
   national_id:d.nationalId||'',passport_id:d.passportId||'',date_of_birth:d.dob||'',phone:d.phone||'',
@@ -339,21 +355,50 @@ function identityServer(d){return{full_name:[d.first,d.second,d.third,d.fourth].
   national_id:d.national,passport_id:d.passport,mother_name:d.mother,residence:d.address,
   place_of_birth:d.pob,phone:d.phone,occupation:d.occupation}}
 function localNameParts(p){return normTxt([p.first,p.second,p.third,p.fourth].join(' ')).split(' ').filter(Boolean)}
+function localSuggestions(d){
+  const parts=[normTxt(d.first),normTxt(d.second),normTxt(d.third),normTxt(d.fourth)].filter(Boolean);
+  const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob);
+  const scored=[];
+  for(const p of db.people){
+    const stored=localNameParts(p),set=new Set(stored);let score=0;
+    if(nat&&normTxt(p.nationalId)){const sn=normTxt(p.nationalId);if(sn===nat)score+=60;else if(nat.length>=2&&sn.startsWith(nat))score+=25}
+    if(pass&&normTxt(p.passportId)){const sp=normTxt(p.passportId);if(sp===pass)score+=60;else if(pass.length>=2&&sp.startsWith(pass))score+=25}
+    if(parts.length>=2&&parts.every(x=>set.has(x))){
+      score+=parts.length*10;
+      if(stored.slice(0,parts.length).join(' ')===parts.join(' '))score+=8;
+      if(dob&&normTxt(p.dob)===dob)score+=12;
+      if(mom&&normTxt(p.motherName)===mom)score+=8;
+    }
+    if(score>=18)scored.push({p,score});
+  }
+  scored.sort((a,b)=>b.score-a.score||a.p.id.localeCompare(b.p.id));
+  return scored.slice(0,8);
+}
 function localResolveIdentity(d){
   const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob);
   const parts=[normTxt(d.first),normTxt(d.second),normTxt(d.third),normTxt(d.fourth)];
   let p=db.people.find(x=>nat&&normTxt(x.nationalId)===nat)||db.people.find(x=>pass&&normTxt(x.passportId)===pass);
-  if(p)return{matched:true,tier:1,person:p,reason:'Exact National ID / Passport match'};
+  if(p)return{matched:true,tier:1,person:p,suggestions:[],reason:'Exact National ID / Passport match'};
   if(parts.every(x=>x)&&dob){
     p=db.people.find(x=>normTxt(localNameParts(x).join(' '))===parts.join(' ')&&normTxt(x.dob)===dob);
-    if(p)return{matched:true,tier:2,person:p,reason:'Exact 4-part name + date of birth match'};
+    if(p)return{matched:true,tier:2,person:p,suggestions:[],reason:'Exact 4-part name + date of birth match'};
   }
   if(mom&&parts.filter(x=>x).length>=3){
     const entered=parts.filter(Boolean);
     const cands=db.people.filter(x=>normTxt(x.motherName)===mom&&entered.filter(t=>localNameParts(x).includes(t)).length>=3);
-    if(cands.length)return{matched:true,tier:3,person:cands[0],candidates:cands,reason:'Fuzzy 3-part name + mother\u2019s name match \u2014 '+cands.length+' candidate(s); officer confirmation required'};
+    if(cands.length)return{matched:true,tier:3,person:cands[0],candidates:cands,suggestions:cands,
+      reason:'Fuzzy 3-part name + mother\u2019s name match \u2014 '+cands.length+' candidate(s); officer confirmation required'};
   }
-  return{matched:false,tier:0,reason:'No exact central record found \u2014 a new Central Person record will be created automatically on save.'};
+  const sugg=localSuggestions(d);
+  const strong=sugg.filter(x=>x.score>=30).map(x=>x.p);
+  const suggestions=sugg.map(x=>x.p);
+  if(suggestions.length===1&&strong.length===1){
+    return{matched:true,tier:4,person:suggestions[0],suggestions,
+      reason:'Partial name match ('+parts.filter(Boolean).length+'-part) \u2014 matching Central Person found; select it to auto-fill and link'};
+  }
+  if(suggestions.length)return{matched:false,tier:0,suggestions,
+    reason:'Possible matches found \u2014 select a record from the matching list'};
+  return{matched:false,tier:0,suggestions:[],reason:'No exact central record found \u2014 a new Central Person record will be created automatically on save.'};
 }
 async function resolveIdentity(d){
   if(serverOn){try{return await api('/api/persons/resolve',{method:'POST',body:JSON.stringify(identityServer(d))})}catch(e){return{tier:-1,matched:false,reason:'Identity lookup unavailable: '+e.message}}}
@@ -362,7 +407,6 @@ async function resolveIdentity(d){
 function identityFormHTML(prefix,opts={}){
   return `
   <div class="id-form">
-   <div id="${prefix}-match" class="match-banner"></div>
    <div class="grid2">
     <div class="field"><label>First name *</label><input id="${prefix}-first" placeholder="e.g. Ayaan" autocomplete="off"></div>
     <div class="field"><label>Second name *</label><input id="${prefix}-second" placeholder="e.g. Cabdi" autocomplete="off"></div>
@@ -371,12 +415,16 @@ function identityFormHTML(prefix,opts={}){
     <div class="field"><label>Date of birth *</label><input id="${prefix}-dob" type="date"></div>
     <div class="field"><label>National ID</label><input id="${prefix}-national" placeholder="National ID number" autocomplete="off"></div>
     <div class="field"><label>Passport ID</label><input id="${prefix}-passport" placeholder="Passport number" autocomplete="off"></div>
+   </div>
+   <div id="${prefix}-matchlist" class="m-matchlist"></div>
+   <div id="${prefix}-match" class="match-banner"></div>
+   <div class="grid2">
     <div class="field"><label>Mother's name *</label><input id="${prefix}-mother" placeholder="Mother's full name" autocomplete="off"></div>
     <div class="field"><label>Address (residence) *</label><input id="${prefix}-address" placeholder="Street, district, town" autocomplete="off"></div>
     <div class="field"><label>Phone</label><input id="${prefix}-phone" placeholder="Contact number" autocomplete="off"></div>
     <div class="field"><label>Place of birth</label><input id="${prefix}-pob" placeholder="City / town"></div>
     <div class="field"><label>Occupation</label><input id="${prefix}-occupation" placeholder="Occupation"></div>
-    ${opts.photo?`<div class="field"><label>Photo</label><input id="${prefix}-photo" type="file" accept="image/*"></div>`:''}
+    ${opts.photo?`<div class="field"><label>Photo</label><input id="${prefix}-photo" type="file" accept="image/*"><img id="${prefix}-photoPrev" class="m-photoprev" alt="person photo"></div>`:''}
    </div>
   </div>`;
 }
@@ -390,10 +438,14 @@ function fillIdentity(prefix,p){
   const map={first:'first',second:'second',third:'third',fourth:'fourth',dob:'dob',national:'nationalId',
     passport:'passportId',mother:'motherName',address:'residence',phone:'phone',pob:'pob',occupation:'occupation'};
   Object.entries(map).forEach(([k,key])=>{const el=document.getElementById(prefix+'-'+k);if(el&&p[key]!=null)el.value=p[key]||''});
+  const pv=document.getElementById(prefix+'-photoPrev');
+  if(pv){const src=p.photoPath||p.photoUrl||'';if(src){pv.src=src;pv.style.display='block'}else pv.style.display='none'}
 }
 function clearIdentity(prefix,p){
   ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{const el=document.getElementById(prefix+'-'+k);if(el)el.value=''});
   const ph=document.getElementById(prefix+'-photo');if(ph)ph.value='';
+  const pv=document.getElementById(prefix+'-photoPrev');if(pv)pv.style.display='none';
+  renderMatchList(prefix,null);
   setMatch(prefix,null);
 }
 function validateIdentity(d){
@@ -404,6 +456,7 @@ function validateIdentity(d){
   if(!d.address)return{ok:false,msg:'Address is required'};
   return{ok:true};
 }
+function identityAvatar(p){return (p.photoPath||p.photoUrl)?`<img class="m-face" src="${esc(p.photoPath||p.photoUrl)}" alt="person photo">`:''}
 function setMatch(prefix,res){
   const box=document.getElementById(prefix+'-match');if(!box)return;
   window._identityMatches=window._identityMatches||{};
@@ -411,61 +464,86 @@ function setMatch(prefix,res){
   if(res.ok){
     window._identityMatches[prefix]=res.person.id;
     box.className='match-banner ok show';
-    box.innerHTML=`<b>✓ Matched Central Record: ${esc(res.person.id)} - ${esc(res.person.name)}</b><small>${esc(res.reason||'')} · existing Central Person registry data auto-populated.</small>`;
+    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>✓ Matched Central Record: ${esc(res.person.id)} - ${esc(res.person.name)}</b><small>${esc(res.reason||'')} · existing Central Person registry data auto-populated.</small></div></div>`;
   }else if(res.warn){
-    const cands=res.candidates||[];
     window._identityMatches[prefix]=null;
-    window._identityWarnCands=window._identityWarnCands||{};window._identityWarnCands[prefix]=cands;
     box.className='match-banner warn show';
-    box.innerHTML=`<b>⚠ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')} — this is a fuzzy warning, not an automatic match. Confirm identity before linking.</small><div class="actions"><button type="button" class="btn small" onclick="useWarnMatch('${prefix}','${esc(res.person.id)}')">Use this record</button><button type="button" class="btn ghost small" onclick="dismissWarnMatch('${prefix}')">Continue as new person</button></div>`;
+    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>⚠ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')} — this is a fuzzy warning, not an automatic match. Select the record below to confirm.</small></div></div>`;
+  }else if(res.suggest){
+    window._identityMatches[prefix]=null;
+    box.className='match-banner info show';
+    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>ℹ Possible central record: ${esc(res.person.name)} (${esc(res.person.id)})</b><small>${esc(res.reason||'')}</small></div></div>`;
   }else if(res.info){
     window._identityMatches[prefix]=null;
     box.className='match-banner info show';
-    box.innerHTML=`<b>ℹ No exact central record</b><small>${esc(res.reason||'')}</small>`;
+    box.innerHTML=`<small>${esc(res.reason||'')}</small>`;
   }else if(res.tier===-1){
     box.className='match-banner info show';
     box.innerHTML=`<small>${esc(res.reason||'')}</small>`;
   }
 }
-function useWarnMatch(prefix,pid){
-  const cands=(window._identityWarnCands&&window._identityWarnCands[prefix])||[];
-  const p=cands.find(x=>x.id===pid);if(!p)return;
-  const ctl=window._identityWires&&window._identityWires[prefix];if(ctl)ctl.fill(p);
-  setMatch(prefix,{ok:true,person:p,reason:'Tier 3 fuzzy match accepted by officer'});
+function renderMatchList(prefix,items){
+  const box=document.getElementById(prefix+'-matchlist');if(!box)return;
+  window._matchItems=window._matchItems||{};
+  if(!items||!items.length){box.className='m-matchlist';box.innerHTML='';window._matchItems[prefix]=[];return}
+  window._matchItems[prefix]=items;
+  box.className='m-matchlist show';
+  box.innerHTML=`<div class="m-label">Matched Central Persons — click to auto-fill</div>`+
+    items.map(p=>`<div class="m-item" onclick="pickSuggestion('${prefix}','${esc(p.id)}')">
+      <span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span>
+      <div class="m-body"><b>${esc(p.name)}</b><small>${esc(p.nationalId||'No NID')}${p.passportId?' · '+esc(p.passportId):''} · DOB ${esc(p.dob||'—')}</small></div>
+      <span class="m-id">${esc(p.id)}</span>
+    </div>`).join('')+
+    `<div class="m-item m-new" onclick="dismissMatches('${prefix}')">＋ Create as new Central Person</div>`;
 }
-function dismissWarnMatch(prefix){
-  window._identitySkip=window._identitySkip||{};window._identitySkip[prefix]=true;
-  setMatch(prefix,null);
+function pickSuggestion(prefix,pid){
+  const items=(window._matchItems&&window._matchItems[prefix])||[];
+  const p=items.find(x=>x.id===pid);if(!p)return;
+  const ctl=window._identityWires&&window._identityWires[prefix];if(ctl)ctl.fill(p);
+  renderMatchList(prefix,null);
+  setMatch(prefix,{ok:true,person:p,reason:'Selected from the matching Central Person list'});
+}
+function dismissMatches(prefix){
+  renderMatchList(prefix,null);
+  setMatch(prefix,{info:true,reason:'No central record selected \u2014 a new Central Person record will be created automatically on save.'});
 }
 function wireIdentity(prefix){
   window._identityWires=window._identityWires||{};
-  window._identitySkip=window._identitySkip||{};
   let t,seq=0;
   async function run(){
     const my=++seq;
     const d=readIdentity(prefix);
-    if(!(d.first||d.second||d.third||d.fourth||d.national||d.passport||d.mother)){setMatch(prefix,null);return}
+    if(!(d.first||d.second||d.third||d.fourth||d.national||d.passport||d.mother)){renderMatchList(prefix,null);setMatch(prefix,null);return}
     let res;try{res=await resolveIdentity(d)}catch(e){if(my!==seq)return;setMatch(prefix,{tier:-1,reason:'Identity lookup unavailable: '+e.message});return}
     if(my!==seq)return; // a newer search is already running — ignore stale response
     const now=readIdentity(prefix);
     if(JSON.stringify(identityServer(d))!==JSON.stringify(identityServer(now)))return; // officer edited while matching
+    const sugg=(res&&res.suggestions||[]).map(mapPerson);
     if(res&&res.matched&&res.tier<=2){
       const p=mapPerson(res.person);
       fillIdentity(prefix,p);
+      renderMatchList(prefix,null);
       setMatch(prefix,{ok:true,tier:res.tier,reason:res.reason,person:p});
     }else if(res&&res.tier===3){
-      if(window._identitySkip[prefix])return;
-      setMatch(prefix,{warn:true,tier:3,reason:res.reason,person:mapPerson(res.person),candidates:(res.candidates||[]).map(mapPerson)});
+      renderMatchList(prefix,sugg.length?sugg:[mapPerson(res.person)]);
+      setMatch(prefix,{warn:true,tier:3,reason:res.reason,person:mapPerson(res.person)});
+    }else if(res&&res.tier===4){
+      renderMatchList(prefix,sugg.length?sugg:[mapPerson(res.person)]);
+      setMatch(prefix,{suggest:true,tier:4,reason:res.reason,person:mapPerson(res.person)});
+    }else if(sugg.length){
+      renderMatchList(prefix,sugg);
+      setMatch(prefix,{info:true,reason:res.reason});
     }else if(res&&res.tier===0){
+      renderMatchList(prefix,null);
       setMatch(prefix,{info:true,reason:res.reason});
     }else setMatch(prefix,null);
   }
   ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{
     const el=document.getElementById(prefix+'-'+k);
-    if(el)el.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(run,320);window._identitySkip[prefix]=false});
+    if(el)el.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(run,220)});
   });
   run();
-  const ctl={read:()=>readIdentity(prefix),fill:p=>fillIdentity(prefix,p),clear:()=>clearIdentity(prefix),refresh:run};
+  const ctl={read:()=>readIdentity(prefix),fill:p=>fillIdentity(prefix,p),clear:()=>clearIdentity(prefix),refresh:run,pick:p=>{renderMatchList(prefix,null);fillIdentity(prefix,p);setMatch(prefix,{ok:true,person:p,reason:'Matched Central Person selected'})}};
   window._identityWires[prefix]=ctl;return ctl;
 }
 async function upsertPerson(data){

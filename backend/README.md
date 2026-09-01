@@ -34,8 +34,10 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
 | **Tier 1** | Exact National ID **or** Passport match (case/space insensitive) | Auto-merge / link — existing Central Person record is returned and unit data is attached to it |
 | **Tier 2** | Exact 4-part name (first + second + third + fourth) **and** date of birth | High-confidence link — existing record is reused/merged automatically |
 | **Tier 3** | 3-part name + mother's name | Fuzzy warning only — candidates are returned; the officer must confirm before linking |
+| **Tier 4** | **Partial name match** — 2, 3 or 4 entered name components all present in the stored name | Matching Central Person surfaced; the officer **selects the record** from the interactive dropdown to auto-fill and link |
 
-- `POST /api/persons/resolve` runs the engine in real time while an officer types. It returns `matched`, `tier`, `reason`, the matched `person` and, for Tier 3, `candidates`.
+- `POST /api/persons/resolve` runs the engine in real time while an officer types. Matching is **case-insensitive and whitespace-trimmed**, and also covers partial National ID / Passport prefixes.
+- The response includes `matched`, `tier`, `reason`, the matched `person` and **`suggestions`** — an ordered list of candidate Central Persons (full name, National ID/Passport, DOB) that the frontend renders as a live **matching dropdown**. Clicking a suggestion auto-fills all existing central data (name, mother's name, DOB, IDs, address, phone, photo) and shows the green **"Matched Central Record: [Person ID] - [Full Name]"** banner.
 - Unit record endpoints (airport, checkpoint, suspect, clearance) accept **either** an existing `person_id` **or** the full identity fields. If no exact match (Tier 1/2) exists, the Central Person record is **auto-created first** and the unit record is attached to it. This is the single unified entry flow — there is no manual "existing vs new person" toggle.
 - Persons store a first/second/third/fourth name plus `full_name`; legacy databases are migrated and name parts are backfilled automatically.
 - National ID is optional as long as a Passport ID is supplied (and vice versa).
@@ -54,7 +56,7 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
 - `GET /api/me` (authenticated)
 - `GET /api/persons?q=...` (authenticated — searches name parts, full name, National ID, passport, phone, mother's name, Person ID)
 - `POST /api/persons` (authenticated — strict create, 409 if the National ID/passport already exists)
-- `POST /api/persons/resolve` (authenticated — Tier 1/2/3 smart identity resolution)
+- `POST /api/persons/resolve` (authenticated — Tier 1/2/3/4 smart identity resolution with flexible partial-name matching and dropdown `suggestions`)
 - `POST /api/persons/upsert` (authenticated — Tier 1/2 merge or create; returns `created`)
 - `PATCH /api/persons/{person_id}` (authenticated — append/update profile details)
 - `GET /api/persons/{person_id}` (authenticated — profile plus linked airport/clearance/CID records)
@@ -80,6 +82,6 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 python3 backend/test_server.py
 ```
 
-Starts the server against a temporary database and verifies the identity-resolution tiers, optional suspect case linking, auto-create behaviour and duplicate protection.
+Starts the server against a temporary database and verifies the identity-resolution tiers (including flexible 2/3/4-part partial name matching, case-insensitive/trimmed search and dropdown suggestions), optional suspect case linking, auto-create behaviour and duplicate protection.
 
 This is a development foundation, not an operational police deployment. Authentication, database, encryption, roles, file-upload validation and audit controls need a production hardening pass before use with real data.
