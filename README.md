@@ -39,6 +39,11 @@ The same interactive matching engine (Tier 1 exact ID/passport auto-merge, Tier 
 
 The interface uses **no native browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **centered modal dialogs** (new person, new case, checkpoint stop, identity review) that open dead-center over a blurred dark backdrop with a fixed header, an internally scrolling body and a sticky footer.
 
+### In-modal errors and the global toast
+
+- Form submission errors, validation warnings and backend API errors are **never** shown as floating toasts. Inside a modal they render as an **inline red alert banner** directly under the modal title (icon + action instructions); the modal body auto-scrolls to the top and any invalid fields get a red border. On the inline page forms they render in the form's own notice area (red variant) — and any other page-level failure shows a transient top-of-page alert.
+- The **bottom-right global toast** is reserved exclusively for **success/system notifications** (e.g. "Record saved successfully"). It is redesigned with a check icon, drop shadow, proper padding, crisp typography and an auto-dismiss animation after 4 seconds.
+
 ### Fingerprint application, review and certificate
 
 - The expanded clearance application captures applicant data (full name, mother's name, DOB/POB, residence, occupation, passport, National ID, photo, clearance reason) plus **4 applicant file slots (≥2 required)** and guardian data (name, relationship, ID, occupation, address, contact) with **3 guardian file slots (≥2 required)**.

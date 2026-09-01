@@ -59,13 +59,30 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .hint{background:#edf7ff;border:1px solid #cfe7ff;color:#24527e;border-radius:9px;padding:12px;font-size:12px;line-height:1.5}
 .empty{text-align:center;color:var(--muted);padding:30px}
 .notice{padding:12px 14px;border-radius:9px;background:#edfaf7;color:#187b67;font-size:13px;font-weight:650;margin-bottom:15px;display:none}
+.notice.err,.notice.err.show{background:#fdecea;color:#8a2020;border:1px solid #f3c1bd}
 .record-type{font-size:12px;color:var(--muted);margin-bottom:18px}
 .muted{color:var(--muted)}
 .kpi{display:flex;justify-content:space-between;align-items:center}.module-icon{font-size:25px;background:#f0f4ff;border-radius:11px;padding:8px}
 .timeline{display:grid;gap:14px}.event{display:flex;gap:12px}.dot{width:9px;height:9px;border-radius:50%;background:var(--blue);margin-top:5px}
 .event b{font-size:13px}.event small{display:block;color:var(--muted);margin-top:3px}
-.toast{position:fixed;right:28px;bottom:25px;background:#132642;color:white;padding:13px 17px;border-radius:10px;box-shadow:var(--shadow);display:none;font-size:13px;z-index:2000;max-width:340px}
-.toast.err{background:#7a2330}
+.toast{position:fixed;right:28px;bottom:25px;background:#0e2b1e;color:#eafff6;padding:14px 18px;border-radius:12px;border:1px solid #1f4030;box-shadow:0 14px 36px #10204033,0 2px 8px #10204022;display:none;font-size:13.5px;font-weight:600;line-height:1.4;z-index:2000;max-width:360px;gap:11px;align-items:center}
+.toast.show{display:flex;animation:toastIn .28s ease}
+.toast.hide{opacity:0;transform:translateY(16px);transition:opacity .32s ease,transform .32s ease}
+@keyframes toastIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.toast .toast-ico{width:26px;height:26px;border-radius:50%;background:#21c07a;color:#fff;display:inline-grid;place-items:center;font-size:14px;font-weight:900;flex:none}
+.toast b{font-size:13.5px;display:block;font-weight:700}
+/* inline alert banners (modal + page forms) */
+.alert{display:none;align-items:flex-start;gap:10px;border-radius:10px;padding:13px 14px;font-size:13px;line-height:1.55;margin-bottom:14px;border:1px solid transparent}
+.alert.show{display:flex}
+.alert.error{background:#fdecea;border-color:#f3c1bd;color:#8a2020}
+.alert.success{background:#e8f8f2;border-color:#b7e6d6;color:#12614f}
+.alert b{display:block;margin-bottom:2px;font-size:13px}
+.alert .a-ico{font-size:17px;flex:none;line-height:1.25}
+.alert .a-body{flex:1;min-width:0}
+.alert.error .a-ico{color:#c0392b}
+.alert.success .a-ico{color:#16856b}
+/* invalid field highlight */
+.field.invalid input,.field.invalid select,.field.invalid textarea,input.invalid,select.invalid,textarea.invalid,.fileslot.invalid{border-color:var(--red)!important;box-shadow:0 0 0 3px #d84f5a24!important;background:#fff7f7}
 /* unified identity form + real-time match banners */
 .match-banner{border-radius:10px;padding:12px 14px;font-size:13px;font-weight:600;line-height:1.55;display:none;margin-bottom:4px}
 .match-banner.show{display:block}
@@ -247,6 +264,7 @@ body.modal-open{overflow:hidden}
 <div class="panel-head">
 <div><button class="backbtn" onclick="go('cid')">← Back to cases</button><h2 style="margin-top:12px" id="cwTitle">Case workspace</h2><div class="sub" id="cwSub"></div></div>
 </div>
+<div class="alert error" id="cwAlert" role="alert" aria-live="assertive" tabindex="-1"></div>
 <div class="tabs">
 <button class="tab active" data-cwtab="details" onclick="cwTab('details')">1 · Case Details &amp; Incident Summary</button>
 <button class="tab" data-cwtab="participants" onclick="cwTab('participants')">2 · Participants &amp; Suspect List</button>
@@ -312,7 +330,7 @@ body.modal-open{overflow:hidden}
 
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
-<div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
+<div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
 
 <script>
 // ============================ state ============================
@@ -333,7 +351,21 @@ function person(id){return db.people.find(p=>p.id===id)}
 function initials(n){return (n||'?').split(' ').map(x=>x[0]).slice(0,2).join('')}
 function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]))}
 function normTxt(s){return String(s??'').replace(/\s+/g,' ').trim().toLowerCase()}
-function toast(s,err){let t=document.getElementById('toast');t.textContent=s;t.className='toast'+(err?' err':'');t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3200)}
+// Global toast — reserved for success/system notifications only (auto-dismisses after 4s).
+function toast(s,sub){let t=document.getElementById('toast');const ico='<span class="toast-ico">✓</span>';t.innerHTML=ico+'<div><b>'+esc(s)+'</b>'+(sub?'<small style="font-weight:500;opacity:.85">'+esc(sub)+'</small>':'')+'</div>';t.className='toast show';clearTimeout(t._h);t._h=setTimeout(()=>{t.classList.add('hide');setTimeout(()=>{t.className='toast';t.classList.remove('hide')},340)},4000)}
+// Inline banner shown directly under the modal title. err=true renders a soft-red error.
+function showModalAlert(msg,err=true,title){const el=document.getElementById('modalError');if(!el)return;const icon=err?'⚠️':'✅';el.className='alert '+(err?'error':'success')+' show';el.innerHTML='<span class="a-ico">'+icon+'</span><div class="a-body"><b>'+(title||(err?'Unable to Save':'Success'))+'</b><span>'+esc(msg)+'</span></div>'}
+function hideModalAlert(){const el=document.getElementById('modalError');if(el)el.className='alert error'}
+// Mark a set of fields invalid (red border). Handles prefixed ids (`prefix-field`) and direct ids (`field`).
+function markInvalid(prefix,fieldNames){const list=fieldNames||[];list.forEach(f=>{let el=prefix?document.getElementById(prefix+'-'+f):null;if(!el)el=document.getElementById(f);if(!el)return;const wrap=el.closest('.field')||el;wrap.classList.add('invalid')})}
+function clearInvalid(root){((root&&root.querySelectorAll?root:document).querySelectorAll('.invalid')).forEach(el=>el.classList.remove('invalid'))}
+// Unified error reporter: active modal -> in-modal banner; page form -> its notice; else transient page alert. No floating toast on error.
+function showFormError(msg,opts={}){const{prefix,names,title,notice}=opts;if(prefix||names)markInvalid(prefix,names);const modal=document.getElementById('drawer');if(modal&&modal.classList.contains('on')){showModalAlert(msg,true,title);const body=document.getElementById('drawerBody');if(body){body.scrollTop=0;try{body.scrollTo({top:0,behavior:'smooth'})}catch(e){}}return}
+  const n=notice&&document.getElementById(notice);
+  if(n){n.className='notice err show';n.style.display='block';n.textContent=msg;try{window.scrollTo({top:0,behavior:'smooth'})}catch(e){}return}
+  const page=document.querySelector('.page.active')||document.body;
+  const a=document.createElement('div');a.className='alert error show';a.innerHTML='<span class="a-ico">⚠️</span><div class="a-body"><b>'+(title||'Unable to Save')+'</b><span>'+esc(msg)+'</span></div>';
+  page.insertBefore(a,page.firstChild);a._t=setTimeout(()=>a.remove(),6000)}
 
 // ============================ api ============================
 async function api(path,options={}){options.headers={...(options.headers||{})};if(!(options.body instanceof FormData))options.headers['Content-Type']='application/json';if(apiToken)options.headers.Authorization='Bearer '+apiToken;let r=await fetch(path,options);let data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Server request failed');return data}
@@ -641,8 +673,8 @@ async function ensureLocalIdentity(d){
 }
 
 // ============================ drawer ============================
-function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on');document.body.classList.add('modal-open')}
-function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on');document.body.classList.remove('modal-open')}
+function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';clearInvalid();hideModalAlert();document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on');document.body.classList.add('modal-open')}
+function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on');document.body.classList.remove('modal-open');hideModalAlert();clearInvalid()}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('drawer').classList.contains('on'))closeDrawer()});
 function val(id){return document.getElementById(id).value.trim()}
 
@@ -659,10 +691,11 @@ function openPersonDrawer(prefill,onSaved){
   window._personDrawerCb=onSaved||null;
 }
 async function submitPersonDrawer(existingId){
-  const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  clearInvalid();
+  const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'pd',names:['first','second','third','fourth','dob','mother','address']});return}
   const data={name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),first:d.first,second:d.second,third:d.third,fourth:d.fourth,
     nationalId:d.national,passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation};
-  if(!data.nationalId&&!data.passportId){toast('National ID or Passport ID is required',true);return}
+  if(!data.nationalId&&!data.passportId){showFormError('National ID or Passport ID is required.',{prefix:'pd',names:['national','passport'],title:'Unable to Save'});return}
   try{
     let saved;
     if(serverOn){
@@ -671,7 +704,7 @@ async function submitPersonDrawer(existingId){
     }else saved=await upsertPerson(data);
     closeDrawer();renderAll();toast(existingId?'Identity profile updated':'Person saved to central registry');
     if(window._personDrawerCb)window._personDrawerCb(saved);
-  }catch(e){toast(e.message,true)}
+  }catch(e){showFormError(e.message||'The person could not be saved.',{prefix:'pd',title:'Unable to Save'})}
 }
 window._viewingPerson=null;
 function openPersonView(id){
@@ -723,10 +756,11 @@ function openAddSuspect(){
   wireIdentity('sp');
 }
 async function submitAddSuspect(){
-  const d=window._identityWires.sp.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  clearInvalid();
+  const d=window._identityWires.sp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'sp',names:['first','second','third','fourth','dob','mother','address']});return}
   const caseId=val('spCase'),origin=caseId?'Case Link':val('spOrigin');
   const reason=val('spNote');
-  if(!caseId&&!reason){toast('Suspect reason / alert details is required for unlinked suspects',true);return}
+  if(!caseId&&!reason){showFormError('Suspect reason / alert details is required for unlinked suspects.',{prefix:'sp',names:['note'],title:'Unable to Save'});return}
   const payload={...identityServer(d),case_id:caseId||null,role:'Suspect',origin,notes:reason};
   try{
     let msg;
@@ -744,7 +778,7 @@ async function submitAddSuspect(){
       persist();msg='Suspect '+p.id+(caseId?' linked to '+caseId:' listed without a case — '+origin)+' (local demo)';
     }
     closeDrawer();await syncServer();toast(msg);
-  }catch(e){toast(e.message,true)}
+  }catch(e){showFormError(e.message||'The suspect could not be added.',{prefix:'sp',title:'Unable to Save'})}
 }
 
 // ============================ render ============================
@@ -802,11 +836,12 @@ function collectFiles(prefix,count){const out=[];for(let i=0;i<count;i++){const 
 function resetFpForm(){fpForm.reset();window._identityWires.fp.clear();[...document.querySelectorAll('.fileslot')].forEach(f=>f.classList.remove('filled'));fpNotice.style.display='none'}
 async function saveFingerprint(e){
   e.preventDefault();
-  const d=window._identityWires.fp.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  clearInvalid();
+  const d=window._identityWires.fp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'fp',names:['first','second','third','fourth','dob','mother','address'],notice:'fpNotice'});return}
   const appDocs=collectFiles('appDoc',4),guardDocs=collectFiles('guardDoc',3);
-  if(!gName.value.trim()){toast('Guardian full name is required',true);return}
-  if(appDocs.length<2){toast('Attach at least 2 applicant documents',true);return}
-  if(guardDocs.length<2){toast('Attach at least 2 guardian documents',true);return}
+  if(!gName.value.trim()){showFormError('Guardian full name is required.',{names:['gName'],notice:'fpNotice'});return}
+  if(appDocs.length<2){showFormError('Attach at least 2 applicant documents.',{notice:'fpNotice'});return}
+  if(guardDocs.length<2){showFormError('Attach at least 2 guardian documents.',{notice:'fpNotice'});return}
   try{
     if(serverOn){
       const photo=document.getElementById('fp-photo').files[0];
@@ -815,39 +850,39 @@ async function saveFingerprint(e){
       appDocs.forEach((f,i)=>fd.append('doc_app_'+i,f));guardDocs.forEach((f,i)=>fd.append('doc_guard_'+i,f));if(photo)fd.append('photo',photo);
       const r=await api('/api/clearance-applications',{method:'POST',body:fd});
       const m=r.identity&&r.identity.matched?'matched to existing central record '+r.identity.person_id:'new central person '+r.person_id+' created';
-      fpNotice.textContent='Application '+r.application_id+' saved — identity '+m+'.';
+      fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application '+r.application_id+' saved — identity '+m+'.';
     }else{
       const person=await ensureLocalIdentity(d);
       db.fingerprint.unshift({id:'FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0'),person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim()});
-      persist();fpNotice.textContent='Application saved (local demo) and linked to '+person.id+'.';
+      persist();fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application saved (local demo) and linked to '+person.id+'.';
     }
-    fpNotice.style.display='block';resetFpForm();await syncServer();toast('Clearance application saved');
-  }catch(err){toast(err.message,true)}
+    fpNotice.className='notice';fpNotice.style.display='block';resetFpForm();await syncServer();toast('Clearance application saved');
+  }catch(err){showFormError(err.message||'The clearance application could not be saved.',{notice:'fpNotice',title:'Unable to Save'})}
 }
 async function approveFP(id){
   try{if(serverOn){await api('/api/clearance-applications/'+id+'/approve',{method:'POST',body:'{}'});await syncServer();toast('Approved — certificate unlocked for printing')}
   else{let x=db.fingerprint.find(a=>a.id===id);x.status='Approved';x.certificate='CL-'+Date.now().toString().slice(-6);persist();renderAll();toast('Approved; certificate '+x.certificate+' generated (local demo)')}}
-  catch(e){toast(e.message,true)}
+  catch(e){showFormError(e.message||('Application '+id+' could not be approved.'),{title:'Unable to Save'})}
 }
 
 // ============================ airport ============================
 async function saveAirport(e){
   e.preventDefault();
-  const d=window._identityWires.air.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  clearInvalid();
+  const d=window._identityWires.air.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'air',names:['first','second','third','fourth','dob','mother','address'],notice:'airNotice'});return}
   try{
     let p;
     if(serverOn){
       const r=await api('/api/airport-records',{method:'POST',body:JSON.stringify({...identityServer(d),movement:airMove.value,travel_date:airDate.value,flight_number:airFlight.value,route:airRoute.value,notes:airNotes.value})});
       p=r.identity&&r.identity.matched?r.identity.person_id:null;
-      airNotice.textContent='Passenger saved — '+(r.identity&&r.identity.matched?'matched and linked to existing Central Person '+r.identity.person_id:'new Central Person '+r.identity.person_id+' created and linked')+'.';
+      airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved — '+(r.identity&&r.identity.matched?'matched and linked to existing Central Person '+r.identity.person_id:'new Central Person '+r.identity.person_id+' created and linked')+'.';
     }else{
       p=(await ensureLocalIdentity(d)).id;
       db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p,move:airMove.value,date:airDate.value,flight:airFlight.value,route:airRoute.value,notes:airNotes.value});persist();
-      airNotice.textContent='Passenger saved and linked to '+p+' in the Central Person Registry (local demo).';
+      airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved and linked to '+p+' in the Central Person Registry (local demo).';
     }
-    airNotice.style.display='block';
     airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';await syncServer();toast('Airport unit record saved');
-  }catch(err){toast(err.message,true)}
+  }catch(err){showFormError(err.message||'The passenger record could not be saved.',{notice:'airNotice',title:'Unable to Save'})}
 }
 
 // ============================ CID case workspace ============================
@@ -863,14 +898,15 @@ function openCaseDrawer(){
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCaseDrawer()">Create case</button>`);
 }
 async function submitCaseDrawer(){
-  if(!val('cdCategory')){toast('Category is required',true);return}
+  clearInvalid();
+  if(!val('cdCategory')){showFormError('Category is required to create a case.',{prefix:'cd',names:['category'],title:'Unable to Save'});return}
   const payload={category:val('cdCategory'),location:val('cdLocation')||'Not specified',status:val('cdStatus'),incident_summary:val('cdSummary')};
   try{
     let id;
     if(serverOn){const r=await api('/api/crime-cases',{method:'POST',body:JSON.stringify(payload)});id=r.case_id}
     else{id='CID-2026-'+String(db.cases.length+8).padStart(3,'0');db.cases.unshift({id,category:payload.category,location:payload.location,status:payload.status,summary:payload.incident_summary,participants:[],evidence:[]});persist()}
     closeDrawer();renderAll();toast('Case '+id+' created');openCase(id);
-  }catch(e){toast(e.message,true)}
+  }catch(e){showFormError(e.message||'The case could not be created.',{title:'Unable to Save'})}
 }
 function cwTab(t){document.querySelectorAll('[data-cwtab]').forEach(b=>b.classList.toggle('active',b.dataset.cwtab===t));document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));document.getElementById('cw-'+t).classList.add('active')}
 async function openCase(caseId){
@@ -901,9 +937,10 @@ function renderCwEvidence(list){
       <div class="ev-body"><b>${esc(x.caption||x.file_name||'Evidence')}</b><small>${esc(x.file_type||'')} ${src?`· <a href="${esc(src)}" target="_blank">open</a>`:''}</small></div></div>`}).join('')||'<div class="empty">No evidence uploaded yet</div>';
 }
 async function addParticipant(){
-  const d=window._identityWires.cw.read(),v=validateIdentity(d);if(!v.ok){toast(v.msg,true);return}
+  clearInvalid();
+  const d=window._identityWires.cw.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'cw',names:['first','second','third','fourth','dob','mother','address'],notice:'cwAlert'});return}
   const role=cwRole.value,note=cwPartNote.value.trim(),caseId=val('cwCaseSel')||null;
-  if(!caseId&&!note){toast('Participant note / reason is required when no case is linked',true);return}
+  if(!caseId&&!note){showFormError('Participant note / reason is required when no case is linked.',{names:['cwPartNote'],notice:'cwAlert'});return}
   try{
     if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({...identityServer(d),case_id:caseId,role,notes:note,origin:caseId?'Case Link':'Direct Intelligence Listing'})});
     else{const c=db.cases.find(x=>x.id===cwCase);const p=await ensureLocalIdentity(d);
@@ -911,23 +948,24 @@ async function addParticipant(){
       if(role==='Suspect')db.suspects.unshift({person:p.id,case:caseId||'',role,alert:'Active alert',origin:caseId?'Case Link':'Direct Intelligence Listing'});
       persist()}
     cwPartNote.value='';window._identityWires.cw.clear();toast(role+' linked'+(caseId?' to '+caseId:' without a linked case'));openCase(cwCase);
-  }catch(e){toast(e.message,true)}
+  }catch(e){showFormError(e.message||'The participant could not be linked.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 async function saveCaseDetails(){
+  clearInvalid();
   const payload={status:cwStatus.value,category:cwCategory.value.trim(),location:cwLocation.value.trim(),incident_summary:cwSummary.value,notes:cwNotes.value};
   try{
     if(serverOn)await api('/api/crime-cases/'+cwCase,{method:'PATCH',body:JSON.stringify(payload)});
     else{const c=db.cases.find(x=>x.id===cwCase);Object.assign(c,{status:payload.status,category:payload.category,location:payload.location,summary:payload.incident_summary,notes:payload.notes});persist()}
     renderAll();toast('Case details saved');
-  }catch(e){toast(e.message,true)}
+  }catch(e){showFormError(e.message||'The case details could not be saved.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 async function uploadEvidence(){
-  const f=evFile.files[0];if(!f){toast('Choose a file to upload',true);return}
+  const f=evFile.files[0];if(!f){showFormError('Choose a file to upload.',{notice:'cwAlert',title:'Unable to Save'});return}
   try{
     if(serverOn){const fd=new FormData();fd.append('caption',evCaption.value.trim());fd.append('file_type',evType.value);fd.append('file',f);await api('/api/crime-cases/'+cwCase+'/evidence',{method:'POST',body:fd})}
     else{const c=db.cases.find(x=>x.id===cwCase);const url=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(f)});c.evidence.push({caption:evCaption.value.trim()||f.name,file_type:evType.value,file_name:f.name,url});persist()}
     evCaption.value='';evFile.value='';toast('Evidence uploaded');openCase(cwCase);
-  }catch(e){toast(e.message,true)}
+  }catch(e){showFormError(e.message||'The evidence could not be uploaded.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 
 // ============================ checkpoints ============================
@@ -959,13 +997,14 @@ function openCheckpointDrawer(){
   });
 }
 async function submitCheckpoint(){
-  const d=window._identityWires.cp.read(),v=validateTraveler(d);if(!v.ok){toast(v.msg,true);return}
-  const gd=window._identityWires.gd.read(),gv=validateGuardian(gd);if(!gv.ok){toast(gv.msg,true);return}
+  clearInvalid();
+  const d=window._identityWires.cp.read(),v=validateTraveler(d);if(!v.ok){showFormError(v.msg,{prefix:'cp',names:['first','second','third','fourth','dob','address','permanent','purpose']});return}
+  const gd=window._identityWires.gd.read(),gv=validateGuardian(gd);if(!gv.ok){showFormError(gv.msg,{prefix:'gd',names:['first','second','third','fourth','relationship','phone','permanent','occupation']});return}
   const trDocs=collectFiles('tdoc',2),gdDocs=collectFiles('gdoc',2);
-  if(trDocs.length<1){toast('Attach at least 1 traveler document',true);return}
-  if(gdDocs.length<1){toast('Attach at least 1 guardian document',true);return}
+  if(trDocs.length<1){showFormError('Attach at least 1 traveler document.',{title:'Unable to Save'});return}
+  if(gdDocs.length<1){showFormError('Attach at least 1 guardian document.',{title:'Unable to Save'});return}
   const photo=document.getElementById('cp-photo').files[0];
-  if(!photo){toast('Real-time traveler photo is required',true);return}
+  if(!photo){showFormError('Real-time traveler photo is required.',{title:'Unable to Save'});return}
   const gmatched=(window._identityMatches&&window._identityMatches.gd)||null;
   try{
     if(serverOn){
@@ -995,7 +1034,7 @@ async function submitCheckpoint(){
       guardianRelationship:gd.relationship,guardianPhone:gd.phone,guardianAddress:gd.permanent,guardianOccupation:gd.occupation,
       travelerDocs:trDocs.length,guardianDocs:gdDocs.length,photoName:photo.name});
     persist();closeDrawer();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
-  }catch(e){toast(e.message,true)}
+  }catch(e){showFormError(e.message||'The checkpoint stop could not be recorded.',{title:'Unable to Save'})}
 }
 
 // ============================ server sync ============================
