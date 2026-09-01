@@ -42,16 +42,20 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .section-label{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--blue);margin:4px 0 2px;border-bottom:2px solid #eef3ff;padding-bottom:6px}
 .search{position:relative}.search input{width:100%;padding:12px 14px 12px 38px;border:1px solid var(--line);border-radius:9px}
 .search span{position:absolute;left:14px;top:10px;color:#8c99ad}
-.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;font-size:13px}
-.table th{text-align:left;color:#75839a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:11px 10px;border-bottom:1px solid var(--line)}
-.table td{padding:13px 10px;border-bottom:1px solid #edf1f6;vertical-align:middle}
+.table-wrap{width:100%;overflow:auto;max-height:calc(100vh - 280px);border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:var(--shadow)}
+.table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.table th{position:sticky;top:0;background:#f7f9ff;text-align:left;color:#75839a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:12px 12px;border-bottom:1px solid var(--line);z-index:2;white-space:nowrap}
+.table td{padding:13px 12px;border-bottom:1px solid #edf1f6;vertical-align:middle}
 .table tr:last-child td{border-bottom:0}
 .table tr.clickable{cursor:pointer}.table tr.clickable:hover td{background:#f8faff}
+.table .actions{white-space:nowrap;text-align:right}
+.table .actions .btn{white-space:nowrap}
 .person{display:flex;align-items:center;gap:10px}.mini{width:30px;height:30px;border-radius:8px;background:#eaf0ff;color:var(--blue);display:grid;place-items:center;font-size:11px;font-weight:800;overflow:hidden}
 .mini img{width:100%;height:100%;object-fit:cover}
 .badge{display:inline-flex;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700}
 .badge.green{background:#e3f7f1;color:var(--green)}.badge.amber{background:#fff3d9;color:var(--amber)}
 .badge.red{background:#ffeaec;color:var(--red)}.badge.blue{background:#eaf0ff;color:var(--blue)}.badge.gray{background:#eef1f6;color:#5b6779}
+.badge.purple{background:#f0e9ff;color:#6c3fd4}
 .hint{background:#edf7ff;border:1px solid #cfe7ff;color:#24527e;border-radius:9px;padding:12px;font-size:12px;line-height:1.5}
 .empty{text-align:center;color:var(--muted);padding:30px}
 .notice{padding:12px 14px;border-radius:9px;background:#edfaf7;color:#187b67;font-size:13px;font-weight:650;margin-bottom:15px;display:none}
@@ -87,15 +91,19 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .m-item .m-id{color:var(--blue);font-weight:800;font-size:11px;flex:none}
 .m-item.m-new{color:var(--blue);font-weight:700;font-size:12px;background:#f7f9ff}
 .m-photoprev{width:44px;height:44px;border-radius:8px;object-fit:cover;margin-top:6px;display:none}
-/* drawer */
-.overlay{position:fixed;inset:0;background:#0d1b31aa;z-index:1100;display:none}
+/* centered modal */
+.overlay{position:fixed;inset:0;background:#0d1b31b3;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:1100;display:none}
 .overlay.on{display:block}
-.drawer{position:fixed;top:0;right:-520px;width:500px;max-width:94vw;height:100vh;background:#fff;z-index:1200;box-shadow:-10px 0 40px #10204022;transition:right .22s ease;display:flex;flex-direction:column}
-.drawer.on{right:0}
-.drawer-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
-.drawer-head h3{margin:0;font-size:17px}.drawer-body{padding:20px 22px;overflow-y:auto;flex:1}
-.drawer-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
-.iconbtn{background:#eef1f6;border-radius:8px;width:34px;height:34px;font-size:16px;color:#526075}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(680px,calc(100vw - 40px));max-height:calc(100vh - 40px);background:#fff;z-index:1200;border-radius:16px;box-shadow:0 30px 70px #10204044;display:none;flex-direction:column;overflow:hidden;animation:modalIn .18s ease}
+.modal.on{display:flex}
+@keyframes modalIn{from{opacity:0;transform:translate(-50%,-50%) translateY(8px) scale(.985)}to{opacity:1;transform:translate(-50%,-50%)}}
+.modal-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex:none;background:#fff}
+.modal-head h3{margin:0;font-size:17px}
+.modal-body{padding:20px 22px;overflow-y:auto;max-height:80vh;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
+.modal-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;flex:none;position:sticky;bottom:0;background:#fff}
+.iconbtn{background:#eef1f6;border-radius:8px;width:34px;height:34px;font-size:16px;color:#526075;flex:none}
+@media(max-width:650px){.modal{width:calc(100vw - 24px);max-width:calc(100vw - 24px)}}
+body.modal-open{overflow:hidden}
 /* file slots */
 .fileslot{border:1.5px dashed #c4d0e3;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;background:#fafcff}
 .fileslot input{font-size:12px}.fileslot .req{color:var(--red);font-weight:800}
@@ -153,7 +161,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="panel"><div class="panel-head"><div><h2>Central Person Registry</h2><div class="sub">One identity record — unit data is appended, never duplicated</div></div><button class="btn" onclick="openPersonDrawer(null)">+ New / update person</button></div>
 <div class="hint" style="margin-bottom:16px">Central data stores identity and contact reference only. Airport, Fingerprint, CID and Checkpoint records stay in their own registers and link through Person ID. Open any person to append new details (e.g. Passport ID, Guardian, phone).</div>
 <div class="search"><span>⌕</span><input id="personSearch" placeholder="Search name, national ID, passport or Person ID..." oninput="renderPeople()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Linked unit records</th><th></th></tr></thead><tbody id="peopleTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Linked unit records</th><th>Actions</th></tr></thead><tbody id="peopleTable"></tbody></table></div>
 </div>
 </section>
 
@@ -214,7 +222,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 </form>
 </div>
 <div class="panel"><div class="panel-head"><div><h2>Recent passenger records</h2><div class="sub">Airport unit register</div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th></tr></thead><tbody id="airTable"></tbody></table></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div></div>
 </div>
 </div>
 </section>
@@ -224,12 +232,12 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="panel">
 <div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><button class="btn" onclick="openCaseDrawer()">+ New case</button></div>
 <div class="hint" style="margin-bottom:14px">Open a case to access its three workspace tabs: <b>Details &amp; incident summary</b>, <b>Participants &amp; suspect linkage</b>, and <b>Evidence &amp; media</b>.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th></tr></thead><tbody id="caseTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th><th>Actions</th></tr></thead><tbody id="caseTable"></tbody></table></div>
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><button class="btn" onclick="openAddSuspect()">＋ Add suspect</button></div>
 <div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes. Suspects listed without a case are recorded with a <b>Direct Intelligence Listing</b> or <b>Manual Entry</b> origin.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th><th>Actions</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
 </div>
 </section>
 
@@ -273,7 +281,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 </div>
 </div>
 <div class="panel" style="box-shadow:none;border:1px solid var(--line)"><div class="panel-head"><div><h2>Linked participants</h2></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Role</th><th>Note</th><th>Alert</th></tr></thead><tbody id="cwPartTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Role</th><th>Note</th><th>Alert</th><th>Actions</th></tr></thead><tbody id="cwPartTable"></tbody></table></div>
 </div>
 </div>
 <div class="tabpane" id="cw-evidence">
@@ -297,14 +305,14 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 <div class="panel">
 <div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div>
 <div class="grid3" style="margin-bottom:20px"><div class="card"><b>South Checkpoint</b><div class="sub">Computer 01 · Active</div></div><div class="card"><b>West Checkpoint</b><div class="sub">Computer 02 · Active</div></div><div class="card"><b>East Checkpoint</b><div class="sub">Computer 03 · Active</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Action</th></tr></thead><tbody id="cpTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Action</th><th>Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div>
 </div>
 </section>
 </main></div>
 
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
-<div class="drawer" id="drawer"><div class="drawer-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()">✕</button></div><div class="drawer-body" id="drawerBody"></div><div class="drawer-foot" id="drawerFoot"></div></div>
+<div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
 
 <script>
 // ============================ state ============================
@@ -633,8 +641,9 @@ async function ensureLocalIdentity(d){
 }
 
 // ============================ drawer ============================
-function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on')}
-function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on')}
+function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on');document.body.classList.add('modal-open')}
+function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on');document.body.classList.remove('modal-open')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('drawer').classList.contains('on'))closeDrawer()});
 function val(id){return document.getElementById(id).value.trim()}
 
 // ---- unified central person drawer (create / view & update) ----
@@ -746,7 +755,7 @@ function renderPeople(){
     <td><div class="person"><span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span><b>${esc(p.name)}</b></div></td>
     <td>${esc(p.id)}</td><td>${esc(p.nationalId||'—')}</td><td>${esc(p.passportId||'—')}</td>
     <td>${(p.units||[]).map(u=>'<span class="badge blue">'+esc(u)+'</span>').join(' ')}</td>
-    <td><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">Open</button></td></tr>`).join('');
+    <td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">View</button></td></tr>`).join('');
   peopleTable.innerHTML=rows||'<tr><td colspan="6" class="empty">No people found</td></tr>';
 }
 function renderAll(){
@@ -757,19 +766,20 @@ function renderAll(){
   renderPeople();
   fpTable.innerHTML=db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
-   <td><span class="badge ${approved?'green':'amber'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
-   <td style="white-space:nowrap">
+   <td><span class="badge ${approved?'green':'blue'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
+   <td class="actions">
      <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
      ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`:`<button class="btn small" onclick="approveFP('${esc(x.id)}')">Approve</button>`}
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
-  airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td></tr>`}).join('')||'<tr><td colspan="4" class="empty">No passenger records</td></tr>';
+  airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}<br><small class="muted">${esc(x.route)}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
-  suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?esc(x.case):'<span class="badge amber">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active alerts</td></tr>';
+  suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No active alerts</td></tr>';
   cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td>
     <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
     <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
     <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
-    <td>${esc(x.action)}${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No stops recorded</td></tr>';
+    <td><span class="badge ${x.action==='Cleared'?'green':'red'}">${esc(x.action)}</span>${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td>
+    <td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No stops recorded</td></tr>';
   activity.innerHTML=`<div class="event"><span class="dot"></span><div><b>${db.fingerprint.length} clearance application(s)</b><small>${db.fingerprint.filter(x=>x.status==='Pending Review').length} pending review · Fingerprint Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--amber)"></span><div><b>${db.cases.filter(x=>x.status!=='Closed').length} open crime case(s)</b><small>CID Criminal Unit</small></div></div>
    <div class="event"><span class="dot" style="background:var(--green)"></span><div><b>${db.checkpoints.length} checkpoint screening event(s)</b><small>${db.checkpoints.filter(x=>x.screen==='Flagged match').length} flagged match(es) · Checkpoint operations</small></div></div>
@@ -779,7 +789,7 @@ function renderCases(){
   if(!window.caseTable)return;
   caseTable.innerHTML=db.cases.map(c=>{
     const parts=c.participants?c.participants.length:(db.suspects.filter(s=>s.case===c.id).length);
-    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No cases yet</td></tr>';
+    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td><td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openCase('${esc(c.id)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="6" class="empty">No cases yet</td></tr>';
 }
 
 // ============================ fingerprint ============================
@@ -882,7 +892,7 @@ async function openCase(caseId){
   }
 }
 function renderCwParticipants(list){
-  cwPartTable.innerHTML=(list||[]).map(x=>`<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.role==='Suspect'?'red':'gray'}">${esc(x.role)}</span>${x.origin&&!x.case_id?`<br><small class="muted">${esc(x.origin)}</small>`:''}</td><td>${esc(x.note||'')}</td><td>${x.role==='Suspect'?'<span class="badge red">Active alert</span>':'<span class="muted">—</span>'}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No participants linked yet</td></tr>';
+  cwPartTable.innerHTML=(list||[]).map(x=>`<tr><td><b>${esc(x.name||person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td><span class="badge ${x.role==='Suspect'?'red':'gray'}">${esc(x.role)}</span>${x.origin&&!x.case_id?`<br><small class="muted">${esc(x.origin)}</small>`:''}</td><td>${esc(x.note||'')}</td><td>${x.role==='Suspect'?'<span class="badge red">Active alert</span>':'<span class="muted">—</span>'}</td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No participants linked yet</td></tr>';
 }
 function renderCwEvidence(list){
   cwEvidGrid.innerHTML=(list||[]).map(x=>{

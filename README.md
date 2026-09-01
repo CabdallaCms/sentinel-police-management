@@ -35,9 +35,9 @@ As the officer types, the form performs **real-time background matching** agains
 
 The same interactive matching engine (Tier 1 exact ID/passport auto-merge, Tier 2 exact 4-part name + DOB high-confidence link, Tier 3 fuzzy warning, Tier 4 partial-name dropdown) is applied across **Checkpoints, Airport Control, Fingerprint Unit and CID**.
 
-### No popups — pages and side panels
+### No popups — pages and centered modals
 
-The interface uses **no browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **slide-in side panels** (new person, new case, checkpoint stop).
+The interface uses **no native browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **centered modal dialogs** (new person, new case, checkpoint stop, identity review) that open dead-center over a blurred dark backdrop with a fixed header, an internally scrolling body and a sticky footer.
 
 ### Fingerprint application, review and certificate
 
@@ -49,7 +49,7 @@ The interface uses **no browser dialogs**. All create/edit actions happen in **d
 
 Each case opens in a full-page workspace with three tabs: **1) Case Details & Incident Summary**, **2) Participants & Suspect List Linkage** (suspect/victim/witness/complainant, with suspects creating checkpoint/airport alerts), and **3) Evidence & Media Storage** (file uploads with captions).
 
-The **Add Suspect** drawer makes the **linked case strictly optional**: a suspect can be listed with a case, or without one, in which case the origin is recorded as **"Direct Intelligence Listing"** or **"Manual Entry"**. The suspect endpoints (`POST /api/suspect-alerts`) accept an optional `case_id` and store the origin server-side.
+The **Add Suspect** modal makes the **linked case strictly optional**: a suspect can be listed with a case, or without one, in which case the origin is recorded as **"Direct Intelligence Listing"** or **"Manual Entry"**. The suspect endpoints (`POST /api/suspect-alerts`) accept an optional `case_id` and store the origin server-side.
 
 ## Architecture
 
@@ -106,7 +106,7 @@ Open `http://localhost:8000`.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
 6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. The **Suspect reason / alert details** field is **mandatory when no Crime Case is linked**; when a case IS linked it can be left empty and automatically defaults to `Linked to CID case {code} — {category}`. Submitting with an exact match reuses the existing central record.
 7. Open a case workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert; the case is optional, and a participant note is required when no case is linked), and upload evidence (tab 3).
-8. Open **Checkpoints → Record stop** for a listed suspect and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts. The checkpoint drawer is a **full traveler + guardian screening layout**: traveler (4-part name, DOB, place of birth, current/permanent address, purpose of visit, real-time photo, optional National ID/Passport, **≥1 of 2 document slots**), guardian (name, relationship, contact, permanent address, occupation, optional IDs, **≥1 of 2 document slots**). Smart identity resolution auto-fills **both** traveler and guardian, and all uploaded files are stored in `backend/uploads/` and referenced from the stored event.
+8. Open **Checkpoints → Record stop** for a listed suspect and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts. The checkpoint modal is a **full traveler + guardian screening layout**: traveler (4-part name, DOB, place of birth, current/permanent address, purpose of visit, real-time photo, optional National ID/Passport, **≥1 of 2 document slots**), guardian (name, relationship, contact, permanent address, occupation, optional IDs, **≥1 of 2 document slots**). Smart identity resolution auto-fills **both** traveler and guardian, and all uploaded files are stored in `backend/uploads/` and referenced from the stored event.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 
