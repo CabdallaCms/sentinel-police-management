@@ -1317,6 +1317,29 @@ function paintActivityFromData(events){
 // message, and the count summary.
 const CP_LOCATIONS = ['South', 'East', 'West'];
 
+// Spec step 1 (frontend): single source of truth for "is this role a
+// Checkpoint officer?". Accepts every spelling the backend recognises:
+//   - 'CheckpointSouth' / 'CheckpointEast' / 'CheckpointWest' (legacy
+//     compound form, stored in users.role)
+//   - 'checkpoint_officer' (canonical normalised alias from the
+//     server payload's role_alias field)
+//   - 'cp_south' / 'cp.east' / 'cp.west' / 'checkpoint_south' (any
+//     other accepted alias)
+//   - 'Checkpoint Officer (South)' (legacy display name)
+function isCheckpointRole(role){
+  if(!role) return false;
+  const r = String(role);
+  if(r === 'checkpoint_officer') return true;
+  if(r.startsWith('Checkpoint') || r.startsWith('checkpoint')) return true;
+  const rl = r.toLowerCase();
+  if(rl.startsWith('cp_') || rl.startsWith('cp.') || rl === 'cp') return true;
+  if(rl.includes('checkpoint')) return true;
+  // The canonical normalised alias may also surface as 'cp' in the
+  // display label (e.g. "cp.south"), which the substring test above
+  // already covers, but be defensive anyway.
+  return false;
+}
+
 // Auto-bind the location filter to the signed-in officer's scope on
 // every page navigation. For Checkpoint officers the filter is forced
 // to their location_scope (and the chip group is locked to that one
@@ -1327,7 +1350,7 @@ function autoBindCpLocationFilter(){
   if(!sessionUser) return;
   const role = sessionUser.role || '';
   const scope = sessionUser.location_scope || '';
-  if(role.startsWith('Checkpoint')){
+  if(isCheckpointRole(role)){
     // Checkpoint officers: lock to their assigned location. Even if
     // the filter was previously set to another location, reset it
     // here so a previous session's filter can never leak in.
@@ -1355,7 +1378,7 @@ function paintCheckpointScopeHint(){
   if(!el) return;
   const role = (sessionUser && sessionUser.role) || '';
   const scope = (sessionUser && sessionUser.location_scope) || '';
-  if(role.startsWith('Checkpoint') && scope){
+  if(isCheckpointRole(role) && scope){
     el.innerHTML = `<b>${esc(scope)} Checkpoint</b> officer view`;
   } else if(role === 'SystemAdmin'){
     el.innerHTML = `<b>System Admin</b> view — choose a location above to scope the table`;
@@ -1372,7 +1395,7 @@ function paintCheckpointChips(){
   const role = (sessionUser && sessionUser.role) || '';
   const scope = (sessionUser && sessionUser.location_scope) || '';
   const isAdmin = role === 'SystemAdmin';
-  const isCheckpoint = role.startsWith('Checkpoint');
+  const isCheckpoint = isCheckpointRole(role);
   // Build the chip set. Admins see "All" + each location. Checkpoint
   // officers see ONLY their assigned location (the chip group is a
   // status indicator in that case).
@@ -1445,7 +1468,7 @@ function renderCheckpointTable(){
   // Resolve the effective scope: explicit filter first, then the
   // Checkpoint officer's own scope. This guarantees the spec's
   // fail-safe filter has a non-empty scope for officers.
-  const effectiveScope = (cpLocationFilter || (userRole.startsWith('Checkpoint') ? userScope : ''));
+  const effectiveScope = (cpLocationFilter || (isCheckpointRole(userRole) ? userScope : ''));
   const rawData = (db.checkpoints || []).slice();
   const filtered = effectiveScope
     ? (db.checkpoints || []).filter(x => cpMatchesLocation(x, effectiveScope))
@@ -1493,7 +1516,7 @@ function renderCheckpointTable(){
   }
   if(!visibleCheckpoints.length){
     if(empty){
-      if(userRole.startsWith('Checkpoint') && userScope){
+      if(isCheckpointRole(userRole) && userScope){
         empty.innerHTML = `No stops recorded at <b>${esc(userScope)} Checkpoint</b> yet. Click <b>+ Record stop</b> to log a screening.`;
       } else {
         empty.textContent = 'No stops recorded';
@@ -1592,7 +1615,7 @@ function renderDashboardLocal(){
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
   const scope = (sessionUser && sessionUser.location_scope) || '';
   const role = (sessionUser && sessionUser.role) || '';
-  const isCheckpoint = role && role.startsWith('Checkpoint');
+  const isCheckpoint = role && isCheckpointRole(role);
   const cards = [];
   if(isAdmin){
     cards.push({id:'central_persons',label:'Central persons',icon:'◉',value:db.people.length,trend:'Unified identity records',module:'people'});
@@ -2427,7 +2450,7 @@ async function renderUserTable(){
     const tb = document.getElementById('userTable');
     if(!data.items.length){ tb.innerHTML = '<tr><td colspan="7" class="um-empty">No users yet</td></tr>'; return; }
     tb.innerHTML = data.items.map(u => {
-      const chip = u.role === 'SystemAdmin' ? 'admin' : (u.role.startsWith('Checkpoint') ? 'checkpoint' : 'unit');
+      const chip = u.role === 'SystemAdmin' ? 'admin' : (isCheckpointRole(u.role) ? 'checkpoint' : 'unit');
       const loc = u.location_scope ? `${esc(u.location_scope)} Checkpoint` : (esc(u.branch) || '—');
       return `<tr>
         <td><div class="person"><div class="mini">${esc((u.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?')}</div><b>${esc(u.display_name)}</b></div></td>
@@ -2493,8 +2516,8 @@ function refreshUserLocationOptions(){
   const role = document.getElementById('nu-role').value;
   const scopeEl = document.getElementById('nu-scope');
   if(!scopeEl) return;
-  scopeEl.disabled = !role.startsWith('Checkpoint');
-  if(!role.startsWith('Checkpoint')) scopeEl.value = '';
+  scopeEl.disabled = !isCheckpointRole(role);
+  if(!isCheckpointRole(role)) scopeEl.value = '';
 }
 async function submitNewUser(){
   const data = {
@@ -2527,12 +2550,12 @@ function openEditUserDrawer(u){
       </div>
       <div class="grid2">
         <div class="field"><label>Role</label>
-          <select id="eu-role" onchange="document.getElementById('eu-scope').disabled=!this.value.startsWith('Checkpoint')">
+          <select id="eu-role" onchange="document.getElementById('eu-scope').disabled=!isCheckpointRole(this.value)">
             ${roles.map(r => `<option value="${r}" ${r===u.role?'selected':''}>${esc(labels[r] || r)}</option>`).join('')}
           </select>
         </div>
         <div class="field"><label>Location scope</label>
-          <select id="eu-scope" ${u.role.startsWith('Checkpoint')?'':'disabled'}>
+          <select id="eu-scope" ${isCheckpointRole(u.role)?'':'disabled'}>
             <option value="">(none)</option>
             ${locs.map(l => `<option value="${l}" ${l===u.location_scope?'selected':''}>${l} Checkpoint</option>`).join('')}
           </select>

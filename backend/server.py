@@ -195,6 +195,80 @@ ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
 ROLE_CHECKPOINT_EAST = 'CheckpointEast'
 ROLE_CHECKPOINT_WEST = 'CheckpointWest'
 
+# Canonical normalized alias for any Checkpoint officer regardless of
+# location. The spec mandates that role-checking logic accept BOTH the
+# legacy compound form ('CheckpointSouth' / 'CheckpointEast' /
+# 'CheckpointWest') AND the canonical normalized form
+# ('checkpoint_officer'). The session payload always surfaces the
+# normalized form so the frontend never has to special-case the
+# compound role strings.
+ROLE_CHECKPOINT_OFFICER = 'checkpoint_officer'
+
+# Map every accepted Checkpoint-officer spelling to the normalized
+# alias. /api/login, /api/me, and every module gate consult this
+# alias so a token whose role is 'CheckpointSouth' is treated
+# exactly like one whose role is 'checkpoint_officer'.
+CHECKPOINT_ROLE_ALIASES = {
+    ROLE_CHECKPOINT_SOUTH: ROLE_CHECKPOINT_OFFICER,
+    ROLE_CHECKPOINT_EAST: ROLE_CHECKPOINT_OFFICER,
+    ROLE_CHECKPOINT_WEST: ROLE_CHECKPOINT_OFFICER,
+    'CheckpointSouth': ROLE_CHECKPOINT_OFFICER,
+    'CheckpointEast': ROLE_CHECKPOINT_OFFICER,
+    'CheckpointWest': ROLE_CHECKPOINT_OFFICER,
+    'checkpoint_south': ROLE_CHECKPOINT_OFFICER,
+    'checkpoint_east': ROLE_CHECKPOINT_OFFICER,
+    'checkpoint_west': ROLE_CHECKPOINT_OFFICER,
+    'cp_south': ROLE_CHECKPOINT_OFFICER,
+    'cp_east': ROLE_CHECKPOINT_OFFICER,
+    'cp_west': ROLE_CHECKPOINT_OFFICER,
+    'cp.south': ROLE_CHECKPOINT_OFFICER,
+    'cp.east': ROLE_CHECKPOINT_OFFICER,
+    'cp.west': ROLE_CHECKPOINT_OFFICER,
+    'Checkpoint Officer (South)': ROLE_CHECKPOINT_OFFICER,
+    'Checkpoint Officer (East)': ROLE_CHECKPOINT_OFFICER,
+    'Checkpoint Officer (West)': ROLE_CHECKPOINT_OFFICER,
+    ROLE_CHECKPOINT_OFFICER: ROLE_CHECKPOINT_OFFICER,
+}
+
+# A role is a Checkpoint officer iff:
+#   - it normalises to ROLE_CHECKPOINT_OFFICER (any accepted spelling), OR
+#   - it starts with 'Checkpoint' (legacy compound form), OR
+#   - it includes the 'cp' / 'Checkpoint' substring (defensive against
+#     future role names that follow the same family).
+def is_checkpoint_role(role):
+    if not role:
+        return False
+    r = str(role)
+    if r in CHECKPOINT_ROLE_ALIASES:
+        return True
+    if r.lower() in CHECKPOINT_ROLE_ALIASES:
+        return True
+    if r.startswith('Checkpoint') or r.startswith('checkpoint'):
+        return True
+    if 'cp' in r.lower().split('_') or 'checkpoint' in r.lower():
+        return True
+    return False
+
+def normalize_role(role):
+    """Map any accepted Checkpoint-officer spelling to the canonical
+    normalised form ('checkpoint_officer'). Pass through any other
+    role unchanged. This is the single source of truth for the
+    spec-mandated role string normalization.
+    """
+    if not role:
+        return role
+    r = str(role)
+    if r in CHECKPOINT_ROLE_ALIASES:
+        return CHECKPOINT_ROLE_ALIASES[r]
+    if r.lower() in CHECKPOINT_ROLE_ALIASES:
+        return CHECKPOINT_ROLE_ALIASES[r.lower()]
+    # Defensive: any 'Checkpoint*' / 'checkpoint_*' / 'cp.*' spelling.
+    if r.startswith('Checkpoint') and r.endswith(('South', 'East', 'West')):
+        return ROLE_CHECKPOINT_OFFICER
+    if r.lower().startswith('checkpoint') or 'cp' in r.lower().split('_'):
+        return ROLE_CHECKPOINT_OFFICER
+    return r
+
 ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID,
              ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
 
@@ -223,6 +297,11 @@ ROLE_MODULES = {
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
+    # Spec step 1: the canonical normalized alias is also a first-class
+    # role. Whether the stored role is 'CheckpointSouth' or
+    # 'checkpoint_officer', the module set and scope lookup resolve to
+    # the same answer.
+    ROLE_CHECKPOINT_OFFICER: {'dashboard', 'checkpoints'},
 }
 
 # Map a role to the checkpoint location it is scoped to (or None for non-checkpoint roles).
@@ -234,29 +313,48 @@ ROLE_LOCATION_SCOPE = {
     ROLE_CHECKPOINT_SOUTH: 'South',
     ROLE_CHECKPOINT_EAST: 'East',
     ROLE_CHECKPOINT_WEST: 'West',
+    # Spec step 3: 'checkpoint_officer' is the canonical normalised
+    # alias; its default scope is empty so the SQL filter never
+    # leaks other locations. The CheckpointSouth/East/West seed
+    # users keep their explicit location_scope from the users table.
+    ROLE_CHECKPOINT_OFFICER: '',
 }
 
 
 def user_view(user):
-    """Return the public-facing user payload (no password hash) with RBAC info."""
-    role = user.get('role') or ''
-    scope = user.get('location_scope') or ROLE_LOCATION_SCOPE.get(role)
+    """Return the public-facing user payload (no password hash) with RBAC info.
+
+    Surfaces BOTH the raw stored role (e.g. 'CheckpointSouth') AND the
+    normalised alias ('checkpoint_officer') so the frontend can use
+    either form. The raw role is preserved in 'role' for back-compat
+    (existing checks use role === 'CheckpointSouth' etc.); the
+    canonical normalized form is in 'role_alias' for the spec-mandated
+    unified checks.
+    """
+    raw_role = user.get('role') or ''
+    # Spec step 1: normalise the role string. The session payload now
+    # carries the canonical 'checkpoint_officer' alias as 'role_alias'
+    # for any Checkpoint officer, regardless of the underlying
+    # storage form.
+    role_alias = normalize_role(raw_role)
+    scope = user.get('location_scope') or ROLE_LOCATION_SCOPE.get(raw_role)
     # Normalise legacy/derived scope for display: checkpoint users see a
     # human-friendly location label, everyone else sees their branch.
-    if role.startswith('Checkpoint') and role.endswith(('South', 'East', 'West')):
-        location = role[len('Checkpoint'):]
+    if raw_role.startswith('Checkpoint') and raw_role.endswith(('South', 'East', 'West')):
+        location = raw_role[len('Checkpoint'):]
     else:
         location = scope or user.get('branch') or ''
     return {
         'id': user['id'],
         'username': user['username'],
         'display_name': user['display_name'],
-        'role': role,
-        'role_label': ROLE_LABELS.get(role, role),
+        'role': raw_role,
+        'role_alias': role_alias,
+        'role_label': ROLE_LABELS.get(raw_role, raw_role),
         'branch': user.get('branch') or '',
         'location_scope': scope,
         'location': location,
-        'modules': sorted(ROLE_MODULES.get(role, set())),
+        'modules': sorted(ROLE_MODULES.get(raw_role, set())),
         'active': bool(user.get('active', 1)),
     }
 
@@ -268,11 +366,26 @@ def require_role(user, role):
 
 
 def require_module(user, module):
-    """Raise PermissionError unless the user can access the given module/page."""
-    modules = ROLE_MODULES.get(user.get('role'), set())
-    if module not in modules:
-        raise PermissionError(
-            f'Restricted to {ROLE_LABELS.get(user.get("role", ""), user.get("role", ""))}')
+    """Raise PermissionError unless the user can access the given module/page.
+
+    Spec step 1: the module check is now also performed against the
+    normalised role alias. A Checkpoint officer whose stored role is
+    'CheckpointSouth' (or 'cp_south' or any other accepted spelling)
+    is treated exactly like one whose role is 'checkpoint_officer'.
+    """
+    role = user.get('role') or ''
+    # Try the raw role first, then the normalised alias — so the
+    # module set is resolved for both spellings of the same logical
+    # role.
+    modules = ROLE_MODULES.get(role, set())
+    if module in modules:
+        return
+    normalised = normalize_role(role)
+    modules = ROLE_MODULES.get(normalised, set())
+    if module in modules:
+        return
+    raise PermissionError(
+        f'Restricted to {ROLE_LABELS.get(role, role)}')
 
 
 def checkpoint_scope(user):
@@ -284,7 +397,29 @@ def checkpoint_scope(user):
     role = user.get('role') or ''
     if role == ROLE_ADMIN:
         return None
-    return ROLE_LOCATION_SCOPE.get(role) or ''
+    # Spec step 3: prefer the stored location_scope on the user
+    # record over the role-based derivation. A PATCH from
+    # 'CheckpointSouth' to 'checkpoint_officer' must NOT wipe the
+    # officer's location. The location_scope column is the
+    # authoritative source for any Checkpoint officer.
+    stored_scope = user.get('location_scope')
+    if stored_scope and stored_scope in CHECKPOINT_LOCATIONS:
+        return stored_scope
+    # Otherwise, derive the scope from the role (legacy code path).
+    aliases_to_try = [role, role.lower(), normalize_role(role)]
+    for r in aliases_to_try:
+        if r in ROLE_LOCATION_SCOPE:
+            return ROLE_LOCATION_SCOPE[r] or ''
+    # Last-ditch: if the role is a Checkpoint officer but the scope
+    # lookup failed, derive the scope from the role string itself
+    # ('CheckpointSouth' -> 'South', 'CheckpointEast' -> 'East',
+    # 'CheckpointWest' -> 'West', 'cp_west' -> 'West', etc.).
+    if is_checkpoint_role(role):
+        rl = role.lower()
+        for code in CHECKPOINT_LOCATIONS:
+            if code.lower() in rl:
+                return code
+    return ''
 
 
 def filter_visibility(user):
@@ -901,13 +1036,35 @@ def build_dashboard(c, user):
     activity feed is enriched with the actual screened-person /
     traveller / suspect name and a human-friendly "N mins ago" stamp
     so the real-time feed reads like a live operations log.
+
+    Spec step 2: the dashboard ALWAYS returns HTTP 200 for any
+    authenticated user — no 404, no role-rejection. The response
+    payload surfaces BOTH the role-specific cards AND the spec's
+    mandated alias keys (screenings_today, travelers_flagged,
+    total_travelers, peak_travel_hour, activity_feed) for Checkpoint
+    officers so any frontend that reads those flat keys still works.
     """
     role = (user.get('role') or '') if user else ''
     is_admin = (role == ROLE_ADMIN)
+    # Spec step 1: normalise the role string. A token whose role is
+    # 'CheckpointSouth' (or 'cp_south' or 'checkpoint_officer') is
+    # treated exactly like the canonical normalised form for the
+    # downstream branching below.
+    role_alias = normalize_role(role)
     scope = checkpoint_scope(user) if user else None
     now_ts = time.time()
     today = time.strftime('%Y-%m-%d', time.gmtime(now_ts))
-    is_checkpoint = bool(role and role in (ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST))
+    # Spec step 1: is_checkpoint now also recognises every accepted
+    # Checkpoint-officer spelling — 'CheckpointSouth',
+    # 'CheckpointEast', 'CheckpointWest', 'checkpoint_officer', and
+    # any other accepted alias. The role_alias doubles as a safety
+    # net: even if the stored role string drifts in the future, as
+    # long as it normalises to ROLE_CHECKPOINT_OFFICER this branch
+    # fires correctly.
+    is_checkpoint = bool(role and (
+        role in (ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
+        or role_alias == ROLE_CHECKPOINT_OFFICER
+    ))
 
     def cp_scope_sql():
         """Flexible case-insensitive match against any of the four
@@ -933,20 +1090,26 @@ def build_dashboard(c, user):
         cards.extend(_admin_dashboard_cards(c))
     elif is_checkpoint:
         cards.extend(_checkpoint_dashboard_cards(c, scope, today, cp_scope_sql))
-    elif role == ROLE_FINGERPRINT:
+    elif role == ROLE_FINGERPRINT or role_alias == ROLE_FINGERPRINT:
         cards.extend(_fingerprint_dashboard_cards(c, today))
-    elif role == ROLE_AIRPORT:
+    elif role == ROLE_AIRPORT or role_alias == ROLE_AIRPORT:
         cards.extend(_airport_dashboard_cards(c, today))
-    elif role == ROLE_CID:
+    elif role == ROLE_CID or role_alias == ROLE_CID:
         cards.extend(_cid_dashboard_cards(c, today))
+    else:
+        # Spec step 2: a token whose role is not one of the canonical
+        # units still gets an empty-but-valid dashboard so the
+        # endpoint NEVER 404s. The frontend can render an empty state
+        # instead of a "Not Found" placeholder.
+        cards = []
 
     # ---- Quick-registration buttons ----------------------------------------
     quick = []
-    if is_admin or role == ROLE_AIRPORT:
+    if is_admin or role == ROLE_AIRPORT or role_alias == ROLE_AIRPORT:
         quick.append({'id':'add_airport','label':'+ Airport passenger','kind':'primary','page':'airport','module':'airport'})
-    if is_admin or role == ROLE_FINGERPRINT:
+    if is_admin or role == ROLE_FINGERPRINT or role_alias == ROLE_FINGERPRINT:
         quick.append({'id':'add_clearance','label':'+ Clearance application','kind':'secondary','page':'fingerprint','module':'fingerprint'})
-    if is_admin or role == ROLE_CID:
+    if is_admin or role == ROLE_CID or role_alias == ROLE_CID:
         quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
     if is_admin or is_checkpoint:
         quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
@@ -954,16 +1117,51 @@ def build_dashboard(c, user):
     # ---- Real-time activity stream (filtered to the user's scope) ---------
     events = _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_scope_sql)
 
+    # ---- Spec step 2 alias keys --------------------------------------------
+    # The spec's mandated top-level keys for the Checkpoint-officer
+    # dashboard (screenings_today, travelers_flagged,
+    # total_travelers, peak_travel_hour, activity_feed) are also
+    # surfaced as flat top-level fields. Any frontend that reads
+    # those keys (instead of cards[].id) works out of the box.
+    screenings_today = 0
+    travelers_flagged = 0
+    total_travelers = 0
+    peak_travel_hour = '—'
+    if is_checkpoint:
+        for card in cards:
+            if card.get('id') == 'cp_screenings_today':
+                screenings_today = card.get('value', 0)
+            elif card.get('id') == 'cp_travelers_flagged':
+                travelers_flagged = card.get('value', 0)
+            elif card.get('id') == 'cp_total_travelers':
+                total_travelers = card.get('value', 0)
+            elif card.get('id') == 'cp_peak_hour':
+                peak_travel_hour = card.get('value', '—')
+
+    # Spec step 1: also surface the modules list under the
+    # normalized role so the frontend can gate on either form.
+    modules_raw = sorted(ROLE_MODULES.get(role, set()))
+    modules_alias = sorted(ROLE_MODULES.get(role_alias, set()))
+    modules = sorted(set(modules_raw) | set(modules_alias))
+
     return {
         'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now_ts)),
         'role': role,
+        'role_alias': role_alias,
         'is_admin': is_admin,
         'location_scope': scope,
-        'modules': sorted(ROLE_MODULES.get(role, set())),
+        'modules': modules,
         'cards': cards,
         'quick_actions': quick,
         'activity': events,
         'stream': events[:8],
+        # Spec step 2: alias keys at the top level for Checkpoint
+        # officers (and zeroed for other roles so the keys exist).
+        'screenings_today': screenings_today,
+        'travelers_flagged': travelers_flagged,
+        'total_travelers': total_travelers,
+        'peak_travel_hour': peak_travel_hour,
+        'activity_feed': events,
         'subhead': (
             'System overview · all units' if is_admin else
             (f'{scope} Checkpoint operations · live' if is_checkpoint else
@@ -1422,16 +1620,24 @@ class API(BaseHTTPRequestHandler):
                     # Defensive: never let a transient query error make the
                     # dashboard unreachable. Fall back to an empty payload so
                     # the frontend can still render its offline view.
+                    r_role = (user.get('role') or '') if user else ''
                     result = {
                         'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-                        'role': (user.get('role') or '') if user else '',
-                        'is_admin': (user.get('role') == ROLE_ADMIN) if user else False,
+                        'role': r_role,
+                        'role_alias': normalize_role(r_role) if user else '',
+                        'is_admin': (r_role == ROLE_ADMIN),
                         'location_scope': checkpoint_scope(user) if user else None,
-                        'modules': sorted(ROLE_MODULES.get((user.get('role') or ''), set())),
+                        'modules': sorted(ROLE_MODULES.get(r_role, set())),
                         'cards': [],
                         'quick_actions': [],
                         'activity': [],
                         'stream': [],
+                        # Spec step 2 alias keys — always present even in degraded mode.
+                        'screenings_today': 0,
+                        'travelers_flagged': 0,
+                        'total_travelers': 0,
+                        'peak_travel_hour': '—',
+                        'activity_feed': [],
                         'subhead': 'Dashboard temporarily unavailable',
                         'degraded': True,
                         'degraded_reason': str(e),
@@ -1647,10 +1853,13 @@ class API(BaseHTTPRequestHandler):
                 if not display_name: raise ValueError('display_name is required')
                 if not password or len(password) < 6:
                     raise ValueError('password must be at least 6 characters')
-                if role not in ALL_ROLES:
-                    raise ValueError(f'role must be one of {", ".join(ALL_ROLES)}')
+                # Spec step 1: accept both the legacy compound forms and
+                # the canonical 'checkpoint_officer' alias.
+                accepted_roles = set(ALL_ROLES) | {ROLE_CHECKPOINT_OFFICER}
+                if role not in accepted_roles:
+                    raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))}')
                 scope = (data.get('location_scope') or ROLE_LOCATION_SCOPE.get(role) or '').strip() or None
-                if role.startswith('Checkpoint') and not scope:
+                if is_checkpoint_role(role) and not scope:
                     raise ValueError('location_scope is required for Checkpoint roles')
                 if scope and scope not in CHECKPOINT_LOCATIONS:
                     raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
@@ -1907,13 +2116,29 @@ class API(BaseHTTPRequestHandler):
                         updates.append(f'{f}=?'); params.append(str(data[f]).strip())
                 if 'role' in data:
                     role = str(data['role']).strip()
-                    if role not in ALL_ROLES:
-                        raise ValueError(f'role must be one of {", ".join(ALL_ROLES)}')
+                    # Spec step 1: accept both the legacy compound forms
+                    # and the canonical 'checkpoint_officer' alias.
+                    accepted_roles = set(ALL_ROLES) | {ROLE_CHECKPOINT_OFFICER}
+                    if role not in accepted_roles:
+                        raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))}')
                     updates.append('role=?'); params.append(role)
-                    # If the new role dictates a location_scope, refresh it (unless caller
-                    # explicitly passes a new one in the same request).
+                    # If the new role dictates a location_scope, refresh
+                    # it. For 'checkpoint_officer' (the canonical alias)
+                    # the table-lookup default is empty; in that case
+                    # PRESERVE the existing location_scope so a PATCH
+                    # from 'CheckpointSouth' -> 'checkpoint_officer'
+                    # does not wipe the officer's location. The
+                    # caller can still pass an explicit
+                    # 'location_scope' to override.
                     if 'location_scope' not in data:
-                        updates.append('location_scope=?'); params.append(ROLE_LOCATION_SCOPE.get(role))
+                        default_scope = ROLE_LOCATION_SCOPE.get(role)
+                        if default_scope:
+                            updates.append('location_scope=?'); params.append(default_scope)
+                        elif not row['location_scope']:
+                            # Existing user had no scope; we don't
+                            # need to touch the column.
+                            pass
+                        # else: keep the existing scope (no-op).
                 if 'location_scope' in data:
                     scope = (str(data['location_scope'] or '').strip() or None)
                     if scope and scope not in CHECKPOINT_LOCATIONS:

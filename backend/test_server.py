@@ -923,6 +923,99 @@ def main():
         badge_count = len(visibleCheckpoints(cps_now['items'], 'South'))
         assert badge_count == len(cps_now['items']) > 0
 
+        # ----------------------------------------------------------------
+        # Spec: Normalize RBAC role strings & fix 404 dashboard endpoint.
+        #
+        # The user reported a screenshot showing
+        #   userRole: "CheckpointSouth", userScope: "South", 404
+        #   rawServerItems: 0
+        # which means the frontend was seeing 404 on /api/dashboard for
+        # a Checkpoint-officer token. The fix is a normalisation layer
+        # in the backend that maps every accepted Checkpoint-officer
+        # spelling ('CheckpointSouth', 'checkpoint_officer', 'cp_south',
+        # etc.) to the canonical 'checkpoint_officer' alias, and ensures
+        # /api/dashboard ALWAYS returns HTTP 200 for any authenticated
+        # user.
+        # ----------------------------------------------------------------
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.south', 'password': 'ChangeMe123!'})
+        assert s == 200
+        south_token = r['token']
+        # Spec step 1: the session payload must surface a
+        # 'role_alias' field normalised to 'checkpoint_officer'.
+        assert r['user'].get('role_alias') == 'checkpoint_officer', \
+            f"role_alias not normalized: {r['user']}"
+        assert r['user'].get('role') == 'CheckpointSouth', \
+            f"raw role should be preserved: {r['user']}"
+        # And the location_scope must be 'South' regardless of the
+        # spelling used.
+        assert r['user'].get('location_scope') == 'South', \
+            f"location_scope not South: {r['user']}"
+
+        # Spec step 2: /api/dashboard must ALWAYS return 200 for
+        # any authenticated Checkpoint officer. Never 404, never
+        # role-rejected.
+        s, d = request(base, 'GET', '/api/dashboard', south_token)
+        assert s == 200, f"dashboard returned {s}: {d}"
+        # And the response payload must surface the spec-mandated
+        # alias keys (screenings_today, travelers_flagged,
+        # total_travelers, peak_travel_hour, activity_feed).
+        for alias in ('screenings_today', 'travelers_flagged',
+                      'total_travelers', 'peak_travel_hour', 'activity_feed'):
+            assert alias in d, f"missing alias key {alias!r} in dashboard payload"
+        # activity_feed must be a list (the spec's contract).
+        assert isinstance(d['activity_feed'], list), \
+            f"activity_feed not a list: {type(d['activity_feed'])}"
+        # role_alias in the dashboard payload is normalised too.
+        assert d.get('role_alias') == 'checkpoint_officer', \
+            f"dashboard role_alias not normalised: {d}"
+        # location_scope is non-empty for Checkpoint officers.
+        assert d.get('location_scope') == 'South', \
+            f"dashboard location_scope not South: {d}"
+
+        # Spec step 3: /api/checkpoint-events must also return 200
+        # with non-zero items for the officer.
+        s, cps = request(base, 'GET', '/api/checkpoint-events', south_token)
+        assert s == 200, f"checkpoint-events returned {s}: {cps}"
+        assert len(cps.get('items', [])) > 0, \
+            f"checkpoint-events must have items for cp.south: {cps}"
+        # And the SQL must have used the case-insensitive LIKE '%south%'
+        # match so newly-created rows show up.
+        for ev in cps['items']:
+            loc_str = ' '.join(filter(None, [
+                ev.get('location'), ev.get('location_code'),
+                ev.get('checkpoint_location'),
+            ])).lower()
+            assert 'south' in loc_str, \
+                f"cp.south event {ev.get('event_id')} not in scope: {loc_str!r}"
+
+        # And the same checks must hold for cp.east and cp.west.
+        for u, scope in [('cp.east', 'East'), ('cp.west', 'West')]:
+            s, r = request(base, 'POST', '/api/login',
+                           body={'username': u, 'password': 'ChangeMe123!'})
+            assert s == 200, f"login {u} returned {s}"
+            tok = r['token']
+            assert r['user'].get('role_alias') == 'checkpoint_officer', \
+                f"{u} role_alias: {r['user']}"
+            s, d = request(base, 'GET', '/api/dashboard', tok)
+            assert s == 200, f"{u} dashboard returned {s}"
+            assert d.get('location_scope') == scope, \
+                f"{u} location_scope not {scope}: {d}"
+            s, cps = request(base, 'GET', '/api/checkpoint-events', tok)
+            assert s == 200, f"{u} checkpoint-events returned {s}"
+
+        # Admin still sees the global dashboard (no regression).
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'admin', 'password': 'ChangeMe123!'})
+        assert s == 200
+        admin_token = r['token']
+        s, d = request(base, 'GET', '/api/dashboard', admin_token)
+        assert s == 200
+        assert d.get('is_admin') is True
+        assert d.get('location_scope') is None
+        assert {c['id'] for c in d['cards']} == {
+            'central_persons', 'open_cases', 'pending_clearances', 'active_alerts'}
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:
