@@ -910,13 +910,22 @@ def build_dashboard(c, user):
     is_checkpoint = bool(role and role in (ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST))
 
     def cp_scope_sql():
-        """Flexible match against any of the four location columns so a row
-        that was just saved with the friendly checkpoint label is returned
-        in the very next poll even if `location_code` was not populated."""
+        """Flexible case-insensitive match against any of the four
+        location columns so a row that was just saved with the friendly
+        checkpoint label is returned in the very next poll even if
+        `location_code` was not populated. Adds a LIKE '%scope%'
+        fallback so any trailing space, casing, or punctuation variation
+        in 'location' / 'checkpoint_location' is still caught.
+        """
         if not scope: return ("", ())
-        sql = ("WHERE (ce.location_code=? OR ce.checkpoint_location=? "
-               "OR ce.checkpoint_location=? OR ce.location=?)")
-        return (sql, (scope, scope, f"{scope} Checkpoint", scope))
+        sql = ("WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=? "
+               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
+               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
+               "OR LOWER(TRIM(COALESCE(ce.location,'')))=? "
+               "OR LOWER(TRIM(COALESCE(ce.location,''))) LIKE ? "
+               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) LIKE ?)")
+        return (sql, (scope.lower(), scope.lower(), f"{scope.lower()} checkpoint",
+                      scope.lower(), f"%{scope.lower()}%", f"%{scope.lower()}%"))
 
     # ---- KPI cards (mini-analytics) ---------------------------------------
     cards = []
@@ -1444,7 +1453,10 @@ class API(BaseHTTPRequestHandler):
                 # location-related column so a row that was just saved with
                 # the friendly checkpoint label ('South Checkpoint') is
                 # returned in the very next poll even if 'location_code' was
-                # not populated.
+                # not populated. The match is also case-insensitive (LOWER
+                # on both sides) and uses a LIKE '%south%' fallback so any
+                # trailing space, casing, or punctuation variation in
+                # 'location' / 'checkpoint_location' is still caught.
                 scope = checkpoint_scope(user)
                 base_cols = '''ce.event_id,ce.location,ce.location_code,ce.checkpoint_location,
                     ce.screening_result,ce.action_taken,ce.notes,ce.created_at,
@@ -1454,13 +1466,22 @@ class API(BaseHTTPRequestHandler):
                     ce.guardian_national_id,ce.guardian_passport_id,ce.guardian_docs,
                     p.person_id,p.full_name,p.national_id,p.passport_id'''
                 if scope:
+                    # Case-insensitive match against all four location columns
+                    # plus a LIKE '%scope%' fallback. The OR-clause catches
+                    # any combination the data layer might have written
+                    # (short code, friendly label, or trailing spaces).
                     rows = c.execute(
                         f"SELECT {base_cols} FROM checkpoint_events ce "
                         f"JOIN persons p ON p.id=ce.person_id "
-                        f"WHERE (ce.location_code=? OR ce.checkpoint_location=? "
-                        f"OR ce.checkpoint_location=? OR ce.location=?) "
+                        f"WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=? "
+                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
+                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
+                        f"OR LOWER(TRIM(COALESCE(ce.location,'')))=? "
+                        f"OR LOWER(TRIM(COALESCE(ce.location,''))) LIKE ? "
+                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) LIKE ?) "
                         f"ORDER BY ce.id DESC",
-                        (scope, scope, f"{scope} Checkpoint", scope)).fetchall()
+                        (scope.lower(), scope.lower(), f"{scope.lower()} checkpoint",
+                         scope.lower(), f"%{scope.lower()}%", f"%{scope.lower()}%")).fetchall()
                 else:
                     rows = c.execute(f"SELECT {base_cols} FROM checkpoint_events ce "
                                      f"JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC").fetchall()
@@ -1740,6 +1761,32 @@ class API(BaseHTTPRequestHandler):
                     guardian_person = c.execute('SELECT id FROM persons WHERE id=?',(match['id'],)).fetchone() if match else None
                 location = (data.get('location') or '').strip()
                 if not location: raise ValueError('location is required')
+                # Normalise casing / trailing whitespace to the canonical
+                # short code so every row stored on disk has a clean
+                # 'South' / 'East' / 'West' short code in BOTH the legacy
+                # 'location' column and the 'location_code' column. The
+                # case-insensitive SQL then matches every row and the
+                # badge display stays consistent across officers.
+                location_lower = location.lower()
+                if location_lower in [c.lower() for c in CHECKPOINT_LOCATIONS]:
+                    location_code = next(c for c in CHECKPOINT_LOCATIONS
+                                          if c.lower() == location_lower)
+                else:
+                    # 'south checkpoint' / 'South Checkpoint' / etc. -> the
+                    # canonical short code (e.g. 'South' / 'East' / 'West').
+                    first_token = location_lower.split()[0].strip()
+                    matched = next((c for c in CHECKPOINT_LOCATIONS
+                                    if c.lower() == first_token), None)
+                    if matched:
+                        location_code = matched
+                    else:
+                        # Unknown location: keep the original (lowercased)
+                        # token so the error message is informative and the
+                        # row can still be stored for audit purposes.
+                        location_code = first_token
+                # The legacy 'location' column is also normalised to the
+                # short code so all three columns agree.
+                location = location_code
                 # RBAC: a Checkpoint user can only create events at their own
                 # location. Admins (and any non-checkpoint officer) may post
                 # to any valid checkpoint code.
@@ -1758,7 +1805,9 @@ class API(BaseHTTPRequestHandler):
                 # short code. When the user picks 'South', both fields line up
                 # so the dashboard, identity profile, and activity feed can
                 # show the exact originating location without re-joining.
-                location_code = location if location in CHECKPOINT_LOCATIONS else location.split()[0]
+                # (location_code is computed earlier from the normalised
+                # location string so even lowercase / trailing-space input is
+                # persisted in canonical form.)
                 checkpoint_location = f'{location_code} Checkpoint'
                 event_id = 'CP-'+str(int(time.time()*1000))[-8:]
                 c.execute('''INSERT INTO checkpoint_events(event_id,person_id,location,location_code,

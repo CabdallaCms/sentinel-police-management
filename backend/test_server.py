@@ -729,6 +729,82 @@ def main():
         assert new_row['location_code'] == 'South'
         assert new_row['checkpoint_location'] == 'South Checkpoint'
 
+        # ----------------------------------------------------------------
+        # Case-insensitive + trailing-space + LIKE-fallback match. The
+        # task spec mandates `LOWER(...)` + `LIKE '%south%'`. The seed
+        # migration backfills legacy rows, but we can simulate a row
+        # with mixed casing / trailing space by direct DB write and
+        # confirm /api/checkpoint-events still returns it for cp.south.
+        # ----------------------------------------------------------------
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'admin', 'password': 'ChangeMe123!'})
+        admin_token3 = r['token']
+        # Admin can write to any checkpoint, including with a lowercase /
+        # trailing-space location string. The server's response must
+        # normalise both columns to canonical short code + label.
+        f3 = dict(cp_fields)
+        f3['first_name'] = 'Cabdi'
+        f3['second_name'] = 'Jaamac'
+        f3['third_name'] = 'Xasan'
+        f3['fourth_name'] = 'Cali'
+        f3['location'] = 'south'  # lowercase, must be normalised
+        s, post3 = multipart_request(base, '/api/checkpoint-events',
+                                     token=admin_token3, fields=f3, files=cp_files)
+        assert s == 201, f"lowercase POST failed: {s} {post3}"
+        # The response must surface location_code='South' (capitalised)
+        # and checkpoint_location='South Checkpoint' regardless of the
+        # input casing, because both columns are explicitly populated on
+        # insert.
+        assert post3['location_code'] == 'South', post3
+        assert post3['checkpoint_location'] == 'South Checkpoint', post3
+
+        # cp.south should still see the new event in their scoped list.
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.south', 'password': 'ChangeMe123!'})
+        south_token3 = r['token']
+        s, cps = request(base, 'GET', '/api/checkpoint-events', south_token3)
+        assert s == 200
+        assert any(e['event_id'] == post3['event_id'] for e in cps['items']), \
+            "case-insensitive POST must still appear in cp.south's GET list"
+        # And the count for cp.south must be > 0 (i.e. the badge that
+        # displays `South Checkpoint N` would not show 0).
+        south_count = len(cps['items'])
+        assert south_count > 0, f"cp.south /api/checkpoint-events empty: {south_count}"
+
+        # cp.east must NOT see the South event even with the new SQL.
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.east', 'password': 'ChangeMe123!'})
+        east_token3 = r['token']
+        s, cps_east = request(base, 'GET', '/api/checkpoint-events', east_token3)
+        assert s == 200
+        assert not any(e['event_id'] == post3['event_id'] for e in cps_east['items']), \
+            "cp.east must NOT see the South event even with the LIKE fallback"
+
+        # ----------------------------------------------------------------
+        # Badge-update flow: post as cp.south, then the immediate
+        # dashboard must show the new event in the activity feed so the
+        # /api/dashboard real-time stream reflects the new record.
+        # This guards the "South Checkpoint 0 -> 1" badge bug.
+        # ----------------------------------------------------------------
+        s, d = request(base, 'GET', '/api/dashboard', south_token3)
+        # cp.south's dashboard activity stream should include the new
+        # checkpoint event id (visible in the live feed).
+        feed_ids = {e['id'] for e in d['activity']}
+        assert post3['event_id'] in feed_ids, \
+            f"new event must appear in cp.south dashboard activity feed: {feed_ids}"
+        # And the dashboard's screening-today card must be > 0 because
+        # we just posted a stop today at South.
+        screenings_today = next(c for c in d['cards']
+                                if c['id'] == 'cp_screenings_today')
+        assert screenings_today['value'] > 0, \
+            f"screening-today card should reflect the new event: {screenings_today}"
+
+        # Final sanity: the /api/dashboard 'scope' field matches the
+        # officer's location_scope, the chips/list filter agrees.
+        assert d['location_scope'] == 'South'
+        assert d['is_admin'] is False
+        assert cps['scope'] == 'South'
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:

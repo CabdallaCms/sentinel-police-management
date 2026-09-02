@@ -1410,12 +1410,23 @@ function paintCheckpointChips(){
 }
 
 function cpMatchesLocation(x, loc){
+  // Case- and space-insensitive match against any of the four
+  // location-related fields the backend may have populated. The
+  // task spec mandates `LOWER(...)` + `LIKE '%south%'` semantics;
+  // here we implement the same logic on the in-memory record so
+  // the chip count badge, the table, and the filter all agree.
   if(!loc) return true;
-  const code = (x.location_code || '').toLowerCase();
-  const lbl = (x.checkpoint_location || '').toLowerCase();
-  const bare = (x.location || '').toLowerCase();
-  const want = loc.toLowerCase();
-  return code === want || lbl === want || lbl === (want + ' checkpoint') || bare === want;
+  const want = String(loc).toLowerCase().trim();
+  const code = String(x.location_code || '').toLowerCase().trim();
+  const lbl = String(x.checkpoint_location || '').toLowerCase().trim();
+  const bare = String(x.location || '').toLowerCase().trim();
+  if(!want) return true;
+  // Exact match wins first so 'South' does not also match 'Southeast'.
+  if(code === want || lbl === want || bare === want) return true;
+  if(lbl === want + ' checkpoint') return true;
+  // Substring fallback (mirrors the backend's `LIKE '%south%'` clause).
+  if(bare.includes(want) || lbl.includes(want) || code.includes(want)) return true;
+  return false;
 }
 
 function renderCheckpointTable(){
