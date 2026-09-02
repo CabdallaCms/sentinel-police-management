@@ -56,6 +56,15 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .badge.green{background:#e3f7f1;color:var(--green)}.badge.amber{background:#fff3d9;color:var(--amber)}
 .badge.red{background:#ffeaec;color:var(--red)}.badge.blue{background:#eaf0ff;color:var(--blue)}.badge.gray{background:#eef1f6;color:#5b6779}
 .badge.purple{background:#f0e9ff;color:#6c3fd4}
+/* checkpoint location chips (used on the Checkpoints page) */
+.cp-loc-chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cp-loc-chip{background:#eef1f6;color:#33415c;border:1px solid #dbe2ee;border-radius:99px;padding:7px 12px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:8px;cursor:pointer;transition:all .14s ease}
+.cp-loc-chip:hover:not(:disabled){background:#eaf0ff;border-color:#c3d5ff;color:var(--blue)}
+.cp-loc-chip.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.cp-loc-chip:disabled{cursor:default;opacity:.95}
+.cp-loc-chip .cp-loc-count{background:rgba(0,0,0,.08);border-radius:99px;padding:1px 7px;font-size:10px;font-weight:800}
+.cp-loc-chip.active .cp-loc-count{background:rgba(255,255,255,.25)}
+.badge.purple{background:#f0e9ff;color:#6c3fd4}
 .hint{background:#edf7ff;border:1px solid #cfe7ff;color:#24527e;border-radius:9px;padding:12px;font-size:12px;line-height:1.5}
 .empty{text-align:center;color:var(--muted);padding:30px}
 .notice{padding:12px 14px;border-radius:9px;background:#edfaf7;color:#187b67;font-size:13px;font-weight:650;margin-bottom:15px;display:none}
@@ -439,8 +448,25 @@ body.modal-open{overflow:hidden}
 <section id="checkpoints" class="page">
 <div class="panel">
 <div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div>
-<div class="grid3" style="margin-bottom:20px"><div class="card"><b>South Checkpoint</b><div class="sub">Computer 01 · Active</div></div><div class="card"><b>West Checkpoint</b><div class="sub">Computer 02 · Active</div></div><div class="card"><b>East Checkpoint</b><div class="sub">Computer 03 · Active</div></div></div>
+<div class="panel-head" style="margin-bottom:14px">
+  <div>
+    <h3 style="margin:0;font-size:14px">Active location</h3>
+    <div class="sub" id="cpFilterLabel">Showing all screening event(s)</div>
+  </div>
+  <div class="cp-loc-chips" id="cpLocChips">
+    <button class="cp-loc-chip" data-cp-loc="">All</button>
+  </div>
+</div>
+<div class="hint" style="margin-bottom:14px;background:#f4f8ff">
+  <b>Auto-filter:</b> the table is automatically scoped to your assigned checkpoint
+  location — a South Checkpoint officer always sees only <b>South Checkpoint</b> records,
+  an East officer only <b>East Checkpoint</b>, etc. Admins can switch between locations
+  using the chips above.
+  <span id="cpScopeHint" style="margin-left:6px"></span>
+</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Action</th><th>Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div>
+<div class="empty" id="cpEmpty" style="display:none">No stops recorded</div>
+<div class="sub" id="cpTableCount" style="margin-top:8px;display:none">0</div>
 </div>
 </section>
 
@@ -531,6 +557,12 @@ checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flag
 let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
 let apiToken='', serverOn=false;
+// Active location filter for the Checkpoints page. Default is empty
+// (no filter — admin sees every location). The filter is auto-bound
+// to the signed-in officer's location_scope on the first render of the
+// page so a Checkpoint officer never sees a blank / "all-locations"
+// table view. '' = no filter; 'South' / 'East' / 'West' = single location.
+let cpLocationFilter = '';
 function person(id){return db.people.find(p=>p.id===id)}
 function initials(n){return (n||'?').split(' ').map(x=>x[0]).slice(0,2).join('')}
 function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]))}
@@ -588,7 +620,25 @@ function go(page){
   if(page==='cid') renderCases();
   if(page==='analytics') renderAnalytics();
   if(page==='admin') renderUserTable();
-  if(page==='dashboard') renderDashboard();
+  if(page==='dashboard'){
+    // Force a fresh /api/dashboard fetch on every navigation. This
+    // guarantees the active user always sees their own role-scoped
+    // payload — a previous session's cached dashboard can never
+    // survive a page navigation.
+    if(serverOn){
+      paintDashboardSkeleton('Loading '+ (sessionUser ? (sessionUser.display_name + ' · ' + (sessionUser.role_label||sessionUser.role)) : 'dashboard') +'…');
+      fetchDashboard();
+    } else {
+      renderDashboard();
+    }
+  }
+  if(page==='checkpoints'){
+    // Auto-bind the location filter to the officer's scope on every
+    // navigation so a Checkpoint officer never sees an unfiltered /
+    // empty table view.
+    autoBindCpLocationFilter();
+    renderCheckpointPage();
+  }
   renderAll();
 }
 const ALLOWED_PAGES_WITHOUT_AUTH = new Set();
@@ -1108,16 +1158,28 @@ function fetchDashboard(){
   // 401, 5xx) we silently fall back to the local renderer so the
   // officer never sees a "Not found" placeholder — the dashboard is a
   // critical operations surface and must always be readable.
+  //
+  // CRITICAL: a successful response always REPLACES db.dashboard
+  // (never `db.dashboard = d || db.dashboard`) so a previous
+  // officer's payload can never leak into the new officer's view. The
+  // catch handler likewise does NOT preserve the old cache: the next
+  // paint derives everything from the active sessionUser, so a stale
+  // payload would risk rendering the wrong role's dashboard.
   if(!serverOn) return;
   api('/api/dashboard').then(d=>{
-    db.dashboard = d || db.dashboard;
-    if(document.getElementById('dashboard').classList.contains('active')){
-      if(d) paintDashboard(d);
+    if(d && d.role){
+      db.dashboard = d;
+      if(document.getElementById('dashboard').classList.contains('active')){
+        paintDashboard(d);
+      }
     }
   }).catch(()=>{
-    // Don't surface a hard error: fall back to the local dashboard so the
-    // officer can still see role-scoped metrics from the local cache.
-    db.dashboard = db.dashboard || null;
+    // Don't surface a hard error: fall back to the local dashboard so
+    // the officer can still see role-scoped metrics from the local
+    // cache. We deliberately drop any cached payload here so the next
+    // render derives scope from sessionUser (the source of truth)
+    // rather than from a possibly-stale cache.
+    db.dashboard = null;
     if(document.getElementById('dashboard').classList.contains('active')){
       renderDashboardLocal();
     }
@@ -1237,6 +1299,171 @@ function paintActivityFromData(events){
       </div>
       <span class="badge gray" style="flex:none;font-size:10px">${esc(when)}</span>
     </div>`;
+  }).join('');
+}
+
+// ============================ Checkpoints page filter ============================
+//
+// The Checkpoints page is the second most-trafficked surface in the
+// system (after the dashboard). For Checkpoint officers it must
+// ALWAYS default to the officer's assigned location so the table is
+// never empty / "No stops recorded" when in fact the officer has
+// records waiting. Admins default to "all locations" and can pick a
+// specific chip to narrow the view.
+//
+// This filter is the source of truth for the table; the cpTable is
+// always rendered through `renderCheckpointTable()` so the same
+// filter is applied consistently to the table, the empty-state
+// message, and the count summary.
+const CP_LOCATIONS = ['South', 'East', 'West'];
+
+// Auto-bind the location filter to the signed-in officer's scope on
+// every page navigation. For Checkpoint officers the filter is forced
+// to their location_scope (and the chip group is locked to that one
+// chip). For admins the filter is left at '' (all locations). This
+// eliminates the previous bug where an officer could land on a blank
+// / unfiltered view and not see their own records.
+function autoBindCpLocationFilter(){
+  if(!sessionUser) return;
+  const role = sessionUser.role || '';
+  const scope = sessionUser.location_scope || '';
+  if(role.startsWith('Checkpoint')){
+    // Checkpoint officers: lock to their assigned location. Even if
+    // the filter was previously set to another location, reset it
+    // here so a previous session's filter can never leak in.
+    cpLocationFilter = scope || '';
+  } else {
+    // Admin / non-checkpoint users: default to "all" on first load.
+    // If the officer explicitly clicked a chip earlier in this
+    // session, preserve that choice.
+    if(cpLocationFilter === undefined || cpLocationFilter === null) cpLocationFilter = '';
+  }
+}
+
+  // Re-render the checkpoint page chips + table. Called by go(),
+  // renderAll() (when the checkpoint page is active) and after a new
+  // checkpoint stop is recorded so the new row appears instantly with
+  // the active filter applied.
+function renderCheckpointPage(){
+  paintCheckpointChips();
+  paintCheckpointScopeHint();
+  renderCheckpointTable();
+}
+
+function paintCheckpointScopeHint(){
+  const el = document.getElementById('cpScopeHint');
+  if(!el) return;
+  const role = (sessionUser && sessionUser.role) || '';
+  const scope = (sessionUser && sessionUser.location_scope) || '';
+  if(role.startsWith('Checkpoint') && scope){
+    el.innerHTML = `<b>${esc(scope)} Checkpoint</b> officer view`;
+  } else if(role === 'SystemAdmin'){
+    el.innerHTML = `<b>System Admin</b> view — choose a location above to scope the table`;
+  } else if(role){
+    el.innerHTML = `<b>${esc(role)}</b> view`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function paintCheckpointChips(){
+  const wrap = document.getElementById('cpLocChips');
+  if(!wrap) return;
+  const role = (sessionUser && sessionUser.role) || '';
+  const scope = (sessionUser && sessionUser.location_scope) || '';
+  const isAdmin = role === 'SystemAdmin';
+  const isCheckpoint = role.startsWith('Checkpoint');
+  // Build the chip set. Admins see "All" + each location. Checkpoint
+  // officers see ONLY their assigned location (the chip group is a
+  // status indicator in that case).
+  const chips = [];
+  if(isAdmin){
+    chips.push({value:'', label:'All locations', count: db.checkpoints.length});
+  }
+  CP_LOCATIONS.forEach(loc => {
+    const label = loc + ' Checkpoint';
+    const count = db.checkpoints.filter(x => cpMatchesLocation(x, loc)).length;
+    chips.push({value: loc, label, count, scope: loc});
+  });
+  if(isCheckpoint){
+    // Lock the chip group to a single chip for Checkpoint officers
+    // and force cpLocationFilter to the officer's scope. This is the
+    // "auto-select" requirement from the spec.
+    cpLocationFilter = scope || '';
+  }
+  wrap.innerHTML = chips.map(ch => {
+    const active = (ch.value || '') === (cpLocationFilter || '');
+    return `<button class="cp-loc-chip ${active?'active':''}" data-cp-loc="${esc(ch.value)}" ${isCheckpoint && !isAdmin ? 'disabled' : ''}>
+      <span>${esc(ch.label)}</span>
+      <span class="cp-loc-count">${ch.count}</span>
+    </button>`;
+  }).join('');
+  // Wire the chip click handlers (admins can switch; officers can't).
+  wrap.querySelectorAll('button.cp-loc-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if(btn.disabled) return;
+      cpLocationFilter = btn.dataset.cpLoc || '';
+      paintCheckpointChips();
+      renderCheckpointTable();
+    });
+  });
+}
+
+function cpMatchesLocation(x, loc){
+  if(!loc) return true;
+  const code = (x.location_code || '').toLowerCase();
+  const lbl = (x.checkpoint_location || '').toLowerCase();
+  const bare = (x.location || '').toLowerCase();
+  const want = loc.toLowerCase();
+  return code === want || lbl === want || lbl === (want + ' checkpoint') || bare === want;
+}
+
+function renderCheckpointTable(){
+  const tbody = document.getElementById('cpTable');
+  if(!tbody) return;
+  const filtered = cpLocationFilter
+    ? db.checkpoints.filter(x => cpMatchesLocation(x, cpLocationFilter))
+    : db.checkpoints;
+  const empty = document.getElementById('cpEmpty');
+  const count = document.getElementById('cpTableCount');
+  const filterLabel = document.getElementById('cpFilterLabel');
+  if(count) count.textContent = filtered.length;
+  if(filterLabel){
+    const role = (sessionUser && sessionUser.role) || '';
+    const scope = (sessionUser && sessionUser.location_scope) || '';
+    if(cpLocationFilter){
+      filterLabel.textContent = `Showing ${cpLocationFilter} Checkpoint only`;
+    } else if(role.startsWith('Checkpoint') && scope){
+      filterLabel.textContent = `Showing ${scope} Checkpoint only`;
+    } else {
+      filterLabel.textContent = `Showing all ${db.checkpoints.length} screening event(s)`;
+    }
+  }
+  if(!filtered.length){
+    const role = (sessionUser && sessionUser.role) || '';
+    const scope = (sessionUser && sessionUser.location_scope) || '';
+    if(empty){
+      if(role.startsWith('Checkpoint') && scope){
+        empty.innerHTML = `No stops recorded at <b>${esc(scope)} Checkpoint</b> yet. Click <b>+ Record stop</b> to log a screening.`;
+      } else {
+        empty.textContent = 'No stops recorded';
+      }
+      empty.style.display = '';
+    }
+    tbody.innerHTML = '';
+    return;
+  }
+  if(empty) empty.style.display = 'none';
+  tbody.innerHTML = filtered.map(x => {
+    const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
+    return `<tr data-event-id="${esc(x.event_id||x.id||'')}" data-loc="${esc(x.location_code||'')}">
+      <td>${esc(x.time)}</td><td>${esc(locLabel||'—')}</td>
+      <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
+      <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
+      <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
+      <td><span class="badge ${x.action==='Cleared'?'green':'red'}">${esc(x.action)}</span>${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td>
+      <td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td>
+    </tr>`;
   }).join('');
 }
 function buildLocalActivity(){
@@ -1410,17 +1637,17 @@ function renderAll(){
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
   suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No active alerts</td></tr>';
-  cpTable.innerHTML=db.checkpoints.map(x=>{
-    // Show the explicit, human-friendly location label (e.g. 'South Checkpoint')
-    // so the table is unambiguous about which checkpoint the row came from.
-    const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
-    return `<tr><td>${esc(x.time)}</td><td>${esc(locLabel||'—')}</td>
-    <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
-    <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
-    <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
-    <td><span class="badge ${x.action==='Cleared'?'green':'red'}">${esc(x.action)}</span>${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td>
-    <td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`;
-  }).join('')||'<tr><td colspan="7" class="empty">No stops recorded</td></tr>';
+  // The checkpoint table is filtered by the active location chip.
+  // When the Checkpoints page is active, render through the chip-aware
+  // helper so the table is always scope-correct for the signed-in
+  // officer. When the page is not active we still refresh the
+  // chip-group counts so the badge stays accurate.
+  if(document.getElementById('checkpoints') && document.getElementById('checkpoints').classList.contains('active')){
+    autoBindCpLocationFilter();
+    renderCheckpointPage();
+  } else {
+    paintCheckpointChips();
+  }
   // The activity feed is now driven by /api/dashboard; paintActivity()
   // refreshes it when the dashboard is the active page.
   if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
@@ -1644,15 +1871,61 @@ async function submitCheckpoint(){
       gdDocs.forEach((f,i)=>fd.append('doc_gd_'+i,f));
       fd.append('photo',photo);
       const r=await api('/api/checkpoint-events',{method:'POST',body:fd});
-      closeDrawer();await syncServer();
+      // Capture the server's authoritative location fields BEFORE we
+      // close the drawer (which destroys the cpLoc DOM element).
+      const newLocation = r.checkpoint_location || (cpLoc.value + ' Checkpoint');
+      const newLocationCode = r.location_code || cpLoc.value;
+      const newNotes = cpNotes.value;
+      closeDrawer();
+      // Optimistic UI: push the new event into the in-memory table so it
+      // appears instantly, then trigger the authoritative server sync
+      // (which re-fetches the location-scoped event list and replaces
+      // the optimistic row with the canonical server payload).
+      const optimistic = {
+        time: (r.created_at || new Date().toISOString().replace('T',' ').slice(0,16)),
+        location: newLocation,
+        location_code: newLocationCode,
+        checkpoint_location: newLocation,
+        person: r.person_id,
+        screen: r.screening_result,
+        action: r.action_taken,
+        notes: newNotes,
+        event_id: r.event_id,
+      };
+      // De-dupe: drop any existing row with the same event_id (in case
+      // an earlier render had an optimistic copy).
+      db.checkpoints = db.checkpoints.filter(x => x.event_id !== optimistic.event_id);
+      db.checkpoints.unshift(optimistic);
+      // Repaint the chips and the table right now so the officer sees
+      // the new event the moment the drawer closes.
+      if(document.getElementById('checkpoints') && document.getElementById('checkpoints').classList.contains('active')){
+        autoBindCpLocationFilter();
+        renderCheckpointPage();
+      } else {
+        paintCheckpointChips();
+      }
+      // Now do the authoritative server sync in the background.
+      await syncServer();
+      // And re-render again so the server's canonical row replaces the
+      // optimistic one (in particular the created_at timestamp).
+      if(document.getElementById('checkpoints') && document.getElementById('checkpoints').classList.contains('active')){
+        autoBindCpLocationFilter();
+        renderCheckpointPage();
+      } else {
+        paintCheckpointChips();
+      }
       toast(r.alerted?`⚠ ${r.location}: potential suspect match — supervisor notified`:'Person screened — no active alert');
       return;
     }
     const p=await ensureLocalIdentity(d);
     const flagged=db.suspects.some(s=>s.person===p.id&&(s.role||'Suspect')==='Suspect'&&s.alert==='Active alert');
     const now=new Date().toLocaleString([],{month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-    db.checkpoints.unshift({time:now,location:cpLoc.value,person:p.id,screen:flagged?'Flagged match':'No active alert',
-      action:flagged?'Supervisor contacted':'Cleared',notes:cpNotes.value,purpose:d.purpose,currentAddress:d.address,
+    // Capture the form values BEFORE closeDrawer() destroys the DOM
+    // (the cpLoc / cpNotes selects / inputs are inside the modal).
+    const localLoc = cpLoc.value;
+    const localNotes = cpNotes.value;
+    db.checkpoints.unshift({time:now,location:localLoc,person:p.id,screen:flagged?'Flagged match':'No active alert',
+      action:flagged?'Supervisor contacted':'Cleared',notes:localNotes,purpose:d.purpose,currentAddress:d.address,
       permanentAddress:d.permanent,guardianName:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
       guardianRelationship:gd.relationship,guardianPhone:gd.phone,guardianAddress:gd.permanent,guardianOccupation:gd.occupation,
       travelerDocs:trDocs.length,guardianDocs:gdDocs.length,photoName:photo.name});
@@ -1770,8 +2043,20 @@ async function submitLogin(ev){
   const btn = document.getElementById('loginSubmit');
   btn.disabled = true; btn.textContent = 'Signing in…';
   try{
+    // Hard reset of session-bound state BEFORE the new login. This is
+    // critical: a previous session's `db.dashboard` (a previous officer's
+    // role-scoped payload) must not leak into the new session. Without
+    // this, an admin who logs in after a checkpoint officer would see
+    // the officer's South Checkpoint dashboard until the new fetch
+    // completes — and would fall back to it on any transient error.
+    resetSessionState();
     const r = await api('/api/login', {method:'POST', body: JSON.stringify({username:u,password:p})});
-    apiToken = r.token; sessionUser = r.user; serverOn = true;
+    apiToken = r.token;
+    // Stash the new token immediately so subsequent api() calls (e.g.
+    // /api/me in loadSession) can authenticate. sessionUser is set
+    // authoritatively inside loadSession() once /api/me confirms the
+    // role + scope, so the dashboard never paints a stale profile.
+    serverOn = true;
     // Persist for the printable pages (application.html, certificate.html) to re-use.
     try{ localStorage.setItem('sentinelSession', JSON.stringify({token: r.token, user: r.user})); }catch(_){}
     await loadSession();
@@ -1783,6 +2068,27 @@ async function submitLogin(ev){
   }finally{
     btn.disabled = false; btn.textContent = 'Sign in';
   }
+}
+
+// Hard reset of every per-session in-memory cache. Called at the top
+// of submitLogin and doLogout so a previous officer's dashboard /
+// checkpoint / case / suspect data never bleeds into the new session.
+// The localStorage seed (`sentinelDB`) is intentionally NOT touched so
+// the offline / localStorage-fallback mode still has a fresh baseline.
+function resetSessionState(){
+  apiToken = '';
+  sessionUser = null;
+  sessionVisibility = null;
+  sessionRoster = null;
+  serverOn = false;
+  // Reset the role-scoped dashboard cache so the next paint is forced
+  // to refetch from the server for the freshly signed-in officer.
+  if(typeof db !== 'undefined'){
+    db.dashboard = null;
+  }
+  // Reset the checkpoint page filter to its default (auto-binds to the
+  // officer's scope on next render of the page).
+  cpLocationFilter = '';
 }
 
 async function loadSession(){
@@ -1803,7 +2109,7 @@ async function loadSession(){
 }
 
 function doLogout(){
-  apiToken=''; sessionUser=null; sessionVisibility=null; serverOn=false;
+  resetSessionState();
   try{ localStorage.removeItem('sentinelSession'); }catch(_){}
   document.getElementById('loginScreen').style.display = '';
   document.getElementById('loginUser').value='';

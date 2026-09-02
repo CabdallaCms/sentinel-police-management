@@ -666,6 +666,69 @@ def main():
         assert feed[0]['location_code'] == 'South', feed[0]
         assert feed[0].get('time_ago'), feed[0]
 
+        # ----------------------------------------------------------------
+        # Session-collision regression test: signing in as cp.south, then
+        # logging out, then logging in as admin must NOT leave the admin
+        # seeing the South-scoped dashboard. This is the user-reported
+        # "Admin sees South Checkpoint Operations" bug. The backend is
+        # stateless across sessions, so the regression is exclusively
+        # frontend (`db.dashboard` cache); this test guards the contract
+        # the frontend relies on: every /api/dashboard response is keyed
+        # on the bearer token and reflects the active user, never a
+        # previous user.
+        # ----------------------------------------------------------------
+        s, _ = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.south', 'password': 'ChangeMe123!'})
+        assert s == 200
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'admin', 'password': 'ChangeMe123!'})
+        assert s == 200
+        admin_token2 = r['token']
+        s, d_admin = request(base, 'GET', '/api/dashboard', admin_token2)
+        assert s == 200
+        # Admin must see the GLOBAL cards, NOT the South cards.
+        admin_card_ids = {c['id'] for c in d_admin['cards']}
+        assert admin_card_ids == {'central_persons','open_cases','pending_clearances','active_alerts'}, \
+            f"admin cards not global: {admin_card_ids}"
+        assert d_admin['is_admin'] is True
+        assert d_admin['location_scope'] is None
+        # And the quick actions must be all 4 — admin has all of them.
+        assert {q['id'] for q in d_admin['quick_actions']} == {'add_airport','add_clearance','add_case','add_checkpoint'}
+        # Admin can read all location events including the South one.
+        s, cps_admin = request(base, 'GET', '/api/checkpoint-events', admin_token2)
+        assert s == 200
+        assert any(e['event_id'] == new_event_id for e in cps_admin['items']), \
+            "admin must see the South event in the cross-unit /api/checkpoint-events"
+
+        # ----------------------------------------------------------------
+        # Immediate-appearance test: cp.south POST then GET must return
+        # the new event in the very next response. (Frontend also
+        # optimistically pushes it into db.checkpoints, so the user sees
+        # it before the network roundtrip completes.)
+        # ----------------------------------------------------------------
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.south', 'password': 'ChangeMe123!'})
+        assert s == 200
+        south_token2 = r['token']
+        f2 = dict(cp_fields)
+        f2['first_name'] = 'Faadumo'
+        f2['second_name'] = 'Yusuf'
+        f2['third_name'] = 'Cabdalle'
+        f2['fourth_name'] = 'Cabdi'
+        f2['location'] = 'South'  # cp.south is locked to their assigned location
+        s2, post2 = multipart_request(base, '/api/checkpoint-events',
+                                      token=south_token2, fields=f2, files=cp_files)
+        assert s2 == 201, f"second POST failed: {s2} {post2}"
+        # Read it back immediately; the new event must be in the list.
+        s, cps = request(base, 'GET', '/api/checkpoint-events', south_token2)
+        assert s == 200
+        assert any(e['event_id'] == post2['event_id'] for e in cps['items']), \
+            "newly-posted event must appear in the immediate /api/checkpoint-events response"
+        # And must be tagged with location_code='South'.
+        new_row = next(e for e in cps['items'] if e['event_id'] == post2['event_id'])
+        assert new_row['location_code'] == 'South'
+        assert new_row['checkpoint_location'] == 'South Checkpoint'
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:
