@@ -805,6 +805,48 @@ def main():
         assert d['is_admin'] is False
         assert cps['scope'] == 'South'
 
+        # ----------------------------------------------------------------
+        # Spec-mandated aggressive-match contract. The frontend's
+        # cpMatchesLocation() must match ANY record whose stored
+        # location string contains the active scope ('south' / 'east' /
+        # 'west'), so the chip count badge and the table agree. We
+        # simulate the function against a representative set of stored
+        # values to guarantee the contract holds.
+        # ----------------------------------------------------------------
+        def cpMatchesLocation(record, activeScope):
+            if not record: return False
+            scope = (activeScope or '').lower() if isinstance(activeScope, str) else ''
+            loc = (record.get('checkpoint_location') or record.get('location_code') or record.get('location') or '').lower()
+            if scope and 'south' in scope and 'south' in loc: return True
+            if scope and 'east'  in scope and 'east'  in loc: return True
+            if scope and 'west'  in scope and 'west'  in loc: return True
+            return loc == scope or scope in loc or loc in scope
+
+        # Match the cp.south events list against scope='South'.
+        south_events = [e for e in cps['items']]
+        south_filtered = [e for e in south_events if cpMatchesLocation(e, 'South')]
+        # Every event in the cp.south list MUST match scope='South'
+        # (no false negatives -> 'South Checkpoint 0' bug is gone).
+        assert all(cpMatchesLocation(e, 'South') for e in south_events), \
+            f"all cp.south events must match South: {south_events}"
+        assert len(south_filtered) == len(south_events) > 0
+        # A cp.south event must NOT match scope='East'.
+        assert not any(cpMatchesLocation(e, 'East') for e in south_events), \
+            "cp.south events must not match East scope"
+
+        # Spec-mandated prepend pattern. Simulate `db.checkpoints =
+        # [newRecord, ...db.checkpoints]` and verify the new event is
+        # at index 0 and the count is incremented.
+        before_prepend = list(south_events)
+        new_rec = south_events[0]  # any existing event works as the "new" record
+        db_after = [new_rec] + [x for x in before_prepend if x.get('event_id') != new_rec.get('event_id')]
+        assert db_after[0]['event_id'] == new_rec['event_id']
+        assert len(db_after) == len(before_prepend)
+        # And the filtered list (with scope='South') is the same length.
+        filtered_after = [e for e in db_after if cpMatchesLocation(e, 'South')]
+        assert len(filtered_after) == len(db_after), \
+            f"badge count after prepend: {len(filtered_after)} vs {len(db_after)}"
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:

@@ -1409,36 +1409,55 @@ function paintCheckpointChips(){
   });
 }
 
-function cpMatchesLocation(x, loc){
-  // Case- and space-insensitive match against any of the four
-  // location-related fields the backend may have populated. The
-  // task spec mandates `LOWER(...)` + `LIKE '%south%'` semantics;
-  // here we implement the same logic on the in-memory record so
-  // the chip count badge, the table, and the filter all agree.
-  if(!loc) return true;
-  const want = String(loc).toLowerCase().trim();
-  const code = String(x.location_code || '').toLowerCase().trim();
-  const lbl = String(x.checkpoint_location || '').toLowerCase().trim();
-  const bare = String(x.location || '').toLowerCase().trim();
-  if(!want) return true;
-  // Exact match wins first so 'South' does not also match 'Southeast'.
-  if(code === want || lbl === want || bare === want) return true;
-  if(lbl === want + ' checkpoint') return true;
-  // Substring fallback (mirrors the backend's `LIKE '%south%'` clause).
-  if(bare.includes(want) || lbl.includes(want) || code.includes(want)) return true;
-  return false;
+function cpMatchesLocation(record, activeScope){
+  // Aggressive, case-insensitive location-scope match (spec-mandated).
+  // Matches any record whose checkpoint_location / location_code /
+  // location string CONTAINS the active scope ('south' / 'east' /
+  // 'west'), or equals the scope. This guarantees the chip count
+  // badge and the table agree on what the officer is looking at.
+  // Example: scope='South' matches records stored as 'South',
+  // 'South Checkpoint', 'south', 'south checkpoint ', etc.
+  if(!record) return false;
+  const scope = (activeScope || '').toString().toLowerCase().trim();
+  const loc = (record.checkpoint_location || record.location_code || record.location || '')
+    .toString().toLowerCase().trim();
+  // Fast path: empty scope means "all locations".
+  if(!scope) return true;
+  // Explicit 'south' / 'east' / 'west' substring checks (defensive
+  // against any future scope naming like 'South-East').
+  if(scope.includes('south') && loc.includes('south')) return true;
+  if(scope.includes('east') && loc.includes('east')) return true;
+  if(scope.includes('west') && loc.includes('west')) return true;
+  // General fallback: exact match or substring either way.
+  return loc === scope || loc.includes(scope) || scope.includes(loc);
 }
 
 function renderCheckpointTable(){
   const tbody = document.getElementById('cpTable');
   if(!tbody) return;
+  // Spec step 2.1: log the in-memory array + active filter for
+  // browser-console diagnosis. Log only when a record is being
+  // looked at to keep production quiet (the filter chip itself
+  // signals the active scope to the officer).
+  try{
+    if(window.__cpDebug){
+      console.log('[cp] renderCheckpointTable: db.checkpoints =',
+                  JSON.stringify(db.checkpoints, null, 2));
+      console.log('[cp] active cpLocationFilter =', JSON.stringify(cpLocationFilter));
+    }
+  }catch(_){}
   const filtered = cpLocationFilter
     ? db.checkpoints.filter(x => cpMatchesLocation(x, cpLocationFilter))
     : db.checkpoints;
   const empty = document.getElementById('cpEmpty');
   const count = document.getElementById('cpTableCount');
   const filterLabel = document.getElementById('cpFilterLabel');
-  if(count) count.textContent = filtered.length;
+  if(count){
+    // Spec step 2.3: chip count badge must reflect filteredRecords.length.
+    count.textContent = filtered.length;
+    // Also surface the count in the per-chip badge via the
+    // paintCheckpointChips() re-render below.
+  }
   if(filterLabel){
     const role = (sessionUser && sessionUser.role) || '';
     const scope = (sessionUser && sessionUser.location_scope) || '';
@@ -1882,16 +1901,18 @@ async function submitCheckpoint(){
       gdDocs.forEach((f,i)=>fd.append('doc_gd_'+i,f));
       fd.append('photo',photo);
       const r=await api('/api/checkpoint-events',{method:'POST',body:fd});
+      // Diagnostic: confirm the server response shape (spec step 1.2).
+      try{ console.log('[cp] POST /api/checkpoint-events response:', r); }catch(_){}
       // Capture the server's authoritative location fields BEFORE we
       // close the drawer (which destroys the cpLoc DOM element).
       const newLocation = r.checkpoint_location || (cpLoc.value + ' Checkpoint');
       const newLocationCode = r.location_code || cpLoc.value;
       const newNotes = cpNotes.value;
       closeDrawer();
-      // Optimistic UI: push the new event into the in-memory table so it
-      // appears instantly, then trigger the authoritative server sync
-      // (which re-fetches the location-scoped event list and replaces
-      // the optimistic row with the canonical server payload).
+      // Optimistic UI: FORCE an immediate local array mutation so the
+      // UI re-renders without waiting for the network re-fetch cycle.
+      // (Spec step 1.3.) De-dupe on event_id first in case the previous
+      // optimistic copy is still in the array.
       const optimistic = {
         time: (r.created_at || new Date().toISOString().replace('T',' ').slice(0,16)),
         location: newLocation,
@@ -1903,27 +1924,36 @@ async function submitCheckpoint(){
         notes: newNotes,
         event_id: r.event_id,
       };
-      // De-dupe: drop any existing row with the same event_id (in case
-      // an earlier render had an optimistic copy).
-      db.checkpoints = db.checkpoints.filter(x => x.event_id !== optimistic.event_id);
-      db.checkpoints.unshift(optimistic);
-      // Repaint the chips and the table right now so the officer sees
-      // the new event the moment the drawer closes.
+      // Spec-mandated pattern: prepend the new record to the array.
+      const before = (db.checkpoints || []).filter(x => x.event_id !== optimistic.event_id);
+      db.checkpoints = [optimistic, ...before];
+      try{
+        console.log('[cp] forced local mutation: db.checkpoints.length =', db.checkpoints.length,
+                    ' active scope =', cpLocationFilter, ' new event_id =', optimistic.event_id);
+      }catch(_){}
+      // IMMEDIATELY call renderCheckpointTable() (spec step 1.4) so the
+      // UI repaints the moment the drawer closes — even if the page
+      // isn't the active page yet. paintCheckpointChips() also updates
+      // the location count badge so the chip shows the new total.
+      paintCheckpointChips();
+      renderCheckpointTable();
+      // If the Checkpoints page is active, also re-bind the filter
+      // (no-op for officers, but keeps admins' selected chip intact).
       if(document.getElementById('checkpoints') && document.getElementById('checkpoints').classList.contains('active')){
         autoBindCpLocationFilter();
         renderCheckpointPage();
-      } else {
-        paintCheckpointChips();
       }
-      // Now do the authoritative server sync in the background.
+      // Now do the authoritative server sync in the background. This
+      // fetches the canonical event list (so we also get any
+      // back-filled server fields like the full created_at timestamp).
       await syncServer();
-      // And re-render again so the server's canonical row replaces the
-      // optimistic one (in particular the created_at timestamp).
+      // And re-render one more time so the server's canonical row
+      // replaces the optimistic one.
+      paintCheckpointChips();
+      renderCheckpointTable();
       if(document.getElementById('checkpoints') && document.getElementById('checkpoints').classList.contains('active')){
         autoBindCpLocationFilter();
         renderCheckpointPage();
-      } else {
-        paintCheckpointChips();
       }
       toast(r.alerted?`⚠ ${r.location}: potential suspect match — supervisor notified`:'Person screened — no active alert');
       return;
@@ -2490,6 +2520,10 @@ document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:tru
 document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
 document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
 applyNavForRole();   // hide admin pages until sign-in
+// Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
+// filter when investigating the 'South Checkpoint 0' bug). Toggle
+// from the browser console with: window.__cpDebug = true | false.
+window.__cpDebug = window.localStorage && localStorage.getItem('sentinelCpDebug') === '1';
 renderAll();
 </script>
 </body></html>
