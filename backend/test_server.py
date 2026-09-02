@@ -358,6 +358,148 @@ def main():
         item = next(x for x in ar['items'] if x['person_id'] == blank_pid)
         assert item['airline'] == 'Sentinel Air' and item['flight_number'] == 'HL-707', item
 
+        # ---- Role-Based Access Control (RBAC) ----
+        # Login each role, verify /api/me reports role + modules + scope.
+        roles = {
+            'admin':       ('SystemAdmin',     None,   {'admin', 'analytics'}),
+            'fp.officer':  ('FingerprintUnit', None,   set()),
+            'ap.officer':  ('AirportControl',  None,   set()),
+            'cid.officer': ('CIDUnit',         None,   set()),
+            'cp.south':    ('CheckpointSouth', 'South', set()),
+            'cp.east':     ('CheckpointEast',  'East',  set()),
+            'cp.west':     ('CheckpointWest',  'West',  set()),
+        }
+        tokens = {}
+        for u, (role, scope, extras) in roles.items():
+            s, r = request(base, 'POST', '/api/login',
+                           body={'username': u, 'password': 'ChangeMe123!'})
+            assert s == 200 and r['user']['role'] == role, (u, r)
+            assert r['user']['location_scope'] == scope, (u, r['user'])
+            expected_mods = {'dashboard'}
+            if role == 'SystemAdmin':
+                expected_mods |= {'admin', 'analytics', 'airport', 'checkpoints',
+                                  'cid', 'fingerprint', 'people'}
+            elif role == 'FingerprintUnit':
+                expected_mods |= {'fingerprint', 'people'}
+            elif role == 'AirportControl':
+                expected_mods |= {'airport', 'people'}
+            elif role == 'CIDUnit':
+                expected_mods |= {'cid', 'people'}
+            elif role.startswith('Checkpoint'):
+                expected_mods |= {'checkpoints'}
+            assert set(r['user']['modules']) == expected_mods, (u, r['user'])
+            s, me = request(base, 'GET', '/api/me', r['token'])
+            assert s == 200 and me['role'] == role, (u, me)
+            assert me['visibility']['is_admin'] is (role == 'SystemAdmin')
+            assert me['visibility']['can_manage_users'] is (role == 'SystemAdmin')
+            assert me['visibility']['can_view_analytics'] is (role == 'SystemAdmin')
+            tokens[u] = r['token']
+
+        # Cross-module RBAC: each unit role can only access its own module.
+        cases = [
+            ('fp.officer',  '/api/airport-records',     401),
+            ('fp.officer',  '/api/clearance-applications', 200),
+            ('ap.officer',  '/api/clearance-applications', 401),
+            ('ap.officer',  '/api/airport-records',     200),
+            ('cid.officer', '/api/crime-cases',         200),
+            ('cid.officer', '/api/airport-records',     401),
+            ('cp.south',    '/api/clearance-applications', 401),
+            ('cp.south',    '/api/checkpoint-events',   200),
+        ]
+        for user, path, expected in cases:
+            s, r = request(base, 'GET', path, tokens[user])
+            assert s == expected, (user, path, s, r)
+
+        # Admin-only endpoints are rejected for non-admins.
+        for user in ('fp.officer', 'cp.south', 'cid.officer'):
+            for path in ('/api/admin/users', '/api/admin/analytics'):
+                s, r = request(base, 'GET', path, tokens[user])
+                assert s == 401, (user, path, s, r)
+
+        # Admins can see all checkpoint events; Checkpoint users only see their location.
+        s, admin_cp = request(base, 'GET', '/api/checkpoint-events', tokens['admin'])
+        assert s == 200 and admin_cp['scope'] is None, admin_cp
+        for u, expected_loc in (('cp.south', 'South'),
+                                ('cp.east', 'East'),
+                                ('cp.west', 'West')):
+            s, r = request(base, 'GET', '/api/checkpoint-events', tokens[u])
+            assert s == 200 and r['scope'] == expected_loc, (u, r)
+            for ev in r['items']:
+                assert ev['location'] == expected_loc, (u, ev)
+        # Admin should see at least as many checkpoint events as any one location.
+        assert len(admin_cp['items']) >= 1
+
+        # Admin user management: create / update / deactivate.
+        s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
+            'username': 'new.user', 'password': 'secret1',
+            'display_name': 'Officer New', 'role': 'CheckpointWest',
+            'branch': 'Checkpoint West', 'location_scope': 'West'})
+        assert s == 201 and r['user']['role'] == 'CheckpointWest', r
+        new_uid = r['user']['id']
+
+        s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
+            'username': 'new.user', 'password': 'secret1',
+            'display_name': 'X', 'role': 'SystemAdmin'})
+        assert s == 409, r
+
+        s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
+            'username': 'bad.role', 'password': 'secret1',
+            'display_name': 'X', 'role': 'NotARole'})
+        assert s == 400, r
+
+        s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
+            'username': 'short.pw', 'password': '1',
+            'display_name': 'X', 'role': 'SystemAdmin'})
+        assert s == 400, r
+
+        s, r = request(base, 'PATCH', f'/api/admin/users/{new_uid}', tokens['admin'],
+                       {'display_name': 'Officer Renamed', 'active': False})
+        assert s == 200 and r['user']['display_name'] == 'Officer Renamed', r
+        assert r['user']['active'] is False, r
+
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'new.user', 'password': 'secret1'})
+        assert s == 401, r  # deactivated user cannot log in
+
+        s, r = request(base, 'POST', '/api/admin/users', tokens['cp.south'], {
+            'username': 'evil', 'password': 'secret1', 'display_name': 'X',
+            'role': 'SystemAdmin'})
+        assert s == 401, r
+
+        # Analytics: admin only and shape-stable for charts.
+        s, analytics = request(base, 'GET', '/api/admin/analytics', tokens['admin'])
+        assert s == 200, analytics
+        a = analytics
+        for key in ('total_central_persons', 'active_suspect_alerts',
+                    'airport_movements', 'fingerprint_records', 'checkpoint_events'):
+            assert key in a['summary'], a['summary']
+        assert 'by_location' in a['crime_distribution']
+        assert 'by_time_of_day' in a['crime_distribution']
+        for bucket in ('Morning (06-12)', 'Afternoon (12-18)',
+                       'Evening (18-24)', 'Night (00-06)'):
+            assert any(b['label'] == bucket for b in a['crime_distribution']['by_time_of_day']), a
+        assert 'by_location' in a['checkpoint_volume']
+        for loc in ('South', 'East', 'West'):
+            assert any(b['label'] == loc for b in a['checkpoint_volume']['by_location']), a
+        for loc in a['checkpoint_volume']['demographics']:
+            for b in a['checkpoint_volume']['demographics'][loc]:
+                assert b['label'] in ('<18', '18-30', '31-50', '50+', 'Unknown'), a
+
+        # Checkpoint create: a South officer cannot record an East event.
+        cp_south = {'first_name': 'Test', 'second_name': 'A', 'third_name': 'B',
+                    'fourth_name': 'C', 'date_of_birth': '2000-01-01',
+                    'current_address': 'X', 'permanent_address': 'Y',
+                    'purpose_of_visit': 'Family', 'location': 'East',
+                    'guardian_first_name': 'G', 'guardian_second_name': 'A',
+                    'guardian_third_name': 'B', 'guardian_fourth_name': 'C',
+                    'guardian_relationship': 'Father', 'guardian_phone': '+1',
+                    'guardian_address': 'X', 'guardian_occupation': 'Worker'}
+        cp_files = {'doc_tr_0': ('t.pdf', b'x'), 'doc_gd_0': ('g.pdf', b'x'),
+                    'photo': ('p.jpg', b'\xff\xd8\xff\xe0x')}
+        s, r = multipart_request(base, '/api/checkpoint-events', tokens['cp.south'],
+                                 cp_south, cp_files)
+        assert s == 400 and 'assigned location' in r['error'].lower(), r
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:

@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS users(
   display_name TEXT NOT NULL, role TEXT NOT NULL,
   branch TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS locations(
+  id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL,
+  label TEXT NOT NULL, kind TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS persons(
   id INTEGER PRIMARY KEY, person_id TEXT UNIQUE NOT NULL,
   full_name TEXT NOT NULL, first_name TEXT, second_name TEXT, third_name TEXT, fourth_name TEXT,
@@ -111,6 +115,9 @@ CREATE TABLE IF NOT EXISTS audit_events(
 
 # Columns added after the initial migration (applied to existing databases).
 ADDED_COLUMNS = {
+    'users': [
+        ('location_scope', "ALTER TABLE users ADD COLUMN location_scope TEXT"),
+    ],
     'persons': [
         ('first_name', "ALTER TABLE persons ADD COLUMN first_name TEXT"),
         ('second_name', "ALTER TABLE persons ADD COLUMN second_name TEXT"),
@@ -166,6 +173,121 @@ NAME_PART_FIELDS = ('first_name', 'second_name', 'third_name', 'fourth_name')
 PERSON_FIELDS = NAME_PART_FIELDS + ('full_name', 'national_id', 'date_of_birth', 'phone',
                                     'mother_name', 'place_of_birth', 'residence',
                                     'occupation', 'passport_id', 'photo_path')
+
+# ---------------------------------------------------------------------------
+# Role-Based Access Control (RBAC) — central definition of roles, the modules
+# they are allowed to use, and any data-scoping (e.g. checkpoint location).
+# ---------------------------------------------------------------------------
+# Canonical role identifiers (stored in users.role and seed data).
+ROLE_ADMIN = 'SystemAdmin'
+ROLE_FINGERPRINT = 'FingerprintUnit'
+ROLE_AIRPORT = 'AirportControl'
+ROLE_CID = 'CIDUnit'
+ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
+ROLE_CHECKPOINT_EAST = 'CheckpointEast'
+ROLE_CHECKPOINT_WEST = 'CheckpointWest'
+
+ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID,
+             ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
+
+# Canonical checkpoint location codes. The data uses the short codes ('South',
+# 'East', 'West') so the scoping stays in sync with existing seed data.
+CHECKPOINT_LOCATIONS = ('South', 'East', 'West')
+
+ROLE_LABELS = {
+    ROLE_ADMIN: 'System Administrator',
+    ROLE_FINGERPRINT: 'Fingerprint Unit Officer',
+    ROLE_AIRPORT: 'Airport Control Officer',
+    ROLE_CID: 'CID Criminal Unit Officer',
+    ROLE_CHECKPOINT_SOUTH: 'Checkpoint Officer (South)',
+    ROLE_CHECKPOINT_EAST: 'Checkpoint Officer (East)',
+    ROLE_CHECKPOINT_WEST: 'Checkpoint Officer (West)',
+}
+
+# Map a role to the operational modules it is allowed to use. Admins get
+# everything; unit users get their single module; checkpoint users only get
+# the Checkpoint module and their own location scope.
+ROLE_MODULES = {
+    ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints'},
+    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint'},
+    ROLE_AIRPORT: {'dashboard', 'people', 'airport'},
+    ROLE_CID: {'dashboard', 'people', 'cid'},
+    ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
+    ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
+    ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
+}
+
+# Map a role to the checkpoint location it is scoped to (or None for non-checkpoint roles).
+ROLE_LOCATION_SCOPE = {
+    ROLE_ADMIN: None,
+    ROLE_FINGERPRINT: None,
+    ROLE_AIRPORT: None,
+    ROLE_CID: None,
+    ROLE_CHECKPOINT_SOUTH: 'South',
+    ROLE_CHECKPOINT_EAST: 'East',
+    ROLE_CHECKPOINT_WEST: 'West',
+}
+
+
+def user_view(user):
+    """Return the public-facing user payload (no password hash) with RBAC info."""
+    role = user.get('role') or ''
+    scope = user.get('location_scope') or ROLE_LOCATION_SCOPE.get(role)
+    # Normalise legacy/derived scope for display: checkpoint users see a
+    # human-friendly location label, everyone else sees their branch.
+    if role.startswith('Checkpoint') and role.endswith(('South', 'East', 'West')):
+        location = role[len('Checkpoint'):]
+    else:
+        location = scope or user.get('branch') or ''
+    return {
+        'id': user['id'],
+        'username': user['username'],
+        'display_name': user['display_name'],
+        'role': role,
+        'role_label': ROLE_LABELS.get(role, role),
+        'branch': user.get('branch') or '',
+        'location_scope': scope,
+        'location': location,
+        'modules': sorted(ROLE_MODULES.get(role, set())),
+        'active': bool(user.get('active', 1)),
+    }
+
+
+def require_role(user, role):
+    """Raise PermissionError unless the user's role matches."""
+    if user.get('role') != role:
+        raise PermissionError(f'Requires {ROLE_LABELS.get(role, role)} role')
+
+
+def require_module(user, module):
+    """Raise PermissionError unless the user can access the given module/page."""
+    modules = ROLE_MODULES.get(user.get('role'), set())
+    if module not in modules:
+        raise PermissionError(
+            f'Restricted to {ROLE_LABELS.get(user.get("role", ""), user.get("role", ""))}')
+
+
+def checkpoint_scope(user):
+    """Return the location code this user is allowed to see for checkpoint data.
+
+    Admins see all locations (None). Checkpoint users see only their own.
+    Other unit users see no checkpoint data (empty string).
+    """
+    role = user.get('role') or ''
+    if role == ROLE_ADMIN:
+        return None
+    return ROLE_LOCATION_SCOPE.get(role) or ''
+
+
+def filter_visibility(user):
+    """Small dict of RBAC booleans used by the /api/me view and frontend."""
+    role = user.get('role') or ''
+    return {
+        'is_admin': role == ROLE_ADMIN,
+        'can_manage_users': role == ROLE_ADMIN,
+        'can_view_analytics': role == ROLE_ADMIN,
+        'checkpoint_scope': checkpoint_scope(user),
+    }
 
 # ---- migration --------------------------------------------------------------
 def norm(value):
@@ -271,9 +393,30 @@ def init_db():
     c = db()
     c.executescript(SCHEMA)
     migrate(c)
+    # Canonical checkpoint locations — referenced by both the data and the RBAC layer.
+    if c.execute('SELECT COUNT(*) FROM locations').fetchone()[0] == 0:
+        for code, label in (('South', 'South Checkpoint'),
+                             ('East', 'East Checkpoint'),
+                             ('West', 'West Checkpoint')):
+            c.execute('INSERT INTO locations(code,label,kind) VALUES(?,?,?)',
+                      (code, label, 'Checkpoint'))
+    # Normalise the legacy admin account + seed a representative user per role
+    # so the RBAC flow is exercised by default. The existing admin keeps its
+    # password (idempotent — we only re-tag it on first run).
     if c.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
-        c.execute('INSERT INTO users(username,display_name,role,branch,password_hash) VALUES(?,?,?,?,?)',
-                  ('admin','Officer A. Hassan','Administrator','Central HQ', password_hash('ChangeMe123!')))
+        seeds = [
+            ('admin',       'Officer A. Hassan',     ROLE_ADMIN,           'Central HQ',      None,                 'ChangeMe123!'),
+            ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,                'ChangeMe123!'),
+            ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!'),
+            ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!'),
+            ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_SOUTH,'Checkpoint South', 'South',             'ChangeMe123!'),
+            ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_EAST, 'Checkpoint East',  'East',              'ChangeMe123!'),
+            ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_WEST, 'Checkpoint West',  'West',              'ChangeMe123!'),
+        ]
+        for u, dn, role, branch, scope, pw in seeds:
+            c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,password_hash) '
+                      'VALUES(?,?,?,?,?,?)',
+                      (u, dn, role, branch, scope, password_hash(pw)))
     if c.execute('SELECT COUNT(*) FROM persons').fetchone()[0] == 0:
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation,passport_id)
@@ -362,10 +505,12 @@ def require_auth(handler):
     user_id = TOKENS.get(token)
     if not user_id: raise PermissionError('Authentication required')
     c = db()
-    user = rowdict(c.execute('SELECT id,username,display_name,role,branch FROM users WHERE id=? AND active=1',(user_id,)).fetchone())
+    user = rowdict(c.execute(
+        'SELECT id,username,display_name,role,branch,location_scope,active '
+        'FROM users WHERE id=? AND active=1',(user_id,)).fetchone())
     c.close()
     if not user: raise PermissionError('Authentication required')
-    return user
+    return user_view(user)
 
 def audit(c, user, action, entity, entity_id, details=''):
     c.execute('INSERT INTO audit_events(user_id,action,entity,entity_id,details) VALUES(?,?,?,?,?)',
@@ -611,6 +756,110 @@ def identity_result(c, data, person):
     return {'person_id': person['person_id'], 'matched': matched,
             'tier': tier if matched else 0, 'reason': reason}
 
+def build_analytics(c, user):
+    """Aggregate analytics for the Executive Dashboard (admin only)."""
+    # --- 1) Operational summary metrics ----------------------------------
+    total_persons = c.execute('SELECT COUNT(*) FROM persons').fetchone()[0]
+    active_alerts = c.execute(
+        "SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0]
+    airport_records = c.execute('SELECT COUNT(*) FROM airport_passengers').fetchone()[0]
+    fingerprint_records = c.execute('SELECT COUNT(*) FROM clearance_applications').fetchone()[0]
+    case_total = c.execute('SELECT COUNT(*) FROM crime_cases').fetchone()[0]
+    open_cases = c.execute("SELECT COUNT(*) FROM crime_cases WHERE status<>'Closed'").fetchone()[0]
+    checkpoint_total = c.execute('SELECT COUNT(*) FROM checkpoint_events').fetchone()[0]
+    checkpoint_flagged = c.execute(
+        "SELECT COUNT(*) FROM checkpoint_events WHERE screening_result='Flagged match'").fetchone()[0]
+    summary = {
+        'total_central_persons': total_persons,
+        'active_suspect_alerts': active_alerts,
+        'airport_movements': airport_records,
+        'fingerprint_records': fingerprint_records,
+        'crime_cases_total': case_total,
+        'crime_cases_open': open_cases,
+        'checkpoint_events': checkpoint_total,
+        'checkpoint_flagged': checkpoint_flagged,
+    }
+
+    # --- 2) Crime distribution by location and time-of-day bucket --------
+    # "location" of a crime is the location stored on the crime_cases row.
+    # time-of-day is bucketed from the created_at timestamp (24h clock).
+    crime_rows = c.execute(
+        "SELECT location, created_at FROM crime_cases").fetchall()
+    by_location = {}
+    by_time = {'Morning (06-12)': 0, 'Afternoon (12-18)': 0,
+               'Evening (18-24)': 0, 'Night (00-06)': 0}
+    for r in crime_rows:
+        loc = (r['location'] or 'Unspecified').strip() or 'Unspecified'
+        by_location[loc] = by_location.get(loc, 0) + 1
+        # created_at is a SQLite 'YYYY-MM-DD HH:MM:SS' string
+        ts = (r['created_at'] or '').strip()
+        hour = None
+        if len(ts) >= 13 and ts[11:13].isdigit():
+            hour = int(ts[11:13])
+        if hour is None:
+            bucket = 'Unspecified'
+        elif 6 <= hour < 12:
+            bucket = 'Morning (06-12)'
+        elif 12 <= hour < 18:
+            bucket = 'Afternoon (12-18)'
+        elif 18 <= hour < 24:
+            bucket = 'Evening (18-24)'
+        else:
+            bucket = 'Night (00-06)'
+        by_time[bucket] = by_time.get(bucket, 0) + 1
+    # Pad the matrix so the dashboard has stable axes.
+    location_order = sorted(by_location.items(), key=lambda x: -x[1])
+    crime_distribution = {
+        'by_location': [{'label': k, 'count': v} for k, v in location_order],
+        'by_time_of_day': [{'label': k, 'count': by_time.get(k, 0)} for k in
+                            ('Morning (06-12)', 'Afternoon (12-18)',
+                             'Evening (18-24)', 'Night (00-06)')],
+    }
+
+    # --- 3) Checkpoint volume by location and traveler demographics ------
+    # Travelers link to a central person; we use the stored date_of_birth
+    # to bucket their age at the time of travel.
+    def age_to_bucket(age):
+        if age is None: return 'Unknown'
+        if age < 18: return '<18'
+        if age <= 30: return '18-30'
+        if age <= 50: return '31-50'
+        return '50+'
+    today = time.gmtime()
+    current_year = today.tm_year
+    by_loc = {code: 0 for code in CHECKPOINT_LOCATIONS}
+    by_loc_age = {code: {'<18': 0, '18-30': 0, '31-50': 0, '50+': 0, 'Unknown': 0}
+                  for code in CHECKPOINT_LOCATIONS}
+    rows = c.execute('''SELECT ce.location, p.date_of_birth
+        FROM checkpoint_events ce JOIN persons p ON p.id=ce.person_id''').fetchall()
+    for r in rows:
+        loc = (r['location'] or '').strip()
+        if loc not in by_loc:
+            by_loc[loc] = 0
+            by_loc_age[loc] = {'<18': 0, '18-30': 0, '31-50': 0, '50+': 0, 'Unknown': 0}
+        by_loc[loc] = by_loc.get(loc, 0) + 1
+        dob = (r['date_of_birth'] or '').strip()
+        age = None
+        if len(dob) >= 4 and dob[:4].isdigit():
+            age = current_year - int(dob[:4])
+        bucket = age_to_bucket(age)
+        by_loc_age.setdefault(loc, {'<18': 0, '18-30': 0, '31-50': 0, '50+': 0, 'Unknown': 0})
+        by_loc_age[loc][bucket] = by_loc_age[loc].get(bucket, 0) + 1
+    volume = {
+        'by_location': [{'label': k, 'count': by_loc.get(k, 0)} for k in CHECKPOINT_LOCATIONS],
+        'demographics': {loc: [{'label': k, 'count': v.get(k, 0)} for k in
+                                ('<18', '18-30', '31-50', '50+', 'Unknown')]
+                         for loc, v in by_loc_age.items()},
+    }
+
+    return {
+        'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', today),
+        'summary': summary,
+        'crime_distribution': crime_distribution,
+        'checkpoint_volume': volume,
+    }
+
+
 class API(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args): print('%s - %s' % (self.address_string(), fmt % args))
 
@@ -660,7 +909,28 @@ class API(BaseHTTPRequestHandler):
             if p.path == '/api/health':
                 return self.send_json(200, {'status':'ok','service':'sentinel-backend','database':'sqlite-development'})
             user = require_auth(self); c = db()
-            if p.path == '/api/me': result = user
+            # RBAC module-gating. Every authenticated user can see /api/me and
+            # the central /api/persons registry, but each unit endpoint is
+            # restricted to the roles that operate that module.
+            module_for_path = {
+                '/api/airport-records': 'airport',
+                '/api/clearance-applications': 'fingerprint',
+                '/api/crime-cases': 'cid',
+                '/api/suspect-alerts': 'cid',
+                '/api/checkpoint-events': 'checkpoints',
+                '/api/admin/users': 'admin',
+                '/api/admin/analytics': 'analytics',
+            }
+            base = '/' + p.path.split('/')[1] + '/' + (p.path.split('/')[2] if len(p.path.split('/')) > 2 else '')
+            for prefix, mod in module_for_path.items():
+                if p.path == prefix or p.path.startswith(prefix + '/'):
+                    require_module(user, mod)
+                    break
+            if p.path == '/api/me':
+                result = {**user, 'visibility': filter_visibility(user),
+                          'roles': list(ALL_ROLES),
+                          'role_labels': ROLE_LABELS,
+                          'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
             elif p.path == '/api/persons':
                 q = re.sub(r'\s+', ' ', parse_qs(p.query).get('q',[''])[0]).strip()
                 like = f'%{q}%'
@@ -716,6 +986,28 @@ class API(BaseHTTPRequestHandler):
                 case['evidence'] = [dict(r) for r in c.execute('''SELECT evidence_id,caption,file_path,file_name,file_type,created_at
                     FROM case_evidence WHERE case_id=? ORDER BY id DESC''',(case['id'],)).fetchall()]
                 result = case
+            elif p.path == '/api/admin/users' or p.path.startswith('/api/admin/users/'):
+                if p.path == '/api/admin/users':
+                    rows = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active
+                        FROM users ORDER BY id ASC''').fetchall()
+                    result = {'items':[user_view(rowdict(r)) for r in rows],
+                              'roles': list(ALL_ROLES),
+                              'role_labels': ROLE_LABELS,
+                              'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
+                else:
+                    uid = p.path.split('/')[4]
+                    if not uid or not uid.isdigit():
+                        self.send_json(400, {'error': 'user id required'}); c.close(); return
+                    row = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active
+                        FROM users WHERE id=?''', (int(uid),)).fetchone()
+                    if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
+                    result = {'user': user_view(rowdict(row)),
+                              'roles': list(ALL_ROLES),
+                              'role_labels': ROLE_LABELS,
+                              'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
+            elif p.path == '/api/admin/analytics':
+                # Aggregate analytics — admin only (module gate above).
+                result = build_analytics(c, user)
             elif p.path == '/api/suspect-alerts':
                 rows = c.execute('''SELECT sa.alert_id,sa.role,sa.alert_status,sa.origin,sa.notes,
                     cc.case_id,cc.category,cc.status AS case_status,
@@ -725,14 +1017,30 @@ class API(BaseHTTPRequestHandler):
                     ORDER BY sa.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path == '/api/checkpoint-events':
-                rows = c.execute('''SELECT ce.event_id,ce.location,ce.screening_result,ce.action_taken,
-                    ce.notes,ce.created_at,ce.purpose_of_visit,ce.current_address,ce.permanent_address,
-                    ce.traveler_photo,ce.traveler_docs,ce.guardian_person_id,ce.guardian_name,
-                    ce.guardian_relationship,ce.guardian_phone,ce.guardian_address,ce.guardian_occupation,
-                    ce.guardian_national_id,ce.guardian_passport_id,ce.guardian_docs,
-                    p.person_id,p.full_name,p.national_id,p.passport_id FROM checkpoint_events ce
-                    JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC''').fetchall()
-                result = {'items':[rowdict(r) for r in rows]}
+                # RBAC: Checkpoint users only see events at their own location.
+                # Admins see all; non-checkpoint users see all but the frontend
+                # won't render the page for them either.
+                scope = checkpoint_scope(user)
+                if scope:
+                    rows = c.execute('''SELECT ce.event_id,ce.location,ce.screening_result,ce.action_taken,
+                        ce.notes,ce.created_at,ce.purpose_of_visit,ce.current_address,ce.permanent_address,
+                        ce.traveler_photo,ce.traveler_docs,ce.guardian_person_id,ce.guardian_name,
+                        ce.guardian_relationship,ce.guardian_phone,ce.guardian_address,ce.guardian_occupation,
+                        ce.guardian_national_id,ce.guardian_passport_id,ce.guardian_docs,
+                        p.person_id,p.full_name,p.national_id,p.passport_id FROM checkpoint_events ce
+                        JOIN persons p ON p.id=ce.person_id WHERE ce.location=?
+                        ORDER BY ce.id DESC''',(scope,)).fetchall()
+                else:
+                    rows = c.execute('''SELECT ce.event_id,ce.location,ce.screening_result,ce.action_taken,
+                        ce.notes,ce.created_at,ce.purpose_of_visit,ce.current_address,ce.permanent_address,
+                        ce.traveler_photo,ce.traveler_docs,ce.guardian_person_id,ce.guardian_name,
+                        ce.guardian_relationship,ce.guardian_phone,ce.guardian_address,ce.guardian_occupation,
+                        ce.guardian_national_id,ce.guardian_passport_id,ce.guardian_docs,
+                        p.person_id,p.full_name,p.national_id,p.passport_id FROM checkpoint_events ce
+                        JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC''').fetchall()
+                result = {'items':[rowdict(r) for r in rows],
+                          'scope': scope,
+                          'visible_locations': [scope] if scope else list(CHECKPOINT_LOCATIONS)}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
@@ -754,9 +1062,21 @@ class API(BaseHTTPRequestHandler):
                               (data.get('username'), password_hash(data.get('password','')))).fetchone(); c.close()
                 if not u: self.send_json(401,{'error':'Invalid username or password'}); return
                 token = secrets.token_urlsafe(32); TOKENS[token] = u['id']
-                self.send_json(200,{'token':token,'user':{'id':u['id'],'username':u['username'],
-                    'display_name':u['display_name'],'role':u['role'],'branch':u['branch']}}); return
+                self.send_json(200,{'token':token,'user':user_view(rowdict(u))}); return
             user = require_auth(self); c = db()
+            # RBAC: same module gate for the POST/PATCH handlers.
+            post_module_for_path = {
+                '/api/airport-records': 'airport',
+                '/api/clearance-applications': 'fingerprint',
+                '/api/crime-cases': 'cid',
+                '/api/suspect-alerts': 'cid',
+                '/api/checkpoint-events': 'checkpoints',
+                '/api/admin/users': 'admin',
+            }
+            for prefix, mod in post_module_for_path.items():
+                if p.path == prefix or p.path.startswith(prefix + '/'):
+                    require_module(user, mod)
+                    break
             if p.path == '/api/persons':
                 data = body_json(self)
                 if not build_full_name(data):
@@ -858,6 +1178,35 @@ class API(BaseHTTPRequestHandler):
                     meta['name'],fields.get('file_type','Evidence'),user['id']))
                 audit(c,user,'UPLOAD','evidence',eid,cid); c.commit()
                 result = {'evidence_id':eid,'file_path':meta['path']}
+            elif p.path == '/api/admin/users':
+                # Create a new officer / admin user. Admin only (module gate above).
+                data = body_json(self)
+                username = (data.get('username') or '').strip()
+                display_name = (data.get('display_name') or '').strip()
+                password = data.get('password') or ''
+                role = (data.get('role') or '').strip()
+                branch = (data.get('branch') or '').strip() or 'Central HQ'
+                if not username: raise ValueError('username is required')
+                if not display_name: raise ValueError('display_name is required')
+                if not password or len(password) < 6:
+                    raise ValueError('password must be at least 6 characters')
+                if role not in ALL_ROLES:
+                    raise ValueError(f'role must be one of {", ".join(ALL_ROLES)}')
+                scope = (data.get('location_scope') or ROLE_LOCATION_SCOPE.get(role) or '').strip() or None
+                if role.startswith('Checkpoint') and not scope:
+                    raise ValueError('location_scope is required for Checkpoint roles')
+                if scope and scope not in CHECKPOINT_LOCATIONS:
+                    raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
+                if c.execute('SELECT 1 FROM users WHERE username=?', (username,)).fetchone():
+                    self.send_json(409, {'error': f'Username "{username}" already exists'}); c.close(); return
+                c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active)
+                    VALUES(?,?,?,?,?,?,?)''',
+                    (username, display_name, role, branch, scope, password_hash(password),
+                     1 if data.get('active', True) else 0))
+                new = rowdict(c.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone())
+                audit(c, user, 'CREATE', 'user', str(new['id']), username)
+                c.commit()
+                result = {'user': user_view(new)}
             elif p.path == '/api/suspect-alerts':
                 data = body_json(self)
                 case = None
@@ -955,6 +1304,13 @@ class API(BaseHTTPRequestHandler):
                     guardian_person = c.execute('SELECT id FROM persons WHERE id=?',(match['id'],)).fetchone() if match else None
                 location = (data.get('location') or '').strip()
                 if not location: raise ValueError('location is required')
+                # RBAC: a Checkpoint user can only create events at their own
+                # location. Admins (and any non-checkpoint officer) may post
+                # to any valid checkpoint code.
+                scope = checkpoint_scope(user)
+                if scope and location != scope:
+                    raise ValueError(
+                        f'Checkpoint officers can only record stops at their assigned location ({scope})')
                 alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=? AND role='Suspect'
                     AND alert_status='Active alert' LIMIT 1''',(person['id'],)).fetchone()
                 screen = 'Flagged match' if alerted else 'No active alert'
@@ -1005,6 +1361,11 @@ class API(BaseHTTPRequestHandler):
         try:
             p = urlparse(self.path)
             user = require_auth(self); data = body_json(self); c = db()
+            # RBAC: only admins can edit user records; CID module updates CID cases.
+            if p.path.startswith('/api/admin/users'):
+                require_module(user, 'admin')
+            elif p.path.startswith('/api/crime-cases'):
+                require_module(user, 'cid')
             if p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 row = c.execute('SELECT * FROM persons WHERE person_id=?',(pid,)).fetchone()
@@ -1033,6 +1394,46 @@ class API(BaseHTTPRequestHandler):
                     c.execute(f"UPDATE crime_cases SET {', '.join(updates)} WHERE id=?", params)
                     audit(c,user,'UPDATE','crime_case',cid)
                 c.commit(); result = {'case_id':cid,'updated':True}
+            elif p.path.startswith('/api/admin/users/'):
+                # Update an existing user — change role, branch, location, password, active.
+                # /api/admin/users/<id> -> split('/') -> ['', 'api', 'admin', 'users', '<id>']
+                parts = p.path.split('/')
+                uid = parts[4] if len(parts) > 4 else ''
+                if not uid or not uid.isdigit():
+                    self.send_json(400, {'error': 'user id required'}); c.close(); return
+                row = c.execute('SELECT * FROM users WHERE id=?', (int(uid),)).fetchone()
+                if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
+                updates, params = [], []
+                for f in ('display_name', 'branch'):
+                    if f in data and str(data[f]).strip():
+                        updates.append(f'{f}=?'); params.append(str(data[f]).strip())
+                if 'role' in data:
+                    role = str(data['role']).strip()
+                    if role not in ALL_ROLES:
+                        raise ValueError(f'role must be one of {", ".join(ALL_ROLES)}')
+                    updates.append('role=?'); params.append(role)
+                    # If the new role dictates a location_scope, refresh it (unless caller
+                    # explicitly passes a new one in the same request).
+                    if 'location_scope' not in data:
+                        updates.append('location_scope=?'); params.append(ROLE_LOCATION_SCOPE.get(role))
+                if 'location_scope' in data:
+                    scope = (str(data['location_scope'] or '').strip() or None)
+                    if scope and scope not in CHECKPOINT_LOCATIONS:
+                        raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
+                    updates.append('location_scope=?'); params.append(scope)
+                if 'active' in data:
+                    updates.append('active=?'); params.append(1 if data['active'] else 0)
+                if data.get('password'):
+                    if len(str(data['password'])) < 6:
+                        raise ValueError('password must be at least 6 characters')
+                    updates.append('password_hash=?'); params.append(password_hash(str(data['password'])))
+                if updates:
+                    params.append(int(uid))
+                    c.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", params)
+                    audit(c, user, 'UPDATE', 'user', uid)
+                c.commit()
+                updated = rowdict(c.execute('SELECT * FROM users WHERE id=?', (int(uid),)).fetchone())
+                result = {'user': user_view(updated)}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)

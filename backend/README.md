@@ -18,12 +18,48 @@ py backend/server.py
 
 The API runs on `http://localhost:8001`.
 
-## Demo account
+## Demo accounts
 
-- Username: `admin`
-- Password: `ChangeMe123!`
+Seven demo users are seeded automatically on first run — one per role — all with
+password `ChangeMe123!`:
 
-Change or remove this demo account before any real deployment.
+| Username     | Role                | Scope / Module             |
+|--------------|---------------------|----------------------------|
+| `admin`      | System Administrator| All modules + analytics + user management |
+| `fp.officer` | Fingerprint Unit    | Fingerprint only           |
+| `ap.officer` | Airport Control     | Airport only               |
+| `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
+| `cp.south`   | Checkpoint South    | Checkpoint · South only    |
+| `cp.east`    | Checkpoint East     | Checkpoint · East only     |
+| `cp.west`    | Checkpoint West     | Checkpoint · West only     |
+
+To re-seed / upgrade an existing database to include the demo users, run:
+
+```bash
+python3 backend/migrate_rbac.py
+```
+
+Change or remove these accounts before any real deployment.
+
+## Role-Based Access Control (RBAC)
+
+Every authenticated request is scoped to the user's role. The full role set is:
+
+- `SystemAdmin` — full access, including `/api/admin/*` (User Management and
+  Executive Analytics) and `GET /api/checkpoint-events` (sees all locations).
+- `FingerprintUnit` — only `/api/clearance-applications*`.
+- `AirportControl` — only `/api/airport-records*`.
+- `CIDUnit` — only `/api/crime-cases*` and `/api/suspect-alerts*`.
+- `CheckpointSouth` / `CheckpointEast` / `CheckpointWest` — only
+  `/api/checkpoint-events*`, **scoped to their assigned location**; a South
+  officer cannot see, create, or amend any event at the East or West
+  checkpoint. The `GET` response carries a `scope` and `visible_locations`
+  field so the client can render the active filter.
+
+`/api/me` returns the current user, the role-derived `modules` list, the
+`visibility` summary (`is_admin`, `can_manage_users`, `can_view_analytics`,
+`checkpoint_scope`), and a `roles` / `role_labels` /
+`checkpoint_locations` roster for building admin dropdowns.
 
 ## Identity resolution (universal matching engine)
 
@@ -70,7 +106,11 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
 - `PATCH /api/crime-cases/{case_id}` (authenticated — update status, category, location, summary, notes)
 - `POST /api/crime-cases/{case_id}/evidence` (authenticated, `multipart/form-data` — evidence file + caption/type)
 - `GET /api/suspect-alerts` / `POST /api/suspect-alerts` (authenticated — participants carry a role: Suspect/Victim/Witness/Complainant; `case_id` is **optional**, `origin` is recorded when no case is linked; `notes`/`reason` is **mandatory for unlinked suspects** — 400 otherwise — and defaults to `Linked to CID case {code} — {category}` when a case is linked and the reason is empty)
-- `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated, `multipart/form-data` — **traveler + guardian screening layout**: traveler 4-part name, date of birth, purpose of visit, current/permanent address, real-time `photo` file, ≥1 `doc_tr_N` file; guardian 4-part name, relationship, contact, permanent address, occupation, optional National ID/Passport and ≥1 `doc_gd_N` file; optional `guardian_person_id` links a known central person. Traveler identity is resolved/auto-created with IDs optional; all file paths are persisted as JSON arrays on the event, and screening result is computed server-side against active suspect alerts, setting the action to `Supervisor contacted` or `Cleared`)
+- `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated, `multipart/form-data` — **traveler + guardian screening layout**: traveler 4-part name, date of birth, purpose of visit, current/permanent address, real-time `photo` file, ≥1 `doc_tr_N` file; guardian 4-part name, relationship, contact, permanent address, occupation, optional National ID/Passport and ≥1 `doc_gd_N` file; optional `guardian_person_id` links a known central person. Traveler identity is resolved/auto-created with IDs optional; all file paths are persisted as JSON arrays on the event, and screening result is computed server-side against active suspect alerts, setting the action to `Supervisor contacted` or `Cleared`. **`GET` is location-scoped for Checkpoint users** — the response carries a `scope` and `visible_locations` field, and a Checkpoint officer can only POST at their assigned location)
+- `GET /api/admin/users` / `GET /api/admin/users/{id}` (SystemAdmin only — list users; the list response includes a `roles`, `role_labels` and `checkpoint_locations` roster for the admin UI)
+- `POST /api/admin/users` (SystemAdmin only — `username`, `display_name`, `role`, `password` (≥6 chars), optional `branch` / `location_scope` / `active`. Checkpoint roles require a `location_scope`.)
+- `PATCH /api/admin/users/{id}` (SystemAdmin only — edit `display_name`, `role`, `branch`, `location_scope`, `password`, `active`. Role changes auto-derive the matching `location_scope` unless one is explicitly passed.)
+- `GET /api/admin/analytics` (SystemAdmin only — `summary` totals, `crime_distribution` by location + time-of-day bucket, `checkpoint_volume` by location + age-bracket demographics, ready for charts)
 
 Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval).
 
@@ -82,6 +122,17 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 python3 backend/test_server.py
 ```
 
-Starts the server against a temporary database and verifies the identity-resolution tiers (including flexible 2/3/4-part partial name matching, case-insensitive/trimmed search and dropdown suggestions), optional suspect case linking, auto-create behaviour and duplicate protection.
+Starts the server against a temporary database and verifies the
+identity-resolution tiers (including flexible 2/3/4-part partial name
+matching, case-insensitive/trimmed search and dropdown suggestions),
+optional suspect case linking, auto-create behaviour, duplicate
+protection, the new **role-based access control** (per-module
+restrictions for each role, location-scoped Checkpoint endpoints,
+admin user-management CRUD, deactivated-user lockout) and the
+**Executive Analytics** aggregation (summary, crime distribution by
+location + time-of-day, checkpoint volume + traveler demographics).
 
-This is a development foundation, not an operational police deployment. Authentication, database, encryption, roles, file-upload validation and audit controls need a production hardening pass before use with real data.
+This is a development foundation, not an operational police deployment.
+Authentication, database, encryption, roles, file-upload validation and
+audit controls need a production hardening pass before use with real
+data.

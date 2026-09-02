@@ -75,11 +75,18 @@ function certificate(a){
    </div>
   </div>`;
 }
+async function getToken(){
+  try{
+    const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');
+    if(s && s.token) return s.token;
+  }catch(_){}
+  const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
+  const data=await login.json();
+  return data.token;
+}
 async function load(){
   try{
-    const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
-    if(!login.ok)throw new Error('no server');
-    const {token}=await login.json();
+    const token=await getToken();
     const r=await fetch('/api/clearance-applications/'+id,{headers:{'Authorization':'Bearer '+token}});
     if(!r.ok)throw new Error('not found');
     const a=await r.json();

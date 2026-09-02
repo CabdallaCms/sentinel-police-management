@@ -147,23 +147,110 @@ body.modal-open{overflow:hidden}
 @media(max-width:950px){.side{width:74px;padding:18px 9px}.brand{padding:4px 8px 30px}.brand span,.side small,.nav button span,.side-footer{display:none}.nav button{justify-content:center}.main{margin-left:74px;width:calc(100% - 74px);padding:22px}.cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:650px){.main{padding:16px}.cards,.grid2,.grid3,.docgrid{grid-template-columns:1fr}.top h1{font-size:23px}.user div:not(.avatar){display:none}}
 @media print{.side,.top,.btn,.form-actions,.tabs,.no-print{display:none!important}.main{margin:0;width:100%;padding:0}.panel{box-shadow:none;border:0}.page{display:block!important}}
+/* ==== Login screen ==== */
+#loginScreen{position:fixed;inset:0;background:linear-gradient(135deg,#0b1a33,#1c3866 60%,#0f4c5c);z-index:3000;display:grid;place-items:center;color:#dce7f8}
+#loginScreen .login-card{width:min(420px,calc(100vw - 32px));background:#ffffff;color:var(--ink);border-radius:18px;box-shadow:0 30px 60px #00000055;padding:30px 32px}
+#loginScreen h1{margin:0 0 4px;font-size:24px;letter-spacing:-.5px}
+#loginScreen .lsub{color:var(--muted);font-size:13px;margin-bottom:18px}
+#loginScreen .badge{font-size:11px;background:#eaf0ff;color:var(--blue);padding:4px 9px;border-radius:99px;font-weight:700}
+#loginScreen .demo-grid{display:grid;gap:6px;margin-top:14px}
+#loginScreen .demo-grid button{background:#f4f6f9;color:#33415c;border:1px solid #e1e7ef;border-radius:8px;padding:8px 10px;font-size:12.5px;text-align:left;display:flex;justify-content:space-between;gap:8px;align-items:center}
+#loginScreen .demo-grid button:hover{background:#eaf0ff;border-color:#c3d5ff;color:var(--blue)}
+#loginScreen .demo-grid small{color:var(--muted);font-size:11px}
+#loginScreen .login-error{background:#fdecea;border:1px solid #f3c1bd;color:#8a2020;border-radius:8px;padding:9px 11px;font-size:12.5px;margin-top:8px;display:none}
+#loginScreen .login-error.show{display:block}
+#loginScreen .login-form .field label{color:#4d5c73}
+/* ==== Analytics charts ==== */
+.chart-wrap{position:relative;width:100%;height:260px}
+.chart-row{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+@media(max-width:950px){.chart-row{grid-template-columns:1fr}}
+.chart-card{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);padding:22px;margin-top:20px}
+.chart-card h2{font-size:17px;margin:0 0 4px}
+.chart-card .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+@media(max-width:950px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
+.kpi-row .kpi-cell{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
+.kpi-row .kpi-cell .ico{width:36px;height:36px;border-radius:10px;background:#f0f4ff;color:var(--blue);display:grid;place-items:center;font-size:18px;flex:none}
+.kpi-row .kpi-cell b{font-size:22px;font-weight:800;display:block;line-height:1}
+.kpi-row .kpi-cell small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.7px}
+.kpi-row .kpi-cell.alert .ico{background:#ffeaec;color:var(--red)}
+.kpi-row .kpi-cell.airport .ico{background:#e3f7f1;color:var(--green)}
+.kpi-row .kpi-cell.fp .ico{background:#f0e9ff;color:#6c3fd4}
+.kpi-row .kpi-cell.people .ico{background:#eaf0ff;color:var(--blue)}
+/* ==== User management ==== */
+.um-table{font-size:13px}
+.um-table .role-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700}
+.um-table .role-chip.admin{background:#fff3d9;color:#7a5b17}
+.um-table .role-chip.unit{background:#eaf0ff;color:var(--blue)}
+.um-table .role-chip.checkpoint{background:#e3f7f1;color:var(--green)}
+.um-table .status-on{color:var(--green);font-weight:700}
+.um-table .status-off{color:#8a93a6;font-weight:700}
+.um-empty{padding:30px;text-align:center;color:var(--muted)}
+/* Sidebar small label grouping (Operations / Administration) */
+.side .group-label{padding:14px 12px 6px;color:#7896c2;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px}
+.side .group-label.admin{color:#c7a04a}
+/* Hide top-bar admin links when not admin */
+.top .admin-only{display:none}
+.top.is-admin .admin-only{display:inline-flex}
+/* Top bar user pill */
+.user-pill{background:#f4f7fb;border:1px solid var(--line);border-radius:99px;padding:4px 12px 4px 4px;display:flex;gap:10px;align-items:center}
+.user-pill .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--cyan));color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px}
+.user-pill .uname{font-weight:700;font-size:13px;line-height:1.1}
+.user-pill .urole{color:var(--muted);font-size:11px}
+.user-pill .logout{background:transparent;color:var(--muted);font-size:11px;padding:4px 8px;border-radius:7px;cursor:pointer}
+.user-pill .logout:hover{background:#fff;color:var(--red)}
 </style>
 </head>
 <body>
+<div id="loginScreen">
+  <div class="login-card">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div class="crest" style="width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#3c83ff,#18c4ad);display:grid;place-items:center;color:white;font-weight:900;font-size:20px">S</div>
+      <div><b style="font-size:18px">Sentinel Police</b><br><small style="color:var(--muted);font-size:12px">Central person reference platform</small></div>
+      <span class="badge" style="margin-left:auto">RBAC v1</span>
+    </div>
+    <h1>Officer sign-in</h1>
+    <div class="lsub">Use your assigned role to sign in. Central admins see all units; unit officers see only their module; checkpoint officers see only their assigned location.</div>
+    <form class="form login-form" id="loginForm" onsubmit="return submitLogin(event)">
+      <div class="field"><label>Username</label><input id="loginUser" autocomplete="username" required></div>
+      <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div>
+      <div class="login-error" id="loginError"></div>
+      <div class="form-actions" style="margin-top:6px">
+        <button class="btn" type="submit" id="loginSubmit">Sign in</button>
+      </div>
+    </form>
+    <div style="margin-top:18px;border-top:1px solid #eef1f6;padding-top:14px">
+      <small style="color:var(--muted);font-size:12px;font-weight:700;display:block;margin-bottom:6px">Quick demo accounts · password ChangeMe123!</small>
+      <div class="demo-grid" id="demoAccounts"></div>
+    </div>
+  </div>
+</div>
 <div class="app">
-<aside class="side"><div class="brand"><div class="crest">S</div><span>Sentinel</span></div><small>Operations</small><nav class="nav" id="nav">
-<button class="active" data-page="dashboard"><i>▦</i><span>Dashboard</span></button>
-<button data-page="people"><i>◉</i><span>Central Persons</span></button>
-<button data-page="fingerprint"><i>⌁</i><span>Fingerprint Unit</span></button>
-<button data-page="cid"><i>⌂</i><span>CID Criminal Unit</span></button>
-<button data-page="checkpoints"><i>⊙</i><span>Checkpoints</span></button>
-<button data-page="airport"><i>✈</i><span>Airport</span></button>
+<aside class="side"><div class="brand"><div class="crest">S</div><span>Sentinel</span></div>
+<small class="group-label" data-group="operations">Operations</small>
+<nav class="nav" id="nav">
+<button class="active" data-page="dashboard" data-modules="dashboard"><i>▦</i><span>Dashboard</span></button>
+<button data-page="people" data-modules="people"><i>◉</i><span>Central Persons</span></button>
+<button data-page="fingerprint" data-modules="fingerprint"><i>⌁</i><span>Fingerprint Unit</span></button>
+<button data-page="cid" data-modules="cid"><i>⌂</i><span>CID Criminal Unit</span></button>
+<button data-page="checkpoints" data-modules="checkpoints"><i>⊙</i><span>Checkpoints</span></button>
+<button data-page="airport" data-modules="airport"><i>✈</i><span>Airport</span></button>
+<small class="group-label admin" data-group="admin" style="display:none">Administration</small>
+<button data-page="analytics" data-modules="analytics" style="display:none"><i>📈</i><span>Analytics</span></button>
+<button data-page="admin" data-modules="admin" style="display:none"><i>⚙</i><span>User Management</span></button>
 </nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span></div></aside>
 <main class="main">
-<header class="top"><div><div class="eyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div><div class="user"><div><b>Officer A. Hassan</b><br><span class="muted">Administrator · Central HQ</span></div><div class="avatar">AH</div></div></header>
+<header class="top" id="topbar"><div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
+<div class="user-pill" id="userPill" style="display:none">
+  <div class="avatar" id="userInitials">?</div>
+  <div><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
+  <button class="logout admin-only" id="gotoAnalytics" onclick="go('analytics')" title="Analytics dashboard">📈</button>
+  <button class="logout admin-only" id="gotoAdmin" onclick="go('admin')" title="User management">⚙</button>
+  <button class="logout" id="logoutBtn" onclick="doLogout()" title="Sign out">↩ Sign out</button>
+</div></header>
 
 <!-- DASHBOARD -->
-<section id="dashboard" class="page active">
+<section id="dashboard" class="page">
 <div class="cards">
 <div class="card"><div class="kpi"><span class="label">Central persons</span><span class="module-icon">◉</span></div><div class="metric" id="mPeople">0</div><div class="trend">↑ Unified identity records</div></div>
 <div class="card"><div class="kpi"><span class="label">Open crime cases</span><span class="module-icon">⌂</span></div><div class="metric" id="mCases">0</div><div class="trend">Active investigations</div></div>
@@ -333,6 +420,73 @@ body.modal-open{overflow:hidden}
 <div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Action</th><th>Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div>
 </div>
 </section>
+
+<!-- ANALYTICS (admin only) -->
+<section id="analytics" class="page">
+<div class="cards kpi-row" id="analyticsKpis">
+  <div class="kpi-cell people"><div class="ico">◉</div><div><small>Total central persons</small><b id="kpiPeople">0</b></div></div>
+  <div class="kpi-cell alert"><div class="ico">!</div><div><small>Active suspect alerts</small><b id="kpiAlerts">0</b></div></div>
+  <div class="kpi-cell airport"><div class="ico">✈</div><div><small>Airport movements</small><b id="kpiAirport">0</b></div></div>
+  <div class="kpi-cell fp"><div class="ico">⌁</div><div><small>Fingerprint records</small><b id="kpiFp">0</b></div></div>
+</div>
+<div class="chart-row">
+  <div class="chart-card">
+    <h2>Crime incidents by location</h2>
+    <div class="sub">Number of crime cases reported per district / area</div>
+    <div class="chart-wrap"><canvas id="chartCrimeLoc"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h2>Crime incidents by time of day</h2>
+    <div class="sub">Distribution across 24-hour buckets</div>
+    <div class="chart-wrap"><canvas id="chartCrimeTime"></canvas></div>
+  </div>
+</div>
+<div class="chart-row">
+  <div class="chart-card">
+    <h2>Checkpoint volume by location</h2>
+    <div class="sub">Total screening events per checkpoint</div>
+    <div class="chart-wrap"><canvas id="chartCpVolume"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h2>Checkpoint demographics by location</h2>
+    <div class="sub">Traveler age brackets per checkpoint</div>
+    <div class="chart-wrap"><canvas id="chartCpDemo"></canvas></div>
+  </div>
+</div>
+<div class="chart-card" style="margin-top:20px">
+  <h2>Operational summary</h2>
+  <div class="sub">High-level totals across all Sentinel modules</div>
+  <div id="analyticsSummary" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:6px"></div>
+</div>
+</section>
+
+<!-- USER MANAGEMENT (admin only) -->
+<section id="admin" class="page">
+<div class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>User management</h2>
+      <div class="sub">Provision officers, assign roles and locations</div>
+    </div>
+    <button class="btn" onclick="openNewUserDrawer()">+ New officer</button>
+  </div>
+  <div class="hint" style="margin-bottom:16px"><b>RBAC:</b> System Admins see all units; unit officers only see their module; checkpoint officers only see their assigned location. Deactivated users cannot sign in.</div>
+  <div class="table-wrap">
+    <table class="table um-table">
+      <thead><tr>
+        <th>Officer</th>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Location</th>
+        <th>Branch</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr></thead>
+      <tbody id="userTable"></tbody>
+    </table>
+  </div>
+</div>
+</section>
 </main></div>
 
 <div class="toast" id="toast"></div>
@@ -392,8 +546,28 @@ function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fou
   mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
-const TITLES={dashboard:'Operations dashboard',people:'Central person registry',fingerprint:'Fingerprint Unit',airport:'Airport passenger register',cid:'CID Criminal Unit',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint operations'};
-function go(page){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.getElementById(page).classList.add('active');document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===page));document.getElementById('pageTitle').textContent=TITLES[page]||'';if(page==='cid')renderCases();renderAll()}
+const TITLES={dashboard:'Operations dashboard',people:'Central person registry',fingerprint:'Fingerprint Unit',airport:'Airport passenger register',cid:'CID Criminal Unit',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint operations',analytics:'Executive analytics',admin:'User management'};
+// Current session ----------------------------------------------------
+let sessionUser=null;          // {id,username,display_name,role,role_label,branch,location,location_scope,modules,active}
+let sessionVisibility=null;    // /api/me visibility
+let sessionRoster=null;        // {roles, role_labels, checkpoint_locations}
+function go(page){
+  if(!sessionUser){
+    if(!ALLOWED_PAGES_WITHOUT_AUTH.has(page)) return;
+  } else if(!sessionUser.modules.includes(page)){
+    // RBAC: redirect to the first page the user is allowed to see.
+    page = sessionUser.modules.includes('dashboard') ? 'dashboard' : (sessionUser.modules[0] || 'dashboard');
+  }
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  document.getElementById(page).classList.add('active');
+  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
+  document.getElementById('pageTitle').textContent=TITLES[page]||'';
+  if(page==='cid') renderCases();
+  if(page==='analytics') renderAnalytics();
+  if(page==='admin') renderUserTable();
+  renderAll();
+}
+const ALLOWED_PAGES_WITHOUT_AUTH = new Set();
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.page));
 
 // ============================ identity: unified matching ============================
@@ -1024,8 +1198,16 @@ async function uploadEvidence(){
 
 // ============================ checkpoints ============================
 function openCheckpointDrawer(){
+  // RBAC: a Checkpoint user is scoped to a single location — lock the picker.
+  const scope = (sessionUser && sessionUser.location_scope) || '';
+  const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
+  const opts = ['South','West','East'].map(l =>
+    `<option value="${l}" ${!isAdmin && l===scope ? 'selected' : ''}${!isAdmin && l!==scope && scope ? ' disabled' : ''}>${l} Checkpoint</option>`
+  ).join('');
+  const lockHint = (!isAdmin && scope) ? `<div class="hint" style="margin-bottom:10px;background:#fff7e6;border-color:#f0dcae;color:#7a5b17"><b>RBAC:</b> You are assigned to <b>${esc(scope)} Checkpoint</b> — only your assigned location can be recorded.</div>` : '';
   openDrawer('Record checkpoint stop',`
    <div class="hint" style="margin-bottom:14px">Structured screening: both the <b>traveler</b> and the <b>guardian</b> are matched against the Central Person Registry <b>in real time</b> — select a match to auto-fill, or type a new identity.</div>
+   ${lockHint}
    <form class="form" id="cpForm">
     <div class="section-label">Traveler — screening &amp; identity</div>
     ${travelerFormHTML('cp')}
@@ -1033,7 +1215,7 @@ function openCheckpointDrawer(){
     ${guardianFormHTML('gd')}
     <div class="section-label">Checkpoint screening</div>
     <div class="grid2">
-     <div class="field"><label>Checkpoint</label><select id="cpLoc"><option>South</option><option>West</option><option>East</option></select></div>
+     <div class="field"><label>Checkpoint</label><select id="cpLoc" ${!isAdmin && scope ? 'disabled' : ''}>${opts}</select></div>
      <div class="field"><label>Officer notes (optional)</label><input id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></div>
     </div>
     <div class="hint" id="cpScreenHint">Screening runs automatically against active suspect alerts.</div>
@@ -1093,11 +1275,27 @@ async function submitCheckpoint(){
 
 // ============================ server sync ============================
 async function syncServer(){
+  // Used by the sign-in flow. Authenticated fetches are scoped to the
+  // signed-in user's role via /api/me and the per-module RBAC checks.
+  if(!apiToken) return;
   try{
-    const login=await api('/api/login',{method:'POST',body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
-    apiToken=login.token;serverOn=true;
+    const me = await api('/api/me');
+    sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me;
     document.getElementById('envBadge').innerHTML='Environment: <span style="color:#7fe3cf">central database</span>';
-    const [ps,ars,fps,ccs,sas,cps]=await Promise.all([api('/api/persons'),api('/api/airport-records'),api('/api/clearance-applications'),api('/api/crime-cases'),api('/api/suspect-alerts'),api('/api/checkpoint-events')]);
+    const fetches = [
+      api('/api/persons').catch(()=>({items:[]})),
+    ];
+    if(sessionUser.modules.includes('airport'))   fetches.push(api('/api/airport-records').catch(()=>({items:[]})));
+    if(sessionUser.modules.includes('fingerprint'))fetches.push(api('/api/clearance-applications').catch(()=>({items:[]})));
+    if(sessionUser.modules.includes('cid'))        fetches.push(api('/api/crime-cases').catch(()=>({items:[]})), api('/api/suspect-alerts').catch(()=>({items:[]})));
+    if(sessionUser.modules.includes('checkpoints'))fetches.push(api('/api/checkpoint-events').catch(()=>({items:[]})));
+    const results = await Promise.all(fetches);
+    const ps = results.shift();
+    const ars = (results.shift() || {items:[]});
+    const fps = (results.shift() || {items:[]});
+    const ccs = sessionUser.modules.includes('cid')       ? (results.shift() || {items:[]}) : {items:[]};
+    const sas = sessionUser.modules.includes('cid')       ? (results.shift() || {items:[]}) : {items:[]};
+    const cps = sessionUser.modules.includes('checkpoints') ? (results.shift() || {items:[]}) : {items:[]};
     db.people=ps.items.map(mapPerson);
     db.people.forEach(p=>{p.units=[];if(ars.items.some(x=>x.person_id===p.id))p.units.push('Airport');if(fps.items.some(x=>x.person_id===p.id))p.units.push('Fingerprint');if(sas.items.some(x=>x.person_id===p.id))p.units.push('CID');if(cps.items.some(x=>x.person_id===p.id))p.units.push('Checkpoint');if(!p.units.length)p.units.push('Central')});
     db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,notes:x.notes}));
@@ -1112,7 +1310,438 @@ async function syncServer(){
       guardianName:x.guardian_name,guardianRelationship:x.guardian_relationship,guardianPhone:x.guardian_phone,
       guardianAddress:x.guardian_address,guardianOccupation:x.guardian_occupation,guardianPerson:x.guardian_person_id}));
     renderAll();
-  }catch(e){serverOn=false;apiToken='';document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">local demo (browser storage)</span>';console.warn('Local demo mode:',e.message)}
+  }catch(e){
+    serverOn=false; apiToken=''; sessionUser=null;
+    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">local demo (browser storage)</span>';
+    console.warn('Local demo mode:', e.message);
+  }
+}
+
+// ============================ sign-in / sign-out ===========================
+const DEMO_ACCOUNTS = [
+  {username:'admin',       label:'System Administrator',   role:'SystemAdmin',      detail:'Full access'},
+  {username:'fp.officer',  label:'Fingerprint Unit',       role:'FingerprintUnit',  detail:'Module only'},
+  {username:'ap.officer',  label:'Airport Control',        role:'AirportControl',   detail:'Module only'},
+  {username:'cid.officer', label:'CID Criminal Unit',      role:'CIDUnit',          detail:'Module only'},
+  {username:'cp.south',    label:'Checkpoint · South',     role:'CheckpointSouth',  detail:'South scope'},
+  {username:'cp.east',     label:'Checkpoint · East',      role:'CheckpointEast',   detail:'East scope'},
+  {username:'cp.west',     label:'Checkpoint · West',      role:'CheckpointWest',   detail:'West scope'},
+];
+
+function renderDemoAccounts(){
+  const el = document.getElementById('demoAccounts');
+  if(!el) return;
+  el.innerHTML = DEMO_ACCOUNTS.map(a =>
+    `<button type="button" data-u="${a.username}"><b>${a.label}</b><small>${a.username} · ${a.detail}</small></button>`
+  ).join('');
+  el.querySelectorAll('button').forEach(b => b.onclick = () => {
+    document.getElementById('loginUser').value = b.dataset.u;
+    document.getElementById('loginPassword').value = 'ChangeMe123!';
+    document.getElementById('loginForm').dispatchEvent(new Event('submit', {cancelable:true}));
+  });
+}
+renderDemoAccounts();
+
+async function submitLogin(ev){
+  ev.preventDefault();
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.classList.remove('show'); errEl.textContent = '';
+  const btn = document.getElementById('loginSubmit');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try{
+    const r = await api('/api/login', {method:'POST', body: JSON.stringify({username:u,password:p})});
+    apiToken = r.token; sessionUser = r.user; serverOn = true;
+    // Persist for the printable pages (application.html, certificate.html) to re-use.
+    try{ localStorage.setItem('sentinelSession', JSON.stringify({token: r.token, user: r.user})); }catch(_){}
+    await loadSession();
+    document.getElementById('loginScreen').style.display = 'none';
+    toast(`Welcome, ${r.user.display_name}`);
+  }catch(e){
+    errEl.textContent = e.message || 'Sign-in failed';
+    errEl.classList.add('show');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+
+async function loadSession(){
+  // Pull /api/me to confirm the role/scope and re-sync from the server.
+  try{
+    const me = await api('/api/me');
+    sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me;
+  }catch(_){
+    sessionVisibility = null;
+  }
+  applyNavForRole();
+  updateUserPill();
+  await syncServer();
+  go('dashboard');
+}
+
+function doLogout(){
+  apiToken=''; sessionUser=null; sessionVisibility=null; serverOn=false;
+  try{ localStorage.removeItem('sentinelSession'); }catch(_){}
+  document.getElementById('loginScreen').style.display = '';
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPassword').value='';
+  document.getElementById('userPill').style.display='none';
+  document.getElementById('topbar').classList.remove('is-admin');
+  // Reset side nav: show the default modules again, hide admin ones.
+  document.querySelectorAll('#nav button').forEach(b => b.style.display = '');
+  document.querySelectorAll('.side .group-label').forEach(g => g.style.display = '');
+  document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">not signed in</span>';
+  toast('Signed out');
+}
+
+function applyNavForRole(){
+  // Hide nav buttons for modules the current user can't access; show admin items for admins.
+  const mods = sessionUser ? sessionUser.modules : ['dashboard'];
+  const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
+  document.querySelectorAll('#nav button').forEach(b => {
+    const m = b.dataset.modules;
+    b.style.display = mods.includes(m) ? '' : 'none';
+    if(m === 'analytics' || m === 'admin') b.style.display = isAdmin ? '' : 'none';
+  });
+  const adminLabel = document.querySelector('.side .group-label.admin');
+  if(adminLabel) adminLabel.style.display = isAdmin ? '' : 'none';
+  const opsLabel = document.querySelector('.side .group-label:not(.admin)');
+  if(opsLabel) opsLabel.style.display = '';
+  const topbar = document.getElementById('topbar');
+  if(topbar) topbar.classList.toggle('is-admin', isAdmin);
+}
+
+function updateUserPill(){
+  const pill = document.getElementById('userPill');
+  if(!sessionUser){ pill.style.display='none'; return; }
+  pill.style.display = '';
+  document.getElementById('userName').textContent = sessionUser.display_name;
+  let label = sessionUser.role_label || sessionUser.role;
+  if(sessionUser.location_scope) label += ' · ' + sessionUser.location_scope + ' Checkpoint';
+  else if(sessionUser.role === 'SystemAdmin') label += ' · ' + (sessionUser.branch || 'Central HQ');
+  else label += ' · ' + (sessionUser.branch || '');
+  document.getElementById('userRole').textContent = label;
+  const ini = (sessionUser.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?';
+  document.getElementById('userInitials').textContent = ini;
+  // Update the eyebrow with the user's role + scope (per spec: "Officer H. Xasan · South Checkpoint")
+  const eb = document.getElementById('pageEyebrow');
+  if(eb){
+    let txt = 'Signed in as ' + sessionUser.display_name;
+    if(sessionUser.location_scope) txt += ' · ' + sessionUser.location_scope + ' Checkpoint';
+    eb.textContent = txt;
+  }
+}
+
+// ============================ analytics ===================================
+let _chartRefs = {};
+function destroyCharts(){
+  Object.values(_chartRefs).forEach(c => { try{c.destroy();}catch(_){} });
+  _chartRefs = {};
+}
+function drawBarChart(canvasId, labels, data, color, opts={}){
+  const c = document.getElementById(canvasId);
+  if(!c) return null;
+  const ctx = c.getContext('2d');
+  const labels2 = labels;
+  const data2 = data;
+  // Lightweight canvas bar chart (no external library)
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.getBoundingClientRect();
+  c.width = rect.width * dpr; c.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0,0,W,H);
+  if(!labels2.length){ ctx.fillStyle='#9aa5b8'; ctx.font='13px Inter, sans-serif'; ctx.textAlign='center'; ctx.fillText('No data', W/2, H/2); return null; }
+  const maxV = Math.max(1, ...data2);
+  const padL = 36, padB = opts.dense ? 50 : 36, padT = 12, padR = 8;
+  const innerW = W - padL - padR, innerH = H - padB - padT;
+  // axis
+  ctx.strokeStyle = '#e3e9f2'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT+innerH); ctx.lineTo(padL+innerW, padT+innerH); ctx.stroke();
+  // y ticks
+  ctx.fillStyle='#7d8aa0'; ctx.font='11px Inter, sans-serif'; ctx.textAlign='right';
+  const ticks = 4;
+  for(let i=0;i<=ticks;i++){
+    const v = Math.round(maxV * i / ticks);
+    const y = padT + innerH - (innerH * i / ticks);
+    ctx.fillText(v, padL-6, y+3);
+    ctx.strokeStyle = '#f0f3f8';
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+innerW, y); ctx.stroke();
+  }
+  // bars
+  const n = labels2.length, gap = 8;
+  const bw = (innerW - gap*(n-1)) / n;
+  labels2.forEach((lab, i) => {
+    const v = data2[i] || 0;
+    const h = (v/maxV) * innerH;
+    const x = padL + i*(bw+gap);
+    const y = padT + innerH - h;
+    const grad = ctx.createLinearGradient(0, y, 0, y+h);
+    grad.addColorStop(0, color); grad.addColorStop(1, color+'80');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, bw, h);
+    ctx.fillStyle = '#1b2740'; ctx.font='600 11px Inter, sans-serif'; ctx.textAlign='center';
+    ctx.fillText(v, x+bw/2, y-4);
+    ctx.fillStyle='#5b6779'; ctx.font='11px Inter, sans-serif';
+    const lbl = lab.length > 14 ? lab.slice(0,12)+'…' : lab;
+    ctx.save(); ctx.translate(x+bw/2, padT+innerH+14); ctx.rotate(-Math.PI/8);
+    ctx.textAlign='right'; ctx.fillText(lbl, 0, 0); ctx.restore();
+  });
+  return c;
+}
+function drawGroupedBarChart(canvasId, groups, series, colors){
+  // groups: labels on x; series: [{label, data: [n]}]
+  const c = document.getElementById(canvasId);
+  if(!c) return null;
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.getBoundingClientRect();
+  c.width = rect.width * dpr; c.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0,0,W,H);
+  if(!groups.length){ ctx.fillStyle='#9aa5b8'; ctx.font='13px Inter, sans-serif'; ctx.textAlign='center'; ctx.fillText('No data', W/2, H/2); return null; }
+  const maxV = Math.max(1, ...series.flatMap(s => s.data));
+  const padL = 36, padB = 70, padT = 24, padR = 8;
+  const innerW = W - padL - padR, innerH = H - padB - padT;
+  // axis
+  ctx.strokeStyle = '#e3e9f2'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT+innerH); ctx.lineTo(padL+innerW, padT+innerH); ctx.stroke();
+  ctx.fillStyle='#7d8aa0'; ctx.font='11px Inter, sans-serif'; ctx.textAlign='right';
+  const ticks = 4;
+  for(let i=0;i<=ticks;i++){
+    const v = Math.round(maxV * i / ticks);
+    const y = padT + innerH - (innerH * i / ticks);
+    ctx.fillText(v, padL-6, y+3);
+    ctx.strokeStyle = '#f0f3f8';
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+innerW, y); ctx.stroke();
+  }
+  const n = groups.length, gap = 14;
+  const groupW = (innerW - gap*(n-1)) / n;
+  const bwg = (groupW - 4) / series.length;
+  groups.forEach((g, gi) => {
+    const x0 = padL + gi*(groupW+gap);
+    series.forEach((s, si) => {
+      const v = s.data[gi] || 0;
+      const h = (v/maxV) * innerH;
+      const x = x0 + si*bwg + 2;
+      const y = padT + innerH - h;
+      ctx.fillStyle = colors[si % colors.length];
+      ctx.fillRect(x, y, bwg-2, Math.max(0, h));
+    });
+    ctx.fillStyle='#1b2740'; ctx.font='600 11px Inter, sans-serif'; ctx.textAlign='center';
+    ctx.fillText(g, x0+groupW/2, padT+innerH+16);
+  });
+  // legend
+  let lx = padL, ly = 6;
+  series.forEach((s, i) => {
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(lx, ly, 10, 10);
+    ctx.fillStyle='#1b2740'; ctx.font='11px Inter, sans-serif'; ctx.textAlign='left';
+    ctx.fillText(s.label, lx+14, ly+9);
+    lx += 14 + ctx.measureText(s.label).width + 14;
+  });
+  return c;
+}
+
+async function renderAnalytics(){
+  if(!sessionUser || !(sessionVisibility && sessionVisibility.can_view_analytics)){
+    go('dashboard'); return;
+  }
+  try{
+    const a = await api('/api/admin/analytics');
+    document.getElementById('kpiPeople').textContent = a.summary.total_central_persons;
+    document.getElementById('kpiAlerts').textContent  = a.summary.active_suspect_alerts;
+    document.getElementById('kpiAirport').textContent = a.summary.airport_movements;
+    document.getElementById('kpiFp').textContent      = a.summary.fingerprint_records;
+    destroyCharts();
+    const colors = ['#246bfe', '#13b8a6', '#c98512', '#6c3fd4', '#d84f5a'];
+    _chartRefs.crimeLoc = drawBarChart('chartCrimeLoc',
+      a.crime_distribution.by_location.map(x=>x.label),
+      a.crime_distribution.by_location.map(x=>x.count),
+      colors[0]);
+    _chartRefs.crimeTime = drawBarChart('chartCrimeTime',
+      a.crime_distribution.by_time_of_day.map(x=>x.label),
+      a.crime_distribution.by_time_of_day.map(x=>x.count),
+      colors[1], {dense:true});
+    _chartRefs.cpVolume = drawBarChart('chartCpVolume',
+      a.checkpoint_volume.by_location.map(x=>x.label),
+      a.checkpoint_volume.by_location.map(x=>x.count),
+      colors[2]);
+    const ageGroups = ['<18','18-30','31-50','50+','Unknown'];
+    const demoGroups = a.checkpoint_volume.by_location.map(x=>x.label);
+    const series = ageGroups.map(ag => ({
+      label: ag,
+      data: demoGroups.map(loc => {
+        const arr = a.checkpoint_volume.demographics[loc] || [];
+        return (arr.find(b => b.label === ag) || {count:0}).count;
+      })
+    }));
+    _chartRefs.cpDemo = drawGroupedBarChart('chartCpDemo', demoGroups, series, colors);
+    // Summary list
+    const items = [
+      ['Crime cases (open)',     a.summary.crime_cases_open],
+      ['Crime cases (total)',    a.summary.crime_cases_total],
+      ['Checkpoint events',      a.summary.checkpoint_events],
+      ['Checkpoint flagged',     a.summary.checkpoint_flagged],
+      ['Active suspect alerts',  a.summary.active_suspect_alerts],
+      ['Fingerprint records',    a.summary.fingerprint_records],
+      ['Airport movements',      a.summary.airport_movements],
+      ['Central persons',        a.summary.total_central_persons],
+    ];
+    document.getElementById('analyticsSummary').innerHTML = items.map(([k,v]) =>
+      `<div style="background:#f7f9ff;border:1px solid #e3e9f2;border-radius:10px;padding:12px 14px"><small style="color:#75839a;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;display:block">${esc(k)}</small><b style="font-size:22px;font-weight:800">${esc(v)}</b></div>`
+    ).join('');
+  }catch(e){
+    showFormError(e.message || 'Could not load analytics');
+  }
+}
+
+// ============================ user management =============================
+async function renderUserTable(){
+  if(!sessionUser || !(sessionVisibility && sessionVisibility.can_manage_users)){
+    go('dashboard'); return;
+  }
+  try{
+    const data = await api('/api/admin/users');
+    const tb = document.getElementById('userTable');
+    if(!data.items.length){ tb.innerHTML = '<tr><td colspan="7" class="um-empty">No users yet</td></tr>'; return; }
+    tb.innerHTML = data.items.map(u => {
+      const chip = u.role === 'SystemAdmin' ? 'admin' : (u.role.startsWith('Checkpoint') ? 'checkpoint' : 'unit');
+      const loc = u.location_scope ? `${esc(u.location_scope)} Checkpoint` : (esc(u.branch) || '—');
+      return `<tr>
+        <td><div class="person"><div class="mini">${esc((u.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?')}</div><b>${esc(u.display_name)}</b></div></td>
+        <td>${esc(u.username)}</td>
+        <td><span class="role-chip ${chip}">${esc(u.role_label || u.role)}</span></td>
+        <td>${loc}</td>
+        <td class="muted">${esc(u.branch || '—')}</td>
+        <td><span class="${u.active?'status-on':'status-off'}">${u.active?'Active':'Disabled'}</span></td>
+        <td class="actions">
+          <button class="btn secondary small" onclick='openEditUserDrawer(${JSON.stringify(u).replace(/'/g,"&apos;")})'>Edit</button>
+          ${u.id===sessionUser.id ? '' : `<button class="btn small" onclick="toggleUserActive(${u.id}, ${!u.active})">${u.active?'Disable':'Enable'}</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+  }catch(e){
+    showFormError(e.message || 'Could not load users');
+  }
+}
+
+async function toggleUserActive(uid, active){
+  try{
+    await api('/api/admin/users/'+uid, {method:'PATCH', body: JSON.stringify({active})});
+    toast(active ? 'User enabled' : 'User disabled');
+    renderUserTable();
+  }catch(e){ showFormError(e.message || 'Update failed'); }
+}
+
+function openNewUserDrawer(){
+  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
+  const labels = (sessionRoster && sessionRoster.role_labels) || {};
+  const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
+  const body = `
+    <form id="newUserForm" class="form">
+      <div class="grid2">
+        <div class="field"><label>Username *</label><input id="nu-username" required></div>
+        <div class="field"><label>Display name *</label><input id="nu-display" required placeholder="e.g. Officer H. Xasan"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Role *</label>
+          <select id="nu-role" onchange="refreshUserLocationOptions()">
+            ${roles.map(r => `<option value="${r}">${esc(labels[r] || r)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Location scope (Checkpoint roles only)</label>
+          <select id="nu-scope">
+            <option value="">(none)</option>
+            ${locs.map(l => `<option value="${l}">${l} Checkpoint</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Branch</label><input id="nu-branch" placeholder="e.g. Fingerprint Unit"></div>
+        <div class="field"><label>Password *</label><input id="nu-password" type="password" required minlength="6" placeholder="At least 6 characters"></div>
+      </div>
+    </form>
+  `;
+  const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
+                <button class="btn" onclick="submitNewUser()">Create officer</button>`;
+  openDrawer('New officer', body, foot);
+  refreshUserLocationOptions();
+}
+function refreshUserLocationOptions(){
+  const role = document.getElementById('nu-role').value;
+  const scopeEl = document.getElementById('nu-scope');
+  if(!scopeEl) return;
+  scopeEl.disabled = !role.startsWith('Checkpoint');
+  if(!role.startsWith('Checkpoint')) scopeEl.value = '';
+}
+async function submitNewUser(){
+  const data = {
+    username: document.getElementById('nu-username').value.trim(),
+    display_name: document.getElementById('nu-display').value.trim(),
+    role: document.getElementById('nu-role').value,
+    branch: document.getElementById('nu-branch').value.trim(),
+    location_scope: document.getElementById('nu-scope').value || null,
+    password: document.getElementById('nu-password').value,
+    active: true,
+  };
+  if(!data.username || !data.display_name || !data.role || !data.password){
+    showFormError('Please fill username, display name, role and password.'); return;
+  }
+  try{
+    await api('/api/admin/users', {method:'POST', body: JSON.stringify(data)});
+    closeDrawer(); toast('Officer created'); renderUserTable();
+  }catch(e){ showFormError(e.message || 'Create failed'); }
+}
+
+function openEditUserDrawer(u){
+  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
+  const labels = (sessionRoster && sessionRoster.role_labels) || {};
+  const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
+  const body = `
+    <form id="editUserForm" class="form">
+      <div class="grid2">
+        <div class="field"><label>Username</label><input value="${esc(u.username)}" disabled></div>
+        <div class="field"><label>Display name</label><input id="eu-display" value="${esc(u.display_name)}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Role</label>
+          <select id="eu-role" onchange="document.getElementById('eu-scope').disabled=!this.value.startsWith('Checkpoint')">
+            ${roles.map(r => `<option value="${r}" ${r===u.role?'selected':''}>${esc(labels[r] || r)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Location scope</label>
+          <select id="eu-scope" ${u.role.startsWith('Checkpoint')?'':'disabled'}>
+            <option value="">(none)</option>
+            ${locs.map(l => `<option value="${l}" ${l===u.location_scope?'selected':''}>${l} Checkpoint</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Branch</label><input id="eu-branch" value="${esc(u.branch||'')}"></div>
+        <div class="field"><label>New password (optional)</label><input id="eu-password" type="password" minlength="6" placeholder="Leave blank to keep"></div>
+      </div>
+    </form>
+  `;
+  const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
+                <button class="btn" onclick="submitEditUser(${u.id})">Save changes</button>`;
+  openDrawer('Edit officer · ' + u.username, body, foot);
+}
+async function submitEditUser(uid){
+  const data = {
+    display_name: document.getElementById('eu-display').value.trim(),
+    role: document.getElementById('eu-role').value,
+    branch: document.getElementById('eu-branch').value.trim(),
+    location_scope: document.getElementById('eu-scope').value || null,
+  };
+  const pw = document.getElementById('eu-password').value;
+  if(pw) data.password = pw;
+  try{
+    await api('/api/admin/users/'+uid, {method:'PATCH', body: JSON.stringify(data)});
+    closeDrawer(); toast('Officer updated'); renderUserTable();
+  }catch(e){ showFormError(e.message || 'Update failed'); }
 }
 
 // ============================ init ============================
@@ -1121,6 +1750,7 @@ buildFileSlots('guardDocs','guardDoc',3,['Document 1 (ID) *','Document 2 *','Doc
 document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:true});wireIdentity('fp');
 document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
 document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
-renderAll();syncServer();
+applyNavForRole();   // hide admin pages until sign-in
+renderAll();
 </script>
 </body></html>

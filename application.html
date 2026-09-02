@@ -85,10 +85,20 @@ function render(a){
    ${a.notes?`<h3 class="sec">Supporting document notes</h3><div style="font-size:14px">${esc(a.notes)}</div>`:''}
    <div class="sign"><div class="box">Applicant signature &amp; date<br><br>________________________________</div><div class="box">Receiving officer signature &amp; stamp<br><br>________________________________</div></div>`;
 }
+async function getToken(){
+  // Reuse the active session if the main UI is signed in (same origin, same port).
+  try{
+    const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');
+    if(s && s.token) return s.token;
+  }catch(_){}
+  // Fallback: sign in as the system admin (development convenience).
+  const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
+  const data=await login.json();
+  return data.token;
+}
 async function approve(){
   try{
-    const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
-    const {token}=await login.json();
+    const token=await getToken();
     const r=await fetch('/api/clearance-applications/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:'{}'});
     const data=await r.json();if(!r.ok)throw new Error(data.error||'Approval failed');
     toast('Approved. Certificate '+data.certificate_number+' unlocked.');
@@ -97,9 +107,7 @@ async function approve(){
 }
 async function load(){
   try{
-    const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
-    if(!login.ok)throw new Error('no server');
-    const {token}=await login.json();
+    const token=await getToken();
     const r=await fetch('/api/clearance-applications/'+id,{headers:{'Authorization':'Bearer '+token}});
     if(!r.ok)throw new Error('not found');
     render(await r.json());

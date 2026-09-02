@@ -66,6 +66,36 @@ Each case opens in a full-page workspace with three tabs: **1) Case Details & In
 
 The **Add Suspect** modal makes the **linked case strictly optional**: a suspect can be listed with a case, or without one, in which case the origin is recorded as **"Direct Intelligence Listing"** or **"Manual Entry"**. The suspect endpoints (`POST /api/suspect-alerts`) accept an optional `case_id` and store the origin server-side.
 
+### Role-Based Access Control & location-isolated checkpoints
+
+Officers sign in with one of seven roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
+
+- **System Admin** — full access to every module plus the Executive Analytics dashboard and the User Management page.
+- **Fingerprint Unit** — Fingerprint module only.
+- **Airport Control** — Airport module only.
+- **CID Criminal Unit** — CID / suspect alerts only.
+- **Checkpoint South / East / West** — only the Checkpoint module, **scoped to their assigned location**; `GET /api/checkpoint-events` returns a `scope` and `visible_locations` payload so the frontend can render the active filter, and `POST /api/checkpoint-events` rejects events at any other location.
+
+The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the analytics aggregation, and a Fingerprint officer cannot list Airport or Crime records.
+
+### Executive Analytics dashboard (admin only)
+
+The **Analytics** page (admin only) renders lightweight canvas charts backed by `/api/admin/analytics`:
+
+- **Crime incident heat / distribution** — crime case counts per location (district) and per time-of-day bucket (Morning 06-12, Afternoon 12-18, Evening 18-24, Night 00-06).
+- **Checkpoint volume & demographics** — total screening events per checkpoint (South vs. East vs. West) split by traveler age brackets (`<18`, `18-30`, `31-50`, `50+`).
+- **Operational summary** — KPI tiles for total central persons, active suspect alerts, airport movements and fingerprint records, plus a full summary card (cases total / open, checkpoint events / flagged).
+
+### Admin User Management (admin only)
+
+The **User Management** page (admin only) lets a System Admin create, edit, activate and deactivate officers and assign their role and location scope. The backend supports `GET /api/admin/users`, `POST /api/admin/users`, `PATCH /api/admin/users/{id}` and `GET /api/admin/users/{id}` for headless provisioning.
+
+A standalone migration script applies the RBAC schema to an existing database without re-creating it:
+
+```bash
+python3 backend/migrate_rbac.py
+```
+
 ## Architecture
 
 The system now has two parts:
@@ -93,14 +123,28 @@ py backend/server.py
 
 Then open `http://localhost:8001` (the backend serves the UI and the API together). The port can be changed with the `PORT` environment variable, and the database location with `SENTINEL_DB`.
 
-### Demo account (development only)
+### Demo accounts (development only)
 
-- Username: `admin`
-- Password: `ChangeMe123!`
+Seven demo users are seeded automatically on first run — one per role — all with
+password `ChangeMe123!`. This makes it easy to exercise the role-based access
+control and location-isolated checkpoints:
 
-This account is created automatically on first run and must be removed or changed before any real deployment.
+| Username     | Role                | Scope / Module             |
+|--------------|---------------------|----------------------------|
+| `admin`      | System Administrator| All modules + analytics + user management |
+| `fp.officer` | Fingerprint Unit    | Fingerprint only           |
+| `ap.officer` | Airport Control     | Airport only               |
+| `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
+| `cp.south`   | Checkpoint South    | Checkpoint · South only    |
+| `cp.east`    | Checkpoint East     | Checkpoint · East only     |
+| `cp.west`    | Checkpoint West     | Checkpoint · West only     |
 
-See [`backend/README.md`](backend/README.md) for the API endpoint reference.
+These accounts are created automatically on first run and must be removed or
+changed before any real deployment. To add a real admin, sign in as `admin`
+and use the **User Management** page in the UI, or `POST /api/admin/users`.
+
+See [`backend/README.md`](backend/README.md) for the full API reference,
+including the RBAC enforcement rules.
 
 ### Frontend-only demo
 
@@ -134,7 +178,7 @@ storage. **It is still not ready for real police data.** It currently uses:
 - **SQLite** instead of a production database (PostgreSQL)
 - **Development authentication** — a single hard-coded demo login (`admin` / `ChangeMe123!`), in-memory session tokens, and unsalted SHA-256 password hashing
 - **No HTTPS** — traffic is plain HTTP
-- **No full role or branch-based permissions** — every authenticated user can do everything
+- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and the Executive Analytics dashboard surfaces summary metrics, crime distribution and checkpoint demographics for admins. The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
 - **No production deployment** configuration
 - **No evidence file security** or chain-of-custody storage
 - **No backup service** or disaster-recovery process
