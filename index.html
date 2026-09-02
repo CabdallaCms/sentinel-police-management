@@ -1466,29 +1466,46 @@ function paintCheckpointChips(){
   const scope = (sessionUser && sessionUser.location_scope) || (isCheckpointRole(role) ? scopeFromRole(role) : '');
   const isAdmin = isAdminRole(role);
   const isCheckpoint = isCheckpointRole(role);
-  // Build the chip set. Admins see "All" + each location. Checkpoint
-  // officers see ONLY their assigned location (the chip group is a
-  // status indicator in that case).
+  // Build the chip set.
+  //  - Central System Admins see the full set ('All locations' + every
+  //    location) with full counts, all clickable, so they can toggle
+  //    between checkpoint views.
+  //  - Checkpoint officers are scoped to a single station: they see ONLY
+  //    the location chip for their assigned station, so the UI never
+  //    surfaces counts for stations they cannot access. The chip is
+  //    locked (disabled) because the officer's location is fixed by their
+  //    account and cannot be switched.
   const chips = [];
-  if(isAdmin){
-    chips.push({value:'', label:'All locations', count: db.checkpoints.length});
-  }
-  CP_LOCATIONS.forEach(loc => {
-    const label = loc + ' Checkpoint';
-    const count = db.checkpoints.filter(x => cpMatchesLocation(x, loc)).length;
-    chips.push({value: loc, label, count, scope: loc});
-  });
   if(isCheckpoint){
-    // Lock the chip group to a single chip for Checkpoint officers
-    // and force cpLocationFilter to the officer's scope. This is the
-    // "auto-select" requirement from the spec.
-    cpLocationFilter = scope || '';
+    if(scope){
+      // Station-scoped officer: render ONLY the assigned location chip.
+      const count = db.checkpoints.filter(x => cpMatchesLocation(x, scope)).length;
+      chips.push({value: scope, label: scope + ' Checkpoint', count, locked: true});
+      cpLocationFilter = scope;
+    } else {
+      // No derivable scope (defensive): still lock the officers to the
+      // chips but hide every external count so a restricted officer never
+      // sees a station total for a location they cannot access.
+      CP_LOCATIONS.forEach(loc => {
+        chips.push({value: loc, label: loc + ' Checkpoint', count: 0, locked: true, hideCount: true});
+      });
+      cpLocationFilter = '';
+    }
+  } else {
+    if(isAdmin){
+      chips.push({value:'', label:'All locations', count: db.checkpoints.length});
+    }
+    CP_LOCATIONS.forEach(loc => {
+      const label = loc + ' Checkpoint';
+      const count = db.checkpoints.filter(x => cpMatchesLocation(x, loc)).length;
+      chips.push({value: loc, label, count});
+    });
   }
   wrap.innerHTML = chips.map(ch => {
     const active = (ch.value || '') === (cpLocationFilter || '');
-    return `<button class="cp-loc-chip ${active?'active':''}" data-cp-loc="${esc(ch.value)}" ${isCheckpoint && !isAdmin ? 'disabled' : ''}>
-      <span>${esc(ch.label)}</span>
-      <span class="cp-loc-count">${ch.count}</span>
+    const countMarkup = ch.hideCount ? '' : `<span class="cp-loc-count">${ch.count}</span>`;
+    return `<button class="cp-loc-chip ${active?'active':''}" data-cp-loc="${esc(ch.value)}" ${ch.locked ? 'disabled' : ''}>
+      <span>${esc(ch.label)}</span>${countMarkup}
     </button>`;
   }).join('');
   // Wire the chip click handlers (admins can switch; officers can't).

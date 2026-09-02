@@ -268,6 +268,45 @@ async function main() {
     if (!(countAfterLogin >= 1)) throw new Error(`cp.south must see >=1 South events, got ${countAfterLogin}`);
     console.log(`ok 2: cp.south signed in — sentinel_token/sentinel_user persisted, South events visible (${countAfterLogin})`);
 
+    // ---- 2b) Checkpoint location chips are scoped to the officer's station ----
+    // A checkpoint officer must see ONLY the chip for their assigned station
+    // (never external counts for stations they cannot access); an admin sees
+    // all three location chips and can switch between them.
+    const renderChipsFor = (profile, cps) => {
+      const sb = buildSandbox({ port, storageDump: {}, consoleSink: [] });
+      loadApp(sb.sandbox);
+      probe(sb.sandbox, 'sessionUser = ' + JSON.stringify(profile));
+      probe(sb.sandbox, 'db.checkpoints = ' + JSON.stringify(cps));
+      probe(sb.sandbox, "cpLocationFilter = ''");
+      probe(sb.sandbox, 'paintCheckpointChips()');
+      return sb.getElementById('cpLocChips').innerHTML;
+    };
+    const sampleEvents = [
+      { event_id: 'CP-1', location: 'South', location_code: 'South', checkpoint_location: 'South Checkpoint', screen: 'No active alert', action: 'Cleared' },
+      { event_id: 'CP-2', location: 'East',  location_code: 'East',  checkpoint_location: 'East Checkpoint',  screen: 'No active alert', action: 'Cleared' },
+      { event_id: 'CP-3', location: 'West',  location_code: 'West',  checkpoint_location: 'West Checkpoint',  screen: 'No active alert', action: 'Cleared' },
+    ];
+    const southChips = s1.getElementById('cpLocChips').innerHTML;
+    if (!/South Checkpoint/.test(southChips)) throw new Error('cp.south chip group missing the assigned South chip: ' + southChips);
+    if (/East Checkpoint/.test(southChips)) throw new Error('cp.south must not render an East chip: ' + southChips);
+    if (/West Checkpoint/.test(southChips)) throw new Error('cp.south must not render a West chip: ' + southChips);
+    if ((southChips.match(/cp-loc-chip active/g) || []).length !== 1) throw new Error('cp.south must have exactly one active chip: ' + southChips);
+    const eastChips = renderChipsFor(
+      { id: 3, username: 'cp.east', display_name: 'Officer A. Maxamed', role: 'CheckpointEast', role_alias: 'checkpoint_officer', location_scope: 'East', modules: ['dashboard', 'checkpoints'] },
+      sampleEvents);
+    if (!/East Checkpoint/.test(eastChips)) throw new Error('cp.east chip group missing the assigned East chip: ' + eastChips);
+    if (/South Checkpoint/.test(eastChips)) throw new Error('cp.east must not render a South chip: ' + eastChips);
+    if (/West Checkpoint/.test(eastChips)) throw new Error('cp.east must not render a West chip: ' + eastChips);
+    const adminChips = renderChipsFor(
+      { id: 1, username: 'admin', display_name: 'Officer A. Hassan', role: 'SystemAdmin', role_alias: 'system_admin', location_scope: null, modules: ['dashboard', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints', 'analytics', 'admin'] },
+      sampleEvents);
+    if (!/All locations/.test(adminChips)) throw new Error('admin chip group missing the All locations chip: ' + adminChips);
+    for (const loc of ['South', 'East', 'West']) {
+      if (!new RegExp(loc + ' Checkpoint').test(adminChips)) throw new Error('admin chip group missing ' + loc + ' Checkpoint: ' + adminChips);
+    }
+    if (/disabled/.test(adminChips)) throw new Error('admin chip group must be fully clickable (never disabled): ' + adminChips);
+    console.log('ok 2b: location chips scoped — cp.south/cp.east see only their station; admin sees all three, clickable');
+
     // ---- 3) Refresh #1: session re-hydrates, officer stays signed in -----
     sink = [];
     let s2 = buildSandbox({ port, storageDump: stored1, consoleSink: sink });
