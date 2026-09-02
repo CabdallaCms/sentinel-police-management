@@ -428,6 +428,98 @@ def main():
                 assert ev['location'] == expected_loc, (u, ev)
         # Admin should see at least as many checkpoint events as any one location.
         assert len(admin_cp['items']) >= 1
+        # Every admin-visible checkpoint event must now carry the explicit
+        # location metadata so the identity profile can render
+        # "Checkpoint (South)" instead of a generic "Checkpoint" pill.
+        for ev in admin_cp['items']:
+            assert ev.get('location_code'), ev
+            assert ev.get('checkpoint_location'), ev
+            assert ev['checkpoint_location'].endswith('Checkpoint'), ev
+
+        # ---- Role-Scoped Operations Dashboard ----
+        # /api/dashboard must be reachable by every authenticated user but
+        # the cards / quick actions / activity feed must be strictly
+        # filtered to the caller's role and location scope.
+        s, d_admin = request(base, 'GET', '/api/dashboard', tokens['admin'])
+        assert s == 200, d_admin
+        assert d_admin['is_admin'] is True
+        assert d_admin['location_scope'] is None
+        admin_card_ids = {c['id'] for c in d_admin['cards']}
+        assert admin_card_ids == {'central_persons', 'open_cases',
+                                  'pending_clearances', 'active_alerts'}, d_admin['cards']
+        admin_quick = {q['id'] for q in d_admin['quick_actions']}
+        assert admin_quick == {'add_airport', 'add_clearance',
+                                'add_case', 'add_checkpoint'}, d_admin['quick_actions']
+        # Activity feed for an admin is a cross-unit feed (all 4 modules
+        # can be present in the same response).
+        admin_mods = {e['module'] for e in d_admin['activity']}
+        assert admin_mods & {'fingerprint', 'airport', 'cid', 'checkpoints'}, d_admin['activity']
+
+        s, d_south = request(base, 'GET', '/api/dashboard', tokens['cp.south'])
+        assert s == 200, d_south
+        assert d_south['is_admin'] is False
+        assert d_south['location_scope'] == 'South'
+        # Checkpoint users see ONLY location-scoped cards and ONLY the
+        # checkpoint quick action. They must never see admin / cross-unit
+        # cards or quick actions.
+        south_card_ids = {c['id'] for c in d_south['cards']}
+        assert south_card_ids == {'cp_screenings_today', 'cp_local_alerts',
+                                  'cp_total_events', 'cp_unique_travelers'}, d_south['cards']
+        assert {q['id'] for q in d_south['quick_actions']} == {'add_checkpoint'}, d_south['quick_actions']
+        # Card labels must explicitly mention 'South' so the officer
+        # can see at a glance which location the metrics are for.
+        for c in d_south['cards']:
+            assert 'South' in c['label'], c
+            assert c.get('location_scope') == 'South', c
+        # Activity feed for cp.south must be empty (no South events in seed
+        # were created after the dashboard wiring). All activity items
+        # (if any) must belong to the checkpoints module with the correct
+        # location_code.
+        for e in d_south['activity']:
+            assert e['module'] == 'checkpoints', e
+            assert e.get('location_code') == 'South', e
+
+        s, d_east = request(base, 'GET', '/api/dashboard', tokens['cp.east'])
+        assert s == 200, d_east
+        assert d_east['location_scope'] == 'East'
+        for c in d_east['cards']:
+            assert 'East' in c['label'], c
+
+        # Unit officers see only their module's cards / quick action.
+        s, d_fp = request(base, 'GET', '/api/dashboard', tokens['fp.officer'])
+        assert s == 200, d_fp
+        assert {c['id'] for c in d_fp['cards']} == {'fp_pending', 'fp_approved', 'fp_total'}, d_fp['cards']
+        assert {q['id'] for q in d_fp['quick_actions']} == {'add_clearance'}, d_fp['quick_actions']
+        for e in d_fp['activity']:
+            assert e['module'] == 'fingerprint', e
+
+        s, d_ap = request(base, 'GET', '/api/dashboard', tokens['ap.officer'])
+        assert s == 200, d_ap
+        assert {c['id'] for c in d_ap['cards']} == {'ap_today', 'ap_arrivals', 'ap_departures', 'ap_total'}, d_ap['cards']
+        assert {q['id'] for q in d_ap['quick_actions']} == {'add_airport'}, d_ap['quick_actions']
+        for e in d_ap['activity']:
+            assert e['module'] == 'airport', e
+
+        s, d_cid = request(base, 'GET', '/api/dashboard', tokens['cid.officer'])
+        assert s == 200, d_cid
+        assert {c['id'] for c in d_cid['cards']} == {'cid_open', 'cid_active_alerts', 'cid_total', 'cid_suspects'}, d_cid['cards']
+        assert {q['id'] for q in d_cid['quick_actions']} == {'add_case'}, d_cid['quick_actions']
+        for e in d_cid['activity']:
+            assert e['module'] == 'cid', e
+
+        # ---- Identity Profile: explicit checkpoint location pills ----
+        # Find the seeded checkpoint event's person and verify the
+        # /api/persons/{person_id} response carries the per-event explicit
+        # location metadata so the modal can render "Checkpoint (South)".
+        assert admin_cp['items'], 'no checkpoint events seeded'
+        susp_pid = admin_cp['items'][0]['person_id']
+        s, p2 = request(base, 'GET', f'/api/persons/{susp_pid}', tokens['admin'])
+        assert s == 200, p2
+        assert p2['checkpoints'], p2
+        for ev in p2['checkpoints']:
+            assert ev.get('location_code'), ev
+            assert ev.get('checkpoint_location'), ev
+            assert ev['checkpoint_location'].endswith('Checkpoint'), ev
 
         # Admin user management: create / update / deactivate.
         s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
@@ -499,6 +591,54 @@ def main():
         s, r = multipart_request(base, '/api/checkpoint-events', tokens['cp.south'],
                                  cp_south, cp_files)
         assert s == 400 and 'assigned location' in r['error'].lower(), r
+
+        # Checkpoint create: cp.south creates a new event at South, it
+        # appears in their own /api/checkpoint-events response immediately
+        # (and not for cp.east / cp.west).
+        cp_south_ok = dict(cp_south)
+        cp_south_ok['location'] = 'South'
+        s, before = request(base, 'GET', '/api/checkpoint-events', tokens['cp.south'])
+        before_ids = {x['event_id'] for x in before['items']}
+        s, r = multipart_request(base, '/api/checkpoint-events', tokens['cp.south'],
+                                 cp_south_ok, cp_files)
+        assert s == 201, r
+        new_event_id = r['event_id']
+        assert r.get('location_code') == 'South', r
+        assert r.get('checkpoint_location') == 'South Checkpoint', r
+        s, after = request(base, 'GET', '/api/checkpoint-events', tokens['cp.south'])
+        after_ids = {x['event_id'] for x in after['items']}
+        assert new_event_id in after_ids, (new_event_id, after_ids)
+        # Newly created event must be visible with explicit location metadata.
+        new_event = next(x for x in after['items'] if x['event_id'] == new_event_id)
+        assert new_event['location_code'] == 'South', new_event
+        assert new_event['checkpoint_location'] == 'South Checkpoint', new_event
+        # And it must NOT be visible to officers at other checkpoints
+        # (cp.east / cp.west). The airport / CID officers do not have
+        # access to /api/checkpoint-events at all (module gate returns
+        # 401), so we only check the in-scope checkpoint officers.
+        for user in ('cp.east', 'cp.west'):
+            s, scoped = request(base, 'GET', '/api/checkpoint-events', tokens[user])
+            assert s == 200, (user, scoped)
+            assert new_event_id not in {x['event_id'] for x in scoped['items']}, (user, scoped)
+        # And not via the admin endpoint either — admin can see all
+        # events across locations, but cp.south's POST must not duplicate
+        # the row at any other location.
+        s, all_evs = request(base, 'GET', '/api/checkpoint-events', tokens['admin'])
+        all_for_new = [x for x in all_evs['items'] if x['event_id'] == new_event_id]
+        assert len(all_for_new) == 1, all_for_new
+        assert all_for_new[0]['location_code'] == 'South', all_for_new[0]
+        # The new event bumps cp.south's dashboard totals (total screenings
+        # and unique travelers are absolute counts, not "today" counts).
+        s, d_after = request(base, 'GET', '/api/dashboard', tokens['cp.south'])
+        total_card = next(c for c in d_after['cards'] if c['id'] == 'cp_total_events')
+        unique_card = next(c for c in d_after['cards'] if c['id'] == 'cp_unique_travelers')
+        assert total_card['value'] >= 1, total_card
+        # Dashboard activity feed for cp.south must now include the new
+        # event with the explicit "South Checkpoint" title and South code.
+        feed = [e for e in d_after['activity'] if e['id'] == new_event_id]
+        assert feed, d_after['activity']
+        assert feed[0]['title'] == 'South Checkpoint', feed[0]
+        assert feed[0]['location_code'] == 'South', feed[0]
 
         print('ALL BACKEND TESTS PASSED')
         return 0

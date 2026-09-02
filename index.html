@@ -251,17 +251,21 @@ body.modal-open{overflow:hidden}
 
 <!-- DASHBOARD -->
 <section id="dashboard" class="page">
-<div class="cards">
-<div class="card"><div class="kpi"><span class="label">Central persons</span><span class="module-icon">◉</span></div><div class="metric" id="mPeople">0</div><div class="trend">↑ Unified identity records</div></div>
-<div class="card"><div class="kpi"><span class="label">Open crime cases</span><span class="module-icon">⌂</span></div><div class="metric" id="mCases">0</div><div class="trend">Active investigations</div></div>
-<div class="card"><div class="kpi"><span class="label">Pending clearances</span><span class="module-icon">⌁</span></div><div class="metric" id="mClear">0</div><div class="trend">Require officer review</div></div>
-<div class="card"><div class="kpi"><span class="label">Active suspect alerts</span><span class="module-icon">!</span></div><div class="metric" id="mSuspects">0</div><div class="trend" style="color:var(--red)">Restricted operational data</div></div>
+<div class="panel-head" style="margin-bottom:14px">
+  <div>
+    <h2 id="dashSubhead" style="font-size:18px">Operations dashboard</h2>
+    <div class="sub" id="dashSub">Loading…</div>
+  </div>
+  <div><button class="btn ghost small" onclick="refreshDashboard()">↻ Refresh</button></div>
+</div>
+<div class="cards" id="dashboardCards">
+  <div class="empty" style="grid-column:1/-1">Loading dashboard…</div>
 </div>
 <div class="grid2">
-<div class="panel"><div class="panel-head"><div><h2>Quick registration</h2><div class="sub">Create a unit record with a central person link</div></div></div>
-<div class="grid2"><button class="btn" onclick="go('airport')">+ Airport passenger</button><button class="btn secondary" onclick="go('fingerprint')">+ Clearance application</button></div>
-<div class="hint" style="margin-top:16px"><b>Identity linking:</b> search a name or ID — the global person registry auto-completes and reuses the existing profile, appending new details instead of creating duplicates.</div></div>
-<div class="panel"><div class="panel-head"><div><h2>Recent activity</h2><div class="sub">Cross-unit operational feed</div></div></div><div class="timeline" id="activity"></div></div>
+<div class="panel"><div class="panel-head"><div><h2>Quick registration</h2><div class="sub" id="quickSub">Create a unit record with a central person link</div></div></div>
+<div class="grid2" id="quickActions"><button class="btn" disabled>+ Loading…</button></div>
+<div class="hint" id="quickHint" style="margin-top:16px"><b>Identity linking:</b> search a name or ID — the global person registry auto-completes and reuses the existing profile, appending new details instead of creating duplicates.</div></div>
+<div class="panel"><div class="panel-head"><div><h2>Recent activity</h2><div class="sub" id="activitySub">Operational feed</div></div></div><div class="timeline" id="activity"><div class="empty">Loading activity…</div></div></div>
 </div>
 </section>
 
@@ -565,6 +569,7 @@ function go(page){
   if(page==='cid') renderCases();
   if(page==='analytics') renderAnalytics();
   if(page==='admin') renderUserTable();
+  if(page==='dashboard') renderDashboard();
   renderAll();
 }
 const ALLOWED_PAGES_WITHOUT_AUTH = new Set();
@@ -930,7 +935,43 @@ async function submitPersonDrawer(existingId){
 window._viewingPerson=null;
 function openPersonView(id){
   const p=person(id);if(!p)return;window._viewingPerson=p;
-  const units=(p.units||[]).map(u=>`<span class="badge blue">${esc(u)}</span>`).join(' ');
+  // Per the spec, replace the generic 'Checkpoint' pill with explicit
+  // 'Checkpoint (South)' / 'Checkpoint (East)' / 'Checkpoint (West)' labels
+  // derived from the linked events' actual location. We dedupe while
+  // preserving the encounter count.
+  const explicit = p.units_explicit || p.units || [];
+  const isCheckpointLabel = u => typeof u === 'string' && (u === 'Checkpoint' || /Checkpoint\s*\(/.test(u) || /^Checkpoint\s+\S/.test(u));
+  const hasExplicitCheckpoint = explicit.some(u => /Checkpoint\s*\(/.test(u) || (typeof u === 'object' && u.kind === 'checkpoint'));
+  // If the explicit list still uses the generic 'Checkpoint' label, try to
+  // resolve it from db.checkpoints so the modal stays accurate even when
+  // syncServer hasn't repopulated p.units_explicit.
+  const unitsHtml = (() => {
+    if(hasExplicitCheckpoint){
+      return explicit.map(u => {
+        if(typeof u === 'object' && u && u.label){
+          return `<span class="badge blue">${esc(u.label)}</span>`;
+        }
+        return `<span class="badge blue">${esc(u)}</span>`;
+      }).join(' ');
+    }
+    const fallback = [];
+    (p.units || []).forEach(u => {
+      if(isCheckpointLabel(u)){
+        const cpe = (db.checkpoints || []).filter(x => x.person === p.id);
+        const seen = new Set();
+        cpe.forEach(ev => {
+          const code = ev.location_code || ev.location;
+          const label = ev.checkpoint_location || (code ? (code + ' Checkpoint') : 'Checkpoint');
+          if(!seen.has(label)){ seen.add(label); fallback.push(label); }
+        });
+        if(!fallback.length) fallback.push('Checkpoint');
+      } else {
+        fallback.push(u);
+      }
+    });
+    return fallback.map(u => `<span class="badge blue">${esc(u)}</span>`).join(' ');
+  })();
+  const units = unitsHtml;
   openDrawer('Identity profile · '+p.id,`
    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
      <span class="mini" style="width:54px;height:54px;font-size:17px">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`:esc(initials(p.name))}</span>
@@ -1013,11 +1054,214 @@ function renderPeople(){
     <td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">View</button></td></tr>`).join('');
   peopleTable.innerHTML=rows||'<tr><td colspan="6" class="empty">No people found</td></tr>';
 }
+// ============================ dashboard (role / scope aware) ============================
+// The dashboard pulls its metrics from /api/dashboard, which is computed on the
+// backend with strict role- and location-scope filtering. The renderer just
+// paints the cards / quick-action buttons / activity feed from the response.
+//
+// Visibility rules (mirrored from backend/server.py:build_dashboard):
+//   * SystemAdmin          → all 4 cross-unit KPI tiles + all quick-action
+//                            buttons + cross-unit activity feed
+//   * Checkpoint*          → only the 4 location-scoped checkpoint KPI tiles
+//                            (e.g. "South Checkpoint screenings today") +
+//                            only the "Record checkpoint stop" quick-action
+//                            button + checkpoint activity for their location
+//   * FingerprintUnit      → only the 3 fingerprint KPI tiles + the
+//                            "+ Clearance application" quick-action button +
+//                            fingerprint activity
+//   * AirportControl       → only the 4 airport KPI tiles + the
+//                            "+ Airport passenger" quick-action button +
+//                            airport activity
+//   * CIDUnit              → only the 4 CID KPI tiles + the
+//                            "+ New crime case" quick-action button +
+//                            CID activity
+// The same payload is also used by renderDashboardLocal() so the offline /
+// localStorage fallback mode shows the same scoped view.
+function renderDashboard(){
+  if(!serverOn){ renderDashboardLocal(); return; }
+  const d = db.dashboard;
+  if(!d){ paintDashboardSkeleton('Connecting to central database…'); fetchDashboard(); return; }
+  paintDashboard(d);
+}
+function fetchDashboard(){
+  if(!serverOn) return;
+  api('/api/dashboard').then(d=>{ db.dashboard = d; if(document.getElementById('dashboard').classList.contains('active')) paintDashboard(d); })
+    .catch(e=>{
+      document.getElementById('dashboardCards').innerHTML = '<div class="empty" style="grid-column:1/-1">Dashboard unavailable: '+esc(e.message||'request failed')+'</div>';
+    });
+}
+function refreshDashboard(){ fetchDashboard(); }
+function paintDashboardSkeleton(msg){
+  document.getElementById('dashboardCards').innerHTML = '<div class="empty" style="grid-column:1/-1">'+esc(msg||'Loading…')+'</div>';
+  document.getElementById('quickActions').innerHTML = '<button class="btn" disabled>Loading…</button>';
+  document.getElementById('activity').innerHTML = '<div class="empty">Loading activity…</div>';
+}
+function paintDashboard(d){
+  const sub = document.getElementById('dashSub');
+  const subhead = document.getElementById('dashSubhead');
+  if(sub) sub.textContent = d.subhead || ('Updated '+ (d.generated_at||'') +' · '+ (d.role||'') + (d.location_scope ? ' · '+d.location_scope+' Checkpoint' : ''));
+  if(subhead) subhead.textContent = (d.is_admin ? 'Cross-unit Operations' : (d.location_scope ? (d.location_scope+' Checkpoint Operations') : ((d.role||'Module')+' Operations')));
+
+  // ---- KPI cards ----
+  const cards = d.cards || [];
+  const cardsEl = document.getElementById('dashboardCards');
+  if(!cards.length){
+    cardsEl.innerHTML = '<div class="empty" style="grid-column:1/-1">No metrics available for your role.</div>';
+  } else {
+    cardsEl.innerHTML = cards.map(c =>
+      `<div class="card" data-module="${esc(c.module||'')}" data-card-id="${esc(c.id||'')}">
+        <div class="kpi"><span class="label">${esc(c.label)}</span><span class="module-icon">${esc(c.icon||'◯')}</span></div>
+        <div class="metric">${esc(c.value||0)}</div>
+        <div class="trend" ${c.trend_kind==='alert'?'style="color:var(--red)"':''}>${esc(c.trend||'')}</div>
+      </div>`
+    ).join('');
+  }
+
+  // ---- Quick-action buttons ----
+  const quick = d.quick_actions || [];
+  const quickEl = document.getElementById('quickActions');
+  if(!quick.length){
+    quickEl.innerHTML = '<div class="empty" style="grid-column:1/-1">No quick-registration actions are available for your role.</div>';
+  } else {
+    quickEl.innerHTML = quick.map(q =>
+      `<button class="btn ${q.kind==='secondary'?'secondary':''}" onclick="go('${esc(q.page)}')">${esc(q.label)}</button>`
+    ).join('');
+  }
+  const quickSub = document.getElementById('quickSub');
+  if(quickSub){
+    if(d.is_admin) quickSub.textContent = 'Create a unit record with a central person link';
+    else if(d.location_scope) quickSub.textContent = 'Create a unit record at '+d.location_scope+' Checkpoint';
+    else quickSub.textContent = 'Create a unit record linked to the central person registry';
+  }
+  const quickHint = document.getElementById('quickHint');
+  if(quickHint){
+    if(d.is_admin || quick.length>1){
+      quickHint.innerHTML = '<b>Identity linking:</b> search a name or ID — the global person registry auto-completes and reuses the existing profile, appending new details instead of creating duplicates.';
+    } else {
+      quickHint.innerHTML = '<b>RBAC:</b> Quick-action buttons are limited to the modules your role can access. Contact a system administrator if you need access to additional units.';
+    }
+  }
+
+  // ---- Activity feed ----
+  const activitySub = document.getElementById('activitySub');
+  if(activitySub){
+    if(d.is_admin) activitySub.textContent = 'Cross-unit operational feed';
+    else if(d.location_scope) activitySub.textContent = d.location_scope+' Checkpoint operational feed';
+    else activitySub.textContent = 'Operational feed for your module';
+  }
+  paintActivityFromData(d.activity || []);
+}
+// paintActivity() is the unified path used by both server and offline modes.
+function paintActivity(){
+  const d = db.dashboard;
+  if(d && Array.isArray(d.activity)) paintActivityFromData(d.activity);
+  else paintActivityFromData(buildLocalActivity());
+}
+function paintActivityFromData(events){
+  const el = document.getElementById('activity');
+  if(!el) return;
+  if(!events.length){
+    el.innerHTML = '<div class="empty">No recent activity to show for your role / location.</div>';
+    return;
+  }
+  el.innerHTML = events.map(e => {
+    const colorVar = ({blue:'var(--blue)',cyan:'var(--cyan)',amber:'var(--amber)',green:'var(--green)',red:'var(--red)'})[e.dot_color] || 'var(--blue)';
+    const moduleLabel = ({fingerprint:'Fingerprint Unit',airport:'Airport Control',cid:'CID Criminal Unit',checkpoints:(e.location_code ? e.location_code+' Checkpoint' : 'Checkpoint')})[e.module] || e.module || '';
+    return `<div class="event">
+      <span class="dot" style="background:${colorVar}"></span>
+      <div><b>${esc(e.title||e.id||'')}</b>
+      <small>${esc(e.subtitle||'')}${moduleLabel?' · '+esc(moduleLabel):''}${e.at?' · '+esc((e.at||'').replace('T',' ').slice(0,16)):''}</small></div>
+    </div>`;
+  }).join('');
+}
+function buildLocalActivity(){
+  // Local / offline fallback: build a small activity feed filtered to the
+  // signed-in user's modules / scope. Mirrors the backend's role-aware feed.
+  const mods = (sessionUser && sessionUser.modules) || ['dashboard'];
+  const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
+  const scope = (sessionUser && sessionUser.location_scope) || '';
+  const events = [];
+  if(isAdmin || mods.includes('fingerprint')){
+    db.fingerprint.slice(0,6).forEach(x=>events.push({module:'fingerprint',id:x.id,title:x.id+' · '+x.purpose,subtitle:x.status,at:'',dot_color:'blue'}));
+  }
+  if(isAdmin || mods.includes('airport')){
+    db.airport.slice(0,6).forEach(x=>events.push({module:'airport',id:x.id,title:(x.route||x.flight||x.id),subtitle:x.move,at:x.date,dot_color:'cyan'}));
+  }
+  if(isAdmin || mods.includes('cid')){
+    db.cases.slice(0,6).forEach(x=>events.push({module:'cid',id:x.id,title:x.id+' · '+x.category,subtitle:x.status,at:'',dot_color:'amber'}));
+  }
+  if(isAdmin || mods.includes('checkpoints')){
+    db.checkpoints.slice(0,6).forEach(x=>{
+      if(scope && x.location_code && x.location_code !== scope) return;
+      const lbl = x.checkpoint_location || (x.location_code?x.location_code+' Checkpoint':x.location);
+      events.push({module:'checkpoints',id:x.event_id||x.id,title:lbl,subtitle:x.screen,at:x.time,dot_color:'green',location_code:x.location_code});
+    });
+  }
+  return events;
+}
+function renderDashboardLocal(){
+  // Offline / localStorage fallback. Build the same dashboard envelope
+  // locally so the role/scoping is preserved when the server is absent.
+  const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
+  const scope = (sessionUser && sessionUser.location_scope) || '';
+  const role = (sessionUser && sessionUser.role) || '';
+  const isCheckpoint = role && role.startsWith('Checkpoint');
+  const cards = [];
+  if(isAdmin){
+    cards.push({id:'central_persons',label:'Central persons',icon:'◉',value:db.people.length,trend:'Unified identity records',module:'people'});
+    cards.push({id:'open_cases',label:'Open crime cases',icon:'⌂',value:db.cases.filter(x=>x.status!=='Closed').length,trend:'Active investigations',module:'cid'});
+    cards.push({id:'pending_clearances',label:'Pending clearances',icon:'⌁',value:db.fingerprint.filter(x=>x.status==='Pending Review').length,trend:'Require officer review',module:'fingerprint'});
+    cards.push({id:'active_alerts',label:'Active suspect alerts',icon:'!',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length,trend:'Restricted operational data',trend_kind:'alert',module:'cid'});
+  } else if(isCheckpoint){
+    const local = db.checkpoints.filter(x => !scope || x.location_code === scope || x.location === scope);
+    const today = new Date().toISOString().slice(0,10);
+    const todayCount = local.filter(x => (x.time||'').slice(0,10) === today || (x.created_at||'').slice(0,10) === today).length;
+    const flagged = local.filter(x => x.screen === 'Flagged match').length;
+    cards.push({id:'cp_screenings_today',label:`${scope||'Local'} Checkpoint screenings today`,icon:'⊙',value:todayCount,trend:`Stops recorded at ${scope||'this'} Checkpoint`,module:'checkpoints',location_scope:scope});
+    cards.push({id:'cp_local_alerts',label:`${scope||'Local'} local alerts`,icon:'!',value:flagged,trend:`Flagged matches at ${scope||'this'} Checkpoint`,trend_kind:'alert',module:'checkpoints',location_scope:scope});
+    cards.push({id:'cp_total_events',label:`${scope||'Local'} total screenings`,icon:'⌁',value:local.length,trend:`All-time screening events`,module:'checkpoints',location_scope:scope});
+    cards.push({id:'cp_unique_travelers',label:`${scope||'Local'} unique travelers`,icon:'◉',value:new Set(local.map(x=>x.person)).size,trend:`Distinct Central Persons screened`,module:'checkpoints',location_scope:scope});
+  } else if(role === 'FingerprintUnit'){
+    cards.push({id:'fp_pending',label:'Pending clearances',icon:'⌁',value:db.fingerprint.filter(x=>x.status==='Pending Review').length,trend:'Require officer review',module:'fingerprint'});
+    cards.push({id:'fp_approved',label:'Approved clearances',icon:'✓',value:db.fingerprint.filter(x=>x.status==='Approved').length,trend:'Certificates issued',module:'fingerprint'});
+    cards.push({id:'fp_total',label:'Total applications',icon:'◉',value:db.fingerprint.length,trend:'All-time clearance volume',module:'fingerprint'});
+  } else if(role === 'AirportControl'){
+    const today = new Date().toISOString().slice(0,10);
+    cards.push({id:'ap_today',label:'Passenger movements today',icon:'✈',value:db.airport.filter(x=>x.date===today).length,trend:'Travel date '+today,module:'airport'});
+    cards.push({id:'ap_arrivals',label:'Arrivals',icon:'↓',value:db.airport.filter(x=>x.move==='Arrival').length,trend:'All-time inbound movements',module:'airport'});
+    cards.push({id:'ap_departures',label:'Departures',icon:'↑',value:db.airport.filter(x=>x.move==='Departure').length,trend:'All-time outbound movements',module:'airport'});
+    cards.push({id:'ap_total',label:'Total movements',icon:'◉',value:db.airport.length,trend:'All-time passenger register',module:'airport'});
+  } else if(role === 'CIDUnit'){
+    cards.push({id:'cid_open',label:'Open crime cases',icon:'⌂',value:db.cases.filter(x=>x.status!=='Closed').length,trend:'Active investigations',module:'cid'});
+    cards.push({id:'cid_active_alerts',label:'Active suspect alerts',icon:'!',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length,trend:'Restricted operational data',trend_kind:'alert',module:'cid'});
+    cards.push({id:'cid_total',label:'Total cases',icon:'◉',value:db.cases.length,trend:'All-time case volume',module:'cid'});
+    cards.push({id:'cid_suspects',label:'Suspects on file',icon:'⌂',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect').length,trend:'All-time suspect listings',module:'cid'});
+  }
+  const quick = [];
+  if(isAdmin || role==='AirportControl') quick.push({id:'add_airport',label:'+ Airport passenger',kind:'primary',page:'airport',module:'airport'});
+  if(isAdmin || role==='FingerprintUnit') quick.push({id:'add_clearance',label:'+ Clearance application',kind:'secondary',page:'fingerprint',module:'fingerprint'});
+  if(isAdmin || role==='CIDUnit') quick.push({id:'add_case',label:'+ New crime case',kind:'secondary',page:'cid',module:'cid'});
+  if(isAdmin || isCheckpoint) quick.push({id:'add_checkpoint',label:'+ Record checkpoint stop',kind:'primary',page:'checkpoints',module:'checkpoints'});
+  const d = {
+    generated_at: new Date().toISOString(),
+    role: role, is_admin: isAdmin, location_scope: scope,
+    cards: cards, quick_actions: quick,
+    activity: buildLocalActivity(),
+    subhead: isAdmin ? 'System overview · all units' : (isCheckpoint ? (scope+' Checkpoint operations') : ((sessionUser && sessionUser.role_label) || role) + ' · module overview'),
+  };
+  db.dashboard = d;
+  paintDashboard(d);
+}
+
 function renderAll(){
-  mPeople.textContent=db.people.length;
-  mCases.textContent=db.cases.filter(x=>x.status!=='Closed').length;
-  mClear.textContent=db.fingerprint.filter(x=>x.status==='Pending Review').length;
-  mSuspects.textContent=db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length;
+  // The dashboard now pulls its metrics from /api/dashboard via
+  // renderDashboard(); the legacy static KPI tiles have been removed
+  // from the DOM. renderDashboard() is invoked from go('dashboard') and
+  // loadSession(); we also call it here as a safety net when the
+  // dashboard is the active page.
+  if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
+    renderDashboard();
+  }
   renderPeople();
   fpTable.innerHTML=db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
@@ -1029,16 +1273,22 @@ function renderAll(){
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
   suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No active alerts</td></tr>';
-  cpTable.innerHTML=db.checkpoints.map(x=>`<tr><td>${esc(x.time)}</td><td>${esc(x.location)}</td>
+  cpTable.innerHTML=db.checkpoints.map(x=>{
+    // Show the explicit, human-friendly location label (e.g. 'South Checkpoint')
+    // so the table is unambiguous about which checkpoint the row came from.
+    const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
+    return `<tr><td>${esc(x.time)}</td><td>${esc(locLabel||'—')}</td>
     <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
     <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
     <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
     <td><span class="badge ${x.action==='Cleared'?'green':'red'}">${esc(x.action)}</span>${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td>
-    <td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No stops recorded</td></tr>';
-  activity.innerHTML=`<div class="event"><span class="dot"></span><div><b>${db.fingerprint.length} clearance application(s)</b><small>${db.fingerprint.filter(x=>x.status==='Pending Review').length} pending review · Fingerprint Unit</small></div></div>
-   <div class="event"><span class="dot" style="background:var(--amber)"></span><div><b>${db.cases.filter(x=>x.status!=='Closed').length} open crime case(s)</b><small>CID Criminal Unit</small></div></div>
-   <div class="event"><span class="dot" style="background:var(--green)"></span><div><b>${db.checkpoints.length} checkpoint screening event(s)</b><small>${db.checkpoints.filter(x=>x.screen==='Flagged match').length} flagged match(es) · Checkpoint operations</small></div></div>
-   <div class="event"><span class="dot" style="background:var(--cyan)"></span><div><b>${db.people.length} central identities</b><small>Unified across all units</small></div></div>`;
+    <td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`;
+  }).join('')||'<tr><td colspan="7" class="empty">No stops recorded</td></tr>';
+  // The activity feed is now driven by /api/dashboard; paintActivity()
+  // refreshes it when the dashboard is the active page.
+  if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
+    paintActivity();
+  }
 }
 function renderCases(){
   if(!window.caseTable)return;
@@ -1289,6 +1539,7 @@ async function syncServer(){
     if(sessionUser.modules.includes('fingerprint'))fetches.push(api('/api/clearance-applications').catch(()=>({items:[]})));
     if(sessionUser.modules.includes('cid'))        fetches.push(api('/api/crime-cases').catch(()=>({items:[]})), api('/api/suspect-alerts').catch(()=>({items:[]})));
     if(sessionUser.modules.includes('checkpoints'))fetches.push(api('/api/checkpoint-events').catch(()=>({items:[]})));
+    fetches.push(api('/api/dashboard').catch(()=>null));
     const results = await Promise.all(fetches);
     const ps = results.shift();
     const ars = (results.shift() || {items:[]});
@@ -1296,14 +1547,45 @@ async function syncServer(){
     const ccs = sessionUser.modules.includes('cid')       ? (results.shift() || {items:[]}) : {items:[]};
     const sas = sessionUser.modules.includes('cid')       ? (results.shift() || {items:[]}) : {items:[]};
     const cps = sessionUser.modules.includes('checkpoints') ? (results.shift() || {items:[]}) : {items:[]};
+    const dash = results.shift();
+    if(dash) db.dashboard = dash;
     db.people=ps.items.map(mapPerson);
-    db.people.forEach(p=>{p.units=[];if(ars.items.some(x=>x.person_id===p.id))p.units.push('Airport');if(fps.items.some(x=>x.person_id===p.id))p.units.push('Fingerprint');if(sas.items.some(x=>x.person_id===p.id))p.units.push('CID');if(cps.items.some(x=>x.person_id===p.id))p.units.push('Checkpoint');if(!p.units.length)p.units.push('Central')});
+    db.people.forEach(p=>{
+      p.units=[];p.units_explicit=[];
+      // Generic unit pills (kept for back-compat with the rest of the UI
+      // such as the Central Persons table).
+      if(ars.items.some(x=>x.person_id===p.id)){p.units.push('Airport');p.units_explicit.push('Airport');}
+      if(fps.items.some(x=>x.person_id===p.id)){p.units.push('Fingerprint');p.units_explicit.push('Fingerprint');}
+      if(sas.items.some(x=>x.person_id===p.id)){p.units.push('CID');p.units_explicit.push('CID');}
+      // Checkpoint pills are now explicit per-encounter location labels
+      // (e.g. 'Checkpoint (South)') so the identity profile shows the
+      // exact originating checkpoint rather than a generic 'Checkpoint'
+      // string. We dedupe by location code and add a generic 'Checkpoint'
+      // pill only when a record has no resolvable location.
+      const cpByLoc = new Map();
+      cps.items.filter(x=>x.person_id===p.id).forEach(ev=>{
+        const code = ev.location_code || (ev.location||'').split(' ')[0] || '';
+        const label = ev.checkpoint_location || (code ? (code+' Checkpoint') : '');
+        if(label && !cpByLoc.has(label)) cpByLoc.set(label, code);
+      });
+      if(cpByLoc.size){
+        // The first entry in p.units keeps the legacy 'Checkpoint' string
+        // for the Central Persons table; explicit labels follow.
+        p.units.push('Checkpoint');
+        cpByLoc.forEach((code, label)=>{
+          p.units_explicit.push({kind:'checkpoint', label, location_code: code, events: cps.items.filter(x=>x.person_id===p.id && (x.checkpoint_location===label || (x.location_code===code))).length});
+        });
+      }
+      if(!p.units.length){p.units.push('Central');p.units_explicit.push('Central');}
+    });
     db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,notes:x.notes}));
     db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
     db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
     db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
-    db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),location:x.location,person:x.person_id,
+    db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
+      location:x.location,location_code:x.location_code,checkpoint_location:x.checkpoint_location,
+      person:x.person_id,
       screen:x.screening_result,action:x.action_taken,notes:x.notes,purpose:x.purpose_of_visit,
       currentAddress:x.current_address,permanentAddress:x.permanent_address,photo:x.traveler_photo,
       travelerDocs:parseDocs(x.traveler_docs).length,guardianDocs:parseDocs(x.guardian_docs).length,
@@ -1378,6 +1660,9 @@ async function loadSession(){
   updateUserPill();
   await syncServer();
   go('dashboard');
+  // The dashboard is now also rendered after syncServer has populated
+  // db.dashboard; renderDashboard() picks the server or local pipeline.
+  renderDashboard();
 }
 
 function doLogout(){
