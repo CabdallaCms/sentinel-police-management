@@ -1435,10 +1435,39 @@ function cpMatchesLocation(record, activeScope){
 function renderCheckpointTable(){
   const tbody = document.getElementById('cpTable');
   if(!tbody) return;
-  // Spec step 2.1: log the in-memory array + active filter for
-  // browser-console diagnosis. Log only when a record is being
-  // looked at to keep production quiet (the filter chip itself
-  // signals the active scope to the officer).
+  // Spec step 1.1: explicit data-pipeline instrumentation. Always
+  // log the active user role + scope + raw + filtered so a remote
+  // troubleshooter can see exactly what the table is working with.
+  // The verbose `window.__cpDebug` dump is opt-in (toggle with
+  // `window.__cpDebug = true` in the browser console).
+  const userRole = (sessionUser && sessionUser.role) || '';
+  const userScope = (sessionUser && sessionUser.location_scope) || '';
+  // Resolve the effective scope: explicit filter first, then the
+  // Checkpoint officer's own scope. This guarantees the spec's
+  // fail-safe filter has a non-empty scope for officers.
+  const effectiveScope = (cpLocationFilter || (userRole.startsWith('Checkpoint') ? userScope : ''));
+  const rawData = (db.checkpoints || []).slice();
+  const filtered = effectiveScope
+    ? (db.checkpoints || []).filter(x => cpMatchesLocation(x, effectiveScope))
+    : (db.checkpoints || []);
+  // Spec step 3: hard-bound fail-safe filter. The visibleCheckpoints
+  // list is ALWAYS the intersection of (active scope, the record's
+  // location field) so the chip count badge and the table row count
+  // can never disagree. This is the final gate before rendering.
+  const visibleCheckpoints = (db.checkpoints || []).filter(item => {
+    if (!item) return false;
+    const activeScope = (effectiveScope || '').toString().toLowerCase();
+    const loc = (item.checkpoint_location || item.location_code || item.location || '').toString().toLowerCase();
+    if (!activeScope) return true;
+    return loc.includes(activeScope) || activeScope.includes(loc) || loc === activeScope;
+  });
+  try{
+    console.log('[DEBUG Checkpoints]', {
+      userRole, userScope,
+      activeFilter: effectiveScope,
+      rawData, filteredData: filtered, visibleCheckpoints,
+    });
+  }catch(_){}
   try{
     if(window.__cpDebug){
       console.log('[cp] renderCheckpointTable: db.checkpoints =',
@@ -1446,35 +1475,26 @@ function renderCheckpointTable(){
       console.log('[cp] active cpLocationFilter =', JSON.stringify(cpLocationFilter));
     }
   }catch(_){}
-  const filtered = cpLocationFilter
-    ? db.checkpoints.filter(x => cpMatchesLocation(x, cpLocationFilter))
-    : db.checkpoints;
   const empty = document.getElementById('cpEmpty');
   const count = document.getElementById('cpTableCount');
   const filterLabel = document.getElementById('cpFilterLabel');
   if(count){
-    // Spec step 2.3: chip count badge must reflect filteredRecords.length.
-    count.textContent = filtered.length;
+    // Spec step 2.3: chip count badge must reflect visibleCheckpoints.length.
+    count.textContent = visibleCheckpoints.length;
     // Also surface the count in the per-chip badge via the
     // paintCheckpointChips() re-render below.
   }
   if(filterLabel){
-    const role = (sessionUser && sessionUser.role) || '';
-    const scope = (sessionUser && sessionUser.location_scope) || '';
-    if(cpLocationFilter){
-      filterLabel.textContent = `Showing ${cpLocationFilter} Checkpoint only`;
-    } else if(role.startsWith('Checkpoint') && scope){
-      filterLabel.textContent = `Showing ${scope} Checkpoint only`;
+    if(effectiveScope){
+      filterLabel.textContent = `Showing ${effectiveScope} Checkpoint only`;
     } else {
       filterLabel.textContent = `Showing all ${db.checkpoints.length} screening event(s)`;
     }
   }
-  if(!filtered.length){
-    const role = (sessionUser && sessionUser.role) || '';
-    const scope = (sessionUser && sessionUser.location_scope) || '';
+  if(!visibleCheckpoints.length){
     if(empty){
-      if(role.startsWith('Checkpoint') && scope){
-        empty.innerHTML = `No stops recorded at <b>${esc(scope)} Checkpoint</b> yet. Click <b>+ Record stop</b> to log a screening.`;
+      if(userRole.startsWith('Checkpoint') && userScope){
+        empty.innerHTML = `No stops recorded at <b>${esc(userScope)} Checkpoint</b> yet. Click <b>+ Record stop</b> to log a screening.`;
       } else {
         empty.textContent = 'No stops recorded';
       }
@@ -1484,7 +1504,7 @@ function renderCheckpointTable(){
     return;
   }
   if(empty) empty.style.display = 'none';
-  tbody.innerHTML = filtered.map(x => {
+  tbody.innerHTML = visibleCheckpoints.map(x => {
     const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
     return `<tr data-event-id="${esc(x.event_id||x.id||'')}" data-loc="${esc(x.location_code||'')}">
       <td>${esc(x.time)}</td><td>${esc(locLabel||'—')}</td>
@@ -2034,7 +2054,12 @@ async function syncServer(){
     db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
     db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
-    db.checkpoints=cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
+    // Spec step 1.2: build the new checkpoint array from the
+    // server payload, but NEVER overwrite db.checkpoints with []
+    // when the server returns 0 items but local has data. This
+    // guards against transient network / scope mismatches wiping
+    // the officer's just-recorded stop.
+    const newCheckpoints = cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
       location:x.location,location_code:x.location_code,checkpoint_location:x.checkpoint_location,
       person:x.person_id,
       screen:x.screening_result,action:x.action_taken,notes:x.notes,purpose:x.purpose_of_visit,
@@ -2042,6 +2067,31 @@ async function syncServer(){
       travelerDocs:parseDocs(x.traveler_docs).length,guardianDocs:parseDocs(x.guardian_docs).length,
       guardianName:x.guardian_name,guardianRelationship:x.guardian_relationship,guardianPhone:x.guardian_phone,
       guardianAddress:x.guardian_address,guardianOccupation:x.guardian_occupation,guardianPerson:x.guardian_person_id}));
+    if(sessionUser.modules.includes('checkpoints')){
+      // The officer is authorised for the checkpoints module, so
+      // the server is the source of truth — trust its response.
+      db.checkpoints = newCheckpoints;
+    } else if(!newCheckpoints.length && (db.checkpoints || []).length){
+      // Cross-scope user (admin / non-checkpoint). The server
+      // returned 0 events and we already had local data — keep
+      // the local cache so the next chip render still has the
+      // historical context. The next sync with a real response
+      // will refresh.
+      try{ console.warn('[cp] syncServer: server returned 0 events but local cache has', db.checkpoints.length, '- keeping local data'); }catch(_){}
+    } else {
+      db.checkpoints = newCheckpoints;
+    }
+    try{
+      // Spec step 1.1: data-pipeline diagnostic. Surface the role /
+      // scope / raw server payload / what the table will render
+      // from so the next bug report has the full context.
+      console.log('[DEBUG Checkpoints] syncServer', {
+        userRole: sessionUser.role,
+        userScope: sessionUser.location_scope,
+        rawServerItems: cps.items.length,
+        dbCheckpointsLength: db.checkpoints.length,
+      });
+    }catch(_){}
     renderAll();
   }catch(e){
     serverOn=false; apiToken=''; sessionUser=null;

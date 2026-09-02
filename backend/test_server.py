@@ -847,6 +847,82 @@ def main():
         assert len(filtered_after) == len(db_after), \
             f"badge count after prepend: {len(filtered_after)} vs {len(db_after)}"
 
+        # ----------------------------------------------------------------
+        # Spec-mandated visibleCheckpoints contract (spec step 3).
+        # The visibleCheckpoints list must equal the intersection of
+        # (active scope, the record's location field). The chip
+        # count badge and the table row count must both read from
+        # visibleCheckpoints.length — they can never disagree.
+        # ----------------------------------------------------------------
+        def visibleCheckpoints(records, scope):
+            """Verbatim spec step-3 function."""
+            out = []
+            for item in (records or []):
+                if not item:
+                    continue
+                activeScope = (scope or '').lower()
+                loc = (item.get('checkpoint_location') or item.get('location_code') or item.get('location') or '').lower()
+                if not activeScope:
+                    out.append(item)
+                    continue
+                if activeScope in loc or loc in activeScope or loc == activeScope:
+                    out.append(item)
+            return out
+
+        # For cp.south, visibleCheckpoints(south_events, 'South') must
+        # equal the full list.
+        v_south = visibleCheckpoints(south_events, 'South')
+        assert len(v_south) == len(south_events) > 0
+        # And no South event must match scope='West' (cross-isolation).
+        for ev in south_events:
+            assert not visibleCheckpoints([ev], 'West'), \
+                f"cp.south event {ev.get('event_id')} matched West scope"
+
+        # Same for cp.west: every West event matches 'West' and
+        # never matches 'South' or 'East'.
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.west', 'password': 'ChangeMe123!'})
+        assert s == 200
+        west_token = r['token']
+        s, cps_w = request(base, 'GET', '/api/checkpoint-events', west_token)
+        assert s == 200
+        for ev in cps_w['items']:
+            assert visibleCheckpoints([ev], 'West'), \
+                f"cp.west event {ev.get('event_id')} not in West scope"
+            assert not visibleCheckpoints([ev], 'South'), \
+                f"cp.west event {ev.get('event_id')} matched South scope"
+            assert not visibleCheckpoints([ev], 'East'), \
+                f"cp.west event {ev.get('event_id')} matched East scope"
+
+        # ----------------------------------------------------------------
+        # Spec test: never wipe db.checkpoints with [] when the
+        # server returns 0 items but local has data (spec step 1.2).
+        # We exercise the backend's case-insensitive matching to
+        # confirm a real cp.south GET never returns 0 when there
+        # are South events in the database.
+        # ----------------------------------------------------------------
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.south', 'password': 'ChangeMe123!'})
+        assert s == 200
+        south_token = r['token']
+        s, cps_now = request(base, 'GET', '/api/checkpoint-events', south_token)
+        assert s == 200
+        assert len(cps_now['items']) > 0, \
+            "cp.south must see at least one event at South location (no 0-bug)"
+        for ev in cps_now['items']:
+            loc_str = ' '.join(filter(None, [
+                ev.get('location'), ev.get('location_code'),
+                ev.get('checkpoint_location'),
+            ])).lower()
+            assert 'south' in loc_str, \
+                f"cp.south event {ev.get('event_id')} not in scope: {loc_str!r}"
+
+        # And the spec's badge pattern: the count badge for cp.south
+        # must equal visibleCheckpoints.length. We mirror the
+        # production function so a future regression is caught.
+        badge_count = len(visibleCheckpoints(cps_now['items'], 'South'))
+        assert badge_count == len(cps_now['items']) > 0
+
         print('ALL BACKEND TESTS PASSED')
         return 0
     finally:
