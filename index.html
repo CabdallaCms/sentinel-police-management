@@ -256,16 +256,35 @@ body.modal-open{overflow:hidden}
     <h2 id="dashSubhead" style="font-size:18px">Operations dashboard</h2>
     <div class="sub" id="dashSub">Loading…</div>
   </div>
-  <div><button class="btn ghost small" onclick="refreshDashboard()">↻ Refresh</button></div>
+  <div>
+    <span class="badge blue" id="dashStatus" style="margin-right:8px">Live</span>
+    <button class="btn ghost small" onclick="refreshDashboard()">↻ Refresh</button>
+  </div>
 </div>
 <div class="cards" id="dashboardCards">
   <div class="empty" style="grid-column:1/-1">Loading dashboard…</div>
 </div>
 <div class="grid2">
-<div class="panel"><div class="panel-head"><div><h2>Quick registration</h2><div class="sub" id="quickSub">Create a unit record with a central person link</div></div></div>
-<div class="grid2" id="quickActions"><button class="btn" disabled>+ Loading…</button></div>
-<div class="hint" id="quickHint" style="margin-top:16px"><b>Identity linking:</b> search a name or ID — the global person registry auto-completes and reuses the existing profile, appending new details instead of creating duplicates.</div></div>
-<div class="panel"><div class="panel-head"><div><h2>Recent activity</h2><div class="sub" id="activitySub">Operational feed</div></div></div><div class="timeline" id="activity"><div class="empty">Loading activity…</div></div></div>
+<div class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Real-time activity</h2>
+      <div class="sub" id="activitySub">Live operations feed</div>
+    </div>
+    <div class="badge gray" id="activityCount" style="display:none">0</div>
+  </div>
+  <div class="timeline" id="activity"><div class="empty">Loading activity…</div></div>
+</div>
+<div class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Quick registration</h2>
+      <div class="sub" id="quickSub">Create a unit record with a central person link</div>
+    </div>
+  </div>
+  <div class="grid2" id="quickActions"><button class="btn" disabled>+ Loading…</button></div>
+  <div class="hint" id="quickHint" style="margin-top:16px"><b>Identity linking:</b> search a name or ID — the global person registry auto-completes and reuses the existing profile, appending new details instead of creating duplicates.</div>
+</div>
 </div>
 </section>
 
@@ -1084,32 +1103,69 @@ function renderDashboard(){
   paintDashboard(d);
 }
 function fetchDashboard(){
+  // Fetch the role-scoped /api/dashboard payload and repaint the cards
+  // and real-time activity stream. On any error (transient network,
+  // 401, 5xx) we silently fall back to the local renderer so the
+  // officer never sees a "Not found" placeholder — the dashboard is a
+  // critical operations surface and must always be readable.
   if(!serverOn) return;
-  api('/api/dashboard').then(d=>{ db.dashboard = d; if(document.getElementById('dashboard').classList.contains('active')) paintDashboard(d); })
-    .catch(e=>{
-      document.getElementById('dashboardCards').innerHTML = '<div class="empty" style="grid-column:1/-1">Dashboard unavailable: '+esc(e.message||'request failed')+'</div>';
-    });
+  api('/api/dashboard').then(d=>{
+    db.dashboard = d || db.dashboard;
+    if(document.getElementById('dashboard').classList.contains('active')){
+      if(d) paintDashboard(d);
+    }
+  }).catch(()=>{
+    // Don't surface a hard error: fall back to the local dashboard so the
+    // officer can still see role-scoped metrics from the local cache.
+    db.dashboard = db.dashboard || null;
+    if(document.getElementById('dashboard').classList.contains('active')){
+      renderDashboardLocal();
+    }
+  });
 }
-function refreshDashboard(){ fetchDashboard(); }
+function refreshDashboard(){
+  if(serverOn){
+    fetchDashboard();
+  } else {
+    renderDashboardLocal();
+  }
+}
 function paintDashboardSkeleton(msg){
   document.getElementById('dashboardCards').innerHTML = '<div class="empty" style="grid-column:1/-1">'+esc(msg||'Loading…')+'</div>';
   document.getElementById('quickActions').innerHTML = '<button class="btn" disabled>Loading…</button>';
   document.getElementById('activity').innerHTML = '<div class="empty">Loading activity…</div>';
 }
 function paintDashboard(d){
+  if(!d) return;
   const sub = document.getElementById('dashSub');
   const subhead = document.getElementById('dashSubhead');
   if(sub) sub.textContent = d.subhead || ('Updated '+ (d.generated_at||'') +' · '+ (d.role||'') + (d.location_scope ? ' · '+d.location_scope+' Checkpoint' : ''));
   if(subhead) subhead.textContent = (d.is_admin ? 'Cross-unit Operations' : (d.location_scope ? (d.location_scope+' Checkpoint Operations') : ((d.role||'Module')+' Operations')));
 
-  // ---- KPI cards ----
+  // Live status pill — the dashboard is refreshed automatically on every
+  // page visit and on POST events so the data is always current.
+  const status = document.getElementById('dashStatus');
+  if(status){
+    if(d.degraded){
+      status.textContent = 'Cached';
+      status.className = 'badge amber';
+    } else if(serverOn){
+      status.textContent = 'Live';
+      status.className = 'badge green';
+    } else {
+      status.textContent = 'Local';
+      status.className = 'badge gray';
+    }
+  }
+
+  // ---- KPI cards (mini-analytics tailored to the officer's job) ----
   const cards = d.cards || [];
   const cardsEl = document.getElementById('dashboardCards');
   if(!cards.length){
     cardsEl.innerHTML = '<div class="empty" style="grid-column:1/-1">No metrics available for your role.</div>';
   } else {
     cardsEl.innerHTML = cards.map(c =>
-      `<div class="card" data-module="${esc(c.module||'')}" data-card-id="${esc(c.id||'')}">
+      `<div class="card" data-module="${esc(c.module||'')}" data-card-id="${esc(c.id||'')}" data-card-kind="${esc(c.kind||'')}">
         <div class="kpi"><span class="label">${esc(c.label)}</span><span class="module-icon">${esc(c.icon||'◯')}</span></div>
         <div class="metric">${esc(c.value||0)}</div>
         <div class="trend" ${c.trend_kind==='alert'?'style="color:var(--red)"':''}>${esc(c.trend||'')}</div>
@@ -1117,7 +1173,7 @@ function paintDashboard(d){
     ).join('');
   }
 
-  // ---- Quick-action buttons ----
+  // ---- Quick-action buttons (only for accessible units) ----
   const quick = d.quick_actions || [];
   const quickEl = document.getElementById('quickActions');
   if(!quick.length){
@@ -1142,12 +1198,12 @@ function paintDashboard(d){
     }
   }
 
-  // ---- Activity feed ----
+  // ---- Real-time activity stream ----
   const activitySub = document.getElementById('activitySub');
   if(activitySub){
-    if(d.is_admin) activitySub.textContent = 'Cross-unit operational feed';
-    else if(d.location_scope) activitySub.textContent = d.location_scope+' Checkpoint operational feed';
-    else activitySub.textContent = 'Operational feed for your module';
+    if(d.is_admin) activitySub.textContent = 'Cross-unit live feed';
+    else if(d.location_scope) activitySub.textContent = d.location_scope+' Checkpoint live feed';
+    else activitySub.textContent = 'Live feed for your module';
   }
   paintActivityFromData(d.activity || []);
 }
@@ -1160,43 +1216,97 @@ function paintActivity(){
 function paintActivityFromData(events){
   const el = document.getElementById('activity');
   if(!el) return;
+  const count = document.getElementById('activityCount');
+  if(count){
+    if(events.length){ count.style.display = ''; count.textContent = events.length; }
+    else count.style.display = 'none';
+  }
   if(!events.length){
-    el.innerHTML = '<div class="empty">No recent activity to show for your role / location.</div>';
+    el.innerHTML = '<div class="empty">No recent activity to show for your role / location. New actions will appear here in real time.</div>';
     return;
   }
   el.innerHTML = events.map(e => {
     const colorVar = ({blue:'var(--blue)',cyan:'var(--cyan)',amber:'var(--amber)',green:'var(--green)',red:'var(--red)'})[e.dot_color] || 'var(--blue)';
     const moduleLabel = ({fingerprint:'Fingerprint Unit',airport:'Airport Control',cid:'CID Criminal Unit',checkpoints:(e.location_code ? e.location_code+' Checkpoint' : 'Checkpoint')})[e.module] || e.module || '';
-    return `<div class="event">
+    const when = e.time_ago || (e.at ? esc((e.at||'').replace('T',' ').slice(0,16)) : '');
+    return `<div class="event" data-module="${esc(e.module||'')}" data-event-id="${esc(e.id||'')}">
       <span class="dot" style="background:${colorVar}"></span>
-      <div><b>${esc(e.title||e.id||'')}</b>
-      <small>${esc(e.subtitle||'')}${moduleLabel?' · '+esc(moduleLabel):''}${e.at?' · '+esc((e.at||'').replace('T',' ').slice(0,16)):''}</small></div>
+      <div style="flex:1;min-width:0">
+        <b>${esc(e.title||e.id||'')}</b>
+        <small>${esc(e.subtitle||'')}${moduleLabel?' · '+esc(moduleLabel):''}</small>
+      </div>
+      <span class="badge gray" style="flex:none;font-size:10px">${esc(when)}</span>
     </div>`;
   }).join('');
 }
 function buildLocalActivity(){
   // Local / offline fallback: build a small activity feed filtered to the
-  // signed-in user's modules / scope. Mirrors the backend's role-aware feed.
+  // signed-in user's modules / scope. Mirrors the backend's role-aware
+  // feed so the same scoped view is rendered in offline mode.
   const mods = (sessionUser && sessionUser.modules) || ['dashboard'];
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
   const scope = (sessionUser && sessionUser.location_scope) || '';
+  const now = Date.now()/1000;
+  const fmtAgo = (iso)=>{
+    if(!iso) return '';
+    const s = String(iso).replace('T',' ');
+    let ts;
+    try{
+      if(s.length >= 19 && s[10] === ' '){
+        ts = new Date(s.slice(0,19) + 'Z').getTime()/1000;
+      } else if(s.length === 10){
+        ts = new Date(s + 'T12:00:00Z').getTime()/1000;
+      } else return '';
+    } catch(e){ return ''; }
+    const d = Math.max(0, Math.round(now - ts));
+    if(d < 60) return 'just now';
+    if(d < 3600) return (d/60|0) + ' min ago';
+    if(d < 86400) return (d/3600|0) + ' hr ago';
+    return (d/86400|0) + ' d ago';
+  };
   const events = [];
   if(isAdmin || mods.includes('fingerprint')){
-    db.fingerprint.slice(0,6).forEach(x=>events.push({module:'fingerprint',id:x.id,title:x.id+' · '+x.purpose,subtitle:x.status,at:'',dot_color:'blue'}));
-  }
-  if(isAdmin || mods.includes('airport')){
-    db.airport.slice(0,6).forEach(x=>events.push({module:'airport',id:x.id,title:(x.route||x.flight||x.id),subtitle:x.move,at:x.date,dot_color:'cyan'}));
-  }
-  if(isAdmin || mods.includes('cid')){
-    db.cases.slice(0,6).forEach(x=>events.push({module:'cid',id:x.id,title:x.id+' · '+x.category,subtitle:x.status,at:'',dot_color:'amber'}));
-  }
-  if(isAdmin || mods.includes('checkpoints')){
-    db.checkpoints.slice(0,6).forEach(x=>{
-      if(scope && x.location_code && x.location_code !== scope) return;
-      const lbl = x.checkpoint_location || (x.location_code?x.location_code+' Checkpoint':x.location);
-      events.push({module:'checkpoints',id:x.event_id||x.id,title:lbl,subtitle:x.screen,at:x.time,dot_color:'green',location_code:x.location_code});
+    db.fingerprint.slice(0,6).forEach(x=>{
+      const person = db.people.find(p=>p.id===x.person);
+      events.push({module:'fingerprint',id:x.id,title:'Clearance · '+(person?.name||x.person),subtitle:(x.purpose||'')+' · '+(x.status||''),at:'',time_ago:'',dot_color:'blue'});
     });
   }
+  if(isAdmin || mods.includes('airport')){
+    db.airport.slice(0,6).forEach(x=>{
+      const person = db.people.find(p=>p.id===x.person);
+      events.push({module:'airport',id:x.id,title:(x.move||'')+' · '+(person?.name||x.person),subtitle:(x.route||(x.origin+' / '+x.dest)||''),at:x.date,time_ago:fmtAgo(x.date),dot_color:'cyan'});
+    });
+  }
+  if(isAdmin || mods.includes('cid')){
+    db.cases.slice(0,6).forEach(x=>events.push({module:'cid',id:x.id,title:'Case · '+(x.category||''),subtitle:'CID · '+(x.status||''),at:'',time_ago:'',dot_color:'amber'}));
+  }
+  if(isAdmin || mods.includes('checkpoints')){
+    db.checkpoints.slice(0,8).forEach(x=>{
+      // Match flexibly: any of (location_code, checkpoint_location,
+      // location) may carry the officer's scope.
+      if(scope){
+        const loc = (x.checkpoint_location||'').toLowerCase();
+        const code = (x.location_code||'').toLowerCase();
+        const bare = (x.location||'').toLowerCase();
+        const matches = code === scope.toLowerCase() || loc === scope.toLowerCase() || loc === (scope.toLowerCase()+' checkpoint') || bare === scope.toLowerCase();
+        if(!matches) return;
+      }
+      const lbl = x.checkpoint_location || (x.location_code?x.location_code+' Checkpoint':x.location);
+      const person = db.people.find(p=>p.id===x.person);
+      const verb = (x.screen === 'Flagged match') ? 'Flagged' : 'Screened';
+      events.push({
+        module:'checkpoints',
+        id:x.event_id||x.id,
+        title:verb+' '+(person?.name||x.person),
+        subtitle:lbl+' · '+(x.screen||''),
+        at:x.time||'',
+        time_ago:fmtAgo(x.time),
+        dot_color: x.screen==='Flagged match' ? 'red' : 'green',
+        location_code: x.location_code,
+      });
+    });
+  }
+  events.sort((a,b)=> (b.at||'').localeCompare(a.at||''));
   return events;
 }
 function renderDashboardLocal(){
@@ -1213,29 +1323,56 @@ function renderDashboardLocal(){
     cards.push({id:'pending_clearances',label:'Pending clearances',icon:'⌁',value:db.fingerprint.filter(x=>x.status==='Pending Review').length,trend:'Require officer review',module:'fingerprint'});
     cards.push({id:'active_alerts',label:'Active suspect alerts',icon:'!',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length,trend:'Restricted operational data',trend_kind:'alert',module:'cid'});
   } else if(isCheckpoint){
-    const local = db.checkpoints.filter(x => !scope || x.location_code === scope || x.location === scope);
+    // Match flexibly across location_code / checkpoint_location / location.
+    const sc = (scope||'').toLowerCase();
+    const local = db.checkpoints.filter(x => {
+      if(!sc) return true;
+      const code = (x.location_code||'').toLowerCase();
+      const lbl = (x.checkpoint_location||'').toLowerCase();
+      const bare = (x.location||'').toLowerCase();
+      return code === sc || lbl === sc || lbl === (sc+' checkpoint') || bare === sc;
+    });
     const today = new Date().toISOString().slice(0,10);
     const todayCount = local.filter(x => (x.time||'').slice(0,10) === today || (x.created_at||'').slice(0,10) === today).length;
     const flagged = local.filter(x => x.screen === 'Flagged match').length;
-    cards.push({id:'cp_screenings_today',label:`${scope||'Local'} Checkpoint screenings today`,icon:'⊙',value:todayCount,trend:`Stops recorded at ${scope||'this'} Checkpoint`,module:'checkpoints',location_scope:scope});
-    cards.push({id:'cp_local_alerts',label:`${scope||'Local'} local alerts`,icon:'!',value:flagged,trend:`Flagged matches at ${scope||'this'} Checkpoint`,trend_kind:'alert',module:'checkpoints',location_scope:scope});
-    cards.push({id:'cp_total_events',label:`${scope||'Local'} total screenings`,icon:'⌁',value:local.length,trend:`All-time screening events`,module:'checkpoints',location_scope:scope});
-    cards.push({id:'cp_unique_travelers',label:`${scope||'Local'} unique travelers`,icon:'◉',value:new Set(local.map(x=>x.person)).size,trend:`Distinct Central Persons screened`,module:'checkpoints',location_scope:scope});
+    // Peak hour (last 7 days) — simple JS implementation
+    const sevenDaysAgo = Date.now() - 7*86400*1000;
+    const buckets = {};
+    local.forEach(x => {
+      const t = (x.time || x.created_at || '').replace('T',' ');
+      const m = t.match(/(\d{2}):(\d{2})/);
+      if(!m) return;
+      const ts = new Date(t.slice(0,10)+'T'+m[0]+':00Z').getTime();
+      if(ts < sevenDaysAgo) return;
+      const hh = parseInt(m[1],10);
+      const bucket = hh;  // 2-hour bucket start
+      buckets[bucket] = (buckets[bucket]||0)+1;
+    });
+    const peakEntry = Object.entries(buckets).sort((a,b)=>b[1]-a[1])[0];
+    const peakLabel = peakEntry ? `${String(peakEntry[0]).padStart(2,'0')}:00 – ${String((parseInt(peakEntry[0])+2)%24).padStart(2,'0')}:00` : '—';
+    const peakValue = peakEntry ? peakEntry[1] : 0;
+    cards.push({id:'cp_screenings_today',label:`${scope||'Local'} · screenings today`,icon:'⊙',value:todayCount,trend:`Stops recorded at ${scope||'this'} Checkpoint`,module:'checkpoints',location_scope:scope,kind:'cp_screenings_today'});
+    cards.push({id:'cp_travelers_flagged',label:`${scope||'Local'} · travelers flagged`,icon:'!',value:flagged,trend:`Flagged matches at ${scope||'this'} Checkpoint today`,trend_kind:'alert',module:'checkpoints',location_scope:scope,kind:'cp_travelers_flagged'});
+    cards.push({id:'cp_total_travelers',label:`${scope||'Local'} · total travelers`,icon:'◉',value:new Set(local.map(x=>x.person)).size,trend:`Distinct Central Persons screened at ${scope||'this'} · ${local.length} total screening(s)`,module:'checkpoints',location_scope:scope,kind:'cp_total_travelers'});
+    cards.push({id:'cp_peak_hour',label:`${scope||'Local'} · peak travel hour`,icon:'⌁',value:peakLabel,trend:`${peakValue} stop(s) in the last 7 days`,module:'checkpoints',location_scope:scope,kind:'cp_peak_hour'});
   } else if(role === 'FingerprintUnit'){
+    const today = new Date().toISOString().slice(0,10);
     cards.push({id:'fp_pending',label:'Pending clearances',icon:'⌁',value:db.fingerprint.filter(x=>x.status==='Pending Review').length,trend:'Require officer review',module:'fingerprint'});
+    cards.push({id:'fp_today',label:'Applications today',icon:'◉',value:db.fingerprint.filter(x=>(x.time||'').slice(0,10)===today).length,trend:'New intake today',module:'fingerprint'});
     cards.push({id:'fp_approved',label:'Approved clearances',icon:'✓',value:db.fingerprint.filter(x=>x.status==='Approved').length,trend:'Certificates issued',module:'fingerprint'});
-    cards.push({id:'fp_total',label:'Total applications',icon:'◉',value:db.fingerprint.length,trend:'All-time clearance volume',module:'fingerprint'});
+    cards.push({id:'fp_total',label:'Total applications',icon:'⌂',value:db.fingerprint.length,trend:'All-time clearance volume',module:'fingerprint'});
   } else if(role === 'AirportControl'){
     const today = new Date().toISOString().slice(0,10);
-    cards.push({id:'ap_today',label:'Passenger movements today',icon:'✈',value:db.airport.filter(x=>x.date===today).length,trend:'Travel date '+today,module:'airport'});
-    cards.push({id:'ap_arrivals',label:'Arrivals',icon:'↓',value:db.airport.filter(x=>x.move==='Arrival').length,trend:'All-time inbound movements',module:'airport'});
-    cards.push({id:'ap_departures',label:'Departures',icon:'↑',value:db.airport.filter(x=>x.move==='Departure').length,trend:'All-time outbound movements',module:'airport'});
+    cards.push({id:'ap_today',label:'Movements today',icon:'✈',value:db.airport.filter(x=>x.date===today).length,trend:'Travel date '+today,module:'airport'});
+    cards.push({id:'ap_arrivals',label:'Arrivals (all-time)',icon:'↓',value:db.airport.filter(x=>x.move==='Arrival').length,trend:'Inbound movements',module:'airport'});
+    cards.push({id:'ap_departures',label:'Departures (all-time)',icon:'↑',value:db.airport.filter(x=>x.move==='Departure').length,trend:'Outbound movements',module:'airport'});
     cards.push({id:'ap_total',label:'Total movements',icon:'◉',value:db.airport.length,trend:'All-time passenger register',module:'airport'});
   } else if(role === 'CIDUnit'){
+    const today = new Date().toISOString().slice(0,10);
     cards.push({id:'cid_open',label:'Open crime cases',icon:'⌂',value:db.cases.filter(x=>x.status!=='Closed').length,trend:'Active investigations',module:'cid'});
     cards.push({id:'cid_active_alerts',label:'Active suspect alerts',icon:'!',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length,trend:'Restricted operational data',trend_kind:'alert',module:'cid'});
-    cards.push({id:'cid_total',label:'Total cases',icon:'◉',value:db.cases.length,trend:'All-time case volume',module:'cid'});
-    cards.push({id:'cid_suspects',label:'Suspects on file',icon:'⌂',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect').length,trend:'All-time suspect listings',module:'cid'});
+    cards.push({id:'cid_cases_today',label:'Cases reported today',icon:'◉',value:db.cases.filter(x=>(x.time||'').slice(0,10)===today).length,trend:'New intake today',module:'cid'});
+    cards.push({id:'cid_suspects',label:'Suspects on file',icon:'⌁',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect').length,trend:'All-time suspect listings',module:'cid'});
   }
   const quick = [];
   if(isAdmin || role==='AirportControl') quick.push({id:'add_airport',label:'+ Airport passenger',kind:'primary',page:'airport',module:'airport'});
@@ -1247,7 +1384,7 @@ function renderDashboardLocal(){
     role: role, is_admin: isAdmin, location_scope: scope,
     cards: cards, quick_actions: quick,
     activity: buildLocalActivity(),
-    subhead: isAdmin ? 'System overview · all units' : (isCheckpoint ? (scope+' Checkpoint operations') : ((sessionUser && sessionUser.role_label) || role) + ' · module overview'),
+    subhead: isAdmin ? 'System overview · all units' : (isCheckpoint ? (scope+' Checkpoint operations · live') : ((sessionUser && sessionUser.role_label) || role) + ' · module overview'),
   };
   db.dashboard = d;
   paintDashboard(d);

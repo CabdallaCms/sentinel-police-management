@@ -463,21 +463,29 @@ def main():
         # checkpoint quick action. They must never see admin / cross-unit
         # cards or quick actions.
         south_card_ids = {c['id'] for c in d_south['cards']}
-        assert south_card_ids == {'cp_screenings_today', 'cp_local_alerts',
-                                  'cp_total_events', 'cp_unique_travelers'}, d_south['cards']
+        assert south_card_ids == {'cp_screenings_today', 'cp_travelers_flagged',
+                                  'cp_total_travelers', 'cp_peak_hour'}, d_south['cards']
         assert {q['id'] for q in d_south['quick_actions']} == {'add_checkpoint'}, d_south['quick_actions']
         # Card labels must explicitly mention 'South' so the officer
         # can see at a glance which location the metrics are for.
         for c in d_south['cards']:
             assert 'South' in c['label'], c
             assert c.get('location_scope') == 'South', c
-        # Activity feed for cp.south must be empty (no South events in seed
-        # were created after the dashboard wiring). All activity items
-        # (if any) must belong to the checkpoints module with the correct
-        # location_code.
+        # The peak-hour card value is a time-range string like "08:00 – 10:00".
+        peak = next(c for c in d_south['cards'] if c['id'] == 'cp_peak_hour')
+        assert isinstance(peak['value'], str) and ('–' in peak['value'] or peak['value'] == '—'), peak
+        # Activity feed for cp.south must include only checkpoints module
+        # entries that match the South location flexibly.
         for e in d_south['activity']:
             assert e['module'] == 'checkpoints', e
             assert e.get('location_code') == 'South', e
+            # Real-time feed rows should carry a human-readable time_ago
+            # and the actual screened person in the title.
+            assert e.get('time_ago') is not None, e
+            assert e.get('title'), e
+            # The title should mention the screened / flagged name. Seed
+            # person is 'Maxamed Nuur Cali Awil' for the only South event.
+            assert 'Maxamed' in e['title'] or 'Screened' in e['title'] or 'Flagged' in e['title'], e
 
         s, d_east = request(base, 'GET', '/api/dashboard', tokens['cp.east'])
         assert s == 200, d_east
@@ -488,7 +496,7 @@ def main():
         # Unit officers see only their module's cards / quick action.
         s, d_fp = request(base, 'GET', '/api/dashboard', tokens['fp.officer'])
         assert s == 200, d_fp
-        assert {c['id'] for c in d_fp['cards']} == {'fp_pending', 'fp_approved', 'fp_total'}, d_fp['cards']
+        assert {c['id'] for c in d_fp['cards']} == {'fp_pending', 'fp_today', 'fp_approved', 'fp_total'}, d_fp['cards']
         assert {q['id'] for q in d_fp['quick_actions']} == {'add_clearance'}, d_fp['quick_actions']
         for e in d_fp['activity']:
             assert e['module'] == 'fingerprint', e
@@ -502,10 +510,26 @@ def main():
 
         s, d_cid = request(base, 'GET', '/api/dashboard', tokens['cid.officer'])
         assert s == 200, d_cid
-        assert {c['id'] for c in d_cid['cards']} == {'cid_open', 'cid_active_alerts', 'cid_total', 'cid_suspects'}, d_cid['cards']
+        assert {c['id'] for c in d_cid['cards']} == {'cid_open', 'cid_active_alerts', 'cid_cases_today', 'cid_suspects'}, d_cid['cards']
         assert {q['id'] for q in d_cid['quick_actions']} == {'add_case'}, d_cid['quick_actions']
         for e in d_cid['activity']:
             assert e['module'] == 'cid', e
+
+        # ---- /api/dashboard routing resilience ---------------------------
+        # Trailing slash, sub-paths and unknown query strings must all
+        # still return the dashboard payload — never 404.
+        for path in ('/api/dashboard', '/api/dashboard/', '/api/dashboard/summary',
+                     '/api/dashboard?range=24h', '/api/dashboard?role=cp.south'):
+            s, body = request(base, 'GET', path, tokens['admin'])
+            assert s == 200, (path, body)
+            assert 'cards' in body and 'activity' in body, (path, body)
+
+        # Missing / invalid auth tokens must return 401 (and never 404),
+        # so the frontend can show a proper "please sign in" message.
+        s, body = request(base, 'GET', '/api/dashboard')
+        assert s == 401, body
+        s, body = request(base, 'GET', '/api/dashboard', token='bogus-token-xxx')
+        assert s == 401, body
 
         # ---- Identity Profile: explicit checkpoint location pills ----
         # Find the seeded checkpoint event's person and verify the
@@ -627,18 +651,20 @@ def main():
         all_for_new = [x for x in all_evs['items'] if x['event_id'] == new_event_id]
         assert len(all_for_new) == 1, all_for_new
         assert all_for_new[0]['location_code'] == 'South', all_for_new[0]
-        # The new event bumps cp.south's dashboard totals (total screenings
-        # and unique travelers are absolute counts, not "today" counts).
+        # The new event bumps cp.south's dashboard totals (total travelers
+        # is the absolute count of distinct Central Persons screened at the
+        # location, so it must include the new traveler).
         s, d_after = request(base, 'GET', '/api/dashboard', tokens['cp.south'])
-        total_card = next(c for c in d_after['cards'] if c['id'] == 'cp_total_events')
-        unique_card = next(c for c in d_after['cards'] if c['id'] == 'cp_unique_travelers')
-        assert total_card['value'] >= 1, total_card
+        unique_card = next(c for c in d_after['cards'] if c['id'] == 'cp_total_travelers')
+        assert unique_card['value'] >= 1, unique_card
         # Dashboard activity feed for cp.south must now include the new
-        # event with the explicit "South Checkpoint" title and South code.
+        # event with the explicit South Checkpoint title, the South
+        # location_code, and a "time_ago" stamp.
         feed = [e for e in d_after['activity'] if e['id'] == new_event_id]
         assert feed, d_after['activity']
-        assert feed[0]['title'] == 'South Checkpoint', feed[0]
+        assert 'South Checkpoint' in feed[0]['title'] or 'South Checkpoint' in feed[0].get('subtitle',''), feed[0]
         assert feed[0]['location_code'] == 'South', feed[0]
+        assert feed[0].get('time_ago'), feed[0]
 
         print('ALL BACKEND TESTS PASSED')
         return 0

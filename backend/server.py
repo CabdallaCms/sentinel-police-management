@@ -888,318 +888,366 @@ def build_dashboard(c, user):
     """Role- and location-scoped operations dashboard payload.
 
     Returns a single JSON envelope the frontend renders as KPI cards,
-    quick-action buttons, and an activity feed. Every field is filtered
-    to the caller's modules and (for Checkpoint users) their assigned
-    location scope, so the dashboard can never leak metrics for a unit
-    or location the officer is not authorised to see.
-    """
-    role = user.get('role') or ''
-    is_admin = (role == ROLE_ADMIN)
-    scope = checkpoint_scope(user)  # None for admins, '' for non-checkpoint, short code otherwise
-    today = time.strftime('%Y-%m-%d', time.gmtime())
+    quick-action buttons, and a real-time activity feed. Every field
+    is filtered to the caller's modules and (for Checkpoint users)
+    their assigned location scope, so the dashboard can never leak
+    metrics for a unit or location the officer is not authorised to
+    see.
 
-    # ---- KPI cards ---------------------------------------------------------
+    Each unit role receives a tailored set of mini-analytics that
+    summarise their specific operational responsibilities (e.g.
+    'Peak Travel Hour' for Checkpoint officers, 'Open investigation
+    cases' for CID, 'Today's passenger movements' for Airport). The
+    activity feed is enriched with the actual screened-person /
+    traveller / suspect name and a human-friendly "N mins ago" stamp
+    so the real-time feed reads like a live operations log.
+    """
+    role = (user.get('role') or '') if user else ''
+    is_admin = (role == ROLE_ADMIN)
+    scope = checkpoint_scope(user) if user else None
+    now_ts = time.time()
+    today = time.strftime('%Y-%m-%d', time.gmtime(now_ts))
+    is_checkpoint = bool(role and role in (ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST))
+
+    def cp_scope_sql():
+        """Flexible match against any of the four location columns so a row
+        that was just saved with the friendly checkpoint label is returned
+        in the very next poll even if `location_code` was not populated."""
+        if not scope: return ("", ())
+        sql = ("WHERE (ce.location_code=? OR ce.checkpoint_location=? "
+               "OR ce.checkpoint_location=? OR ce.location=?)")
+        return (sql, (scope, scope, f"{scope} Checkpoint", scope))
+
+    # ---- KPI cards (mini-analytics) ---------------------------------------
     cards = []
     if is_admin:
-        cards.append({
-            'id': 'central_persons',
-            'label': 'Central persons',
-            'icon': '◉',
-            'value': c.execute('SELECT COUNT(*) FROM persons').fetchone()[0],
-            'trend': 'Unified identity records',
-            'module': 'people',
-        })
-        cards.append({
-            'id': 'open_cases',
-            'label': 'Open crime cases',
-            'icon': '⌂',
-            'value': c.execute("SELECT COUNT(*) FROM crime_cases WHERE status<>'Closed'").fetchone()[0],
-            'trend': 'Active investigations',
-            'module': 'cid',
-        })
-        cards.append({
-            'id': 'pending_clearances',
-            'label': 'Pending clearances',
-            'icon': '⌁',
-            'value': c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Pending Review'").fetchone()[0],
-            'trend': 'Require officer review',
-            'module': 'fingerprint',
-        })
-        cards.append({
-            'id': 'active_alerts',
-            'label': 'Active suspect alerts',
-            'icon': '!',
-            'value': c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
-            'trend': 'Restricted operational data',
-            'trend_kind': 'alert',
-            'module': 'cid',
-        })
-    elif role == ROLE_CHECKPOINT_SOUTH or role == ROLE_CHECKPOINT_EAST or role == ROLE_CHECKPOINT_WEST:
-        # Checkpoint users see only their assigned location's metrics. The
-        # spec calls for a "screenings today" tile and a "local alerts" tile
-        # and explicit, location-scoped labels.
-        cp_filter = "WHERE ce.location_code=?" if scope else "WHERE 1=1"
-        cp_args = (scope,) if scope else ()
-        screenings_today = c.execute(
-            f"SELECT COUNT(*) FROM checkpoint_events ce {cp_filter} "
-            f"AND substr(ce.created_at,1,10)=?",
-            (*cp_args, today)).fetchone()[0]
-        flagged_today = c.execute(
-            f"SELECT COUNT(*) FROM checkpoint_events ce {cp_filter} "
-            f"AND ce.screening_result='Flagged match' "
-            f"AND substr(ce.created_at,1,10)=?",
-            (*cp_args, today)).fetchone()[0]
-        total_cp = c.execute(
-            f"SELECT COUNT(*) FROM checkpoint_events ce {cp_filter}", cp_args).fetchone()[0]
-        local_persons = c.execute(
-            "SELECT COUNT(DISTINCT ce.person_id) FROM checkpoint_events ce " +
-            (f"WHERE ce.location_code=?" if scope else "WHERE 1=1"),
-            cp_args).fetchone()[0]
-        cards.append({
-            'id': 'cp_screenings_today',
-            'label': f'{scope} Checkpoint screenings today',
-            'icon': '⊙',
-            'value': screenings_today,
-            'trend': f'Stops recorded at {scope} Checkpoint · {today}',
-            'module': 'checkpoints',
-            'location_scope': scope,
-        })
-        cards.append({
-            'id': 'cp_local_alerts',
-            'label': f'{scope} local alerts',
-            'icon': '!',
-            'value': flagged_today,
-            'trend': f'Flagged matches today at {scope} Checkpoint',
-            'trend_kind': 'alert',
-            'module': 'checkpoints',
-            'location_scope': scope,
-        })
-        cards.append({
-            'id': 'cp_total_events',
-            'label': f'{scope} total screenings',
-            'icon': '⌁',
-            'value': total_cp,
-            'trend': f'All-time screening events at {scope} Checkpoint',
-            'module': 'checkpoints',
-            'location_scope': scope,
-        })
-        cards.append({
-            'id': 'cp_unique_travelers',
-            'label': f'{scope} unique travelers',
-            'icon': '◉',
-            'value': local_persons,
-            'trend': f'Distinct Central Persons screened at {scope} Checkpoint',
-            'module': 'checkpoints',
-            'location_scope': scope,
-        })
+        cards.extend(_admin_dashboard_cards(c))
+    elif is_checkpoint:
+        cards.extend(_checkpoint_dashboard_cards(c, scope, today, cp_scope_sql))
     elif role == ROLE_FINGERPRINT:
-        cards.append({
-            'id': 'fp_pending',
-            'label': 'Pending clearances',
-            'icon': '⌁',
-            'value': c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Pending Review'").fetchone()[0],
-            'trend': 'Require officer review',
-            'module': 'fingerprint',
-        })
-        cards.append({
-            'id': 'fp_approved',
-            'label': 'Approved clearances',
-            'icon': '✓',
-            'value': c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Approved'").fetchone()[0],
-            'trend': 'Certificates issued',
-            'module': 'fingerprint',
-        })
-        cards.append({
-            'id': 'fp_total',
-            'label': 'Total applications',
-            'icon': '◉',
-            'value': c.execute('SELECT COUNT(*) FROM clearance_applications').fetchone()[0],
-            'trend': 'All-time clearance volume',
-            'module': 'fingerprint',
-        })
+        cards.extend(_fingerprint_dashboard_cards(c, today))
     elif role == ROLE_AIRPORT:
-        total = c.execute('SELECT COUNT(*) FROM airport_passengers').fetchone()[0]
-        arrivals = c.execute("SELECT COUNT(*) FROM airport_passengers WHERE movement='Arrival'").fetchone()[0]
-        departures = c.execute("SELECT COUNT(*) FROM airport_passengers WHERE movement='Departure'").fetchone()[0]
-        today_movements = c.execute(
-            "SELECT COUNT(*) FROM airport_passengers WHERE travel_date=?", (today,)).fetchone()[0]
-        cards.append({
-            'id': 'ap_today',
-            'label': 'Passenger movements today',
-            'icon': '✈',
-            'value': today_movements,
-            'trend': f'Travel date {today}',
-            'module': 'airport',
-        })
-        cards.append({
-            'id': 'ap_arrivals',
-            'label': 'Arrivals',
-            'icon': '↓',
-            'value': arrivals,
-            'trend': 'All-time inbound movements',
-            'module': 'airport',
-        })
-        cards.append({
-            'id': 'ap_departures',
-            'label': 'Departures',
-            'icon': '↑',
-            'value': departures,
-            'trend': 'All-time outbound movements',
-            'module': 'airport',
-        })
-        cards.append({
-            'id': 'ap_total',
-            'label': 'Total movements',
-            'icon': '◉',
-            'value': total,
-            'trend': 'All-time passenger register',
-            'module': 'airport',
-        })
+        cards.extend(_airport_dashboard_cards(c, today))
     elif role == ROLE_CID:
-        cards.append({
-            'id': 'cid_open',
-            'label': 'Open crime cases',
-            'icon': '⌂',
-            'value': c.execute("SELECT COUNT(*) FROM crime_cases WHERE status<>'Closed'").fetchone()[0],
-            'trend': 'Active investigations',
-            'module': 'cid',
-        })
-        cards.append({
-            'id': 'cid_active_alerts',
-            'label': 'Active suspect alerts',
-            'icon': '!',
-            'value': c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
-            'trend': 'Restricted operational data',
-            'trend_kind': 'alert',
-            'module': 'cid',
-        })
-        cards.append({
-            'id': 'cid_total',
-            'label': 'Total cases',
-            'icon': '◉',
-            'value': c.execute('SELECT COUNT(*) FROM crime_cases').fetchone()[0],
-            'trend': 'All-time case volume',
-            'module': 'cid',
-        })
-        cards.append({
-            'id': 'cid_suspects',
-            'label': 'Suspects on file',
-            'icon': '⌂',
-            'value': c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect'").fetchone()[0],
-            'trend': 'All-time suspect listings',
-            'module': 'cid',
-        })
+        cards.extend(_cid_dashboard_cards(c, today))
 
     # ---- Quick-registration buttons ----------------------------------------
-    # Only buttons for units the user can actually access are surfaced.
     quick = []
     if is_admin or role == ROLE_AIRPORT:
-        quick.append({
-            'id': 'add_airport',
-            'label': '+ Airport passenger',
-            'kind': 'primary',
-            'page': 'airport',
-            'module': 'airport',
-        })
+        quick.append({'id':'add_airport','label':'+ Airport passenger','kind':'primary','page':'airport','module':'airport'})
     if is_admin or role == ROLE_FINGERPRINT:
-        quick.append({
-            'id': 'add_clearance',
-            'label': '+ Clearance application',
-            'kind': 'secondary',
-            'page': 'fingerprint',
-            'module': 'fingerprint',
-        })
+        quick.append({'id':'add_clearance','label':'+ Clearance application','kind':'secondary','page':'fingerprint','module':'fingerprint'})
     if is_admin or role == ROLE_CID:
-        quick.append({
-            'id': 'add_case',
-            'label': '+ New crime case',
-            'kind': 'secondary',
-            'page': 'cid',
-            'module': 'cid',
-        })
-    if is_admin or (role and role.startswith('Checkpoint')):
-        quick.append({
-            'id': 'add_checkpoint',
-            'label': '+ Record checkpoint stop',
-            'kind': 'primary',
-            'page': 'checkpoints',
-            'module': 'checkpoints',
-        })
-    # Checkpoint users get no Airport / Clearance / Case buttons; the spec
-    # says "Hide buttons for units the user cannot access".
+        quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
+    if is_admin or is_checkpoint:
+        quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
 
-    # ---- Activity feed (filtered to the user's scope) ----------------------
-    # Per-module events, newest first. Each event carries its source module
-    # so the frontend can colour-code the dot and the frontend can omit
-    # entries the user is not allowed to see.
+    # ---- Real-time activity stream (filtered to the user's scope) ---------
+    events = _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_scope_sql)
+
+    return {
+        'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now_ts)),
+        'role': role,
+        'is_admin': is_admin,
+        'location_scope': scope,
+        'modules': sorted(ROLE_MODULES.get(role, set())),
+        'cards': cards,
+        'quick_actions': quick,
+        'activity': events,
+        'stream': events[:8],
+        'subhead': (
+            'System overview · all units' if is_admin else
+            (f'{scope} Checkpoint operations · live' if is_checkpoint else
+             f'{ROLE_LABELS.get(role, role)} · live operations feed')
+        ),
+    }
+
+
+def _admin_dashboard_cards(c):
+    return [
+        {'id':'central_persons','label':'Central persons','icon':'◉',
+         'value':c.execute('SELECT COUNT(*) FROM persons').fetchone()[0],
+         'trend':'Unified identity records','module':'people'},
+        {'id':'open_cases','label':'Open crime cases','icon':'⌂',
+         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE status<>'Closed'").fetchone()[0],
+         'trend':'Active investigations','module':'cid'},
+        {'id':'pending_clearances','label':'Pending clearances','icon':'⌁',
+         'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Pending Review'").fetchone()[0],
+         'trend':'Require officer review','module':'fingerprint'},
+        {'id':'active_alerts','label':'Active suspect alerts','icon':'!',
+         'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
+         'trend':'Restricted operational data','trend_kind':'alert','module':'cid'},
+    ]
+
+
+def _checkpoint_dashboard_cards(c, scope, today, cp_scope_sql):
+    """Tailored mini-analytics for Checkpoint South / East / West officers.
+
+    4 compact stat cards, all filtered to the officer's assigned
+    location: 'Screenings today', 'Travelers flagged', 'Total
+    location travelers', and 'Peak travel hour' (the 2-hour bucket
+    with the most events in the last 7 days).
+    """
+    cards = []
+    filter_sql, filter_args = cp_scope_sql()
+    # If the officer has no scope (shouldn't happen for checkpoint users),
+    # fall back to the most permissive filter so the cards still render
+    # rather than throwing a 500.
+    if not filter_sql:
+        filter_sql, filter_args = "WHERE 1=1", ()
+
+    screenings_today = c.execute(
+        f"SELECT COUNT(*) FROM checkpoint_events ce {filter_sql} "
+        f"AND substr(ce.created_at,1,10)=?",
+        (*filter_args, today)).fetchone()[0]
+    flagged_today = c.execute(
+        f"SELECT COUNT(*) FROM checkpoint_events ce {filter_sql} "
+        f"AND ce.screening_result='Flagged match' "
+        f"AND substr(ce.created_at,1,10)=?",
+        (*filter_args, today)).fetchone()[0]
+    total_local = c.execute(
+        f"SELECT COUNT(*) FROM checkpoint_events ce {filter_sql}", filter_args).fetchone()[0]
+    unique_travelers = c.execute(
+        f"SELECT COUNT(DISTINCT ce.person_id) FROM checkpoint_events ce {filter_sql}",
+        filter_args).fetchone()[0]
+
+    # Peak travel hour — bucket created_at into 2-hour slices for the
+    # last 7 days. SQLite has no native date arithmetic on TEXT so we
+    # use a LIKE prefix on the YYYY-MM-DD portion.
+    seven_days_ago = time.strftime('%Y-%m-%d', time.gmtime(time.time() - 7 * 86400))
+    peak_row = c.execute(
+        f"SELECT substr(ce.created_at,12,2) AS hh, COUNT(*) AS n "
+        f"FROM checkpoint_events ce {filter_sql} "
+        f"AND substr(ce.created_at,1,10) >= ? "
+        f"GROUP BY hh ORDER BY n DESC, hh ASC LIMIT 1",
+        (*filter_args, seven_days_ago)).fetchone()
+    if peak_row and peak_row['hh']:
+        hh = int(peak_row['hh'])
+        bucket_end = (hh + 2) % 24
+        peak_label = f'{hh:02d}:00 – {bucket_end:02d}:00'
+        peak_value = peak_row['n']
+    else:
+        peak_label = '—'
+        peak_value = 0
+
+    cards.append({
+        'id': 'cp_screenings_today',
+        'label': f'{scope} · screenings today',
+        'icon': '⊙',
+        'value': screenings_today,
+        'trend': f'Stops recorded at {scope} Checkpoint · {today}',
+        'module': 'checkpoints',
+        'location_scope': scope,
+        'kind': 'cp_screenings_today',
+    })
+    cards.append({
+        'id': 'cp_travelers_flagged',
+        'label': f'{scope} · travelers flagged',
+        'icon': '!',
+        'value': flagged_today,
+        'trend': f'Flagged matches at {scope} Checkpoint today',
+        'trend_kind': 'alert',
+        'module': 'checkpoints',
+        'location_scope': scope,
+        'kind': 'cp_travelers_flagged',
+    })
+    cards.append({
+        'id': 'cp_total_travelers',
+        'label': f'{scope} · total travelers',
+        'icon': '◉',
+        'value': unique_travelers,
+        'trend': f'Distinct Central Persons screened at {scope} · {total_local} screening(s)',
+        'module': 'checkpoints',
+        'location_scope': scope,
+        'kind': 'cp_total_travelers',
+    })
+    cards.append({
+        'id': 'cp_peak_hour',
+        'label': f'{scope} · peak travel hour',
+        'icon': '⌁',
+        'value': peak_label,
+        'trend': f'{peak_value} stop(s) in the last 7 days',
+        'module': 'checkpoints',
+        'location_scope': scope,
+        'kind': 'cp_peak_hour',
+    })
+    return cards
+
+
+def _fingerprint_dashboard_cards(c, today):
+    return [
+        {'id':'fp_pending','label':'Pending clearances','icon':'⌁',
+         'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Pending Review'").fetchone()[0],
+         'trend':'Require officer review','module':'fingerprint'},
+        {'id':'fp_today','label':'Applications today','icon':'◉',
+         'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE substr(created_at,1,10)=?", (today,)).fetchone()[0],
+         'trend':f'New intake · {today}','module':'fingerprint'},
+        {'id':'fp_approved','label':'Approved clearances','icon':'✓',
+         'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Approved'").fetchone()[0],
+         'trend':'Certificates issued','module':'fingerprint'},
+        {'id':'fp_total','label':'Total applications','icon':'⌂',
+         'value':c.execute('SELECT COUNT(*) FROM clearance_applications').fetchone()[0],
+         'trend':'All-time clearance volume','module':'fingerprint'},
+    ]
+
+
+def _airport_dashboard_cards(c, today):
+    total = c.execute('SELECT COUNT(*) FROM airport_passengers').fetchone()[0]
+    arrivals = c.execute("SELECT COUNT(*) FROM airport_passengers WHERE movement='Arrival'").fetchone()[0]
+    departures = c.execute("SELECT COUNT(*) FROM airport_passengers WHERE movement='Departure'").fetchone()[0]
+    today_movements = c.execute(
+        "SELECT COUNT(*) FROM airport_passengers WHERE travel_date=?", (today,)).fetchone()[0]
+    return [
+        {'id':'ap_today','label':'Movements today','icon':'✈',
+         'value':today_movements,'trend':f'Travel date {today}','module':'airport'},
+        {'id':'ap_arrivals','label':'Arrivals (all-time)','icon':'↓',
+         'value':arrivals,'trend':'Inbound movements on register','module':'airport'},
+        {'id':'ap_departures','label':'Departures (all-time)','icon':'↑',
+         'value':departures,'trend':'Outbound movements on register','module':'airport'},
+        {'id':'ap_total','label':'Total movements','icon':'◉',
+         'value':total,'trend':'All-time passenger register','module':'airport'},
+    ]
+
+
+def _cid_dashboard_cards(c, today):
+    return [
+        {'id':'cid_open','label':'Open crime cases','icon':'⌂',
+         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE status<>'Closed'").fetchone()[0],
+         'trend':'Active investigations','module':'cid'},
+        {'id':'cid_active_alerts','label':'Active suspect alerts','icon':'!',
+         'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
+         'trend':'Restricted operational data','trend_kind':'alert','module':'cid'},
+        {'id':'cid_cases_today','label':'Cases reported today','icon':'◉',
+         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE substr(created_at,1,10)=?", (today,)).fetchone()[0],
+         'trend':f'New intake · {today}','module':'cid'},
+        {'id':'cid_suspects','label':'Suspects on file','icon':'⌁',
+         'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect'").fetchone()[0],
+         'trend':'All-time suspect listings','module':'cid'},
+    ]
+
+
+def _time_ago(iso_ts, now_ts):
+    """Best-effort "N mins ago" formatter for the live activity feed.
+
+    Accepts SQLite CURRENT_TIMESTAMP-style strings ("YYYY-MM-DD HH:MM:SS")
+    or date-only strings ("YYYY-MM-DD"). Returns '' on parse failure.
+    """
+    if not iso_ts:
+        return ''
+    s = str(iso_ts).strip().replace('T', ' ')
+    try:
+        if len(s) >= 19 and s[10] == ' ':
+            tm = time.strptime(s[:19], '%Y-%m-%d %H:%M:%S')
+        elif len(s) == 10:
+            tm = time.strptime(s + ' 12:00:00', '%Y-%m-%d %H:%M:%S')
+        else:
+            return ''
+        ts = time.mktime(tm)
+    except Exception:
+        return ''
+    delta = max(0, int(now_ts - ts))
+    if delta < 60: return 'just now'
+    if delta < 3600: return f'{delta // 60} min ago'
+    if delta < 86400: return f'{delta // 3600} hr ago'
+    return f'{delta // 86400} d ago'
+
+
+def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_scope_sql):
+    """Build the real-time activity stream for the dashboard.
+
+    Each entry is a dict with:
+      module       'fingerprint' | 'airport' | 'cid' | 'checkpoints'
+      kind         short identifier
+      id           record id
+      title        human-friendly headline (e.g. 'Screened Jama Abdi')
+      subtitle     status / location context
+      at           raw ISO-ish timestamp
+      time_ago     formatted 'N mins ago' string
+      dot_color    'blue' | 'cyan' | 'amber' | 'green' | 'red'
+      location_code  (checkpoint only) 'South' / 'East' / 'West'
+    """
     events = []
+
     if is_admin or role == ROLE_FINGERPRINT:
         for r in c.execute('''SELECT a.application_id AS id, a.purpose AS title,
-            a.status AS subtitle, a.created_at AS at
-            FROM clearance_applications a ORDER BY a.id DESC LIMIT 6''').fetchall():
+            a.status AS subtitle, a.created_at AS at,
+            p.full_name AS person_name
+            FROM clearance_applications a
+            JOIN persons p ON p.id=a.person_id
+            ORDER BY a.id DESC LIMIT 8''').fetchall():
+            name = r['person_name'] or 'applicant'
             events.append({
                 'module': 'fingerprint',
                 'kind': 'clearance',
-                'id': r['id'], 'title': r['title'], 'subtitle': r['subtitle'], 'at': r['at'],
+                'id': r['id'],
+                'title': f'Clearance · {name}',
+                'subtitle': f'{r["title"]} · {r["subtitle"]}',
+                'at': r['at'],
+                'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'blue',
             })
+
     if is_admin or role == ROLE_AIRPORT:
-        for r in c.execute('''SELECT a.record_id AS id, a.route AS title,
-            a.movement AS subtitle, a.travel_date AS at
-            FROM airport_passengers a ORDER BY a.id DESC LIMIT 6''').fetchall():
+        for r in c.execute('''SELECT a.record_id AS id, a.route AS route,
+            a.movement AS movement, a.travel_date AS at,
+            p.full_name AS person_name
+            FROM airport_passengers a
+            JOIN persons p ON p.id=a.person_id
+            ORDER BY a.id DESC LIMIT 8''').fetchall():
+            name = r['person_name'] or 'traveller'
             events.append({
                 'module': 'airport',
                 'kind': 'airport',
-                'id': r['id'], 'title': r['title'], 'subtitle': r['subtitle'], 'at': r['at'],
+                'id': r['id'],
+                'title': f'{r["movement"]} · {name}',
+                'subtitle': r['route'] or '',
+                'at': r['at'] or '',
+                'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'cyan',
             })
+
     if is_admin or role == ROLE_CID:
         for r in c.execute('''SELECT cc.case_id AS id, cc.category AS title,
             cc.status AS subtitle, cc.created_at AS at
-            FROM crime_cases cc ORDER BY cc.id DESC LIMIT 6''').fetchall():
+            FROM crime_cases cc ORDER BY cc.id DESC LIMIT 8''').fetchall():
             events.append({
                 'module': 'cid',
                 'kind': 'case',
-                'id': r['id'], 'title': r['title'], 'subtitle': r['subtitle'], 'at': r['at'],
+                'id': r['id'],
+                'title': f'Case · {r["title"]}',
+                'subtitle': f'CID · {r["subtitle"]}',
+                'at': r['at'],
+                'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'amber',
             })
-    if is_admin or (role and role.startswith('Checkpoint')):
-        cp_filter = "WHERE ce.location_code=?" if scope else ""
-        cp_args = (scope,) if scope else ()
+
+    if is_admin or is_checkpoint:
+        cp_filter, cp_args = cp_scope_sql()
         for r in c.execute(
-            f"SELECT ce.event_id AS id, ce.checkpoint_location AS title, "
-            f"ce.screening_result AS subtitle, ce.created_at AS at, "
-            f"ce.location_code "
-            f"FROM checkpoint_events ce {cp_filter} ORDER BY ce.id DESC LIMIT 6",
+            f"SELECT ce.event_id AS id, ce.checkpoint_location AS location_label, "
+            f"ce.location_code, ce.screening_result AS subtitle, ce.created_at AS at, "
+            f"ce.action_taken, "
+            f"p.full_name AS person_name, p.person_id AS person_code "
+            f"FROM checkpoint_events ce JOIN persons p ON p.id=ce.person_id "
+            f"{cp_filter} ORDER BY ce.id DESC LIMIT 10",
             cp_args).fetchall():
+            loc_label = r['location_label'] or (f"{(r['location_code'] or '')} Checkpoint" if r['location_code'] else 'Checkpoint')
+            name = r['person_name'] or r['person_code'] or 'traveller'
+            verb = 'Flagged' if r['subtitle'] == 'Flagged match' else 'Screened'
             events.append({
                 'module': 'checkpoints',
                 'kind': 'checkpoint',
                 'id': r['id'],
-                'title': r['title'] or f"{(r['location_code'] or '')} Checkpoint",
-                'subtitle': r['subtitle'], 'at': r['at'],
-                'dot_color': 'green',
+                'title': f'{verb} {name}',
+                'subtitle': f'{loc_label} · {r["subtitle"]}',
+                'at': r['at'],
+                'time_ago': _time_ago(r['at'], now_ts),
+                'dot_color': 'red' if r['subtitle'] == 'Flagged match' else 'green',
                 'location_code': r['location_code'],
             })
-    # Sort newest first and cap to a reasonable feed size.
-    events.sort(key=lambda e: e.get('at') or '', reverse=True)
-    events = events[:12]
 
-    return {
-        'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-        'role': role,
-        'is_admin': is_admin,
-        'location_scope': scope,
-        'modules': list(ROLE_MODULES.get(role, set())),
-        'cards': cards,
-        'quick_actions': quick,
-        'activity': events,
-        'subhead': (
-            f'System overview · all units' if is_admin else
-            (f'{scope} Checkpoint operations' if (role and role.startswith('Checkpoint')) else
-             f'{ROLE_LABELS.get(role, role)} · module overview')
-        ),
-    }
+    events.sort(key=lambda e: e.get('at') or '', reverse=True)
+    return events[:16]
 
 
 class API(BaseHTTPRequestHandler):
@@ -1351,11 +1399,34 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/admin/analytics':
                 # Aggregate analytics — admin only (module gate above).
                 result = build_analytics(c, user)
-            elif p.path == '/api/dashboard':
+            elif p.path == '/api/dashboard' or p.path.startswith('/api/dashboard/'):
                 # Role- and location-scoped operations dashboard. Every
                 # authenticated user can call this; the response is filtered
                 # to the modules / location scope their role can access.
-                result = build_dashboard(c, user)
+                # The route is a prefix-match so any trailing path (e.g.
+                # /api/dashboard/, /api/dashboard/refresh) is accepted and
+                # never returns 404 — guards against router regressions on
+                # the frontend.
+                try:
+                    result = build_dashboard(c, user)
+                except Exception as e:
+                    # Defensive: never let a transient query error make the
+                    # dashboard unreachable. Fall back to an empty payload so
+                    # the frontend can still render its offline view.
+                    result = {
+                        'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                        'role': (user.get('role') or '') if user else '',
+                        'is_admin': (user.get('role') == ROLE_ADMIN) if user else False,
+                        'location_scope': checkpoint_scope(user) if user else None,
+                        'modules': sorted(ROLE_MODULES.get((user.get('role') or ''), set())),
+                        'cards': [],
+                        'quick_actions': [],
+                        'activity': [],
+                        'stream': [],
+                        'subhead': 'Dashboard temporarily unavailable',
+                        'degraded': True,
+                        'degraded_reason': str(e),
+                    }
             elif p.path == '/api/suspect-alerts':
                 rows = c.execute('''SELECT sa.alert_id,sa.role,sa.alert_status,sa.origin,sa.notes,
                     cc.case_id,cc.category,cc.status AS case_status,
@@ -1368,6 +1439,12 @@ class API(BaseHTTPRequestHandler):
                 # RBAC: Checkpoint users only see events at their own location.
                 # Admins see all; non-checkpoint users see all but the frontend
                 # won't render the page for them either.
+                #
+                # The scope filter is matched flexibly against every
+                # location-related column so a row that was just saved with
+                # the friendly checkpoint label ('South Checkpoint') is
+                # returned in the very next poll even if 'location_code' was
+                # not populated.
                 scope = checkpoint_scope(user)
                 base_cols = '''ce.event_id,ce.location,ce.location_code,ce.checkpoint_location,
                     ce.screening_result,ce.action_taken,ce.notes,ce.created_at,
@@ -1377,12 +1454,16 @@ class API(BaseHTTPRequestHandler):
                     ce.guardian_national_id,ce.guardian_passport_id,ce.guardian_docs,
                     p.person_id,p.full_name,p.national_id,p.passport_id'''
                 if scope:
-                    rows = c.execute(f'''SELECT {base_cols} FROM checkpoint_events ce
-                        JOIN persons p ON p.id=ce.person_id WHERE ce.location_code=?
-                        ORDER BY ce.id DESC''',(scope,)).fetchall()
+                    rows = c.execute(
+                        f"SELECT {base_cols} FROM checkpoint_events ce "
+                        f"JOIN persons p ON p.id=ce.person_id "
+                        f"WHERE (ce.location_code=? OR ce.checkpoint_location=? "
+                        f"OR ce.checkpoint_location=? OR ce.location=?) "
+                        f"ORDER BY ce.id DESC",
+                        (scope, scope, f"{scope} Checkpoint", scope)).fetchall()
                 else:
-                    rows = c.execute(f'''SELECT {base_cols} FROM checkpoint_events ce
-                        JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC''').fetchall()
+                    rows = c.execute(f"SELECT {base_cols} FROM checkpoint_events ce "
+                                     f"JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC").fetchall()
                 # Surface the explicit location metadata in every response item
                 # so the frontend can render the friendly label without re-deriving it.
                 items = []
