@@ -321,6 +321,53 @@ ROLE_LOCATION_SCOPE = {
 }
 
 
+def canonical_location_scope(scope):
+    """Map a location value ('south', 'South Checkpoint', ' SOUTH '...) to the
+    canonical short code ('South' / 'East' / 'West'). Returns the trimmed
+    original when it does not match any known location (callers validate)."""
+    s = str(scope or '').strip()
+    if not s:
+        return None
+    for code in CHECKPOINT_LOCATIONS:
+        if s.lower() == code.lower():
+            return code
+    first = s.split()[0]
+    for code in CHECKPOINT_LOCATIONS:
+        if first.lower() == code.lower():
+            return code
+    return s
+
+
+def normalize_incoming_role(role):
+    """Normalise a role string supplied on user create/update.
+
+    Every accepted Checkpoint-officer spelling ('CheckpointSouth',
+    'checkpoint_south', 'cp_south', 'cp.east', 'Checkpoint Officer
+    (West)', 'checkpoint_officer', ...) is mapped to the canonical
+    'checkpoint_officer'. All other canonical roles pass through
+    unchanged. Returns (canonical_role, derived_location_scope_or_None)
+    — the derived scope is pulled from the alias itself ('cp_south' ->
+    'South') so normalizing NEVER loses the officer's location.
+    """
+    r = str(role or '').strip()
+    if not r:
+        return r, None
+    if r in set(ALL_ROLES) | {ROLE_CHECKPOINT_OFFICER}:
+        derived = ROLE_LOCATION_SCOPE.get(r) or None
+        if is_checkpoint_role(r):
+            return ROLE_CHECKPOINT_OFFICER, derived
+        return r, None
+    if is_checkpoint_role(r):
+        derived = None
+        rl = r.lower()
+        for code in CHECKPOINT_LOCATIONS:
+            if code.lower() in rl:
+                derived = code
+                break
+        return ROLE_CHECKPOINT_OFFICER, derived
+    return r, None
+
+
 def user_view(user):
     """Return the public-facing user payload (no password hash) with RBAC info.
 
@@ -344,6 +391,13 @@ def user_view(user):
         location = raw_role[len('Checkpoint'):]
     else:
         location = scope or user.get('branch') or ''
+    # The module set must resolve for BOTH the raw stored role AND the
+    # normalised alias. Without the alias lookup a user stored as
+    # 'cp_south' / 'checkpoint_officer' would get modules: [] and the
+    # frontend would never fetch /api/checkpoint-events (the "0 records"
+    # bug).
+    modules = set(ROLE_MODULES.get(raw_role, set())) | \
+        set(ROLE_MODULES.get(role_alias, set()))
     return {
         'id': user['id'],
         'username': user['username'],
@@ -354,7 +408,7 @@ def user_view(user):
         'branch': user.get('branch') or '',
         'location_scope': scope,
         'location': location,
-        'modules': sorted(ROLE_MODULES.get(raw_role, set())),
+        'modules': sorted(modules),
         'active': bool(user.get('active', 1)),
     }
 
@@ -1854,11 +1908,21 @@ class API(BaseHTTPRequestHandler):
                 if not password or len(password) < 6:
                     raise ValueError('password must be at least 6 characters')
                 # Spec step 1: accept both the legacy compound forms and
-                # the canonical 'checkpoint_officer' alias.
+                # the canonical 'checkpoint_officer' alias — and ANY
+                # accepted checkpoint spelling ('cp_south',
+                # 'checkpoint_south', 'Checkpoint Officer (South)', ...).
+                # Aliases are normalised to 'checkpoint_officer' here so
+                # the stored role is canonical; the location is derived
+                # from the alias ('cp_south' -> 'South') when the caller
+                # does not pass an explicit location_scope, so
+                # normalizing never loses the officer's location.
+                role, derived_scope = normalize_incoming_role(role)
                 accepted_roles = set(ALL_ROLES) | {ROLE_CHECKPOINT_OFFICER}
                 if role not in accepted_roles:
-                    raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))}')
-                scope = (data.get('location_scope') or ROLE_LOCATION_SCOPE.get(role) or '').strip() or None
+                    raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))} '
+                                     '(Checkpoint aliases such as CheckpointSouth / cp_south are also accepted)')
+                scope = canonical_location_scope(
+                    data.get('location_scope') or derived_scope or ROLE_LOCATION_SCOPE.get(role))
                 if is_checkpoint_role(role) and not scope:
                     raise ValueError('location_scope is required for Checkpoint roles')
                 if scope and scope not in CHECKPOINT_LOCATIONS:
@@ -2115,12 +2179,17 @@ class API(BaseHTTPRequestHandler):
                     if f in data and str(data[f]).strip():
                         updates.append(f'{f}=?'); params.append(str(data[f]).strip())
                 if 'role' in data:
-                    role = str(data['role']).strip()
                     # Spec step 1: accept both the legacy compound forms
-                    # and the canonical 'checkpoint_officer' alias.
+                    # and the canonical 'checkpoint_officer' alias — and
+                    # ANY accepted checkpoint spelling. Aliases are
+                    # normalised to 'checkpoint_officer'; the location
+                    # embedded in the alias ('CheckpointWest' -> 'West')
+                    # is carried into location_scope so it is preserved.
+                    role, derived_scope = normalize_incoming_role(str(data['role']).strip())
                     accepted_roles = set(ALL_ROLES) | {ROLE_CHECKPOINT_OFFICER}
                     if role not in accepted_roles:
-                        raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))}')
+                        raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))} '
+                                         '(Checkpoint aliases such as CheckpointSouth / cp_south are also accepted)')
                     updates.append('role=?'); params.append(role)
                     # If the new role dictates a location_scope, refresh
                     # it. For 'checkpoint_officer' (the canonical alias)
@@ -2131,16 +2200,12 @@ class API(BaseHTTPRequestHandler):
                     # caller can still pass an explicit
                     # 'location_scope' to override.
                     if 'location_scope' not in data:
-                        default_scope = ROLE_LOCATION_SCOPE.get(role)
+                        default_scope = derived_scope or ROLE_LOCATION_SCOPE.get(role)
                         if default_scope:
                             updates.append('location_scope=?'); params.append(default_scope)
-                        elif not row['location_scope']:
-                            # Existing user had no scope; we don't
-                            # need to touch the column.
-                            pass
                         # else: keep the existing scope (no-op).
                 if 'location_scope' in data:
-                    scope = (str(data['location_scope'] or '').strip() or None)
+                    scope = canonical_location_scope(data['location_scope'])
                     if scope and scope not in CHECKPOINT_LOCATIONS:
                         raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
                     updates.append('location_scope=?'); params.append(scope)

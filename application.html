@@ -88,6 +88,8 @@ function render(a){
 async function getToken(){
   // Reuse the active session if the main UI is signed in (same origin, same port).
   try{
+    const t=localStorage.getItem('sentinel_token');
+    if(t) return t;
     const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');
     if(s && s.token) return s.token;
   }catch(_){}

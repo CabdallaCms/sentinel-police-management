@@ -545,12 +545,18 @@ def main():
             assert ev.get('checkpoint_location'), ev
             assert ev['checkpoint_location'].endswith('Checkpoint'), ev
 
-        # Admin user management: create / update / deactivate.
+        # Admin user management: create / update / deactivate. Checkpoint
+        # role aliases are normalised on write: 'CheckpointWest' is stored
+        # as the canonical 'checkpoint_officer' while the location_scope
+        # ('West') is preserved.
         s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
             'username': 'new.user', 'password': 'secret1',
             'display_name': 'Officer New', 'role': 'CheckpointWest',
             'branch': 'Checkpoint West', 'location_scope': 'West'})
-        assert s == 201 and r['user']['role'] == 'CheckpointWest', r
+        assert s == 201 and r['user']['role'] == 'checkpoint_officer', r
+        assert r['user']['role_alias'] == 'checkpoint_officer', r
+        assert r['user']['location_scope'] == 'West', r
+        assert set(('dashboard', 'checkpoints')) <= set(r['user']['modules']), r
         new_uid = r['user']['id']
 
         s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
@@ -1015,6 +1021,122 @@ def main():
         assert d.get('location_scope') is None
         assert {c['id'] for c in d['cards']} == {
             'central_persons', 'open_cases', 'pending_clearances', 'active_alerts'}
+
+        # ---- Session-refresh regression: cp.south end-to-end flow ---------
+        # Mirrors the manual verification: login -> dashboard 200 ->
+        # checkpoint-events 200 -> record a stop -> the count goes up and
+        # every request stays 200 (no 401 / 404 for a valid checkpoint
+        # officer). A stored bearer token keeps working across repeated
+        # calls, which is what the frontend relies on after a refresh.
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.south', 'password': 'ChangeMe123!'})
+        assert s == 200, f'cp.south login failed: {r}'
+        cps_tok = r['token']
+        assert r['user']['role_alias'] == 'checkpoint_officer', r['user']
+        assert r['user']['location_scope'] == 'South', r['user']
+        assert set(('dashboard', 'checkpoints')) <= set(r['user']['modules']), r['user']
+        # The same token authenticates many consecutive requests (refresh
+        # simulation): /api/me + /api/dashboard + /api/checkpoint-events.
+        for _ in range(3):
+            s, me = request(base, 'GET', '/api/me', cps_tok)
+            assert s == 200, f'/api/me returned {s} on refresh: {me}'
+        s, d = request(base, 'GET', '/api/dashboard', cps_tok)
+        assert s == 200, f'dashboard returned {s} for cp.south'
+        s, cps_before = request(base, 'GET', '/api/checkpoint-events', cps_tok)
+        assert s == 200, f'checkpoint-events returned {s} for cp.south'
+        assert cps_before.get('scope') == 'South', cps_before
+        n_before = len(cps_before['items'])
+        assert n_before >= 1, f'cp.south should see the seeded South event: {cps_before}'
+        # Record one stop at South as cp.south (bearer token unchanged).
+        stop_fields = dict(cp_fields)
+        stop_fields['location'] = 'South'
+        stop_fields['first_name'] = 'Cabdalla'; stop_fields['second_name'] = 'Muuse'
+        stop_fields['third_name'] = 'Faarax'; stop_fields['fourth_name'] = 'Xirsi'
+        stop_fields['date_of_birth'] = '1991-05-05'
+        stop_fields['national_id'] = '70707071'
+        stop_files = {'doc_tr_0': ('ticket.pdf', b'%PDF-refresh-test'),
+                      'doc_gd_0': ('gid.pdf', b'%PDF-guardian-refresh'),
+                      'photo': ('p.jpg', b'\xff\xd8\xff\xe0refresh')}
+        s, r = multipart_request(base, '/api/checkpoint-events', cps_tok,
+                                 stop_fields, stop_files)
+        assert s == 201, f'cp.south POST stop returned {s}: {r}'
+        assert r['location_code'] == 'South' and r['checkpoint_location'] == 'South Checkpoint', r
+        # Re-fetch with the SAME token (page-refresh simulation): 200 and
+        # the count went up by exactly one — never 0, never 401 / 404.
+        s, cps_after = request(base, 'GET', '/api/checkpoint-events', cps_tok)
+        assert s == 200, f'checkpoint-events after stop returned {s}'
+        assert len(cps_after['items']) == n_before + 1, \
+            f'expected {n_before + 1} South events, got {len(cps_after["items"])}'
+        assert all('south' in ' '.join(filter(None, [
+            ev.get('location'), ev.get('location_code'),
+            ev.get('checkpoint_location')])).lower() for ev in cps_after['items']), cps_after
+
+        # ---- Role-alias normalization on the admin user endpoints ----------
+        # Creating a user with the 'cp_south' alias stores the canonical
+        # 'checkpoint_officer' role and derives location_scope 'South' —
+        # and the new officer's /api/me, /api/dashboard and
+        # /api/checkpoint-events all return 200 (the "modules: []" bug).
+        s, r = request(base, 'POST', '/api/admin/users', admin_token, {
+            'username': 'cp.alias.south', 'display_name': 'Officer T. Alias',
+            'password': 'ChangeMe123!', 'role': 'cp_south', 'branch': 'Checkpoint South'})
+        assert s == 201, f'create cp_south alias user returned {s}: {r}'
+        assert r['user']['role'] == 'checkpoint_officer', r['user']
+        assert r['user']['location_scope'] == 'South', r['user']
+        assert set(('dashboard', 'checkpoints')) <= set(r['user']['modules']), r['user']
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'cp.alias.south', 'password': 'ChangeMe123!'})
+        assert s == 200, f'alias-user login returned {s}: {r}'
+        alias_tok = r['token']
+        assert r['user']['role_alias'] == 'checkpoint_officer', r['user']
+        s, d = request(base, 'GET', '/api/dashboard', alias_tok)
+        assert s == 200 and d.get('location_scope') == 'South', \
+            f'alias-user dashboard: {s} {d}'
+        s, cps_alias = request(base, 'GET', '/api/checkpoint-events', alias_tok)
+        assert s == 200 and cps_alias.get('scope') == 'South', f'{s} {cps_alias}'
+        assert len(cps_alias['items']) == n_before + 1, \
+            f"alias officer must see the same South events as cp.south: {cps_alias}"
+        # Case-insensitive location_scope on create ('west' -> 'West').
+        s, r = request(base, 'POST', '/api/admin/users', admin_token, {
+            'username': 'cp.alias.west', 'display_name': 'Officer W. Alias',
+            'password': 'ChangeMe123!', 'role': 'checkpoint_officer',
+            'location_scope': 'west'})
+        assert s == 201 and r['user']['location_scope'] == 'West', r
+        # Legacy compound role on create is also normalized, scope preserved.
+        s, r = request(base, 'POST', '/api/admin/users', admin_token, {
+            'username': 'cp.alias.east', 'display_name': 'Officer E. Alias',
+            'password': 'ChangeMe123!', 'role': 'CheckpointEast'})
+        assert s == 201 and r['user']['role'] == 'checkpoint_officer', r
+        assert r['user']['location_scope'] == 'East', r
+        # PATCH a compound role onto the alias user: role normalizes and the
+        # location survives ('CheckpointWest' -> checkpoint_officer + West).
+        alias_uid = request(base, 'GET', '/api/admin/users', admin_token)[1]['items']
+        alias_uid = next(u['id'] for u in alias_uid if u['username'] == 'cp.alias.south')
+        s, r = request(base, 'PATCH', f'/api/admin/users/{alias_uid}', admin_token,
+                       {'role': 'CheckpointWest'})
+        assert s == 200 and r['user']['role'] == 'checkpoint_officer', r
+        assert r['user']['location_scope'] == 'West', \
+            f'PATCH must preserve/derive the location scope: {r}'
+        # PATCH back to the canonical alias without a scope: existing scope kept.
+        s, r = request(base, 'PATCH', f'/api/admin/users/{alias_uid}', admin_token,
+                       {'role': 'checkpoint_officer'})
+        assert s == 200 and r['user']['role'] == 'checkpoint_officer', r
+        assert r['user']['location_scope'] == 'West', \
+            f'PATCH to canonical alias must not wipe location_scope: {r}'
+
+        # ---- /api/dashboard returns 200 for every seeded role --------------
+        for u in ('admin', 'fp.officer', 'ap.officer', 'cid.officer',
+                  'cp.south', 'cp.east', 'cp.west'):
+            s, r = request(base, 'POST', '/api/login',
+                           body={'username': u, 'password': 'ChangeMe123!'})
+            assert s == 200, f'login {u} failed: {s} {r}'
+            s, d = request(base, 'GET', '/api/dashboard', r['token'])
+            assert s == 200 and isinstance(d.get('cards'), list), \
+                f'/api/dashboard must return 200 for {u}: {s} {d}'
+
+        # An expired / bogus token is the ONLY 401 the frontend may treat as
+        # a sign-out: /api/me rejects it explicitly.
+        s, r = request(base, 'GET', '/api/me', 'bogus-token-000')
+        assert s == 401, f'bogus token /api/me returned {s}: {r}'
 
         print('ALL BACKEND TESTS PASSED')
         return 0

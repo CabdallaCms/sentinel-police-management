@@ -119,18 +119,30 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 ## Tests
 
 ```bash
-python3 backend/test_server.py
+python3 backend/test_server.py        # API suite (Python stdlib only)
+node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18)
 ```
 
-Starts the server against a temporary database and verifies the
-identity-resolution tiers (including flexible 2/3/4-part partial name
-matching, case-insensitive/trimmed search and dropdown suggestions),
-optional suspect case linking, auto-create behaviour, duplicate
-protection, the new **role-based access control** (per-module
+The backend suite starts the server against a temporary database and
+verifies the identity-resolution tiers (including flexible 2/3/4-part
+partial name matching, case-insensitive/trimmed search and dropdown
+suggestions), optional suspect case linking, auto-create behaviour,
+duplicate protection, the new **role-based access control** (per-module
 restrictions for each role, location-scoped Checkpoint endpoints,
-admin user-management CRUD, deactivated-user lockout) and the
-**Executive Analytics** aggregation (summary, crime distribution by
-location + time-of-day, checkpoint volume + traveler demographics).
+admin user-management CRUD, deactivated-user lockout), **role-alias
+normalization** (`cp_south` / `CheckpointEast` / `checkpoint_officer`
+all stored and served as the canonical `checkpoint_officer` with the
+`location_scope` preserved), the checkpoint-officer refresh contract
+(`/api/me` + `/api/dashboard` + `/api/checkpoint-events` stay HTTP 200
+across repeated requests with one bearer token) and the **Executive
+Analytics** aggregation (summary, crime distribution by location +
+time-of-day, checkpoint volume + traveler demographics).
+
+The frontend smoke test executes the real inline script from
+`index.html` in a Node VM against the live backend and verifies that a
+page refresh re-hydrates `sentinel_token` / `sentinel_user` before the
+API sync, never signs the officer out on non-fatal errors, and never
+wipes `db.checkpoints` with an empty sync.
 
 This is a development foundation, not an operational police deployment.
 Authentication, database, encryption, roles, file-upload validation and

@@ -78,6 +78,12 @@ Officers sign in with one of seven roles. The sidebar, top-bar user pill, and ev
 
 The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the analytics aggregation, and a Fingerprint officer cannot list Airport or Crime records.
 
+**Session persistence (refresh-safe sign-in).** On sign-in the auth token and user object are stored in browser storage (`localStorage.setItem('sentinel_token', token)` and `localStorage.setItem('sentinel_user', JSON.stringify(user))`, plus the legacy `sentinelSession` object used by the printable pages). On every page load `initApp()` re-hydrates `currentUser` and `authToken` **before** the initial API sync (`syncServer` / `fetchCheckpoints`), and every request automatically carries `Authorization: Bearer ${token}`. A refresh therefore never signs the officer out: only an explicit HTTP **401** from the dedicated auth check (`GET /api/me`) clears the session — non-fatal startup errors (server still booting, transient 5xx, a 404) keep the officer signed in and retry in the background.
+
+**Role normalization.** Every accepted Checkpoint-officer spelling (`CheckpointSouth` / `CheckpointEast` / `CheckpointWest`, `checkpoint_south`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, …) is normalized to the canonical role **`checkpoint_officer`** while the officer's `location_scope` (`South` / `East` / `West`) is preserved (and derived from the alias when not passed explicitly). `GET /api/dashboard` and `GET /api/checkpoint-events` return HTTP 200 for all of these roles — never 404/401 for a valid checkpoint officer — and the checkpoint query matches the location case-insensitively (`LOWER(location_code) = 'south' OR LOWER(checkpoint_location) LIKE '%south%'` and equivalent columns).
+
+**Checkpoint table freshness.** `submitCheckpoint()` prepends the new stop into `db.checkpoints` immediately so the table and the location badge update instantly (`South Checkpoint 0 → 1`), and `syncServer()` never overwrites `db.checkpoints` with `[]` from a transient/failed response — only a successful response with rows replaces the local cache.
+
 ### Executive Analytics dashboard (admin only)
 
 The **Analytics** page (admin only) renders lightweight canvas charts backed by `/api/admin/analytics`:
@@ -155,6 +161,24 @@ python3 -m http.server 8000 --bind 0.0.0.0
 ```
 
 Open `http://localhost:8000`.
+
+## Testing
+
+Backend API suite (standard library only; boots the server against a temporary database):
+
+```bash
+python3 backend/test_server.py
+```
+
+Covers the identity-resolution tiers, unit-record routes, RBAC module gating, location-scoped checkpoint reads/writes, role-alias normalization (`cp_south` / `CheckpointEast` → `checkpoint_officer` with the scope preserved), the `/api/dashboard` contract for every role and the analytics aggregation.
+
+Frontend session smoke test (Node ≥ 18; executes the real inline script against the real backend in a VM sandbox):
+
+```bash
+node backend/test_frontend_session.mjs
+```
+
+Verifies the checkpoint-officer refresh journey: sign in as `cp.south`, token/user persisted to `sentinel_token` / `sentinel_user`, page refresh re-hydrates the session before the API sync (no auto-signout, no 401/404), the checkpoint count survives the refresh, an empty server sync never wipes local rows, a bogus token signs out only via an explicit `/api/me` 401, and a server-down load keeps the officer signed in.
 
 ## Demo workflow
 

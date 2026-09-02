@@ -556,7 +556,48 @@ suspects:[{person:'P-0002',case:'CID-2026-008',role:'Suspect',alert:'Active aler
 checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted'}]};
 let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
+// ---- session state --------------------------------------------------------
+// `apiToken` is the live Bearer token (a.k.a. authToken), `currentUser` is
+// the signed-in user object re-hydrated from localStorage on page load,
+// `sessionUser` is the server-confirmed profile from /api/me.
 let apiToken='', serverOn=false;
+let currentUser=null;
+const SESSION_TOKEN_KEY='sentinel_token';
+const SESSION_USER_KEY='sentinel_user';
+const LEGACY_SESSION_KEY='sentinelSession';
+function authToken(){return apiToken||''}
+// Persist the session exactly as mandated (sentinel_token + sentinel_user),
+// plus the legacy sentinelSession object re-used by the printable
+// application.html / certificate.html pages.
+function saveSession(token,user){
+  try{
+    localStorage.setItem(SESSION_TOKEN_KEY,token);
+    localStorage.setItem(SESSION_USER_KEY,JSON.stringify(user||null));
+    localStorage.setItem(LEGACY_SESSION_KEY,JSON.stringify({token,user}));
+  }catch(_){}
+}
+// Re-hydrate the stored session. Prefers sentinel_token / sentinel_user and
+// falls back to the legacy sentinelSession object written by older builds.
+function loadStoredSession(){
+  try{
+    let token=localStorage.getItem(SESSION_TOKEN_KEY)||'';
+    let user=null;
+    try{user=JSON.parse(localStorage.getItem(SESSION_USER_KEY)||'null')}catch(_){user=null}
+    if(!token){
+      let legacy=null;
+      try{legacy=JSON.parse(localStorage.getItem(LEGACY_SESSION_KEY)||'null')}catch(_){legacy=null}
+      if(legacy&&legacy.token){token=legacy.token;user=legacy.user||null}
+    }
+    return token?{token,user}:null;
+  }catch(_){return null}
+}
+function clearStoredSession(){
+  try{
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+    localStorage.removeItem(SESSION_USER_KEY);
+    localStorage.removeItem(LEGACY_SESSION_KEY);
+  }catch(_){}
+}
 // Active location filter for the Checkpoints page. Default is empty
 // (no filter — admin sees every location). The filter is auto-bound
 // to the signed-in officer's location_scope on the first render of the
@@ -584,7 +625,22 @@ function showFormError(msg,opts={}){const{prefix,names,title,notice}=opts;if(pre
   page.insertBefore(a,page.firstChild);a._t=setTimeout(()=>a.remove(),6000)}
 
 // ============================ api ============================
-async function api(path,options={}){options.headers={...(options.headers||{})};if(!(options.body instanceof FormData))options.headers['Content-Type']='application/json';if(apiToken)options.headers.Authorization='Bearer '+apiToken;let r=await fetch(path,options);let data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Server request failed');return data}
+// Every request automatically carries `Authorization: Bearer ${token}` once a
+// session exists. Errors carry their HTTP status so callers can tell an
+// explicit auth rejection (401) apart from a non-fatal 404 / 5xx — only the
+// former is ever allowed to sign the officer out.
+async function api(path,options={}){
+  options.headers={...(options.headers||{})};
+  if(!(options.body instanceof FormData))options.headers['Content-Type']='application/json';
+  const t=authToken();
+  if(t)options.headers.Authorization='Bearer '+t;
+  let r;
+  try{ r=await fetch(path,options); }
+  catch(netErr){ const e=new Error('Network unavailable'); e.status=0; e.network=true; throw e; }
+  let data=await r.json().catch(()=>({}));
+  if(!r.ok){ const e=new Error(data.error||'Server request failed'); e.status=r.status; throw e; }
+  return data;
+}
 function mapPerson(p){
   const raw=[p.first_name??p.first,p.second_name??p.second,p.third_name??p.third,p.fourth_name??p.fourth].map(x=>x||'');
   const hasParts=raw.some(Boolean);
@@ -1317,27 +1373,41 @@ function paintActivityFromData(events){
 // message, and the count summary.
 const CP_LOCATIONS = ['South', 'East', 'West'];
 
-// Spec step 1 (frontend): single source of truth for "is this role a
-// Checkpoint officer?". Accepts every spelling the backend recognises:
-//   - 'CheckpointSouth' / 'CheckpointEast' / 'CheckpointWest' (legacy
-//     compound form, stored in users.role)
-//   - 'checkpoint_officer' (canonical normalised alias from the
-//     server payload's role_alias field)
-//   - 'cp_south' / 'cp.east' / 'cp.west' / 'checkpoint_south' (any
-//     other accepted alias)
-//   - 'Checkpoint Officer (South)' (legacy display name)
+// Spec step 2 (frontend): single source of truth for role-string
+// normalization, mirroring backend normalize_role(). Maps every accepted
+// checkpoint-officer spelling to the canonical 'checkpoint_officer' while
+// the per-user location_scope ('South' / 'East' / 'West') is carried
+// separately on the session user. All other roles pass through unchanged.
+function normalizeRole(role){
+  if(!role) return '';
+  const r=String(role).trim();
+  if(!r) return '';
+  const l=r.toLowerCase();
+  if(l==='checkpoint_officer') return 'checkpoint_officer';
+  // 'CheckpointSouth' / 'checkpoint_south' / 'cp_south' / 'cp.south' /
+  // 'cp-south' / 'Checkpoint Officer (South)' etc.
+  const cleaned=l.replace(/[^a-z]/g,'');
+  if(/^checkpoint(officer)?(south|east|west)?$/.test(cleaned)) return 'checkpoint_officer';
+  if(/^cp(south|east|west)?$/.test(cleaned)) return 'checkpoint_officer';
+  if(cleaned.includes('checkpoint')) return 'checkpoint_officer';
+  return r;
+}
+// Derive the location scope from an alias role string when the session
+// object does not carry one explicitly ('cp.south' -> 'South').
+function scopeFromRole(role){
+  const l=String(role||'').toLowerCase();
+  for(const c of CP_LOCATIONS){ if(l.includes(c.toLowerCase())) return c; }
+  return '';
+}
+// "Is this role a Checkpoint officer?" — accepts every spelling the backend
+// recognises ('CheckpointSouth', 'checkpoint_officer', 'cp_south', ...).
 function isCheckpointRole(role){
-  if(!role) return false;
-  const r = String(role);
-  if(r === 'checkpoint_officer') return true;
-  if(r.startsWith('Checkpoint') || r.startsWith('checkpoint')) return true;
-  const rl = r.toLowerCase();
-  if(rl.startsWith('cp_') || rl.startsWith('cp.') || rl === 'cp') return true;
-  if(rl.includes('checkpoint')) return true;
-  // The canonical normalised alias may also surface as 'cp' in the
-  // display label (e.g. "cp.south"), which the substring test above
-  // already covers, but be defensive anyway.
-  return false;
+  return normalizeRole(role)==='checkpoint_officer';
+}
+// Normalized admin check ('SystemAdmin', 'system_admin', 'Admin', ...).
+function isAdminRole(role){
+  const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
+  return l==='systemadmin'||l==='admin'||l==='administrator';
 }
 
 // Auto-bind the location filter to the signed-in officer's scope on
@@ -1349,7 +1419,7 @@ function isCheckpointRole(role){
 function autoBindCpLocationFilter(){
   if(!sessionUser) return;
   const role = sessionUser.role || '';
-  const scope = sessionUser.location_scope || '';
+  const scope = sessionUser.location_scope || (isCheckpointRole(role) ? scopeFromRole(role) : '');
   if(isCheckpointRole(role)){
     // Checkpoint officers: lock to their assigned location. Even if
     // the filter was previously set to another location, reset it
@@ -1380,7 +1450,7 @@ function paintCheckpointScopeHint(){
   const scope = (sessionUser && sessionUser.location_scope) || '';
   if(isCheckpointRole(role) && scope){
     el.innerHTML = `<b>${esc(scope)} Checkpoint</b> officer view`;
-  } else if(role === 'SystemAdmin'){
+  } else if(isAdminRole(role)){
     el.innerHTML = `<b>System Admin</b> view — choose a location above to scope the table`;
   } else if(role){
     el.innerHTML = `<b>${esc(role)}</b> view`;
@@ -1393,8 +1463,8 @@ function paintCheckpointChips(){
   const wrap = document.getElementById('cpLocChips');
   if(!wrap) return;
   const role = (sessionUser && sessionUser.role) || '';
-  const scope = (sessionUser && sessionUser.location_scope) || '';
-  const isAdmin = role === 'SystemAdmin';
+  const scope = (sessionUser && sessionUser.location_scope) || (isCheckpointRole(role) ? scopeFromRole(role) : '');
+  const isAdmin = isAdminRole(role);
   const isCheckpoint = isCheckpointRole(role);
   // Build the chip set. Admins see "All" + each location. Checkpoint
   // officers see ONLY their assigned location (the chip group is a
@@ -1464,7 +1534,7 @@ function renderCheckpointTable(){
   // The verbose `window.__cpDebug` dump is opt-in (toggle with
   // `window.__cpDebug = true` in the browser console).
   const userRole = (sessionUser && sessionUser.role) || '';
-  const userScope = (sessionUser && sessionUser.location_scope) || '';
+  const userScope = (sessionUser && sessionUser.location_scope) || (isCheckpointRole(userRole) ? scopeFromRole(userRole) : '');
   // Resolve the effective scope: explicit filter first, then the
   // Checkpoint officer's own scope. This guarantees the spec's
   // fail-safe filter has a non-empty scope for officers.
@@ -1886,7 +1956,7 @@ async function uploadEvidence(){
 // ============================ checkpoints ============================
 function openCheckpointDrawer(){
   // RBAC: a Checkpoint user is scoped to a single location — lock the picker.
-  const scope = (sessionUser && sessionUser.location_scope) || '';
+  const scope = (sessionUser && (sessionUser.location_scope || (isCheckpointRole(sessionUser.role)?scopeFromRole(sessionUser.role):''))) || '';
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
   const opts = ['South','West','East'].map(l =>
     `<option value="${l}" ${!isAdmin && l===scope ? 'selected' : ''}${!isAdmin && l!==scope && scope ? ' disabled' : ''}>${l} Checkpoint</option>`
@@ -1954,22 +2024,33 @@ async function submitCheckpoint(){
       closeDrawer();
       // Optimistic UI: FORCE an immediate local array mutation so the
       // UI re-renders without waiting for the network re-fetch cycle.
-      // (Spec step 1.3.) De-dupe on event_id first in case the previous
-      // optimistic copy is still in the array.
+      // De-dupe on event_id first in case the previous optimistic copy is
+      // still in the array.
       const optimistic = {
         time: (r.created_at || new Date().toISOString().replace('T',' ').slice(0,16)),
-        location: newLocation,
+        location: newLocationCode,
         location_code: newLocationCode,
         checkpoint_location: newLocation,
         person: r.person_id,
         screen: r.screening_result,
         action: r.action_taken,
         notes: newNotes,
+        purpose: d.purpose,
+        currentAddress: d.address,
+        permanentAddress: d.permanent,
+        guardianName: [gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
+        guardianRelationship: gd.relationship,
+        travelerDocs: trDocs.length,
+        guardianDocs: gdDocs.length,
         event_id: r.event_id,
       };
-      // Spec-mandated pattern: prepend the new record to the array.
+      // Spec-mandated pattern: prepend the new record to db.checkpoints so
+      // the table + badge update instantly (South Checkpoint 0 -> 1).
       const before = (db.checkpoints || []).filter(x => x.event_id !== optimistic.event_id);
       db.checkpoints = [optimistic, ...before];
+      // Persist the local table state immediately so it survives a refresh
+      // even before the background server sync completes.
+      persist();
       try{
         console.log('[cp] forced local mutation: db.checkpoints.length =', db.checkpoints.length,
                     ' active scope =', cpLocationFilter, ' new event_id =', optimistic.event_id);
@@ -2018,46 +2099,98 @@ async function submitCheckpoint(){
 }
 
 // ============================ server sync ============================
+// Safe fetch wrapper: resolves {ok, items} instead of throwing, so a
+// transient failure (network blip, 5xx, non-fatal 404) can NEVER be
+// mistaken for "the server has zero records" and wipe local state.
+async function safeItems(path){
+  try{
+    const r=await api(path);
+    return {ok:true, items:Array.isArray(r.items)?r.items:[], raw:r};
+  }catch(e){
+    return {ok:false, items:[], error:e};
+  }
+}
+// Dedicated checkpoint-events fetch used by syncServer() (and available for
+// page-level refreshes). ok=false means "request failed — keep local data".
+async function fetchCheckpoints(){
+  try{
+    const r=await api('/api/checkpoint-events');
+    return {ok:true, items:Array.isArray(r.items)?r.items:[],
+            scope:r.scope||'', visible_locations:Array.isArray(r.visible_locations)?r.visible_locations:[]};
+  }catch(e){
+    return {ok:false, items:[], error:e};
+  }
+}
+let _syncRetryTimer=null;
+function scheduleRetrySync(){
+  if(_syncRetryTimer) return;
+  _syncRetryTimer=setTimeout(()=>{
+    _syncRetryTimer=null;
+    if(authToken() && !serverOn) syncServer();
+  },2500);
+}
 async function syncServer(){
   // Used by the sign-in flow. Authenticated fetches are scoped to the
   // signed-in user's role via /api/me and the per-module RBAC checks.
-  if(!apiToken) return;
+  if(!authToken()) return;
+  // ---- dedicated auth check ------------------------------------------------
+  // /api/me is the ONLY call whose failure may end the session, and only an
+  // explicit HTTP 401 (expired / revoked token) does. Non-fatal responses
+  // (server still booting, transient 5xx, a 404 from a missing endpoint)
+  // keep the officer signed in and retry in the background.
+  let me;
   try{
-    const me = await api('/api/me');
-    sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me;
+    me = await api('/api/me');
+  }catch(e){
+    if(e && e.status===401){ doLogout('expired'); return; }
+    console.warn('syncServer: auth check unavailable, session kept —', e.message);
+    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">server unreachable — retrying</span>';
+    scheduleRetrySync();
+    return;
+  }
+  serverOn = true;
+  sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me; currentUser = me;
+  try{
     document.getElementById('envBadge').innerHTML='Environment: <span style="color:#7fe3cf">central database</span>';
+    // Each collection is fetched through safeItems()/fetchCheckpoints():
+    // a failed fetch reports ok=false and the corresponding local array is
+    // left untouched (never clobbered with [] by a transient error).
     const fetches = [
-      api('/api/persons').catch(()=>({items:[]})),
+      safeItems('/api/persons'),
+      sessionUser.modules.includes('airport')    ? safeItems('/api/airport-records')          : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('fingerprint')? safeItems('/api/clearance-applications')   : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('cid')        ? safeItems('/api/suspect-alerts')           : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
+      api('/api/dashboard').catch(()=>null),
     ];
-    if(sessionUser.modules.includes('airport'))   fetches.push(api('/api/airport-records').catch(()=>({items:[]})));
-    if(sessionUser.modules.includes('fingerprint'))fetches.push(api('/api/clearance-applications').catch(()=>({items:[]})));
-    if(sessionUser.modules.includes('cid'))        fetches.push(api('/api/crime-cases').catch(()=>({items:[]})), api('/api/suspect-alerts').catch(()=>({items:[]})));
-    if(sessionUser.modules.includes('checkpoints'))fetches.push(api('/api/checkpoint-events').catch(()=>({items:[]})));
-    fetches.push(api('/api/dashboard').catch(()=>null));
     const results = await Promise.all(fetches);
     const ps = results.shift();
-    const ars = (results.shift() || {items:[]});
-    const fps = (results.shift() || {items:[]});
-    const ccs = sessionUser.modules.includes('cid')       ? (results.shift() || {items:[]}) : {items:[]};
-    const sas = sessionUser.modules.includes('cid')       ? (results.shift() || {items:[]}) : {items:[]};
-    const cps = sessionUser.modules.includes('checkpoints') ? (results.shift() || {items:[]}) : {items:[]};
+    const ars = results.shift();
+    const fps = results.shift();
+    const ccs = results.shift();
+    const sas = results.shift();
+    const cps = results.shift();
     const dash = results.shift();
     if(dash) db.dashboard = dash;
-    db.people=ps.items.map(mapPerson);
-    db.people.forEach(p=>{
+    if(ps.ok) db.people=ps.items.map(mapPerson);
+    // Rebuild the per-person unit pills only from collections that actually
+    // answered (ok=true). A failed fetch keeps the previous local array and
+    // can never zero a register.
+    (ps.ok?db.people:[]).forEach(p=>{
       p.units=[];p.units_explicit=[];
       // Generic unit pills (kept for back-compat with the rest of the UI
       // such as the Central Persons table).
-      if(ars.items.some(x=>x.person_id===p.id)){p.units.push('Airport');p.units_explicit.push('Airport');}
-      if(fps.items.some(x=>x.person_id===p.id)){p.units.push('Fingerprint');p.units_explicit.push('Fingerprint');}
-      if(sas.items.some(x=>x.person_id===p.id)){p.units.push('CID');p.units_explicit.push('CID');}
+      if(ars.ok&&ars.items.some(x=>x.person_id===p.id)){p.units.push('Airport');p.units_explicit.push('Airport');}
+      if(fps.ok&&fps.items.some(x=>x.person_id===p.id)){p.units.push('Fingerprint');p.units_explicit.push('Fingerprint');}
+      if(sas.ok&&sas.items.some(x=>x.person_id===p.id)){p.units.push('CID');p.units_explicit.push('CID');}
       // Checkpoint pills are now explicit per-encounter location labels
       // (e.g. 'Checkpoint (South)') so the identity profile shows the
       // exact originating checkpoint rather than a generic 'Checkpoint'
       // string. We dedupe by location code and add a generic 'Checkpoint'
       // pill only when a record has no resolvable location.
       const cpByLoc = new Map();
-      cps.items.filter(x=>x.person_id===p.id).forEach(ev=>{
+      (cps.ok?cps.items:[]).filter(x=>x.person_id===p.id).forEach(ev=>{
         const code = ev.location_code || (ev.location||'').split(' ')[0] || '';
         const label = ev.checkpoint_location || (code ? (code+' Checkpoint') : '');
         if(label && !cpByLoc.has(label)) cpByLoc.set(label, code);
@@ -2072,54 +2205,51 @@ async function syncServer(){
       }
       if(!p.units.length){p.units.push('Central');p.units_explicit.push('Central');}
     });
-    db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,notes:x.notes}));
-    db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
-    db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
-    db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
+    if(ars.ok) db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,notes:x.notes}));
+    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
+    if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
+    if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
-    // Spec step 1.2: build the new checkpoint array from the
-    // server payload, but NEVER overwrite db.checkpoints with []
-    // when the server returns 0 items but local has data. This
-    // guards against transient network / scope mismatches wiping
-    // the officer's just-recorded stop.
     const newCheckpoints = cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
       location:x.location,location_code:x.location_code,checkpoint_location:x.checkpoint_location,
-      person:x.person_id,
+      person:x.person_id,event_id:x.event_id,
       screen:x.screening_result,action:x.action_taken,notes:x.notes,purpose:x.purpose_of_visit,
       currentAddress:x.current_address,permanentAddress:x.permanent_address,photo:x.traveler_photo,
       travelerDocs:parseDocs(x.traveler_docs).length,guardianDocs:parseDocs(x.guardian_docs).length,
       guardianName:x.guardian_name,guardianRelationship:x.guardian_relationship,guardianPhone:x.guardian_phone,
       guardianAddress:x.guardian_address,guardianOccupation:x.guardian_occupation,guardianPerson:x.guardian_person_id}));
-    if(sessionUser.modules.includes('checkpoints')){
-      // The officer is authorised for the checkpoints module, so
-      // the server is the source of truth — trust its response.
+    // ---- Guard against empty syncs ------------------------------------------
+    // db.checkpoints is NEVER overwritten with [] by a transient server
+    // response. Only a request that actually succeeded (ok=true) AND returned
+    // rows replaces the local array. A failed fetch (network blip, 5xx,
+    // non-fatal 404) or an empty response keeps the existing local rows, so
+    // a transient hiccup can never flip "South Checkpoint 1" back to
+    // "South Checkpoint 0".
+    if(cps.ok && newCheckpoints.length){
       db.checkpoints = newCheckpoints;
-    } else if(!newCheckpoints.length && (db.checkpoints || []).length){
-      // Cross-scope user (admin / non-checkpoint). The server
-      // returned 0 events and we already had local data — keep
-      // the local cache so the next chip render still has the
-      // historical context. The next sync with a real response
-      // will refresh.
-      try{ console.warn('[cp] syncServer: server returned 0 events but local cache has', db.checkpoints.length, '- keeping local data'); }catch(_){}
+    } else if(cps.ok && !(db.checkpoints||[]).length){
+      db.checkpoints = [];   // server confirmed empty AND nothing local
     } else {
-      db.checkpoints = newCheckpoints;
+      try{ console.warn('[cp] syncServer: keeping local checkpoint cache (ok='+cps.ok+', serverItems='+cps.items.length+', local='+(db.checkpoints||[]).length+')'); }catch(_){}
     }
     try{
-      // Spec step 1.1: data-pipeline diagnostic. Surface the role /
-      // scope / raw server payload / what the table will render
-      // from so the next bug report has the full context.
+      // Data-pipeline diagnostic: role / scope / raw server payload / what
+      // the table will render from, so the next bug report has full context.
       console.log('[DEBUG Checkpoints] syncServer', {
         userRole: sessionUser.role,
         userScope: sessionUser.location_scope,
         rawServerItems: cps.items.length,
+        fetchOk: cps.ok,
         dbCheckpointsLength: db.checkpoints.length,
       });
     }catch(_){}
+    persist();
     renderAll();
   }catch(e){
-    serverOn=false; apiToken=''; sessionUser=null;
-    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">local demo (browser storage)</span>';
-    console.warn('Local demo mode:', e.message);
+    // Rendering/sync bookkeeping errors are non-fatal: the session token and
+    // local cache are kept, the officer stays signed in.
+    console.warn('syncServer: transient error, session kept —', e.message);
+    scheduleRetrySync();
   }
 }
 
@@ -2166,14 +2296,19 @@ async function submitLogin(ev){
     resetSessionState();
     const r = await api('/api/login', {method:'POST', body: JSON.stringify({username:u,password:p})});
     apiToken = r.token;
+    currentUser = r.user;
     // Stash the new token immediately so subsequent api() calls (e.g.
     // /api/me in loadSession) can authenticate. sessionUser is set
     // authoritatively inside loadSession() once /api/me confirms the
     // role + scope, so the dashboard never paints a stale profile.
     serverOn = true;
-    // Persist for the printable pages (application.html, certificate.html) to re-use.
-    try{ localStorage.setItem('sentinelSession', JSON.stringify({token: r.token, user: r.user})); }catch(_){}
-    await loadSession();
+    // Persist the auth token + user object in browser storage so a page
+    // refresh re-hydrates the session instead of signing the officer out.
+    // (sentinel_token + sentinel_user, plus the legacy sentinelSession
+    // object re-used by application.html / certificate.html.)
+    saveSession(r.token, r.user);
+    const ok = await loadSession();
+    if(!ok) return;   // e.g. expired token -> doLogout already ran
     document.getElementById('loginScreen').style.display = 'none';
     toast(`Welcome, ${r.user.display_name}`);
   }catch(e){
@@ -2209,8 +2344,13 @@ async function loadSession(){
   // Pull /api/me to confirm the role/scope and re-sync from the server.
   try{
     const me = await api('/api/me');
-    sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me;
-  }catch(_){
+    sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me; currentUser = me;
+    // Refresh the stored user object with the server-confirmed profile.
+    try{ saveSession(authToken(), me); }catch(_){}
+  }catch(e){
+    if(e && e.status===401){ doLogout('expired'); return false; }
+    // Non-fatal (server momentarily unavailable): keep the re-hydrated
+    // session and let syncServer's retry recover.
     sessionVisibility = null;
   }
   applyNavForRole();
@@ -2220,11 +2360,13 @@ async function loadSession(){
   // The dashboard is now also rendered after syncServer has populated
   // db.dashboard; renderDashboard() picks the server or local pipeline.
   renderDashboard();
+  return true;
 }
 
-function doLogout(){
+function doLogout(reason){
   resetSessionState();
-  try{ localStorage.removeItem('sentinelSession'); }catch(_){}
+  currentUser=null;
+  clearStoredSession();
   document.getElementById('loginScreen').style.display = '';
   document.getElementById('loginUser').value='';
   document.getElementById('loginPassword').value='';
@@ -2234,7 +2376,65 @@ function doLogout(){
   document.querySelectorAll('#nav button').forEach(b => b.style.display = '');
   document.querySelectorAll('.side .group-label').forEach(g => g.style.display = '');
   document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">not signed in</span>';
-  toast('Signed out');
+  if(reason==='expired') toast('Session expired','Please sign in again');
+  else toast('Signed out');
+}
+
+// ---- page-load bootstrap (spec: fixes auto-signout on refresh) ------------
+// Re-hydrates currentUser + authToken from localStorage BEFORE any API sync
+// (syncServer / fetchCheckpoints). Sign-out happens ONLY when the dedicated
+// auth check (/api/me) explicitly returns HTTP 401; non-fatal load errors
+// (server still booting, transient 5xx / 404) keep the officer signed in.
+let _initDone=false;
+async function initApp(){
+  if(_initDone) return; _initDone=true;
+  renderAll();   // paint the shell immediately (behind the login screen)
+  const stored=loadStoredSession();
+  if(!stored){
+    document.getElementById('loginScreen').style.display='';
+    return;
+  }
+  // Re-hydrate BEFORE the initial API sync.
+  apiToken=stored.token;
+  currentUser=stored.user||null;
+  if(currentUser){
+    sessionUser=currentUser;
+    sessionVisibility=currentUser.visibility||null;
+    applyNavForRole();
+    updateUserPill();
+  }
+  // Hide the login screen immediately while the stored token is re-checked —
+  // a refresh must not flash the sign-in form at a signed-in officer. If the
+  // auth check rejects the token (401) doLogout shows it again.
+  document.getElementById('loginScreen').style.display='none';
+  try{
+    const me=await api('/api/me');        // dedicated auth check
+    serverOn=true;
+    sessionUser=me; sessionVisibility=me.visibility; sessionRoster=me; currentUser=me;
+    try{ saveSession(authToken(), me); }catch(_){}
+    document.getElementById('loginScreen').style.display='none';
+    applyNavForRole();
+    updateUserPill();
+    await syncServer();                   // full data sync (incl. fetchCheckpoints)
+    go('dashboard');
+    renderDashboard();
+  }catch(e){
+    if(e && e.status===401){
+      // Explicit auth rejection (expired / revoked token) — the ONLY
+      // automatic sign-out path.
+      doLogout('expired');
+      return;
+    }
+    // Non-fatal initial-load error: stay signed in, keep local data and
+    // retry in the background. Never sign out on a 404 or transient fault.
+    console.warn('initApp: initial sync failed, keeping session —', e.message);
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">server unreachable — retrying</span>';
+    applyNavForRole();
+    updateUserPill();
+    renderAll();
+    scheduleRetrySync();
+  }
 }
 
 function applyNavForRole(){
@@ -2260,8 +2460,9 @@ function updateUserPill(){
   pill.style.display = '';
   document.getElementById('userName').textContent = sessionUser.display_name;
   let label = sessionUser.role_label || sessionUser.role;
-  if(sessionUser.location_scope) label += ' · ' + sessionUser.location_scope + ' Checkpoint';
-  else if(sessionUser.role === 'SystemAdmin') label += ' · ' + (sessionUser.branch || 'Central HQ');
+  const uScope = sessionUser.location_scope || (isCheckpointRole(sessionUser.role) ? scopeFromRole(sessionUser.role) : '');
+  if(uScope && isCheckpointRole(sessionUser.role)) label += ' · ' + uScope + ' Checkpoint';
+  else if(isAdminRole(sessionUser.role)) label += ' · ' + (sessionUser.branch || 'Central HQ');
   else label += ' · ' + (sessionUser.branch || '');
   document.getElementById('userRole').textContent = label;
   const ini = (sessionUser.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?';
@@ -2270,7 +2471,7 @@ function updateUserPill(){
   const eb = document.getElementById('pageEyebrow');
   if(eb){
     let txt = 'Signed in as ' + sessionUser.display_name;
-    if(sessionUser.location_scope) txt += ' · ' + sessionUser.location_scope + ' Checkpoint';
+    if(uScope && isCheckpointRole(sessionUser.role)) txt += ' · ' + uScope + ' Checkpoint';
     eb.textContent = txt;
   }
 }
@@ -2597,6 +2798,11 @@ applyNavForRole();   // hide admin pages until sign-in
 // filter when investigating the 'South Checkpoint 0' bug). Toggle
 // from the browser console with: window.__cpDebug = true | false.
 window.__cpDebug = window.localStorage && localStorage.getItem('sentinelCpDebug') === '1';
-renderAll();
+// Page-load bootstrap: re-hydrate the stored session (sentinel_token +
+// sentinel_user) BEFORE the initial API sync so a refresh never signs the
+// officer out. Runs on DOMContentLoaded (the script sits at the end of the
+// body, so the DOM is normally ready already).
+if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initApp); }
+else{ initApp(); }
 </script>
 </body></html>
