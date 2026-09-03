@@ -150,11 +150,11 @@ PHOTO
 const id=new URLSearchParams(location.search).get('id');
 const REVIEW_LOCK_HOURS=12;
 let app=null;
-let currentRole='';
+// NEVER 'admin' by default: with no confirmed session the viewer is a
+// standard officer, so every record renders LOCKED.
+const STANDARD_ROLE='fingerprint_officer';
+let currentRole=STANDARD_ROLE;
 let isAdmin=false;
-// True when the token came from the development admin fallback (no real
-// session in storage). Such a viewer can never claim the admin bypass.
-let sessionFromDevFallback=false;
 
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 // The template ships with '-' placeholders; keep that convention for blanks.
@@ -248,9 +248,7 @@ function render(a){
     btn.setAttribute('style','pointer-events:none;opacity:0.5;');
     btn.title=lock.label;
     btn.innerHTML='&#128274; Review Locked (12h)';
-    lockbar('&#128274; '+esc(lock.label)+
-      (sessionFromDevFallback?' — no signed-in session detected; sign in through the main system to approve.'
-                             :' — a System Administrator can bypass the mandatory review period.'));
+    lockbar('&#128274; '+esc(lock.label)+' — a System Administrator can bypass the mandatory review period.');
   }else{
     btn.disabled=false;btn.title='';btn.removeAttribute('disabled');btn.setAttribute('style','');
     btn.innerHTML=isAdmin?'&#10003; Approve Application (Admin bypass)':'&#10003; Approve Application';
@@ -285,6 +283,8 @@ function render(a){
   }
 }
 
+// NO developer fallback: this page never signs itself in as an admin.
+// Without a confirmed session there is no approver here at all.
 async function getToken(){
   try{
     const t=localStorage.getItem('sentinel_token');
@@ -292,32 +292,46 @@ async function getToken(){
     const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');
     if(s && s.token) return s.token;
   }catch(_){}
-  // No real session: fall back to the development admin login so the page can
-  // still load data — but that MUST NOT grant the review-period bypass. The
-  // identity of the viewer is unknown, so the approval stays locked.
-  sessionFromDevFallback=true;
-  const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
-  const data=await login.json();
-  return data.token;
+  return '';
 }
-// Resolve the signed-in role: /api/me is authoritative, localStorage is the
-// offline fallback. Admins bypass the 12-hour review period, everybody else
-// (Fingerprint Officers included) is locked out until it elapses.
+// Hard re-login: wipe every stale session key (and the session cookie) and
+// send the officer back to the main app. The page never drops into a silent
+// offline mode that could inherit another identity's privileges.
+function forceSignIn(reason){
+  try{
+    localStorage.removeItem('sentinel_token');
+    localStorage.removeItem('sentinel_user');
+    localStorage.removeItem('sentinelSession');
+    document.cookie='sentinel_session=; Path=/; Max-Age=0; SameSite=Lax';
+  }catch(_){}
+  isAdmin=false;
+  currentRole=STANDARD_ROLE;
+  const btn=document.getElementById('approveBtn');
+  if(btn){btn.disabled=true;btn.setAttribute('disabled','disabled');
+    btn.setAttribute('style','opacity:0.5;pointer-events:none;cursor:not-allowed;');
+    btn.innerHTML='&#128274; Review Locked (12h)';}
+  lockbar(esc(reason||'Session expired')+' — please sign in again to continue.',true);
+  document.querySelector('.page').innerHTML=
+    '<div style="text-align:center;padding:70px 20px;font-family:Arial,sans-serif;color:#4a5a78">'+
+    '<div style="font-size:44px">&#128274;</div>'+
+    '<h2 style="margin:12px 0 8px;color:#0b1a30">Sign in required</h2>'+
+    '<p style="max-width:460px;margin:0 auto 16px auto">'+
+    esc(reason||'Your session has expired')+'. Sign in through the main system to view and approve this application.</p>'+
+    '<a class="btn" href="index.html">Go to sign in &rarr;</a></div>';
+}
+// Resolve the signed-in role. /api/me (HTTP 200) is the ONLY thing that can
+// grant the administrator bypass; anything else leaves a standard officer.
 async function resolveRole(token){
-  const local=storedUser();
-  currentRole=(local&&local.role)||'';
-  isAdmin=isAdminRole(currentRole);
+  currentRole=STANDARD_ROLE;
+  isAdmin=false;
   try{
     const r=await fetch('/api/me',{headers:{'Authorization':'Bearer '+token}});
-    if(r.ok){
-      const me=await r.json();
-      currentRole=me.role||currentRole;
-      isAdmin=!!(me.visibility&&me.visibility.is_admin)||isAdminRole(currentRole);
-    }
-  }catch(_){}
-  // The dev fallback login is not a real session: nobody may claim the
-  // administrator bypass through it.
-  if(sessionFromDevFallback) isAdmin=false;
+    if(!r.ok) return false;                       // 401 / 403 -> not signed in
+    const me=await r.json();
+    currentRole=me.role_spec||me.role||STANDARD_ROLE;
+    isAdmin=!!(me.visibility&&me.visibility.is_admin===true);
+    return true;
+  }catch(_){ return false; }
 }
 async function approve(){
   const btn=document.getElementById('approveBtn');
@@ -347,27 +361,21 @@ async function approve(){
   finally{btn.disabled=false}
 }
 async function load(){
+  const token=await getToken();
+  if(!token){ forceSignIn('You are not signed in'); return; }
+  const authed=await resolveRole(token);
+  if(!authed){ forceSignIn('Session expired (401 Unauthorized)'); return; }
   try{
-    const token=await getToken();
-    await resolveRole(token);
     const r=await fetch('/api/clearance-applications/'+id,{headers:{'Authorization':'Bearer '+token}});
-    if(!r.ok)throw new Error('not found');
+    if(r.status===401){ forceSignIn('Session expired (401 Unauthorized)'); return; }
+    if(!r.ok) throw new Error('not found');
     render(await r.json());
   }catch(e){
-    const db=JSON.parse(localStorage.getItem('sentinelDB')||'null');
-    const fp=db&&db.fingerprint.find(x=>x.id===id);
-    if(fp){
-      const p=db.people.find(x=>x.id===fp.person)||{};
-      render({application_id:fp.id,status:fp.status,created_at:fp.created_at,full_name:p.name,
-        national_id:p.nationalId,mother_name:p.motherName,date_of_birth:p.dob,place_of_birth:p.pob,
-        residence:p.residence,passport_id:p.passportId,phone:p.phone,purpose:fp.purpose,guardian_name:fp.guardian});
-    }else{
-      document.querySelector('.page').innerHTML=
-        '<div style="text-align:center;padding:80px 20px;font-family:Arial,sans-serif;color:#4a5a78">'+
-        '<div style="font-size:44px">&#128274;</div>'+
-        '<p>Application not found. Open it from the Fingerprint register while running the server.</p>'+
-        '<a class="btn ghost" href="index.html">Back to system</a></div>';
-    }
+    document.querySelector('.page').innerHTML=
+      '<div style="text-align:center;padding:80px 20px;font-family:Arial,sans-serif;color:#4a5a78">'+
+      '<div style="font-size:44px">&#128274;</div>'+
+      '<p>Application '+esc(id||'')+' could not be loaded. Open it from the Fingerprint register while the server is running.</p>'+
+      '<a class="btn ghost" href="index.html">Back to system</a></div>';
   }
 }
 load();

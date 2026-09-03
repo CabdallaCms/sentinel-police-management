@@ -158,6 +158,7 @@ function certificate(a){
   '</div>';
 }
 
+// NO developer admin fallback: the page never signs itself in.
 async function getToken(){
   try{
     const t=localStorage.getItem('sentinel_token');
@@ -165,27 +166,36 @@ async function getToken(){
     const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');
     if(s && s.token) return s.token;
   }catch(_){}
-  const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
-  const data=await login.json();
-  return data.token;
+  return '';
+}
+// Hard re-login: clear every stale session key + cookie and send the officer
+// back to the main app instead of rendering a half-authenticated page.
+function forceSignIn(reason){
+  try{
+    localStorage.removeItem('sentinel_token');
+    localStorage.removeItem('sentinel_user');
+    localStorage.removeItem('sentinelSession');
+    document.cookie='sentinel_session=; Path=/; Max-Age=0; SameSite=Lax';
+  }catch(_){}
+  document.getElementById('sheet').innerHTML=
+    '<div class="lock"><div class="big">&#128274;</div><h2>Sign in required</h2>'+
+    '<p>'+esc(reason||'Your session has expired')+'. Sign in through the main system to view this certificate.</p>'+
+    '<p><a class="btn" href="index.html">Go to sign in &rarr;</a></p></div>';
 }
 async function load(){
+  const token=await getToken();
+  if(!token){ forceSignIn('You are not signed in'); return; }
   try{
-    const token=await getToken();
     const r=await fetch('/api/clearance-applications/'+id,{headers:{'Authorization':'Bearer '+token}});
+    if(r.status===401){ forceSignIn('Session expired (401 Unauthorized)'); return; }
     if(!r.ok)throw new Error('not found');
     const a=await r.json();
     if(a.status==='Approved'&&a.certificate_number)certificate(a);else locked(a);
   }catch(e){
-    const db=JSON.parse(localStorage.getItem('sentinelDB')||'null');
-    const fp=db&&db.fingerprint.find(x=>x.id===id);
-    if(fp&&fp.status==='Approved'&&fp.certificate){
-      const p=db.people.find(x=>x.id===fp.person)||{};
-      certificate({application_id:fp.id,certificate_number:fp.certificate,full_name:p.name,national_id:p.nationalId,
-        passport_id:p.passportId,mother_name:p.motherName,date_of_birth:p.dob,place_of_birth:p.pob,
-        residence:p.residence,occupation:p.occupation,purpose:fp.purpose,guardian_name:fp.guardian,
-        guardian_relationship:'',created_at:fp.created_at,reviewed_at:''});
-    }else locked(fp?{status:fp.status}:null);
+    document.getElementById('sheet').innerHTML=
+      '<div class="lock"><div class="big">&#128274;</div><h2>Certificate unavailable</h2>'+
+      '<p>Application '+esc(id||'')+' could not be loaded. Open it from the Fingerprint register while the server is running.</p>'+
+      '<p><a class="btn ghost" href="index.html">Back to system</a></p></div>';
   }
 }
 load();

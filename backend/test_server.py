@@ -1239,6 +1239,61 @@ def main():
                             tokens['fp.officer'])
         assert s == 200 and detail['status'] == 'Approved' and detail['certificate_number'], detail
 
+        # ---- Session persistence + spec role on /api/me --------------------
+        # Sessions are stored in SQLite, so a token keeps working after a
+        # server restart (an in-memory token map used to 401 every browser on
+        # restart, which pushed the frontend into its offline fallbacks).
+        s, login = request(base, 'POST', '/api/login',
+                           body={'username': 'fp.officer', 'password': 'ChangeMe123!'})
+        assert s == 200, login
+        restart_token = login['token']
+        assert login['user']['username'] == 'fp.officer', login['user']
+        assert login['user']['role'] == 'FingerprintUnit', login['user']
+        # Spec-facing snake_case role is exposed for the client UI.
+        assert login['user'].get('role_spec') == 'fingerprint_officer', login['user']
+        s, me = request(base, 'GET', '/api/me', restart_token)
+        assert s == 200, f'/api/me must return 200 for Officer H. Xasan: {s} {me}'
+        assert me['username'] == 'fp.officer', me
+        assert me['role'] == 'FingerprintUnit' and me['role_spec'] == 'fingerprint_officer', me
+        assert me['visibility']['is_admin'] is False, me
+        s, admin_me = request(base, 'GET', '/api/me', tokens['admin'])
+        assert s == 200 and admin_me['role_spec'] == 'admin', admin_me
+
+        # Restart the server on the SAME database: the token must survive.
+        proc.terminate(); proc.wait(timeout=10)
+        proc = subprocess.Popen([sys.executable, SERVER], env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            try:
+                status, _ = request(base, 'GET', '/api/health')
+                if status == 200:
+                    break
+            except Exception:
+                time.sleep(0.2)
+        else:
+            raise RuntimeError('server did not restart')
+        s, me = request(base, 'GET', '/api/me', restart_token)
+        assert s == 200, f'session must survive a restart, /api/me returned {s}: {me}'
+        assert me['username'] == 'fp.officer', me
+        # The still-authenticated officer is still blocked by the review gate.
+        s, created = new_clearance(tokens['admin'], '55500066', purpose='Education')
+        assert s == 201, created
+        restart_app = created['application_id']
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{restart_app}/approve',
+                       restart_token, {})
+        assert s == 400 and 'review period active' in review_error(r), (s, r)
+        # Logout revokes the session: the token is dead afterwards.
+        s, _ = request(base, 'POST', '/api/logout', restart_token, {})
+        assert s == 200, s
+        s, me = request(base, 'GET', '/api/me', restart_token)
+        assert s == 401, f'revoked session must return 401, got {s}: {me}'
+        # ... and a fresh sign-in works again.
+        s, login = request(base, 'POST', '/api/login',
+                           body={'username': 'fp.officer', 'password': 'ChangeMe123!'})
+        assert s == 200, login
+        s, me = request(base, 'GET', '/api/me', login['token'])
+        assert s == 200 and me['username'] == 'fp.officer', me
+
         # --- Fail-closed: a row with NO submission stamp stays locked -------
         # (legacy rows, or a row written by an older build). The elapsed time
         # cannot be proven, so a standard officer is still rejected while an

@@ -1806,8 +1806,12 @@ function stampToTime(v){
   const t=Date.parse(s);
   return isNaN(t)?null:t;
 }
+// NEVER defaults to an administrator: with no confirmed session the caller
+// is treated as a standard officer, which keeps the 12-hour review lock
+// fail-closed (an unauthenticated view must never gain the bypass).
+const STANDARD_ROLE='fingerprint_officer';
 function signedInRole(){
-  return (currentUser&&currentUser.role)||(sessionUser&&sessionUser.role)||'';
+  return (currentUser&&currentUser.role)||(sessionUser&&sessionUser.role)||STANDARD_ROLE;
 }
 function reviewLockState(x){
   // Admins are exempt: the Approve action is always available to them.
@@ -2512,9 +2516,13 @@ async function loadSession(){
 }
 
 function doLogout(reason){
+  // Revoke the session server-side too, so a stale token can never be
+  // replayed, and drop the session cookie.
+  try{ fetch('/api/logout',{method:'POST',headers:{Authorization:'Bearer '+(apiToken||'')}}); }catch(_){}
   resetSessionState();
   currentUser=null;
   clearStoredSession();
+  try{ document.cookie='sentinel_session=; Path=/; Max-Age=0; SameSite=Lax'; }catch(_){}
   document.getElementById('loginScreen').style.display = '';
   document.getElementById('loginUser').value='';
   document.getElementById('loginPassword').value='';

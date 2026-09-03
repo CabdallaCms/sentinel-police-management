@@ -85,9 +85,31 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
 - `GET /api/suspect-alerts` returns `case_id` as the case code (e.g. `CID-2026-009`) or `null`, plus the `origin` column.
 - Duplicate prevention: a person can have one active alert per case **or** one active alert without a linked case.
 
+## Sessions
+
+- `POST /api/login` returns a bearer token **and** sets an `HttpOnly`
+  `sentinel_session` cookie; either transport authenticates the request.
+- Sessions are persisted in a `sessions` table, so a token keeps working
+  after a server restart. (Tokens used to live only in an in-memory map, so
+  every restart made `GET /api/me` answer **401** and pushed the frontends
+  into their offline fallbacks.)
+- `GET /api/me` returns the active user, e.g.
+  `{"username": "fp.officer", "role": "FingerprintUnit",
+    "role_spec": "fingerprint_officer", "visibility": {"is_admin": false}}`.
+  `role_spec` is the snake-case spec alias (`fingerprint_officer`, `admin`,
+  `airport_officer`, `cid_officer`, `checkpoint_officer`) and never defaults
+  to `admin`.
+- `POST /api/logout` revokes the token and clears the cookie.
+
+The printable pages (`application.html`, `certificate.html`) have **no
+development admin fallback**: with no valid session (or on a 401 from
+`/api/me`) they clear the stored keys, show a "Sign in required" screen and
+render every record **locked**.
+
 ## Current endpoints
 
 - `POST /api/login`
+- `POST /api/logout` (authenticated)
 - `GET /api/health`
 - `GET /api/me` (authenticated)
 - `GET /api/persons?q=...` (authenticated — searches name parts, full name, National ID, passport, phone, mother's name, Person ID)

@@ -107,6 +107,10 @@ CREATE TABLE IF NOT EXISTS checkpoint_events(
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS sessions(
+  token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS audit_events(
   id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id),
   action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT,
@@ -519,6 +523,28 @@ def normalize_role(role):
 ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID,
              ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
 
+# Spec-facing snake_case name for every canonical role. Surfaced by
+# /api/me as `role_alias` (and `spec_role`) so a client can key its UI off
+# `fingerprint_officer` / `admin` exactly as the spec describes, while the
+# stored `role` stays canonical.
+SPEC_ROLE_ALIASES = {
+    ROLE_ADMIN: 'admin',
+    ROLE_FINGERPRINT: 'fingerprint_officer',
+    ROLE_AIRPORT: 'airport_officer',
+    ROLE_CID: 'cid_officer',
+}
+SPEC_ROLE_DEFAULT = 'fingerprint_officer'
+
+
+def spec_role_for(role):
+    """Snake-case spec alias for a canonical role (never defaults to admin)."""
+    canonical = canonical_unit_role(role)
+    if canonical in SPEC_ROLE_ALIASES:
+        return SPEC_ROLE_ALIASES[canonical]
+    if is_checkpoint_role(role):
+        return ROLE_CHECKPOINT_OFFICER
+    return SPEC_ROLE_DEFAULT
+
 # Spec-facing / snake_case aliases for the unit roles. A user stored as
 # 'fingerprint_officer' (or signed in as `admin`) must behave exactly like
 # the canonical 'FingerprintUnit' / 'SystemAdmin' row: same modules, same
@@ -671,6 +697,8 @@ def user_view(user):
     # for any Checkpoint officer, regardless of the underlying
     # storage form.
     role_alias = normalize_role(raw_role)
+    # Snake-case spec alias ('fingerprint_officer' / 'admin' / ...).
+    spec_role = spec_role_for(raw_role)
     scope = user.get('location_scope') or ROLE_LOCATION_SCOPE.get(raw_role)
     # Normalise legacy/derived scope for display: checkpoint users see a
     # human-friendly location label, everyone else sees their branch.
@@ -684,13 +712,19 @@ def user_view(user):
     # frontend would never fetch /api/checkpoint-events (the "0 records"
     # bug).
     modules = set(ROLE_MODULES.get(raw_role, set())) | \
-        set(ROLE_MODULES.get(role_alias, set()))
+        set(ROLE_MODULES.get(role_alias, set())) | \
+        set(ROLE_MODULES.get(spec_role, set()))
     return {
         'id': user['id'],
         'username': user['username'],
         'display_name': user['display_name'],
         'role': raw_role,
         'role_alias': role_alias,
+        # Spec-facing snake_case name ('fingerprint_officer', 'admin', ...).
+        # Never defaults to 'admin': an unknown role is treated as a standard
+        # officer, which keeps the 12-hour review lock fail-closed.
+        'role_spec': spec_role,
+        'spec_role': spec_role,
         'role_label': ROLE_LABELS.get(raw_role, raw_role),
         'branch': user.get('branch') or '',
         'location_scope': scope,
@@ -1003,9 +1037,69 @@ def save_upload(f):
         out.write(f['content'])
     return {'path': '/uploads/' + stored, 'name': base}
 
+def session_token_from_cookie(handler):
+    """Read the sentinel_session cookie (fallback to the Bearer header)."""
+    raw = handler.headers.get('Cookie','') or ''
+    for part in raw.split(';'):
+        name, _, value = part.partition('=')
+        if name.strip() == 'sentinel_session':
+            return value.strip()
+    return ''
+
+
+def lookup_session(token):
+    """Resolve a token from the persistent sessions table.
+
+    Sessions used to live only in the in-memory TOKENS map, so every server
+    restart invalidated every signed-in browser and /api/me started answering
+    401 — which pushed the frontends into their offline fallbacks. Sessions
+    are now stored in SQLite and survive a restart.
+    """
+    if not token:
+        return None
+    c = db()
+    try:
+        row = c.execute('SELECT user_id FROM sessions WHERE token=?', (token,)).fetchone()
+    finally:
+        c.close()
+    return row['user_id'] if row else None
+
+
+def create_session(user_id):
+    """Issue a new session token (memory cache + persistent row)."""
+    token = secrets.token_urlsafe(32)
+    TOKENS[token] = user_id
+    c = db()
+    try:
+        c.execute('INSERT OR REPLACE INTO sessions(token,user_id) VALUES(?,?)', (token, user_id))
+        c.commit()
+    finally:
+        c.close()
+    return token
+
+
+def destroy_session(token):
+    """Revoke a session (logout / stale-token cleanup)."""
+    if not token:
+        return
+    TOKENS.pop(token, None)
+    c = db()
+    try:
+        c.execute('DELETE FROM sessions WHERE token=?', (token,))
+        c.commit()
+    finally:
+        c.close()
+
+
 def require_auth(handler):
-    token = handler.headers.get('Authorization','').replace('Bearer ','')
+    token = (handler.headers.get('Authorization','') or '').replace('Bearer ','')
+    if not token:
+        token = session_token_from_cookie(handler)
+    if not token: raise PermissionError('Authentication required')
     user_id = TOKENS.get(token)
+    if not user_id:
+        user_id = lookup_session(token)
+        if user_id: TOKENS[token] = user_id
     if not user_id: raise PermissionError('Authentication required')
     c = db()
     user = rowdict(c.execute(
@@ -1804,7 +1898,7 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
 class API(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args): print('%s - %s' % (self.address_string(), fmt % args))
 
-    def send_json(self, status, data):
+    def send_json(self, status, data, extra_headers=None):
         out = json.dumps(data, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header('Content-Type','application/json; charset=utf-8')
@@ -1812,6 +1906,8 @@ class API(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin','*')
         self.send_header('Access-Control-Allow-Headers','Content-Type, Authorization')
         self.send_header('Access-Control-Allow-Methods','GET, POST, PATCH, OPTIONS')
+        for name, value in (extra_headers or []):
+            self.send_header(name, value)
         self.end_headers(); self.wfile.write(out)
 
     def send_file(self, path, ctype):
@@ -2113,8 +2209,23 @@ class API(BaseHTTPRequestHandler):
                 u = c.execute('SELECT * FROM users WHERE username=? AND password_hash=? AND active=1',
                               (data.get('username'), password_hash(data.get('password','')))).fetchone(); c.close()
                 if not u: self.send_json(401,{'error':'Invalid username or password'}); return
-                token = secrets.token_urlsafe(32); TOKENS[token] = u['id']
-                self.send_json(200,{'token':token,'user':user_view(rowdict(u))}); return
+                # Persistent session: the token survives a server restart, so
+                # /api/me keeps answering 200 for a signed-in officer.
+                token = create_session(u['id'])
+                self.send_json(200,{'token':token,'user':user_view(rowdict(u))},
+                               extra_headers=[('Set-Cookie',
+                                               f'sentinel_session={token}; Path=/; HttpOnly; SameSite=Lax')])
+                return
+            if p.path == '/api/logout':
+                # Revoke the session (both transports) so the client is forced
+                # into a clean re-login instead of a broken offline state.
+                token = (self.headers.get('Authorization','') or '').replace('Bearer ','') \
+                    or session_token_from_cookie(self)
+                destroy_session(token)
+                self.send_json(200, {'ok': True},
+                               extra_headers=[('Set-Cookie',
+                                               'sentinel_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax')])
+                return
             user = require_auth(self); c = db()
             # RBAC: same module gate for the POST/PATCH handlers.
             post_module_for_path = {
