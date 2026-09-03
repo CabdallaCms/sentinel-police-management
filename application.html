@@ -3,109 +3,324 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Fingerprint Application · Review</title>
+<title>Good Conduct Certificate Application</title>
 <style>
-:root{--blue:#246bfe;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--green:#16856b;--amber:#c98512;--red:#d84f5a;--bg:#f4f7fb}
-*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial;color:var(--ink);background:var(--bg)}
-.wrap{max-width:880px;margin:24px auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #1020400d;overflow:hidden}
-.toolbar{display:flex;gap:10px;align-items:center;padding:14px 22px;border-bottom:1px solid var(--line);background:#fafcff;position:sticky;top:0}
-.btn{border:0;border-radius:8px;padding:10px 15px;font-weight:700;font-size:13px;cursor:pointer;color:#fff;background:var(--blue)}
-.btn.green{background:var(--green)}.btn.ghost{background:#eef1f6;color:#33415c}
-.badge{display:inline-flex;padding:5px 10px;border-radius:99px;font-size:12px;font-weight:800}
-.badge.amber{background:#fff3d9;color:var(--amber)}.badge.green{background:#e3f7f1;color:var(--green)}
-.sheet{padding:34px 40px}
-.letterhead{text-align:center;border-bottom:3px double #11233f;padding-bottom:18px;margin-bottom:8px}
-.crest{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#3c83ff,#18c4ad);color:#fff;display:grid;place-items:center;font-weight:900;font-size:24px;margin:0 auto 8px}
-.letterhead h1{margin:2px 0;font-size:21px;letter-spacing:.5px}.letterhead .org{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:2px}
-.doc-title{text-align:center;margin:20px 0 26px}.doc-title h2{margin:0;font-size:18px}.doc-title .ref{color:var(--muted);font-size:13px;margin-top:4px}
-.photo{width:120px;height:140px;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#eef1f6;float:right;margin:0 0 10px 18px}
-h3.sec{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--blue);border-bottom:2px solid #eef3ff;padding-bottom:6px;margin:24px 0 12px;clear:both}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 26px}
-.row{display:flex;font-size:14px;padding:7px 0;border-bottom:1px dashed #eef1f6}.row .k{width:200px;color:var(--muted);font-weight:600;flex:none}.row .v{font-weight:600}
-.docs{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
-.doc{border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700;background:#f7f9ff}
-.doc a{color:var(--blue);text-decoration:none}
-.sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:40px}.sign .box{border-top:1px solid #9aa7bd;padding-top:8px;font-size:12px;color:var(--muted)}
-.verify{background:#fff8ec;border:1px solid #f2ddae;color:#7a5b17;border-radius:10px;padding:12px 14px;font-size:13px;margin:18px 0}
-.lock{padding:60px 40px;text-align:center}.lock .big{font-size:44px}
-.toast{position:fixed;right:24px;bottom:24px;background:#132642;color:#fff;padding:13px 17px;border-radius:10px;display:none;font-size:13px}
-@media print{.toolbar,.no-print{display:none!important}.wrap{box-shadow:none;border:0;margin:0;max-width:100%}.sheet{padding:10px}}
+  :root{
+    --navy:#0f2855;
+    --navy-2:#14346b;
+    --gold:#c9a227;
+    --green:#0e6b4a;
+    --orange:#b7650e;
+    --green-bg:#ecfdf5;
+    --orange-bg:#fff7e6;
+    --border:#b8c5da;
+    --label-bg:#eef2fa;
+    --text:#0b1a30;
+    --muted:#4a5a78;
+    --muted-2:#2c3e5c;
+    --paper:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#fff;font-family:"Georgia","Times New Roman",Times,serif;color:var(--text);font-size:10pt;line-height:1.35}
+  .page{
+    width:210mm;min-height:297mm;margin:0 auto;padding:8mm 10mm 6mm 10mm;
+    background:#fff;position:relative;
+  }
+  @media print{@page{size:A4;margin:0}.page{padding:6mm 8mm 4mm 8mm}}
+
+  /* ---- Dual logo: faint centred watermark + crisp letterhead emblem ---- */
+  .watermark{
+    position:absolute;
+    top:52%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    z-index:2;
+    opacity:0.08;
+    pointer-events:none;
+  }
+  .watermark img{width:150mm;height:auto}
+  .content{position:relative;z-index:1}
+
+  .header-logo{text-align:center;margin-bottom:4px}
+  .header-logo img{width:28mm;height:auto}
+
+  .hdr{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:4px;margin-bottom:6px}
+  .hdr .t1{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;letter-spacing:.2px;color:var(--navy)}
+  .hdr .t2{font-family:Arial,sans-serif;font-size:9.5pt;font-weight:700;color:var(--green);margin-top:1px;letter-spacing:.1px}
+  .title{text-align:center;font-size:16pt;font-weight:700;color:var(--navy);margin:6px 0 4px 0;letter-spacing:.4px;font-family:Georgia,"Times New Roman",serif}
+
+  .photo-wrap{text-align:center;margin:2px 0 4px 0}
+  .photo-frame{display:inline-block}
+  .photo{width:28mm;height:36mm;border:1.5px solid var(--navy);background:#fff;position:relative;overflow:hidden}
+  .photo img{width:100%;height:100%;object-fit:cover}
+  .photo .ph-lbl{position:absolute;inset:auto 0 3px 0;text-align:center;font-family:Arial,sans-serif;font-size:6pt;color:#7a8aa3;letter-spacing:.3px;line-height:1.2;font-weight:700}
+  .photo-cap{font-family:Arial,sans-serif;font-size:7pt;color:var(--muted);font-style:italic;margin-top:1px}
+
+  .intro{font-size:9pt;text-align:justify;color:var(--muted-2);margin:2px 0 6px 0}
+
+  .sec{
+    background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;
+    font-family:Arial,sans-serif;font-weight:700;font-size:9.5pt;padding:4px 10px;
+    margin-top:4px;position:relative;padding-left:16px;letter-spacing:.1px;
+  }
+  .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:10px;background:var(--gold)}
+
+  .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:9pt}
+  .grid td{border:1px solid var(--border);padding:3px 6px;vertical-align:top}
+  .lab{font-weight:700;color:var(--text)}
+  .inline-lab b{font-weight:700}
+  .val{font-weight:600;margin-top:2px;word-break:break-word}
+  .val.navy{color:var(--navy);font-size:10pt}
+  .stm{padding:4px 10px 4px 12px;font-size:9pt;margin-top:2px;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid}
+  .stm.green{background:var(--green-bg);border-color:var(--green);border-left-color:var(--green)}
+  .stm.orange{background:var(--orange-bg);border-color:var(--orange);border-left-color:var(--orange)}
+  .stm .t{font-style:italic;font-weight:700;font-size:9pt}
+  .stm .body{font-style:italic;color:var(--muted-2);font-size:8.5pt}
+  .sig{margin-top:4px;font-size:8.5pt}
+  .sig b{font-weight:700}
+  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:10px;margin:0 2px;vertical-align:bottom}
+  .sig .sl.sh{width:28mm}
+
+  .foot{margin-top:8px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
+  .foot .stripe{height:2px;background:linear-gradient(to right,var(--navy) 0%,var(--gold) 50%,var(--green) 100%)}
+  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:4px 10px;text-align:center;font-size:8.5pt;font-weight:700;letter-spacing:.1px}
+  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:8pt;margin:0 6px}
+  .foot .phone{color:#ffd96b;font-weight:700;letter-spacing:.2px}
+
+  /* ---- Screen-only chrome (never printed) ---- */
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--border);background:#fafcff}
+  .btn{border:0;border-radius:8px;padding:9px 15px;font-weight:700;font-size:13px;cursor:pointer;color:#fff;background:var(--navy);text-decoration:none;display:inline-block;font-family:Arial,sans-serif}
+  .btn.green{background:var(--green)}.btn.ghost{background:#eef1f6;color:#33415c}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .badge{display:inline-flex;padding:5px 10px;border-radius:99px;font-size:12px;font-weight:800;font-family:Arial,sans-serif}
+  .badge.amber{background:#fff3d9;color:var(--orange)}
+  .badge.green{background:#e3f7f1;color:var(--green)}
+  .notice{margin:0;padding:10px 18px;font-family:Arial,sans-serif;font-size:13px;background:#fff8ec;border-bottom:1px solid #f2ddae;color:#7a5b17;display:none}
+  .notice.err{background:#fdecee;border-color:#f3c3c8;color:#8a2230}
+  .notice.on{display:block}
+  .docs-screen{max-width:210mm;margin:16px auto 40px auto;padding:0 10mm;font-family:Arial,sans-serif;font-size:12px;color:var(--muted-2);display:none}
+  .docs-screen.on{display:block}
+  .docs-screen h4{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--navy);margin-bottom:6px}
+  .docs-screen .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .docs-screen a{display:inline-block;border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:#f7f9ff;color:var(--navy);text-decoration:none;font-weight:700}
+  .toast{position:fixed;right:24px;bottom:24px;background:#132642;color:#fff;padding:13px 17px;border-radius:10px;display:none;font-size:13px;font-family:Arial,sans-serif;max-width:420px;z-index:50}
+  @media print{.toolbar,.no-print,.docs-screen,.toast{display:none!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="toolbar no-print">
-    <a class="btn ghost" href="index.html">← Back to system</a>
-    <div style="flex:1"></div>
-    <span id="statusBadge" class="badge amber">Pending Review</span>
-    <button class="btn" onclick="window.print()">🖨 Print for applicant review</button>
-    <button class="btn green" id="approveBtn" onclick="approve()">✓ Approve Application</button>
-  </div>
-  <div class="sheet" id="sheet"><div style="text-align:center;color:var(--muted);padding:60px">Loading application…</div></div>
+
+<div class="toolbar no-print">
+  <a class="btn ghost" href="index.html">&larr; Back to system</a>
+  <div style="flex:1"></div>
+  <span id="statusBadge" class="badge amber">Pending Review</span>
+  <button class="btn" onclick="window.print()">&#128424; Print for applicant review</button>
+  <button class="btn green" id="approveBtn" onclick="approve()">&#10003; Approve Application</button>
 </div>
+
+<div class="notice no-print" id="notice"></div>
+
+<div class="page">
+  <div class="watermark">
+    <img src="images/police_logo.png" alt="Police Watermark">
+  </div>
+
+  <div class="content">
+
+  <div class="header-logo">
+    <img src="images/police_logo.png" alt="Police Logo">
+  </div>
+
+  <div class="hdr">
+    <div class="t1">NORTHEASTERN POLICE FORCE &bull; CRIMINAL INVESTIGATION DIRECTORATE (2026)</div>
+    <div class="t2">Criminal Investigation Directorate (CID) &nbsp;|&nbsp; Code: PCC-2026-DIGITAL-01</div>
+  </div>
+
+  <h1 class="title">GOOD CONDUCT CERTIFICATE APPLICATION</h1>
+
+  <div class="photo-wrap">
+    <div class="photo-frame">
+      <div class="photo" id="photoBox">
+        <div class="ph-lbl">PASSPORT
+PHOTO
+<span style="font-weight:400">35&times;45 mm</span></div>
+      </div>
+    </div>
+    <div class="photo-cap">Attach passport size photo (35mm &times; 45mm)</div>
+  </div>
+
+  <p class="intro">This form digitally initiates the security background check procedure. Please carefully complete your national identification (NIRA/ID) or passport details.</p>
+
+  <div class="sec">SECTION 01 &nbsp;|&nbsp; APPLICANT IDENTIFICATION DETAILS</div>
+  <table class="grid">
+    <tr><td colspan="2"><span class="lab">FULL LEGAL NAME:</span><div class="val navy" id="v_full_name">&mdash;</div></td></tr>
+    <tr><td colspan="2"><span class="lab">MOTHER'S FULL NAME:</span><div class="val" id="v_mother_name">&mdash;</div></td></tr>
+    <tr><td><span class="lab">NATIONAL ID NUMBER (NIRA):</span><div class="val" id="v_id_number">&mdash;</div></td>
+        <td><span class="lab">PASSPORT NUMBER (IF APPLICABLE):</span><div class="val" id="v_passport_number">&mdash;</div></td></tr>
+    <tr><td><span class="lab">DATE OF BIRTH (DD/MM/YYYY):</span><div class="val" id="v_date_of_birth">&mdash;</div></td>
+        <td><span class="lab">PLACE OF BIRTH:</span><div class="val" id="v_place_of_birth">&mdash;</div></td></tr>
+    <tr><td><span class="lab">GENDER (MALE / FEMALE):</span><div class="val" id="v_sex">&mdash;</div></td>
+        <td><span class="lab">PHONE NUMBER | EMAIL:</span><div class="val" id="v_contact">&mdash;</div></td></tr>
+    <tr><td colspan="2"><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div class="val" id="v_current_address">&mdash;</div></td></tr>
+  </table>
+
+  <div class="sec">SECTION 02 &nbsp;|&nbsp; PURPOSE OF APPLICATION</div>
+  <div style="border:1px solid var(--border);background:#fff;padding:4px 10px;font-family:Arial,sans-serif;font-size:10pt;">
+    <strong>Intended Purpose:</strong>
+    <span style="font-weight:700;color:var(--navy);" id="v_purpose">Employment</span>
+  </div>
+
+  <div class="sec">SECTION 03 &nbsp;|&nbsp; GUARANTOR DETAILS</div>
+  <table class="grid">
+    <tr><td class="inline-lab"><b>GUARANTOR FULL NAME:</b><div class="val" id="v_guardian_name">&mdash;</div></td>
+        <td class="inline-lab"><b>NATIONAL ID (NIRA):</b><div class="val" id="v_guardian_id">&mdash;</div></td></tr>
+    <tr><td class="inline-lab"><b>RELATIONSHIP TO APPLICANT:</b><div class="val" id="v_guardian_relationship">&mdash;</div></td>
+        <td class="inline-lab"><b>CONTACT PHONE:</b><div class="val" id="v_guardian_contact">&mdash;</div></td></tr>
+    <tr><td><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div class="val" id="v_guardian_address">&mdash;</div></td>
+        <td><span class="lab">OCCUPATION:</span><div class="val" id="v_guardian_occupation">&mdash;</div></td></tr>
+  </table>
+
+  <div class="sec">SECTION 04 &nbsp;|&nbsp; CONSENT &amp; SIGNATURES</div>
+
+  <div class="stm green">
+    <span class="t">GUARANTOR CONSENT &amp; DECLARATION:</span>
+    <span class="body"> "I hereby verify and act as GUARANTOR for the identity and information of the applicant listed above. I confirm that this data is accurate, and I assume full responsibility for any discrepancies."</span>
+    <div class="sig"><b>GUARANTOR SIGNATURE:</b><span class="sl"></span><b>DATE:</b><span class="sl sh"></span></div>
+  </div>
+
+  <div class="stm orange">
+    <span class="t">APPLICANT CONSENT &amp; DECLARATION:</span>
+    <span class="body"> I declare that the information provided above is accurate and matches my official legal documents. I grant permission to the Police Force to store my biometric data and screen it against security and criminal database records.</span>
+    <div class="sig"><b>APPLICANT SIGNATURE:</b><span class="sl"></span><b>DATE:</b><span class="sl sh"></span></div>
+  </div>
+
+  <div class="foot">
+    <div class="stripe"></div>
+    <div class="body">
+      Criminal Investigation Directorate - North East State of Somalia
+      <span class="pill">Fingerprint &amp; Verification Unit</span>
+      <span class="phone">&#9742; +252-2754131</span>
+    </div>
+  </div>
+
+  </div>
+</div>
+
+<div class="docs-screen no-print" id="docsScreen">
+  <h4>Supporting documents (screen only &mdash; not printed)</h4>
+  <div class="row" id="appDocRow"></div>
+  <div class="row" id="guardDocRow"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
 const id=new URLSearchParams(location.search).get('id');
+const LOGO='images/police_logo.png';
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function toast(s){let t=document.getElementById('toast');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',3000)}
+function setText(el,v){const n=document.getElementById(el);if(n)n.textContent=(v&&String(v).trim())?String(v):'—'}
+function toast(s){const t=document.getElementById('toast');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',4000)}
+function notice(msg,isError){const n=document.getElementById('notice');n.textContent=msg||'';n.className='notice no-print'+(msg?' on':'')+(isError?' err':'');}
+function dash(v){return (v===null||v===undefined||String(v).trim()==='')?'—':String(v)}
+// 'YYYY-MM-DD' (or any Date-parsable stamp) -> 'DD/MM/YYYY'
+function dmy(v){
+  if(!v) return '—';
+  const s=String(v).trim().slice(0,10);
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if(m) return m[3]+'/'+m[2]+'/'+m[1];
+  const d=new Date(String(v));
+  if(isNaN(d.getTime())) return dash(v);
+  return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();
+}
+function docList(json){try{const v=JSON.parse(json||'[]');return Array.isArray(v)?v:[]}catch(e){return[]}}
 let app=null;
-function docList(json){try{return JSON.parse(json||'[]')}catch(e){return[]}}
-function row(k,v){return `<div class="row"><span class="k">${k}</span><span class="v">${esc(v||'—')}</span></div>`}
 function render(a){
   app=a;
   const approved=a.status==='Approved';
-  document.getElementById('statusBadge').className='badge '+(approved?'green':'amber');
-  document.getElementById('statusBadge').textContent=a.status;
-  document.getElementById('approveBtn').style.display=approved?'none':'';
+  const badge=document.getElementById('statusBadge');
+  badge.className='badge '+(approved?'green':'amber');
+  badge.textContent=a.status||'Pending Review';
+  const btn=document.getElementById('approveBtn');
+  btn.style.display=approved?'none':'';
+
+  // ---- mandatory 12-hour review window -----------------------------------
+  // `can_approve` is resolved server-side for the signed-in user: a System
+  // Administrator bypasses the wait, everybody else must sit it out.
+  const rev=a.review||{};
+  const mayApprove=a.can_approve!==false;
+  if(approved){
+    btn.disabled=false;
+    if(a.certificate_number) notice('Approved — certificate '+a.certificate_number+' is unlocked for printing.');
+    else notice('');
+  }else if(rev.review_locked&&!mayApprove){
+    btn.disabled=true;
+    notice('Mandatory '+esc(rev.review_window_hours||12)+'-hour review period in progress — this application can be approved from '+
+      esc((rev.review_eligible_at||'').replace('T',' ').replace('Z',' UTC'))+
+      ' ('+esc(rev.hours_remaining)+' h remaining). A System Administrator can bypass the waiting period.');
+  }else if(rev.review_locked){
+    btn.disabled=false;
+    notice('Mandatory '+esc(rev.review_window_hours||12)+'-hour review period ('+esc(rev.hours_remaining)+
+      ' h remaining). Your account bypasses the wait — you may approve now.');
+  }else{
+    btn.disabled=false;
+    notice('');
+  }
+
+  setText('v_full_name',a.full_name);
+  setText('v_mother_name',a.mother_name);
+  setText('v_id_number',a.national_id);
+  setText('v_passport_number',a.passport_id);
+  setText('v_date_of_birth',dmy(a.date_of_birth));
+  setText('v_place_of_birth',a.place_of_birth);
+  setText('v_sex',a.sex);
+  setText('v_contact',[a.phone,a.email].filter(x=>x&&String(x).trim()).join(' | '));
+  setText('v_current_address',a.residence||a.current_address);
+  setText('v_purpose',a.purpose||'Employment');
+  setText('v_guardian_name',a.guardian_name);
+  setText('v_guardian_id',a.guardian_id);
+  setText('v_guardian_relationship',a.guardian_relationship);
+  setText('v_guardian_contact',a.guardian_phone);
+  setText('v_guardian_address',a.guardian_address);
+  setText('v_guardian_occupation',a.guardian_occupation);
+
+  const box=document.getElementById('photoBox');
+  const photo=a.applicant_photo||a.photo_path;
+  if(photo) box.innerHTML='<img src="'+esc(photo)+'" alt="Applicant Photo">';
+
   const appDocs=docList(a.applicant_docs),guardDocs=docList(a.guardian_docs);
-  const photo=a.photo_path?`<img class="photo" src="${a.photo_path}" alt="photo">`:'';
-  document.getElementById('sheet').innerHTML=`
-   <div class="letterhead"><div class="crest">S</div><div class="org">Somaliland Police Force · Sentinel</div><h1>Fingerprint Unit — Clearance Application</h1><div class="org">Hargeisa Branch</div></div>
-   <div class="doc-title"><h2>APPLICANT REVIEW COPY</h2><div class="ref">Application No. <b>${esc(a.application_id)}</b> · Submitted ${esc((a.created_at||'').slice(0,10))}</div></div>
-   <div class="verify no-print">Day 1 — Please print this page and ask the applicant to check every field carefully. Report any error to the officer before approval.</div>
-   ${photo}
-   <h3 class="sec">Applicant information</h3>
-   <div class="grid">
-     ${row('Full name',a.full_name)}${row('National ID',a.national_id)}
-     ${row("Mother's name",a.mother_name)}${row('Date of birth',a.date_of_birth)}
-     ${row('Place of birth',a.place_of_birth)}${row('Residence',a.residence)}
-     ${row('Occupation',a.occupation)}${row('Passport ID',a.passport_id)}
-     ${row('Phone',a.phone)}${row('Clearance reason',a.purpose)}
-   </div>
-   <h3 class="sec">Applicant attachments (${appDocs.length})</h3>
-   <div class="docs">${appDocs.map(d=>`<span class="doc"><a href="${d.path}" target="_blank">📎 ${esc(d.name)}</a></span>`).join('')||'<span class="muted">—</span>'}</div>
-   <h3 class="sec">Guardian / next of kin</h3>
-   <div class="grid">
-     ${row('Guardian name',a.guardian_name)}${row('Relationship',a.guardian_relationship)}
-     ${row('Guardian ID',a.guardian_id)}${row('Occupation',a.guardian_occupation)}
-     ${row('Address',a.guardian_address)}${row('Contact number',a.guardian_phone)}
-   </div>
-   <h3 class="sec">Guardian attachments (${guardDocs.length})</h3>
-   <div class="docs">${guardDocs.map(d=>`<span class="doc"><a href="${d.path}" target="_blank">📎 ${esc(d.name)}</a></span>`).join('')||'<span class="muted">—</span>'}</div>
-   ${a.notes?`<h3 class="sec">Supporting document notes</h3><div style="font-size:14px">${esc(a.notes)}</div>`:''}
-   <div class="sign"><div class="box">Applicant signature &amp; date<br><br>________________________________</div><div class="box">Receiving officer signature &amp; stamp<br><br>________________________________</div></div>`;
+  if(appDocs.length||guardDocs.length){
+    document.getElementById('docsScreen').classList.add('on');
+    document.getElementById('appDocRow').innerHTML='<b>Applicant:</b> '+(appDocs.map(d=>'<a href="'+esc(d.path)+'" target="_blank">&#128206; '+esc(d.name||'document')+'</a>').join('')||'—');
+    document.getElementById('guardDocRow').innerHTML='<b>Guarantor:</b> '+(guardDocs.map(d=>'<a href="'+esc(d.path)+'" target="_blank">&#128206; '+esc(d.name||'document')+'</a>').join('')||'—');
+  }
 }
 async function getToken(){
-  // Reuse the active session if the main UI is signed in (same origin, same port).
   try{
     const t=localStorage.getItem('sentinel_token');
     if(t) return t;
     const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');
     if(s && s.token) return s.token;
   }catch(_){}
-  // Fallback: sign in as the system admin (development convenience).
   const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
   const data=await login.json();
   return data.token;
 }
 async function approve(){
+  const btn=document.getElementById('approveBtn');
+  btn.disabled=true;
   try{
     const token=await getToken();
-    const r=await fetch('/api/clearance-applications/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:'{}'});
-    const data=await r.json();if(!r.ok)throw new Error(data.error||'Approval failed');
+    // The spec-facing alias route; the legacy /api/clearance-applications
+    // route behaves identically.
+    const r=await fetch('/api/fingerprint/applications/'+id+'/approve',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:'{}'});
+    const data=await r.json();
+    if(!r.ok){
+      notice(data.error||'Approval failed',true);
+      throw new Error(data.error||'Approval failed');
+    }
+    notice('');
     toast('Approved. Certificate '+data.certificate_number+' unlocked.');
-    load(true);
-  }catch(e){toast('Cannot approve in local demo mode: '+e.message)}
+    load();
+  }catch(e){toast(e.message||'Cannot approve this application.')}
+  finally{btn.disabled=false}
 }
 async function load(){
   try{
@@ -114,13 +329,22 @@ async function load(){
     if(!r.ok)throw new Error('not found');
     render(await r.json());
   }catch(e){
-    // local demo fallback
     const db=JSON.parse(localStorage.getItem('sentinelDB')||'null');
     const fp=db&&db.fingerprint.find(x=>x.id===id);
-    if(fp){const p=db.people.find(x=>x.id===fp.person)||{};render({application_id:fp.id,status:fp.status,full_name:p.name,national_id:p.nationalId,mother_name:p.motherName,date_of_birth:p.dob,place_of_birth:p.pob,residence:p.residence,occupation:p.occupation,passport_id:p.passportId,phone:p.phone,purpose:fp.purpose,guardian_name:fp.guardian,applicant_docs:'[]',guardian_docs:'[]'})}
-    else document.getElementById('sheet').innerHTML='<div class="lock"><div class="big">🔒</div><p>Application not found. Open it from the Fingerprint register while running the server.</p><a class="btn ghost" href="index.html">Back to system</a></div>';
+    if(fp){
+      const p=db.people.find(x=>x.id===fp.person)||{};
+      render({application_id:fp.id,status:fp.status,full_name:p.name,national_id:p.nationalId,mother_name:p.motherName,
+        date_of_birth:p.dob,place_of_birth:p.pob,residence:p.residence,passport_id:p.passportId,phone:p.phone,
+        purpose:fp.purpose,guardian_name:fp.guardian,applicant_docs:'[]',guardian_docs:'[]'});
+    }else{
+      document.querySelector('.page').innerHTML=
+        '<div style="text-align:center;padding:80px 20px;font-family:Arial,sans-serif;color:#4a5a78">'+
+        '<div style="font-size:44px">&#128274;</div><p>Application not found. Open it from the Fingerprint register while running the server.</p>'+
+        '<a class="btn ghost" href="index.html">Back to system</a></div>';
+    }
   }
 }
 load();
 </script>
-</body></html>
+</body>
+</html>

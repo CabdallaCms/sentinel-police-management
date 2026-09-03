@@ -13,7 +13,7 @@ Identity matching tiers (used by /api/persons/resolve and every unit route):
 
 Replace SQLite and demo authentication before any operational deployment.
 """
-import hashlib, json, os, re, secrets, sqlite3, time
+import datetime, hashlib, json, os, re, secrets, sqlite3, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -144,6 +144,9 @@ ADDED_COLUMNS = {
         ('applicant_docs', "ALTER TABLE clearance_applications ADD COLUMN applicant_docs TEXT"),
         ('guardian_docs', "ALTER TABLE clearance_applications ADD COLUMN guardian_docs TEXT"),
         ('applicant_photo', "ALTER TABLE clearance_applications ADD COLUMN applicant_photo TEXT"),
+        # Printable-application extras (Section 01 of the Good Conduct form).
+        ('sex', "ALTER TABLE clearance_applications ADD COLUMN sex TEXT"),
+        ('email', "ALTER TABLE clearance_applications ADD COLUMN email TEXT"),
     ],
     'crime_cases': [
         ('incident_summary', "ALTER TABLE crime_cases ADD COLUMN incident_summary TEXT"),
@@ -181,6 +184,118 @@ NAME_PART_FIELDS = ('first_name', 'second_name', 'third_name', 'fourth_name')
 PERSON_FIELDS = NAME_PART_FIELDS + ('full_name', 'national_id', 'date_of_birth', 'phone',
                                     'mother_name', 'place_of_birth', 'residence',
                                     'occupation', 'passport_id', 'photo_path')
+
+# ---------------------------------------------------------------------------
+# Fingerprint / clearance-application policy.
+# ---------------------------------------------------------------------------
+# The mandatory `clearance_reason` values offered by the application form.
+# Submissions are validated against exactly this list (case-insensitive) and
+# the printable application template prints the selected reason verbatim.
+CLEARANCE_REASONS = ('Education', 'Travel', 'Employment', 'Citizenship', 'Licence')
+
+# A clearance application may only be approved once the mandatory review
+# window has elapsed. System Administrators bypass the gate entirely;
+# Fingerprint Officers (and every other non-admin reviewer) must wait.
+FINGERPRINT_REVIEW_WINDOW_HOURS = 12
+
+# Accepted spellings for the two roles the approval gate cares about. The
+# stored role is canonical ('SystemAdmin' / 'FingerprintUnit') but the API
+# also tolerates the spec's snake_case aliases ('admin',
+# 'fingerprint_officer') and the historical compound forms.
+ADMIN_ROLE_KEYS = {'admin', 'systemadmin', 'systemadministrator'}
+FINGERPRINT_ROLE_KEYS = {'fingerprint', 'fingerprintunit', 'fingerprintofficer',
+                         'fingerprintunitofficer', 'fpofficer'}
+
+# /api/fingerprint/applications* is the spec-facing alias for the clearance
+# register; both prefixes resolve to the same handler and module gate.
+FINGERPRINT_API_ALIAS = '/api/fingerprint/applications'
+CLEARANCE_API = '/api/clearance-applications'
+
+
+def canonical_api_path(path):
+    """Resolve the /api/fingerprint/applications alias onto /api/clearance-applications."""
+    if path == FINGERPRINT_API_ALIAS or path.startswith(FINGERPRINT_API_ALIAS + '/'):
+        return CLEARANCE_API + path[len(FINGERPRINT_API_ALIAS):]
+    return path
+
+
+def _role_key(value):
+    return re.sub(r'[^a-z0-9]', '', (value or '').lower())
+
+
+def is_admin_user(user):
+    """True for System Administrators (canonical role or any admin alias)."""
+    if not user:
+        return False
+    keys = {_role_key(user.get('role')), _role_key(user.get('role_alias'))}
+    keys.add(_role_key(normalize_role(user.get('role') or '')))
+    return bool(keys & ADMIN_ROLE_KEYS)
+
+
+def is_fingerprint_officer(user):
+    """True for Fingerprint Unit officers (canonical role or the spec alias)."""
+    if not user:
+        return False
+    keys = {_role_key(user.get('role')), _role_key(user.get('role_alias'))}
+    keys.add(_role_key(normalize_role(user.get('role') or '')))
+    return bool(keys & FINGERPRINT_ROLE_KEYS)
+
+
+def utc_now_stamp():
+    """UTC 'YYYY-MM-DD HH:MM:SS' — the same shape as SQLite CURRENT_TIMESTAMP."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def parse_stamp(value):
+    """Parse a SQLite / ISO-8601 timestamp into a POSIX timestamp, or None."""
+    s = (value or '').strip()
+    if not s:
+        return None
+    s = s.replace('T', ' ').rstrip('Zz').strip()
+    if '.' in s:
+        s = s.split('.', 1)[0]
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            dt = datetime.datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+        return dt.replace(tzinfo=datetime.timezone.utc).timestamp()
+    return None
+
+
+def normalise_reason(value):
+    """Return the canonical CLEARANCE_REASONS spelling for `value`, or None."""
+    s = (value or '').strip()
+    for reason in CLEARANCE_REASONS:
+        if s.lower() == reason.lower():
+            return reason
+    return None
+
+
+def fingerprint_review_state(app, now=None):
+    """12-hour review-window state for a clearance application row.
+
+    `review_locked` is True while `created_at + 12h` is still in the future.
+    Rows without a parseable `created_at` (legacy data) are never locked.
+    """
+    hours = FINGERPRINT_REVIEW_WINDOW_HOURS
+    created = parse_stamp(app.get('created_at') if app else None)
+    if created is None:
+        return {'review_window_hours': hours, 'review_eligible_at': None,
+                'hours_elapsed': None, 'hours_remaining': 0.0,
+                'review_locked': False, 'submitted_at': app.get('created_at') if app else None}
+    now_ts = time.time() if now is None else now
+    elapsed = max(0.0, (now_ts - created) / 3600.0)
+    remaining = max(0.0, hours - elapsed)
+    return {
+        'review_window_hours': hours,
+        'submitted_at': app.get('created_at'),
+        'review_eligible_at': datetime.datetime.fromtimestamp(
+            created + hours * 3600, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'hours_elapsed': round(elapsed, 2),
+        'hours_remaining': round(remaining, 2),
+        'review_locked': remaining > 0,
+    }
 
 # ---------------------------------------------------------------------------
 # Role-Based Access Control (RBAC) — central definition of roles, the modules
@@ -1533,6 +1648,9 @@ class API(BaseHTTPRequestHandler):
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(data)))
         self.end_headers(); self.wfile.write(data)
+        # Truthy => the caller (serve_static) stops and does NOT fall through
+        # to the JSON API, which would append a second response to the body.
+        return True
 
     def do_OPTIONS(self): self.send_json(204, {})
 
@@ -1549,6 +1667,18 @@ class API(BaseHTTPRequestHandler):
             ctype = {'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png',
                      '.gif':'image/gif','.webp':'image/webp','.pdf':'application/pdf'}.get(ext,'application/octet-stream')
             return self.send_file(os.path.join(UPLOAD_DIR, name), ctype)
+        # Brand assets for the printable templates — the police emblem used as
+        # both the letterhead logo and the page watermark. '/static/images/x'
+        # and '/images/x' resolve to the project-root images/ folder.
+        for prefix in ('/images/', '/static/images/'):
+            if p.path.startswith(prefix):
+                rel = os.path.normpath(p.path[len(prefix):]).lstrip('/\\')
+                if rel.startswith('..') or os.path.isabs(rel):
+                    self.send_json(404, {'error':'Not found'}); return True
+                ext = os.path.splitext(rel)[1].lower()
+                ctype = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg',
+                         '.gif':'image/gif','.webp':'image/webp','.svg':'image/svg+xml'}.get(ext,'application/octet-stream')
+                return self.send_file(os.path.join(PROJECT_ROOT, 'images', rel), ctype)
         return None
 
     # ---- GET ----------------------------------------------------------------
@@ -1557,6 +1687,9 @@ class API(BaseHTTPRequestHandler):
         c = None
         try:
             p = urlparse(self.path)
+            # /api/fingerprint/applications* is served by the clearance handlers.
+            if canonical_api_path(p.path) != p.path:
+                p = p._replace(path=canonical_api_path(p.path))
             if p.path == '/api/health':
                 return self.send_json(200, {'status':'ok','service':'sentinel-backend','database':'sqlite-development'})
             user = require_auth(self); c = db()
@@ -1566,6 +1699,7 @@ class API(BaseHTTPRequestHandler):
             module_for_path = {
                 '/api/airport-records': 'airport',
                 '/api/clearance-applications': 'fingerprint',
+                '/api/fingerprint/applications': 'fingerprint',
                 '/api/crime-cases': 'cid',
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
@@ -1613,7 +1747,15 @@ class API(BaseHTTPRequestHandler):
                 rows = c.execute('''SELECT a.application_id,a.purpose,a.status,a.certificate_number,a.created_at,
                     a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id ORDER BY a.id DESC''').fetchall()
-                result = {'items':[rowdict(r) for r in rows]}
+                items = []
+                for r in rows:
+                    item = rowdict(r)
+                    # 12-hour mandatory review window — admins bypass it, so
+                    # `can_approve` is resolved per caller.
+                    item['review'] = fingerprint_review_state(item)
+                    item['can_approve'] = bool(is_admin_user(user) or not item['review']['review_locked'])
+                    items.append(item)
+                result = {'items': items, 'review_window_hours': FINGERPRINT_REVIEW_WINDOW_HOURS}
             elif p.path.startswith('/api/clearance-applications/'):
                 aid = p.path.split('/')[3]
                 a = rowdict(c.execute('''SELECT a.*,p.full_name,p.national_id,p.date_of_birth,p.mother_name,
@@ -1621,6 +1763,9 @@ class API(BaseHTTPRequestHandler):
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id
                     WHERE a.application_id=?''',(aid,)).fetchone())
                 if not a: self.send_json(404,{'error':'Application not found'}); c.close(); return
+                # 12-hour mandatory review window metadata for the printable page.
+                a['review'] = fingerprint_review_state(a)
+                a['can_approve'] = bool(is_admin_user(user) or not a['review']['review_locked'])
                 result = a
             elif p.path == '/api/crime-cases':
                 rows = c.execute('''SELECT cc.*, COUNT(sa.id) AS participant_count
@@ -1773,6 +1918,9 @@ class API(BaseHTTPRequestHandler):
         c = None
         try:
             p = urlparse(self.path)
+            # /api/fingerprint/applications* is handled by the clearance routes.
+            if canonical_api_path(p.path) != p.path:
+                p = p._replace(path=canonical_api_path(p.path))
             if p.path == '/api/login':
                 data = body_json(self); c = db()
                 u = c.execute('SELECT * FROM users WHERE username=? AND password_hash=? AND active=1',
@@ -1785,6 +1933,7 @@ class API(BaseHTTPRequestHandler):
             post_module_for_path = {
                 '/api/airport-records': 'airport',
                 '/api/clearance-applications': 'fingerprint',
+                '/api/fingerprint/applications': 'fingerprint',
                 '/api/crime-cases': 'cid',
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
@@ -1840,6 +1989,12 @@ class API(BaseHTTPRequestHandler):
                     raise ValueError('Applicant full name (4-part) is required')
                 if not (fields.get('national_id') or '').strip() and not (fields.get('passport_id') or '').strip():
                     raise ValueError('Applicant National ID or Passport ID is required')
+                # Mandatory clearance reason — must be one of the approved
+                # dropdown options (case-insensitive, legacy values mapped).
+                purpose = normalise_reason(fields.get('purpose'))
+                if not purpose:
+                    raise ValueError('Clearance reason is required and must be one of: '
+                                     + ', '.join(CLEARANCE_REASONS))
                 photo = save_upload(files['photo']) if 'photo' in files else None
                 person, created = ensure_person(c, fields, photo_path=(photo['path'] if photo else None))
                 if created:
@@ -1852,26 +2007,63 @@ class API(BaseHTTPRequestHandler):
                 if not fields.get('guardian_name'): raise ValueError('Guardian full name is required')
                 if len(guard_docs) < 2: raise ValueError('At least 2 guardian documents are required')
                 aid = 'FP-'+str(int(time.time()*1000))[-8:]
+                # The submission timestamp is stored explicitly (UTC) so the
+                # 12-hour mandatory review window can be evaluated against it.
+                submitted_at = utc_now_stamp()
                 c.execute('''INSERT INTO clearance_applications(application_id,person_id,purpose,
                     guardian_name,guardian_relationship,guardian_id,guardian_occupation,guardian_address,
-                    guardian_phone,legal_document_ref,notes,applicant_docs,guardian_docs,applicant_photo,created_by)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                    (aid,person['id'],fields.get('purpose','Other'),fields.get('guardian_name',''),
+                    guardian_phone,legal_document_ref,notes,applicant_docs,guardian_docs,applicant_photo,
+                    sex,email,created_by,created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    (aid,person['id'],purpose,fields.get('guardian_name',''),
                      fields.get('guardian_relationship',''),fields.get('guardian_id',''),
                      fields.get('guardian_occupation',''),fields.get('guardian_address',''),
                      fields.get('guardian_phone',''),fields.get('legal_document_ref',''),
                      fields.get('notes',''),json.dumps(app_docs),json.dumps(guard_docs),
-                     photo['path'] if photo else None,user['id']))
+                     photo['path'] if photo else None,
+                     (fields.get('sex') or '').strip(),(fields.get('email') or '').strip(),
+                     user['id'],submitted_at))
                 audit(c,user,'CREATE','clearance_application',aid,person['person_id']); c.commit()
                 result = {'application_id':aid,'person_id':person['person_id'],
-                          'status':'Pending Review','identity':identity_result(c,fields,person)}
+                          'status':'Pending Review','created_at':submitted_at,'purpose':purpose,
+                          'review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
+                          'review_eligible_at':fingerprint_review_state({'created_at':submitted_at})['review_eligible_at'],
+                          'identity':identity_result(c,fields,person)}
             elif p.path.startswith('/api/clearance-applications/') and p.path.endswith('/approve'):
                 aid = p.path.split('/')[3]
-                cert = 'CL-'+str(int(time.time()*1000))[-8:]
+                row = c.execute('SELECT application_id,status,certificate_number,created_at '
+                                'FROM clearance_applications WHERE application_id=?', (aid,)).fetchone()
+                if not row:
+                    self.send_json(404, {'error':'Application not found'}); c.close(); return
+                app_row = rowdict(row)
+                # ---- 12-hour mandatory review period ----------------------
+                # System Administrators bypass the gate and can approve the
+                # moment the application is submitted. Fingerprint Officers
+                # (and every other non-admin reviewer) must wait until
+                # created_at + 12 hours has elapsed.
+                bypassed = is_admin_user(user)
+                if not bypassed:
+                    state = fingerprint_review_state(app_row)
+                    if state['review_locked']:
+                        self.send_json(400, {
+                            'error': 'Application is under mandatory 12-hour review period.',
+                            'code': 'review_period_active',
+                            'application_id': aid,
+                            'review_window_hours': state['review_window_hours'],
+                            'hours_remaining': state['hours_remaining'],
+                            'review_eligible_at': state['review_eligible_at'],
+                        }); c.close(); return
+                cert = app_row['certificate_number'] or ('CL-'+str(int(time.time()*1000))[-8:])
                 c.execute("UPDATE clearance_applications SET status='Approved',certificate_number=?,reviewed_at=CURRENT_TIMESTAMP WHERE application_id=?",
                           (cert,aid))
-                audit(c,user,'APPROVE','clearance_application',aid,cert); c.commit()
-                result = {'application_id':aid,'certificate_number':cert,'status':'Approved'}
+                audit(c,user,'APPROVE','clearance_application',aid,
+                      f"{cert} by {user.get('role')}"
+                      + (' (review period bypassed)' if bypassed else '')); c.commit()
+                result = {'application_id':aid,'certificate_number':cert,'status':'Approved',
+                          'review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
+                          'review_period_bypassed':bypassed,
+                          'approved_by_role':user.get('role'),
+                          'reviewer_is_fingerprint_officer':is_fingerprint_officer(user)}
             elif p.path == '/api/crime-cases':
                 data = body_json(self)
                 if not data.get('category'): raise ValueError('category is required')

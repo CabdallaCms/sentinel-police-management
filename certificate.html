@@ -3,78 +3,196 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Clearance Certificate</title>
+<title>Good Conduct / Clearance Certificate</title>
 <style>
-:root{--blue:#246bfe;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--green:#16856b;--amber:#c98512;--red:#d84f5a;--bg:#f4f7fb}
-*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial;color:var(--ink);background:var(--bg)}
-.wrap{max-width:880px;margin:24px auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px #1020400d;overflow:hidden}
-.toolbar{display:flex;gap:10px;align-items:center;padding:14px 22px;border-bottom:1px solid var(--line);background:#fafcff}
-.btn{border:0;border-radius:8px;padding:10px 15px;font-weight:700;font-size:13px;cursor:pointer;color:#fff;background:var(--blue);text-decoration:none;display:inline-block}
-.btn.ghost{background:#eef1f6;color:#33415c}.btn.green{background:var(--green)}
-.badge{display:inline-flex;padding:5px 10px;border-radius:99px;font-size:12px;font-weight:800}
-.badge.amber{background:#fff3d9;color:var(--amber)}.badge.green{background:#e3f7f1;color:var(--green)}
-.sheet{padding:40px 48px}
-.lock{padding:70px 40px;text-align:center}.lock .big{font-size:52px}.lock h2{margin:14px 0 8px}.lock p{color:var(--muted);max-width:420px;margin:8px auto}
-.cert{border:8px double #11233f;border-radius:10px;padding:38px 40px;position:relative}
-.letterhead{text-align:center;border-bottom:3px double #11233f;padding-bottom:16px;margin-bottom:20px}
-.crest{width:58px;height:58px;border-radius:14px;background:linear-gradient(135deg,#3c83ff,#18c4ad);color:#fff;display:grid;place-items:center;font-weight:900;font-size:26px;margin:0 auto 8px}
-.letterhead .org{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:2px}
-.letterhead h1{margin:4px 0 2px;font-size:22px}
-.cert-title{text-align:center;margin:22px 0 6px}.cert-title h2{font-size:24px;letter-spacing:3px;margin:0;color:#11233f}.cert-title .ref{color:var(--muted);font-size:13px;margin-top:6px}
-.body-text{font-size:15px;line-height:2;margin:18px 6px}
-.name-line{font-weight:800;font-size:19px;border-bottom:2px solid var(--ink);padding:0 8px}
-.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px 30px;margin:18px 6px;font-size:14px}
-.kv div b{color:var(--muted);font-weight:600;margin-right:6px}
-.seal{text-align:right;margin-top:34px}.seal .stamp{display:inline-block;border:3px solid var(--green);color:var(--green);border-radius:50%;width:110px;height:110px;line-height:1.05;display:inline-grid;place-items:center;font-weight:900;text-align:center;font-size:13px;transform:rotate(-12deg);opacity:.85}
-.sign{margin-top:10px}.sign .box{border-top:1px solid #9aa7bd;padding-top:8px;font-size:12px;color:var(--muted);max-width:280px}
-.toast{position:fixed;right:24px;bottom:24px;background:#132642;color:#fff;padding:13px 17px;border-radius:10px;display:none;font-size:13px}
-@media print{.toolbar,.no-print{display:none!important}.wrap{box-shadow:none;border:0;margin:0;max-width:100%}.sheet{padding:0}}
+  :root{
+    --navy:#0f2855;
+    --navy-2:#14346b;
+    --gold:#c9a227;
+    --green:#0e6b4a;
+    --border:#b8c5da;
+    --text:#0b1a30;
+    --muted:#4a5a78;
+    --muted-2:#2c3e5c;
+    --label-bg:#eef2fa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#fff;font-family:"Georgia","Times New Roman",Times,serif;color:var(--text);font-size:11pt;line-height:1.4}
+  .page{
+    width:210mm;min-height:297mm;margin:0 auto;padding:8mm 10mm 6mm 10mm;
+    background:#fff;position:relative;
+  }
+  @media print{@page{size:A4;margin:0}.page{padding:6mm 8mm 4mm 8mm}}
+
+  /* ---- Dual logo: centred watermark + letterhead emblem ---- */
+  .watermark{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    z-index:2;
+    opacity:0.09;
+    pointer-events:none;
+  }
+  .watermark img{width:150mm;height:auto}
+  .content{position:relative;z-index:1}
+
+  .frame{border:6px double var(--navy);border-radius:6px;padding:8mm 9mm 7mm 9mm;position:relative}
+  .frame::after{content:"";position:absolute;inset:3px;border:1px solid var(--gold);border-radius:3px;pointer-events:none}
+
+  .letterhead{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:6px}
+  .letterhead .logo-wrap{margin:0 auto 2px auto;line-height:0}
+  .letterhead .logo-wrap img{width:26mm;height:auto}
+  .letterhead .t1{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;letter-spacing:.2px;color:var(--navy)}
+  .letterhead .t2{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;color:var(--green);margin-top:1px;letter-spacing:.1px}
+  .letterhead .t3{font-family:Arial,sans-serif;font-size:7.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:1.4px;margin-top:2px}
+
+  .cert-title{text-align:center;margin:8px 0 6px 0}
+  .cert-title h1{font-size:20pt;font-weight:700;letter-spacing:3px;color:var(--navy);margin:0}
+  .cert-title .ref{font-family:Arial,sans-serif;font-size:8.5pt;color:var(--muted);margin-top:4px}
+  .cert-title .ref b{color:var(--navy)}
+
+  .body-text{font-size:11pt;line-height:2;margin:14px 4px 4px 4px;text-align:justify}
+  .name-line{font-weight:800;font-size:14pt;color:var(--navy);border-bottom:2px solid var(--navy);padding:0 6px}
+
+  .kv{width:100%;border-collapse:collapse;margin:14px 0 6px 0;font-family:Arial,sans-serif;font-size:9.5pt;border:1px solid var(--border)}
+  .kv td{border:1px solid var(--border);padding:4px 8px;vertical-align:top}
+  .kv .k{font-weight:700;color:var(--muted-2);width:33%;background:var(--label-bg)}
+  .kv .v{font-weight:600;color:var(--text);word-break:break-word}
+
+  .stmt{margin-top:10px;padding:6px 10px;background:#fff7e6;border-left:4px solid var(--orange,#b7650e);
+        font-family:Arial,sans-serif;font-size:9pt;font-style:italic;color:var(--muted-2)}
+
+  .bottom{display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px;gap:20px}
+  .sign{font-family:Arial,sans-serif;font-size:8.5pt;color:var(--muted);max-width:80mm}
+  .sign .line{height:14mm;border-bottom:1px solid var(--text);margin-bottom:4px}
+  .seal{text-align:right;flex:none}
+  .seal .stamp{display:inline-grid;place-items:center;width:32mm;height:32mm;border:3px solid var(--green);color:var(--green);
+    border-radius:50%;font-family:Arial,sans-serif;font-weight:900;font-size:8pt;text-align:center;transform:rotate(-12deg);opacity:.85;line-height:1.15}
+
+  .foot{margin-top:10px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
+  .foot .stripe{height:2px;background:linear-gradient(to right,var(--navy) 0%,var(--gold) 50%,var(--green) 100%)}
+  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:4px 10px;text-align:center;font-size:8.5pt;font-weight:700;letter-spacing:.1px}
+  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:8pt;margin:0 6px}
+  .foot .phone{color:#ffd96b;font-weight:700}
+
+  /* ---- Screen-only chrome ---- */
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--border);background:#fafcff}
+  .btn{border:0;border-radius:8px;padding:9px 15px;font-weight:700;font-size:13px;cursor:pointer;color:#fff;background:var(--navy);text-decoration:none;display:inline-block;font-family:Arial,sans-serif}
+  .btn.green{background:var(--green)}.btn.ghost{background:#eef1f6;color:#33415c}
+  .badge{display:inline-flex;padding:5px 10px;border-radius:99px;font-size:12px;font-weight:800;font-family:Arial,sans-serif}
+  .badge.amber{background:#fff3d9;color:#b7650e}
+  .badge.green{background:#e3f7f1;color:var(--green)}
+  .lock{padding:80px 30px;text-align:center;font-family:Arial,sans-serif;color:var(--muted)}
+  .lock .big{font-size:52px}
+  .lock h2{margin:14px 0 8px;color:var(--text)}
+  .lock p{color:var(--muted);max-width:440px;margin:8px auto}
+  .toast{position:fixed;right:24px;bottom:24px;background:#132642;color:#fff;padding:13px 17px;border-radius:10px;display:none;font-size:13px;font-family:Arial,sans-serif;z-index:50}
+  @media print{.toolbar,.no-print,.toast{display:none!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="toolbar no-print">
-    <a class="btn ghost" href="index.html">← Back to system</a>
-    <div style="flex:1"></div>
-    <span id="statusBadge" class="badge amber">Checking…</span>
-    <button class="btn green" id="printBtn" style="display:none" onclick="window.print()">🖨 Print clearance certificate</button>
-  </div>
-  <div class="sheet" id="sheet"><div style="text-align:center;color:var(--muted);padding:60px">Checking clearance status…</div></div>
+
+<div class="toolbar no-print">
+  <a class="btn ghost" href="index.html">&larr; Back to system</a>
+  <div style="flex:1"></div>
+  <span id="statusBadge" class="badge amber">Checking&hellip;</span>
+  <button class="btn green" id="printBtn" style="display:none" onclick="window.print()">&#128424; Print clearance certificate</button>
 </div>
+
+<div id="sheet"><div class="lock"><div class="big">&#128274;</div><p style="font-family:Arial,sans-serif">Checking clearance status&hellip;</p></div></div>
+
 <div class="toast" id="toast"></div>
 <script>
 const id=new URLSearchParams(location.search).get('id');
+const LOGO='images/police_logo.png';
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function kv(k,v){return `<div><b>${k}</b>${esc(v||'—')}</div>`}
+function dash(v){return (v===null||v===undefined||String(v).trim()==='')?'&mdash;':esc(v)}
+function toast(s){const t=document.getElementById('toast');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',3000)}
+function dmy(v){
+  if(!v) return '&mdash;';
+  const s=String(v).trim().slice(0,10);
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if(m) return m[3]+'/'+m[2]+'/'+m[1];
+  const d=new Date(String(v));
+  if(isNaN(d.getTime())) return esc(String(v).slice(0,10));
+  return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();
+}
+function row(k,v){return '<tr><td class="k">'+k+'</td><td class="v">'+dash(v)+'</td></tr>'}
+
 function locked(a){
-  document.getElementById('statusBadge').className='badge amber';
-  document.getElementById('statusBadge').textContent=a&&a.status?a.status:'Locked';
+  const badge=document.getElementById('statusBadge');
+  badge.className='badge amber';
+  badge.textContent=(a&&a.status)?a.status:'Locked';
   document.getElementById('printBtn').style.display='none';
-  document.getElementById('sheet').innerHTML=`<div class="lock"><div class="big">🔒</div><h2>Certificate locked</h2>
-   <p>The clearance certificate for application <b>${esc(id||'')}</b> is only released after an authorized officer approves the application.</p>
-   <p>Current status: <b>${esc(a&&a.status?a.status:'Pending Review')}</b>. Review and approve the application first, then this certificate unlocks for Day-2 printing.</p>
-   <a class="btn" href="application.html?id=${encodeURIComponent(id||'')}">Go to application review →</a></div>`;
+  const rev=(a&&a.review)||{};
+  const wait=(a&&a.status!=='Approved'&&rev.review_locked)
+    ? '<p style="font-family:Arial,sans-serif;font-size:12px;color:#7a5b17;background:#fff8ec;border:1px solid #f2ddae;border-radius:10px;padding:10px 14px">'+
+      'This application is still inside the mandatory '+esc(rev.review_window_hours||12)+'-hour review period. '+
+      'It becomes eligible for approval on '+esc((rev.review_eligible_at||'').replace('T',' ').replace('Z',' UTC'))+' '+
+      '('+esc(rev.hours_remaining)+' h remaining).</p>' : '';
+  document.getElementById('sheet').innerHTML=
+    '<div class="lock"><div class="big">&#128274;</div><h2>Certificate locked</h2>'+
+    '<p>The clearance certificate for application <b>'+esc(id||'')+'</b> is only released after an authorized officer approves the application.</p>'+
+    '<p>Current status: <b>'+esc((a&&a.status)?a.status:'Pending Review')+'</b>. Review and approve the application first, then this certificate unlocks for printing.</p>'+
+    wait+
+    '<p><a class="btn" href="application.html?id='+encodeURIComponent(id||'')+'">Go to application review &rarr;</a></p></div>';
 }
+
 function certificate(a){
-  document.getElementById('statusBadge').className='badge green';document.getElementById('statusBadge').textContent='Approved';
+  document.getElementById('statusBadge').className='badge green';
+  document.getElementById('statusBadge').textContent='Approved';
   document.getElementById('printBtn').style.display='';
-  document.getElementById('sheet').innerHTML=`<div class="cert">
-   <div class="letterhead"><div class="crest">S</div><div class="org">Somaliland Police Force · Sentinel</div><h1>Fingerprint Unit</h1><div class="org">Hargeisa Branch</div></div>
-   <div class="cert-title"><h2>CLEARANCE CERTIFICATE</h2><div class="ref">Certificate No. <b>${esc(a.certificate_number)}</b> · Application ${esc(a.application_id)}</div></div>
-   <div class="body-text">This is to certify that <span class="name-line">${esc(a.full_name)}</span>, holder of National ID <b>${esc(a.national_id)}</b>${a.passport_id?(' and Passport <b>'+esc(a.passport_id)+'</b>'):''}, has been cleared by the Fingerprint Unit for the purpose of <b>${esc(a.purpose)}</b>. No adverse criminal record is held against the above-named person in the records of the CID Criminal Unit as of the date of issue.</div>
-   <div class="kv">
-     ${kv('National ID',a.national_id)}${kv('Passport ID',a.passport_id)}
-     ${kv("Mother's name",a.mother_name)}${kv('Date of birth',a.date_of_birth)}
-     ${kv('Residence',a.residence)}${kv('Occupation',a.occupation)}
-     ${kv('Guardian',a.guardian_name ? a.guardian_name + (a.guardian_relationship ? ' ('+a.guardian_relationship+')' : '') : '')}
-     ${kv('Issued on',(a.reviewed_at||a.updated_at||'').slice(0,10))}
-   </div>
-   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:26px">
-     <div class="sign"><div class="box">Authorized officer signature &amp; stamp<br><br>______________________________</div></div>
-     <div class="seal"><span class="stamp">POLICE<br>CLEARED<br>✓</span></div>
-   </div>
-  </div>`;
+  const guardian=[a.guardian_name,a.guardian_relationship?'('+a.guardian_relationship+')':''].filter(Boolean).join(' ');
+  document.getElementById('sheet').innerHTML=
+  '<div class="page">'+
+    '<div class="watermark"><img src="'+LOGO+'" alt="Police Watermark"></div>'+
+    '<div class="content">'+
+      '<div class="frame">'+
+        '<div class="letterhead">'+
+          '<div class="logo-wrap"><img src="'+LOGO+'" alt="Police Logo"></div>'+
+          '<div class="t1">NORTHEASTERN POLICE FORCE &bull; CRIMINAL INVESTIGATION DIRECTORATE (2026)</div>'+
+          '<div class="t2">Criminal Investigation Directorate (CID) &nbsp;|&nbsp; Code: PCC-2026-DIGITAL-01</div>'+
+          '<div class="t3">Fingerprint &amp; Verification Unit</div>'+
+        '</div>'+
+        '<div class="cert-title">'+
+          '<h1>CLEARANCE CERTIFICATE</h1>'+
+          '<div class="ref">Certificate No. <b>'+esc(a.certificate_number)+'</b> &middot; Application '+esc(a.application_id)+'</div>'+
+        '</div>'+
+        '<div class="body-text">This is to certify that <span class="name-line">'+esc(a.full_name)+'</span>, '+
+          'holder of National ID <b>'+esc(a.national_id)+'</b>'+
+          (a.passport_id?(' and Passport <b>'+esc(a.passport_id)+'</b>'):'')+
+          ', has been cleared by the Fingerprint Unit for the purpose of <b>'+esc(a.purpose)+'</b>. '+
+          'No adverse criminal record is held against the above-named person in the records of the CID Criminal Unit as of the date of issue.</div>'+
+        '<table class="kv">'+
+          row('Full legal name',a.full_name)+
+          row("Mother's full name",a.mother_name)+
+          row('National ID (NIRA)',a.national_id)+
+          row('Passport number',a.passport_id)+
+          row('Date of birth (DD/MM/YYYY)',dmy(a.date_of_birth))+
+          row('Place of birth',a.place_of_birth)+
+          row('Current residential address',a.residence||a.current_address)+
+          row('Occupation',a.occupation)+
+          row('Purpose of application',a.purpose)+
+          row('Guarantor',guardian)+
+          row('Application submitted',dmy(a.created_at))+
+          row('Certificate issued on',dmy(a.reviewed_at||a.updated_at))+
+        '</table>'+
+        '<div class="stmt">This certificate is issued on the basis of the records available to the Criminal Investigation Directorate at the time of issue and does not exempt the holder from any lawful security procedure.</div>'+
+        '<div class="bottom">'+
+          '<div class="sign"><div class="line"></div>Authorized officer signature, name &amp; stamp</div>'+
+          '<div class="seal"><span class="stamp">POLICE<br>CLEARED<br>&#10003;</span></div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="foot"><div class="stripe"></div><div class="body">'+
+        'Criminal Investigation Directorate - North East State of Somalia'+
+        '<span class="pill">Fingerprint &amp; Verification Unit</span>'+
+        '<span class="phone">&#9742; +252-2754131</span>'+
+      '</div></div>'+
+    '</div>'+
+  '</div>';
 }
+
 async function getToken(){
   try{
     const t=localStorage.getItem('sentinel_token');
@@ -96,10 +214,15 @@ async function load(){
   }catch(e){
     const db=JSON.parse(localStorage.getItem('sentinelDB')||'null');
     const fp=db&&db.fingerprint.find(x=>x.id===id);
-    if(fp&&fp.status==='Approved'&&fp.certificate){const p=db.people.find(x=>x.id===fp.person)||{};certificate({application_id:fp.id,certificate_number:fp.certificate,full_name:p.name,national_id:p.nationalId,passport_id:p.passportId,mother_name:p.motherName,date_of_birth:p.dob,residence:p.residence,occupation:p.occupation,purpose:fp.purpose,guardian_name:fp.guardian,reviewed_at:''})}
-    else locked(fp?{status:fp.status}:null);
+    if(fp&&fp.status==='Approved'&&fp.certificate){
+      const p=db.people.find(x=>x.id===fp.person)||{};
+      certificate({application_id:fp.id,certificate_number:fp.certificate,full_name:p.name,national_id:p.nationalId,
+        passport_id:p.passportId,mother_name:p.motherName,date_of_birth:p.dob,place_of_birth:p.pob,
+        residence:p.residence,occupation:p.occupation,purpose:fp.purpose,guardian_name:fp.guardian,reviewed_at:''});
+    }else locked(fp?{status:fp.status}:null);
   }
 }
 load();
 </script>
-</body></html>
+</body>
+</html>

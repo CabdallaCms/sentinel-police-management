@@ -8,9 +8,11 @@ auto-create behaviour and the migrations.
 Usage:
     python3 backend/test_server.py
 """
+import datetime
 import json
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -1137,6 +1139,137 @@ def main():
         # a sign-out: /api/me rejects it explicitly.
         s, r = request(base, 'GET', '/api/me', 'bogus-token-000')
         assert s == 401, f'bogus token /api/me returned {s}: {r}'
+
+        # =================================================================
+        # Fingerprint clearance — mandatory reasons + 12-hour review gate
+        # =================================================================
+
+        def backdate_application(application_id, hours):
+            """Rewrite created_at to `hours` in the past (simulates elapsed time)."""
+            stamp = (datetime.datetime.now(datetime.timezone.utc)
+                     - datetime.timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
+            conn = sqlite3.connect(db_path, timeout=10)
+            try:
+                conn.execute('UPDATE clearance_applications SET created_at=? WHERE application_id=?',
+                             (stamp, application_id))
+                conn.commit()
+            finally:
+                conn.close()
+            return stamp
+
+        def new_clearance(token, national_id, purpose='Employment',
+                          first='Review', second='Period', third='Test', fourth='Case'):
+            fields = {'first_name': first, 'second_name': second, 'third_name': third,
+                      'fourth_name': fourth, 'date_of_birth': '1995-03-03',
+                      'national_id': national_id, 'mother_name': 'Hooyo Test',
+                      'residence': 'Hargeisa, Review Ward', 'phone': '+252 63 555 0900',
+                      'sex': 'Male', 'email': 'applicant@example.com',
+                      'purpose': purpose,
+                      'guardian_name': 'Guardian Test', 'guardian_relationship': 'Uncle',
+                      'guardian_id': 'GD-7788', 'guardian_occupation': 'Teacher',
+                      'guardian_address': 'Burao, Road 9', 'guardian_phone': '+252 63 555 0901'}
+            files = {'doc_app_0': ('app1.pdf', b'%PDF-app1'),
+                     'doc_app_1': ('app2.pdf', b'%PDF-app2'),
+                     'doc_guard_0': ('gd1.pdf', b'%PDF-gd1'),
+                     'doc_guard_1': ('gd2.pdf', b'%PDF-gd2'),
+                     'photo': ('applicant.jpg', b'\xff\xd8\xff\xe0applicant')}
+            return multipart_request(base, '/api/clearance-applications', token, fields, files)
+
+        # --- Mandatory clearance_reason dropdown -------------------------
+        # Anything outside ['Education','Travel','Employment','Citizenship','Licence']
+        # is rejected with 400.
+        s, r = new_clearance(tokens['admin'], '55500011', purpose='Other')
+        assert s == 400 and 'clearance reason' in r.get('error', '').lower(), (s, r)
+        s, r = new_clearance(tokens['admin'], '55500011', purpose='Residence')
+        assert s == 400, (s, r)
+        for reason in ('Education', 'Travel', 'Employment', 'Citizenship', 'Licence'):
+            s, r = new_clearance(tokens['admin'], '5550' + str(abs(hash(reason)) % 10000).zfill(4),
+                                 purpose=reason)
+            assert s == 201 and r['purpose'] == reason, (reason, s, r)
+
+        # --- TEST 1: Fingerprint Officer instant approval -> 400 ---------
+        s, created = new_clearance(tokens['admin'], '55500011', purpose='Employment')
+        assert s == 201, created
+        officer_app = created['application_id']
+        # created_at is stored on creation and echoed back.
+        assert created.get('created_at'), created
+        assert created.get('review_eligible_at'), created
+
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{officer_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 400, f'officer instant approval must fail with 400, got {s}: {r}'
+        assert 'mandatory 12-hour review period' in r['error'].lower(), r
+        assert r.get('code') == 'review_period_active', r
+        assert r.get('review_window_hours') == 12, r
+        assert r.get('hours_remaining') and r['hours_remaining'] > 0, r
+        assert r.get('review_eligible_at'), r
+
+        # Nothing was approved: the row is still pending and the detail
+        # payload reports the lock for the officer.
+        s, detail = request(base, 'GET', f'/api/clearance-applications/{officer_app}',
+                            tokens['fp.officer'])
+        assert s == 200 and detail['status'] == 'Pending Review', detail
+        assert detail['certificate_number'] is None, detail
+        assert detail['review']['review_locked'] is True, detail
+        assert detail['review']['review_window_hours'] == 12, detail
+        assert detail['can_approve'] is False, detail
+        # ... while an admin may approve the very same locked application.
+        s, detail = request(base, 'GET', f'/api/clearance-applications/{officer_app}',
+                            tokens['admin'])
+        assert s == 200 and detail['can_approve'] is True, detail
+
+        # --- TEST 2: Fingerprint Officer approval after +12 hours -> OK --
+        backdate_application(officer_app, 13)
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{officer_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 201, f'officer approval after 12h must succeed, got {s}: {r}'
+        assert r['status'] == 'Approved' and r['certificate_number'], r
+        assert r['review_period_bypassed'] is False, r
+        assert r['approved_by_role'] == 'FingerprintUnit', r
+        assert r['reviewer_is_fingerprint_officer'] is True, r
+        s, detail = request(base, 'GET', f'/api/clearance-applications/{officer_app}',
+                            tokens['fp.officer'])
+        assert s == 200 and detail['status'] == 'Approved' and detail['certificate_number'], detail
+
+        # --- TEST 3: Admin instant approval straight after create -> OK ---
+        s, created = new_clearance(tokens['admin'], '55500022', purpose='Travel')
+        assert s == 201, created
+        admin_app = created['application_id']
+        # Zero simulated elapsed time: the admin bypasses the gate entirely.
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{admin_app}/approve',
+                       tokens['admin'], {})
+        assert s == 201, f'admin instant approval must succeed, got {s}: {r}'
+        assert r['status'] == 'Approved' and r['certificate_number'], r
+        assert r['review_period_bypassed'] is True, r
+        # The certificate page unlocks immediately.
+        s, detail = request(base, 'GET', f'/api/clearance-applications/{admin_app}',
+                            tokens['admin'])
+        assert s == 200 and detail['status'] == 'Approved' and detail['certificate_number'], detail
+
+        # --- The legacy /api/clearance-applications route behaves identically ---
+        s, created = new_clearance(tokens['admin'], '55500033', purpose='Citizenship')
+        assert s == 201, created
+        legacy_app = created['application_id']
+        s, r = request(base, 'POST', f'/api/clearance-applications/{legacy_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 400 and 'mandatory 12-hour review period' in r['error'].lower(), (s, r)
+        # One minute short of the window is still locked ...
+        backdate_application(legacy_app, 11.9)
+        s, r = request(base, 'POST', f'/api/clearance-applications/{legacy_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 400, f'approval at 11.9h must stay locked, got {s}: {r}'
+        # ... and just past 12 hours it is released.
+        backdate_application(legacy_app, 12.1)
+        s, r = request(base, 'POST', f'/api/clearance-applications/{legacy_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 201 and r['status'] == 'Approved', (s, r)
+
+        # The printable extras (Section 01) round-trip through the API.
+        s, detail = request(base, 'GET', f'/api/clearance-applications/{legacy_app}',
+                            tokens['fp.officer'])
+        assert s == 200, detail
+        assert detail.get('sex') == 'Male' and detail.get('email') == 'applicant@example.com', detail
+        assert detail.get('created_at'), detail
 
         print('ALL BACKEND TESTS PASSED')
         return 0

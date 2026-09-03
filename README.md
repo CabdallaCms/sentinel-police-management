@@ -56,9 +56,11 @@ The interface uses **no native browser dialogs**. All create/edit actions happen
 
 ### Fingerprint application, review and certificate
 
-- The expanded clearance application captures applicant data (full name, mother's name, DOB/POB, residence, occupation, passport, National ID, photo, clearance reason) plus **4 applicant file slots (≥2 required)** and guardian data (name, relationship, ID, occupation, address, contact) with **3 guardian file slots (≥2 required)**.
-- **`application.html`** — a printable Day-1 review summary the applicant verifies, with an **Approve Application** action for authorized officers.
-- **`certificate.html`** — the official Day-2 clearance certificate. It is **locked until an officer approves** the application, then unlocks for printing.
+- The expanded clearance application captures applicant data (full name, mother's name, DOB/POB, residence, occupation, passport, National ID, photo, gender, email, clearance reason) plus **4 applicant file slots (≥2 required)** and guardian data (name, relationship, ID, occupation, address, contact) with **3 guardian file slots (≥2 required)**.
+- The **clearance reason** dropdown offers exactly five mandatory reasons — **Education, Travel, Employment, Citizenship, Licence**. The API rejects any other value with HTTP 400.
+- **`application.html`** — the printable Day-1 "Good Conduct Certificate Application" (A4, English) the applicant verifies, with an **Approve Application** action for authorized officers. It carries the police emblem **twice**: a crisp top-centre letterhead logo and a faint centred watermark (`images/police_logo.png`, opacity 0.08).
+- **`certificate.html`** — the official Day-2 clearance certificate. It is **locked until an officer approves** the application, then unlocks for printing. It uses the same emblem twice: the `.letterhead .logo-wrap` header emblem and the centred watermark (opacity 0.09).
+- **Mandatory 12-hour review period.** A clearance application can only be approved once `created_at + 12 hours` has elapsed. A **Fingerprint Officer** attempting an earlier approval gets HTTP 400 `Application is under mandatory 12-hour review period.`; a **System Administrator** bypasses the wait and can approve immediately. The register and the printable page both surface the remaining hours.
 
 ### CID case workspace and optional case linking
 
@@ -185,7 +187,7 @@ Verifies the checkpoint-officer refresh journey: sign in as `cp.south`, token/us
 1. Open **Airport** and type `Ayaan / Cabdi / Xasan / Axmed`, DOB `1997-04-18` and `10012345` — the unified identity form matches central person `P-0001` in real time and auto-fills the existing data.
 2. Open **Fingerprint Unit** and type the same identity; an exact match auto-fills the applicant fields.
 3. Complete clearance reason, guardian details, and attach **at least 2 applicant and 2 guardian documents** (plus an optional photo), then save.
-4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**.
+4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**. Sign in as `fp.officer` and the button is disabled with a "review lock" note until the mandatory 12-hour period has elapsed; sign in as `admin` and the same application can be approved instantly.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
 6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. The **Suspect reason / alert details** field is **mandatory when no Crime Case is linked**; when a case IS linked it can be left empty and automatically defaults to `Linked to CID case {code} — {category}`. Submitting with an exact match reuses the existing central record.
 7. Open a case workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert; the case is optional, and a participant note is required when no case is linked), and upload evidence (tab 3).

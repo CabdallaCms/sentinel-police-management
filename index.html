@@ -32,6 +32,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .btn{background:var(--blue);color:#fff;border-radius:8px;padding:10px 14px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px}
 .btn:hover{filter:brightness(1.05)}.btn.secondary{background:#eef3ff;color:var(--blue)}.btn.ghost{background:#f4f6f9;color:#526075}
 .btn.danger{background:#fff0f1;color:var(--red)}.btn.green{background:#e3f7f1;color:var(--green)}.btn.small{padding:6px 10px;font-size:12px}
+.btn[disabled]{opacity:.45;cursor:not-allowed;filter:grayscale(.4)}.btn[disabled]:hover{filter:grayscale(.4)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
 .form{display:grid;gap:14px}.field{display:grid;gap:6px}
 .field label{font-size:12px;font-weight:700;color:#4d5c73}
@@ -317,7 +318,11 @@ body.modal-open{overflow:hidden}
 <div class="section-label">Applicant identity — Central Person Registry</div>
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>: an exact match (National ID/passport or 4-part name + DOB) auto-fills the existing record; if no match exists a new Central Person is created automatically on save.</div>
 <div id="fpIdentity"></div>
-<div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Travel</option><option>Education</option><option>Employment</option><option>Residence</option><option>Other</option></select></div>
+<div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Education</option><option>Travel</option><option>Employment</option><option>Citizenship</option><option>Licence</option></select></div>
+<div class="grid2">
+<div class="field"><label>Gender</label><select id="fpSex"><option value="">Not stated</option><option>Male</option><option>Female</option></select></div>
+<div class="field"><label>Email</label><input id="fpEmail" placeholder="applicant@example.com"></div>
+</div>
 <div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs"></div></div>
 <div class="section-label">Guardian / next of kin</div>
 <div class="grid2">
@@ -335,7 +340,7 @@ body.modal-open{overflow:hidden}
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div></div>
-<div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing.</div>
+<div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> a Fingerprint Officer can only approve once the 12-hour review period has elapsed; a System Administrator can approve immediately.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
 </div>
@@ -1788,11 +1793,15 @@ function renderAll(){
   }
   renderPeople();
   fpTable.innerHTML=db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
+   // Mandatory 12-hour review window: until it elapses a Fingerprint Officer
+   // cannot approve (System Administrators bypass the wait).
+   const rev=x.review||null;const locked=!approved&&rev&&rev.review_locked;
+   const waitNote=locked?`<br><small class="muted">Review lock: ${esc(rev.hours_remaining)} h left</small>`:'';
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
-   <td><span class="badge ${approved?'green':'blue'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
+   <td><span class="badge ${approved?'green':'blue'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:waitNote}</td>
    <td class="actions">
      <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
-     ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`:`<button class="btn small" onclick="approveFP('${esc(x.id)}')">Approve</button>`}
+     ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`:`<button class="btn small" ${locked?'disabled title="Under mandatory 12-hour review period"':''} onclick="approveFP('${esc(x.id)}')">Approve</button>`}
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
@@ -1828,7 +1837,7 @@ function buildFileSlots(containerId,prefix,count,labels){
   el.querySelectorAll('input[type=file]').forEach(inp=>inp.addEventListener('change',()=>{document.getElementById(prefix+inp.dataset.slot.slice(-1)).classList.toggle('filled',!!inp.files[0])}));
 }
 function collectFiles(prefix,count){const out=[];for(let i=0;i<count;i++){const inp=document.querySelector(`input[data-slot="${prefix}${i}"]`);if(inp&&inp.files[0])out.push(inp.files[0])}return out}
-function resetFpForm(){fpForm.reset();window._identityWires.fp.clear();[...document.querySelectorAll('.fileslot')].forEach(f=>f.classList.remove('filled'));fpNotice.style.display='none'}
+function resetFpForm(){fpForm.reset();fpPurpose.value='Education';fpSex.value='';fpEmail.value='';window._identityWires.fp.clear();[...document.querySelectorAll('.fileslot')].forEach(f=>f.classList.remove('filled'));fpNotice.style.display='none'}
 async function saveFingerprint(e){
   e.preventDefault();
   clearInvalid();
@@ -1841,7 +1850,7 @@ async function saveFingerprint(e){
     if(serverOn){
       const photo=document.getElementById('fp-photo').files[0];
       const fd=new FormData();
-      Object.entries({...identityServer(d),person_id:matchedPersonId('fp'),purpose:fpPurpose.value,guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
+      Object.entries({...identityServer(d),person_id:matchedPersonId('fp'),purpose:fpPurpose.value,sex:fpSex.value,email:fpEmail.value.trim(),guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
       appDocs.forEach((f,i)=>fd.append('doc_app_'+i,f));guardDocs.forEach((f,i)=>fd.append('doc_guard_'+i,f));if(photo)fd.append('photo',photo);
       const r=await api('/api/clearance-applications',{method:'POST',body:fd});
       const m=r.identity&&r.identity.matched?'matched to existing central record '+r.identity.person_id:'new central person '+r.person_id+' created';
@@ -1855,9 +1864,14 @@ async function saveFingerprint(e){
   }catch(err){showFormError(err.message||'The clearance application could not be saved.',{notice:'fpNotice',title:'Unable to Save'})}
 }
 async function approveFP(id){
-  try{if(serverOn){await api('/api/clearance-applications/'+id+'/approve',{method:'POST',body:'{}'});await syncServer();toast('Approved — certificate unlocked for printing')}
+  try{if(serverOn){
+      // POST /api/fingerprint/applications/:id/approve — the clearance
+      // register route. A Fingerprint Officer is blocked by the mandatory
+      // 12-hour review period (HTTP 400); a System Administrator bypasses it.
+      await api('/api/fingerprint/applications/'+id+'/approve',{method:'POST',body:'{}'});
+      await syncServer();toast('Approved — certificate unlocked for printing')}
   else{let x=db.fingerprint.find(a=>a.id===id);x.status='Approved';x.certificate='CL-'+Date.now().toString().slice(-6);persist();renderAll();toast('Approved; certificate '+x.certificate+' generated (local demo)')}}
-  catch(e){showFormError(e.message||('Application '+id+' could not be approved.'),{title:'Unable to Save'})}
+  catch(e){showFormError(e.message||('Application '+id+' could not be approved.'),{title:'Approval blocked'})}
 }
 
 // ============================ airport ============================
@@ -2223,7 +2237,10 @@ async function syncServer(){
       if(!p.units.length){p.units.push('Central');p.units_explicit.push('Central');}
     });
     if(ars.ok) db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,notes:x.notes}));
-    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number}));
+    // The review payload carries the 12-hour mandatory-review window state
+    // (and whether the signed-in user may approve right now), so the register
+    // can show why an approval is still locked.
+    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at}));
     if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
     if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};

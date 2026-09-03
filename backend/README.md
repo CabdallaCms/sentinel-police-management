@@ -98,9 +98,18 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
 - `GET /api/persons/{person_id}` (authenticated — profile plus linked airport/clearance/CID records)
 - `GET /api/airport-records` / `POST /api/airport-records` (authenticated — accepts `person_id` or identity fields; auto-creates the central person)
 - `GET /api/clearance-applications` (authenticated)
-- `POST /api/clearance-applications` (authenticated, `multipart/form-data` — applicant identity fields, 4 applicant docs and 3 guardian docs with **at least 2 of each required**, optional photo; identity is resolved/auto-created)
-- `GET /api/clearance-applications/{application_id}` (authenticated — full detail for the printable pages)
-- `POST /api/clearance-applications/{id}/approve` (authenticated — issues the certificate number and unlocks the certificate)
+- `POST /api/clearance-applications` (authenticated, `multipart/form-data` — applicant identity fields, 4 applicant docs and 3 guardian docs with **at least 2 of each required**, optional photo; identity is resolved/auto-created. `purpose` (clearance reason) is **mandatory** and must be one of `Education`, `Travel`, `Employment`, `Citizenship`, `Licence`; the submission timestamp is stored explicitly in `created_at`)
+- `GET /api/clearance-applications/{application_id}` (authenticated — full detail for the printable pages, plus the `review` block and `can_approve` flag for the 12-hour gate)
+- `POST /api/clearance-applications/{id}/approve` (authenticated — issues the certificate number and unlocks the certificate, subject to the mandatory 12-hour review period)
+
+  `/api/fingerprint/applications` is an alias for `/api/clearance-applications`; every route below it (including `/api/fingerprint/applications/{id}/approve`) behaves identically and is gated by the same `fingerprint` module rule.
+
+  **12-hour approval rule**
+
+  | Caller | Behaviour |
+  |--------|-----------|
+  | `SystemAdmin` (or any admin alias) | Approves immediately — the review window is bypassed (`review_period_bypassed: true`) |
+  | `FingerprintUnit` / `fingerprint_officer` (or any other non-admin reviewer) | Only once `now >= created_at + 12h`; otherwise HTTP 400 `Application is under mandatory 12-hour review period.` with `hours_remaining` and `review_eligible_at` |
 - `GET /api/crime-cases` / `POST /api/crime-cases` (authenticated)
 - `GET /api/crime-cases/{case_id}` (authenticated — incident summary, participants and evidence)
 - `PATCH /api/crime-cases/{case_id}` (authenticated — update status, category, location, summary, notes)
@@ -112,7 +121,7 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
 - `PATCH /api/admin/users/{id}` (SystemAdmin only — edit `display_name`, `role`, `branch`, `location_scope`, `password`, `active`. Role changes auto-derive the matching `location_scope` unless one is explicitly passed.)
 - `GET /api/admin/analytics` (SystemAdmin only — `summary` totals, `crime_distribution` by location + time-of-day bucket, `checkpoint_volume` by location + age-bracket demographics, ready for charts)
 
-Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval).
+Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval). Both printable pages load the police emblem from `images/police_logo.png` (served at `/images/...` and `/static/images/...`) and render it twice — as the letterhead logo and as a low-opacity (0.08–0.09) centred watermark behind the document content.
 
 The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoint records must reference a central `person_id` (created or matched automatically from the unified identity form). Person records are merged (never duplicated) when a Tier 1 or Tier 2 match is found; only newly provided fields are updated.
 
@@ -127,7 +136,12 @@ The backend suite starts the server against a temporary database and
 verifies the identity-resolution tiers (including flexible 2/3/4-part
 partial name matching, case-insensitive/trimmed search and dropdown
 suggestions), optional suspect case linking, auto-create behaviour,
-duplicate protection, the new **role-based access control** (per-module
+duplicate protection, the **mandatory clearance reasons** (any value
+outside the five dropdown options is rejected with 400), the **12-hour
+review gate** (a Fingerprint Officer's instant approval fails with 400,
+the same approval succeeds once `created_at` is backdated past 12 hours,
+and an admin approves a brand-new application instantly), the new
+**role-based access control** (per-module
 restrictions for each role, location-scoped Checkpoint endpoints,
 admin user-management CRUD, deactivated-user lockout), **role-alias
 normalization** (`cp_south` / `CheckpointEast` / `checkpoint_officer`
