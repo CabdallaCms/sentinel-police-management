@@ -1264,6 +1264,69 @@ def main():
                        tokens['fp.officer'], {})
         assert s == 201 and r['status'] == 'Approved', (s, r)
 
+        # --- Role-alias hardening: 'fingerprint_officer' / 'admin' ---------
+        # The spec names the reviewer roles in snake_case. A user created (or
+        # stored) with an alias must resolve to the canonical role everywhere:
+        # modules, RBAC gates, visibility flags and the 12-hour review lock.
+        s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
+            'username': 'fp.alias', 'display_name': 'Officer Alias',
+            'password': 'ChangeMe123!', 'role': 'fingerprint_officer',
+            'branch': 'Fingerprint Unit'})
+        assert s == 201, f'create fingerprint_officer alias returned {s}: {r}'
+        assert r['user']['role'] == 'FingerprintUnit', r['user']
+        assert set(('dashboard', 'fingerprint', 'people')) <= set(r['user']['modules']), r['user']
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'fp.alias', 'password': 'ChangeMe123!'})
+        assert s == 200, f'alias officer login returned {s}: {r}'
+        alias_fp_token = r['token']
+        assert set(('dashboard', 'fingerprint', 'people')) <= set(r['user']['modules']), r['user']
+        s, d = request(base, 'GET', '/api/dashboard', alias_fp_token)
+        assert s == 200 and d.get('is_admin') is False, (s, d)
+        s, me = request(base, 'GET', '/api/me', alias_fp_token)
+        assert s == 200 and me['visibility']['is_admin'] is False, me
+        # Admin alias on create normalises to SystemAdmin.
+        s, r = request(base, 'POST', '/api/admin/users', tokens['admin'], {
+            'username': 'admin.alias', 'display_name': 'Admin Alias',
+            'password': 'ChangeMe123!', 'role': 'admin'})
+        assert s == 201 and r['user']['role'] == 'SystemAdmin', r
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'admin.alias', 'password': 'ChangeMe123!'})
+        assert s == 200 and r['user']['role'] == 'SystemAdmin', r
+        s, me = request(base, 'GET', '/api/me', r['token'])
+        assert s == 200 and me['visibility']['is_admin'] is True, me
+
+        # A legacy row whose role is literally stored as 'fingerprint_officer'
+        # still resolves to the Fingerprint modules and the 12-hour gate.
+        sys.path.insert(0, ROOT)
+        import server as sentinel_server
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
+            conn.execute("INSERT INTO users(username,display_name,role,branch,password_hash,active) "
+                         "VALUES('legacy.fp','Legacy FP','fingerprint_officer','Fingerprint Unit',?,1)",
+                         (sentinel_server.password_hash('ChangeMe123!'),))
+            conn.commit()
+        finally:
+            conn.close()
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'legacy.fp', 'password': 'ChangeMe123!'})
+        assert s == 200, f'legacy alias login returned {s}: {r}'
+        legacy_token = r['token']
+        assert set(('dashboard', 'fingerprint', 'people')) <= set(r['user']['modules']), r['user']
+        s, r = request(base, 'GET', '/api/clearance-applications', legacy_token)
+        assert s == 200, f'legacy alias must reach the fingerprint module: {s} {r}'
+        # ... and the mandatory review window still blocks this officer.
+        s, created = new_clearance(tokens['admin'], '55500044', purpose='Licence')
+        assert s == 201, created
+        alias_app = created['application_id']
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{alias_app}/approve',
+                       legacy_token, {})
+        assert s == 400 and 'mandatory 12-hour review period' in r['error'].lower(), (s, r)
+        backdate_application(alias_app, 13)
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{alias_app}/approve',
+                       legacy_token, {})
+        assert s == 201 and r['status'] == 'Approved', (s, r)
+        assert r['reviewer_is_fingerprint_officer'] is True, r
+
         # The printable extras (Section 01) round-trip through the API.
         s, detail = request(base, 'GET', f'/api/clearance-applications/{legacy_app}',
                             tokens['fp.officer'])

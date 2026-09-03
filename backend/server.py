@@ -364,15 +364,42 @@ def is_checkpoint_role(role):
         return True
     return False
 
+def canonical_unit_role(role):
+    """Resolve a unit-role alias ('admin', 'fingerprint_officer', ...) to the
+    canonical stored role ('SystemAdmin', 'FingerprintUnit', ...).
+
+    The spec refers to the reviewer roles by their snake_case names
+    (`admin` / `fingerprint_officer`), so a user row stored in either
+    spelling must resolve to the same canonical role everywhere —
+    module gates, visibility flags, role labels and the 12-hour review
+    window. Unknown roles pass through unchanged.
+    """
+    if not role:
+        return role
+    r = str(role).strip()
+    if r in UNIT_ROLE_ALIASES:
+        return UNIT_ROLE_ALIASES[r]
+    key = _role_key(r)
+    for alias, canonical in UNIT_ROLE_ALIASES.items():
+        if _role_key(alias) == key:
+            return canonical
+    return r
+
+
 def normalize_role(role):
     """Map any accepted Checkpoint-officer spelling to the canonical
-    normalised form ('checkpoint_officer'). Pass through any other
-    role unchanged. This is the single source of truth for the
-    spec-mandated role string normalization.
+    normalised form ('checkpoint_officer') and any unit alias
+    ('fingerprint_officer', 'admin', ...) to its canonical role.
+    All other roles pass through unchanged. This is the single source
+    of truth for the spec-mandated role string normalization.
     """
     if not role:
         return role
     r = str(role)
+    # Unit aliases first: 'fingerprint_officer' -> 'FingerprintUnit', ...
+    canonical = canonical_unit_role(r)
+    if canonical != r:
+        return canonical
     if r in CHECKPOINT_ROLE_ALIASES:
         return CHECKPOINT_ROLE_ALIASES[r]
     if r.lower() in CHECKPOINT_ROLE_ALIASES:
@@ -386,6 +413,32 @@ def normalize_role(role):
 
 ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID,
              ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
+
+# Spec-facing / snake_case aliases for the unit roles. A user stored as
+# 'fingerprint_officer' (or signed in as `admin`) must behave exactly like
+# the canonical 'FingerprintUnit' / 'SystemAdmin' row: same modules, same
+# RBAC gates, same role label, same 12-hour review rule.
+UNIT_ROLE_ALIASES = {
+    ROLE_ADMIN: ROLE_ADMIN,
+    'admin': ROLE_ADMIN,
+    'system_admin': ROLE_ADMIN,
+    'systemadministrator': ROLE_ADMIN,
+    'administrator': ROLE_ADMIN,
+    ROLE_FINGERPRINT: ROLE_FINGERPRINT,
+    'fingerprint_officer': ROLE_FINGERPRINT,
+    'fingerprintofficer': ROLE_FINGERPRINT,
+    'fingerprint_unit': ROLE_FINGERPRINT,
+    'fp_officer': ROLE_FINGERPRINT,
+    'fp.officer': ROLE_FINGERPRINT,
+    ROLE_AIRPORT: ROLE_AIRPORT,
+    'airport_officer': ROLE_AIRPORT,
+    'airport_control': ROLE_AIRPORT,
+    'ap_officer': ROLE_AIRPORT,
+    ROLE_CID: ROLE_CID,
+    'cid_officer': ROLE_CID,
+    'cidunit': ROLE_CID,
+    'criminal_investigation': ROLE_CID,
+}
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
 # 'East', 'West') so the scoping stays in sync with existing seed data.
@@ -435,6 +488,14 @@ ROLE_LOCATION_SCOPE = {
     ROLE_CHECKPOINT_OFFICER: '',
 }
 
+# Every unit alias inherits the modules / scope / label of the canonical
+# role it resolves to, so a row stored as 'fingerprint_officer' (or a token
+# issued for 'admin') is never left with an empty module list.
+for _alias, _canonical in UNIT_ROLE_ALIASES.items():
+    ROLE_MODULES.setdefault(_alias, ROLE_MODULES[_canonical])
+    ROLE_LOCATION_SCOPE.setdefault(_alias, ROLE_LOCATION_SCOPE[_canonical])
+    ROLE_LABELS.setdefault(_alias, ROLE_LABELS[_canonical])
+
 
 def canonical_location_scope(scope):
     """Map a location value ('south', 'South Checkpoint', ' SOUTH '...) to the
@@ -463,10 +524,16 @@ def normalize_incoming_role(role):
     unchanged. Returns (canonical_role, derived_location_scope_or_None)
     — the derived scope is pulled from the alias itself ('cp_south' ->
     'South') so normalizing NEVER loses the officer's location.
+    Unit aliases are canonicalised too: 'fingerprint_officer' is stored as
+    'FingerprintUnit' and 'admin' as 'SystemAdmin'.
     """
     r = str(role or '').strip()
     if not r:
         return r, None
+    # 'fingerprint_officer' -> 'FingerprintUnit', 'admin' -> 'SystemAdmin', ...
+    canonical = canonical_unit_role(r)
+    if canonical != r:
+        return canonical, None
     if r in set(ALL_ROLES) | {ROLE_CHECKPOINT_OFFICER}:
         derived = ROLE_LOCATION_SCOPE.get(r) or None
         if is_checkpoint_role(r):
@@ -594,10 +661,13 @@ def checkpoint_scope(user):
 def filter_visibility(user):
     """Small dict of RBAC booleans used by the /api/me view and frontend."""
     role = user.get('role') or ''
+    # Resolve aliases first so 'admin' / 'system_admin' behave like the
+    # canonical SystemAdmin row.
+    is_admin = canonical_unit_role(role) == ROLE_ADMIN
     return {
-        'is_admin': role == ROLE_ADMIN,
-        'can_manage_users': role == ROLE_ADMIN,
-        'can_view_analytics': role == ROLE_ADMIN,
+        'is_admin': is_admin,
+        'can_manage_users': is_admin,
+        'can_view_analytics': is_admin,
         'checkpoint_scope': checkpoint_scope(user),
     }
 
@@ -1647,6 +1717,10 @@ class API(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(data)))
+        # Development server: never let a browser serve a stale copy of a
+        # template (the printable pages are edited frequently and a cached
+        # application.html shows an outdated layout).
+        self.send_header('Cache-Control', 'no-store, must-revalidate')
         self.end_headers(); self.wfile.write(data)
         # Truthy => the caller (serve_static) stops and does NOT fall through
         # to the JSON API, which would append a second response to the body.

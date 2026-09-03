@@ -110,6 +110,29 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
   |--------|-----------|
   | `SystemAdmin` (or any admin alias) | Approves immediately — the review window is bypassed (`review_period_bypassed: true`) |
   | `FingerprintUnit` / `fingerprint_officer` (or any other non-admin reviewer) | Only once `now >= created_at + 12h`; otherwise HTTP 400 `Application is under mandatory 12-hour review period.` with `hours_remaining` and `review_eligible_at` |
+
+  The same rule is mirrored in the UI: `index.html` and `application.html`
+  compare `created_at` with the current time for the signed-in user and
+  disable the Approve action with a
+  `Review Lock (12h Required) - X hours remaining` badge, so a non-admin
+  officer never even issues the request.
+
+### Role aliases
+
+Roles are resolved through one normaliser, so every spelling behaves
+identically:
+
+| Canonical role | Accepted aliases |
+|----------------|------------------|
+| `SystemAdmin` | `admin`, `system_admin`, `administrator` |
+| `FingerprintUnit` | `fingerprint_officer`, `fingerprint_unit`, `fp_officer` |
+| `AirportControl` | `airport_officer`, `airport_control`, `ap_officer` |
+| `CIDUnit` | `cid_officer`, `criminal_investigation` |
+| `checkpoint_officer` | `CheckpointSouth/East/West`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, … |
+
+  A row stored as `fingerprint_officer` therefore keeps its modules, RBAC
+  gates, role label and review-window behaviour; creating or patching a
+  user with an alias stores the canonical role.
 - `GET /api/crime-cases` / `POST /api/crime-cases` (authenticated)
 - `GET /api/crime-cases/{case_id}` (authenticated — incident summary, participants and evidence)
 - `PATCH /api/crime-cases/{case_id}` (authenticated — update status, category, location, summary, notes)

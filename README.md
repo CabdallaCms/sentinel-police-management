@@ -60,7 +60,11 @@ The interface uses **no native browser dialogs**. All create/edit actions happen
 - The **clearance reason** dropdown offers exactly five mandatory reasons — **Education, Travel, Employment, Citizenship, Licence**. The API rejects any other value with HTTP 400.
 - **`application.html`** — the printable Day-1 "Good Conduct Certificate Application" (A4, English) the applicant verifies, with an **Approve Application** action for authorized officers. It carries the police emblem **twice**: a crisp top-centre letterhead logo and a faint centred watermark (`images/police_logo.png`, opacity 0.08).
 - **`certificate.html`** — the official Day-2 clearance certificate. It is **locked until an officer approves** the application, then unlocks for printing. It uses the same emblem twice: the `.letterhead .logo-wrap` header emblem and the centred watermark (opacity 0.09).
-- **Mandatory 12-hour review period.** A clearance application can only be approved once `created_at + 12 hours` has elapsed. A **Fingerprint Officer** attempting an earlier approval gets HTTP 400 `Application is under mandatory 12-hour review period.`; a **System Administrator** bypasses the wait and can approve immediately. The register and the printable page both surface the remaining hours.
+- **Mandatory 12-hour review period.** A clearance application can only be approved once `created_at + 12 hours` has elapsed. A **Fingerprint Officer** attempting an earlier approval gets HTTP 400 `Application is under mandatory 12-hour review period.`; a **System Administrator** bypasses the wait and can approve immediately. The lock is enforced in **three** places:
+  - the backend gate on `POST /api/fingerprint/applications/{id}/approve`;
+  - the **Fingerprint register table** in `index.html`, where the Approve button is disabled and replaced by a `🔒 Review Lock (12h Required) - X hours remaining` badge the moment the application is created (admins see an enabled button with an "Admin bypass" label);
+  - `application.html`, which reads `created_at` and the signed-in role and blocks the approve call client-side before any request is sent.
+- Role names are alias-tolerant: an officer stored as `fingerprint_officer` (or an account named `admin`) resolves to the canonical `FingerprintUnit` / `SystemAdmin` role for modules, RBAC gates, visibility flags and the review window.
 
 ### CID case workspace and optional case linking
 

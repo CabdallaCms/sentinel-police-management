@@ -1782,6 +1782,55 @@ function renderDashboardLocal(){
   paintDashboard(d);
 }
 
+// =====================================================================
+// Fingerprint — mandatory 12-hour review lock
+// ---------------------------------------------------------------------
+// An application may only be approved once (current_time - created_at)
+// >= 12 hours. System Administrators bypass the rule; every other role
+// (Fingerprint Officer included) is locked out of approval until the
+// window elapses. The lock is evaluated here on the client (so the
+// Approve button is disabled the instant an application is created),
+// mirrored by the identical server-side gate on
+// POST /api/fingerprint/applications/{id}/approve.
+// =====================================================================
+const REVIEW_LOCK_HOURS=12;
+// Parse a stored timestamp. SQLite writes 'YYYY-MM-DD HH:MM:SS' in UTC
+// with no zone marker, so it is normalised to a UTC ISO string first.
+function stampToTime(v){
+  if(!v) return null;
+  let s=String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s)) s=s.replace(' ','T')+':00Z';
+  else if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) s=s.replace(' ','T')+'Z';
+  else if(/^\d{4}-\d{2}-\d{2}$/.test(s)) s=s+'T00:00:00Z';
+  const t=Date.parse(s);
+  return isNaN(t)?null:t;
+}
+function signedInRole(){
+  return (currentUser&&currentUser.role)||(sessionUser&&sessionUser.role)||'';
+}
+function reviewLockState(x){
+  // Admins are exempt: the Approve action is always available to them.
+  if(isAdminRole(signedInRole())) return {locked:false,hoursRemaining:0,label:'',eligibleAt:null};
+  let remaining=0, eligibleAt=null;
+  const created=stampToTime(x&&x.created_at);
+  if(created!==null){
+    remaining=Math.max(0,REVIEW_LOCK_HOURS-((Date.now()-created)/3600000));
+    eligibleAt=new Date(created+REVIEW_LOCK_HOURS*3600000).toISOString();
+  }else if(x&&x.review&&typeof x.review.hours_remaining==='number'){
+    // No local timestamp (offline rows) — trust the server's window.
+    remaining=Math.max(0,x.review.hours_remaining);
+    eligibleAt=x.review.review_eligible_at||null;
+  }
+  // The server gate is authoritative too: honour it when it still says locked.
+  const serverLocked=!!(x&&x.review&&x.review.review_locked);
+  const locked=remaining>0||serverLocked;
+  if(locked&&remaining<=0&&x&&x.review&&typeof x.review.hours_remaining==='number'){
+    remaining=Math.max(0,x.review.hours_remaining);
+  }
+  return {locked,hoursRemaining:remaining,eligibleAt,
+    label:locked?`Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${remaining.toFixed(1)} hours remaining`:''};
+}
+
 function renderAll(){
   // The dashboard now pulls its metrics from /api/dashboard via
   // renderDashboard(); the legacy static KPI tiles have been removed
@@ -1795,13 +1844,15 @@ function renderAll(){
   fpTable.innerHTML=db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
    // Mandatory 12-hour review window: until it elapses a Fingerprint Officer
    // cannot approve (System Administrators bypass the wait).
-   const rev=x.review||null;const locked=!approved&&rev&&rev.review_locked;
-   const waitNote=locked?`<br><small class="muted">Review lock: ${esc(rev.hours_remaining)} h left</small>`:'';
+   const lock=reviewLockState(x);
+   const locked=!approved&&lock.locked;
+   const lockNote=locked?`<br><span class="badge amber">&#128274; Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${esc(lock.hoursRemaining.toFixed(1))} hours remaining</span>`:'';
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
-   <td><span class="badge ${approved?'green':'blue'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:waitNote}</td>
+   <td><span class="badge ${approved?'green':'blue'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:lockNote}</td>
    <td class="actions">
      <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
-     ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`:`<button class="btn small" ${locked?'disabled title="Under mandatory 12-hour review period"':''} onclick="approveFP('${esc(x.id)}')">Approve</button>`}
+     ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`
+       :`<button class="btn small" ${locked?'disabled':''} title="${locked?esc(lock.label):'Approve this application'}" onclick="approveFP('${esc(x.id)}')">${locked?'&#128274; Approve (Locked)':'&#10003; Approve'}</button>`}
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
@@ -1857,13 +1908,29 @@ async function saveFingerprint(e){
       fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application '+r.application_id+' saved — identity '+m+'.';
     }else{
       const person=await ensureLocalIdentity(d);
-      db.fingerprint.unshift({id:'FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0'),person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim()});
+      // created_at is stored so the client-side 12-hour review lock works
+      // in the offline demo path exactly as it does against the server.
+      db.fingerprint.unshift({id:'FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0'),person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim(),created_at:new Date().toISOString()});
       persist();fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application saved (local demo) and linked to '+person.id+'.';
     }
     fpNotice.className='notice';fpNotice.style.display='block';resetFpForm();await syncServer();toast('Clearance application saved');
   }catch(err){showFormError(err.message||'The clearance application could not be saved.',{notice:'fpNotice',title:'Unable to Save'})}
 }
 async function approveFP(id){
+  // Client-side guard for the mandatory 12-hour review period. Non-admin
+  // officers never even reach the network: the call is blocked here (and
+  // the server rejects it with HTTP 400 if it ever does).
+  const rec=(db.fingerprint||[]).find(a=>a.id===id);
+  if(rec&&rec.status!=='Approved'){
+    const lock=reviewLockState(rec);
+    if(lock.locked){
+      showFormError((lock.label||`Review Lock (${REVIEW_LOCK_HOURS}h Required)`)+
+        ' — this application cannot be approved until the mandatory review period has elapsed.',
+        {notice:'fpNotice',title:'Approval blocked'});
+      renderAll();
+      return;
+    }
+  }
   try{if(serverOn){
       // POST /api/fingerprint/applications/:id/approve — the clearance
       // register route. A Fingerprint Officer is blocked by the mandatory
