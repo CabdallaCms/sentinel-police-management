@@ -152,6 +152,9 @@ const REVIEW_LOCK_HOURS=12;
 let app=null;
 let currentRole='';
 let isAdmin=false;
+// True when the token came from the development admin fallback (no real
+// session in storage). Such a viewer can never claim the admin bypass.
+let sessionFromDevFallback=false;
 
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 // The template ships with '-' placeholders; keep that convention for blanks.
@@ -245,7 +248,9 @@ function render(a){
     btn.setAttribute('style','pointer-events:none;opacity:0.5;');
     btn.title=lock.label;
     btn.innerHTML='&#128274; Review Locked (12h)';
-    lockbar('&#128274; '+esc(lock.label)+' — a System Administrator can bypass the mandatory review period.');
+    lockbar('&#128274; '+esc(lock.label)+
+      (sessionFromDevFallback?' — no signed-in session detected; sign in through the main system to approve.'
+                             :' — a System Administrator can bypass the mandatory review period.'));
   }else{
     btn.disabled=false;btn.title='';btn.removeAttribute('disabled');btn.setAttribute('style','');
     btn.innerHTML=isAdmin?'&#10003; Approve Application (Admin bypass)':'&#10003; Approve Application';
@@ -287,6 +292,10 @@ async function getToken(){
     const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');
     if(s && s.token) return s.token;
   }catch(_){}
+  // No real session: fall back to the development admin login so the page can
+  // still load data — but that MUST NOT grant the review-period bypass. The
+  // identity of the viewer is unknown, so the approval stays locked.
+  sessionFromDevFallback=true;
   const login=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'ChangeMe123!'})});
   const data=await login.json();
   return data.token;
@@ -306,6 +315,9 @@ async function resolveRole(token){
       isAdmin=!!(me.visibility&&me.visibility.is_admin)||isAdminRole(currentRole);
     }
   }catch(_){}
+  // The dev fallback login is not a real session: nobody may claim the
+  // administrator bypass through it.
+  if(sessionFromDevFallback) isAdmin=false;
 }
 async function approve(){
   const btn=document.getElementById('approveBtn');

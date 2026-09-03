@@ -227,15 +227,6 @@ def _role_key(value):
     return re.sub(r'[^a-z0-9]', '', (value or '').lower())
 
 
-def is_admin_user(user):
-    """True for System Administrators (canonical role or any admin alias)."""
-    if not user:
-        return False
-    keys = {_role_key(user.get('role')), _role_key(user.get('role_alias'))}
-    keys.add(_role_key(normalize_role(user.get('role') or '')))
-    return bool(keys & ADMIN_ROLE_KEYS)
-
-
 def is_fingerprint_officer(user):
     """True for Fingerprint Unit officers (canonical role or the spec alias)."""
     if not user:
@@ -252,19 +243,126 @@ def utc_now_stamp():
 
 def parse_stamp(value):
     """Parse a SQLite / ISO-8601 timestamp into a POSIX timestamp, or None."""
+    dt = parse_created_at(value)
+    return dt.timestamp() if dt else None
+
+
+def parse_created_at(value):
+    """Parse a stored `created_at` into a timezone-aware UTC datetime.
+
+    Accepts the SQLite shape ('YYYY-MM-DD HH:MM:SS' — stored in UTC), ISO-8601
+    with or without a 'Z'/'offset' suffix, and date-only values. A naive value
+    is assumed to be UTC. Returns None when nothing can be parsed.
+    """
     s = (value or '').strip()
     if not s:
         return None
-    s = s.replace('T', ' ').rstrip('Zz').strip()
-    if '.' in s:
-        s = s.split('.', 1)[0]
-    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
-        try:
-            dt = datetime.datetime.strptime(s, fmt)
-        except ValueError:
-            continue
-        return dt.replace(tzinfo=datetime.timezone.utc).timestamp()
-    return None
+    candidate = s.replace('Z', '+00:00')
+    dt = None
+    try:
+        dt = datetime.datetime.fromisoformat(candidate)
+    except ValueError:
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+            try:
+                dt = datetime.datetime.strptime(s.split('.', 1)[0], fmt)
+                break
+            except ValueError:
+                continue
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc)
+
+
+# The exact rejection text mandated by the spec for a non-admin approving
+# inside the mandatory review window.
+REVIEW_LOCK_MESSAGE = ('Review period active. Standard officers must wait 12 hours '
+                       'before approving.')
+
+
+def is_admin_user(user):
+    """True only for administrators — the ONLY role allowed to bypass the
+    mandatory 12-hour fingerprint review window.
+
+    Accepts the canonical 'SystemAdmin' role and the spec's 'admin' alias
+    (case/format-insensitive). Everything else (`FingerprintUnit`,
+    `fingerprint_officer`, …) is a standard officer and is gated.
+    """
+    if not user:
+        return False
+    role = user.get('role')
+    keys = {_role_key(role), _role_key(user.get('role_alias')),
+            _role_key(normalize_role(role or ''))}
+    return bool(keys & ADMIN_ROLE_KEYS)
+
+
+def review_gate_decision(app_row, user):
+    """Gate an approval request. Returns None when it may proceed, otherwise
+    (status_code, payload) for the rejection.
+
+    FAIL-CLOSED — mirroring the mandated implementation:
+
+        is_admin  = user.role in ('admin', 'SystemAdmin')
+        if not is_admin:
+            if not created_at:                -> 400 (missing stamp = locked)
+            hours_elapsed = (utc_now - created_at) / 3600
+            if hours_elapsed < 12.0:          -> 400
+
+    The decision uses ONLY the stored row and the server-side role, never
+    anything the client supplied.
+    """
+    if is_admin_user(user):
+        return None
+    created_at = parse_created_at((app_row or {}).get('created_at'))
+    reason = 'submission timestamp missing' if created_at is None else 'review window open'
+    if created_at is not None:
+        hours_elapsed = (datetime.datetime.now(datetime.timezone.utc) - created_at).total_seconds() / 3600.0
+        if hours_elapsed >= float(FINGERPRINT_REVIEW_WINDOW_HOURS):
+            return None
+    payload = {
+        'detail': REVIEW_LOCK_MESSAGE,
+        'error': REVIEW_LOCK_MESSAGE,
+        'code': 'review_period_active',
+        'reason': reason,
+        'review_window_hours': FINGERPRINT_REVIEW_WINDOW_HOURS,
+        'submitted_at': (app_row or {}).get('created_at'),
+    }
+    if created_at is not None:
+        payload['hours_elapsed'] = round(max(0.0, hours_elapsed), 2)
+        payload['hours_remaining'] = round(float(FINGERPRINT_REVIEW_WINDOW_HOURS) - max(0.0, hours_elapsed), 2)
+        payload['review_eligible_at'] = (created_at + datetime.timedelta(
+            hours=FINGERPRINT_REVIEW_WINDOW_HOURS)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    if (app_row or {}).get('application_id'):
+        payload['application_id'] = app_row['application_id']
+    return 400, payload
+
+
+def review_lock_self_test():
+    """Prove at boot that the mandatory review gate is armed. Returns a log line."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    stamp = lambda **kw: (now - datetime.timedelta(**kw)).strftime('%Y-%m-%d %H:%M:%S')
+    officer = {'role': 'FingerprintUnit'}
+    alias_officer = {'role': 'fingerprint_officer'}
+    admin = {'role': 'SystemAdmin'}
+    admin_alias = {'role': 'admin'}
+    cases = [
+        ('officer @0h blocked', {'application_id': 'X', 'created_at': stamp(hours=0)}, officer, True),
+        ('officer @11.5h blocked', {'application_id': 'X', 'created_at': stamp(hours=11.5)}, officer, True),
+        ('officer @13h allowed', {'application_id': 'X', 'created_at': stamp(hours=13)}, officer, False),
+        ('officer, missing stamp blocked', {'application_id': 'X', 'created_at': None}, officer, True),
+        ('officer, bad stamp blocked', {'application_id': 'X', 'created_at': 'not-a-date'}, officer, True),
+        ('fingerprint_officer alias blocked', {'application_id': 'X', 'created_at': stamp(hours=1)}, alias_officer, True),
+        ('SystemAdmin bypasses', {'application_id': 'X', 'created_at': stamp(hours=0)}, admin, False),
+        ('admin alias bypasses', {'application_id': 'X', 'created_at': stamp(hours=0)}, admin_alias, False),
+    ]
+    failures = []
+    for name, row, user, expect_rejected in cases:
+        rejected = review_gate_decision(row, user) is not None
+        if rejected != expect_rejected:
+            failures.append(name)
+    return ('review lock self-test: PASS (8/8 cases)' if not failures
+            else 'review lock self-test: FAILED -> ' + ', '.join(failures))
 
 
 def normalise_reason(value):
@@ -2126,31 +2224,14 @@ class API(BaseHTTPRequestHandler):
                     self.send_json(404, {'error':'Application not found'}); c.close(); return
                 app_row = rowdict(row)
                 # ---- 12-hour mandatory review period ----------------------
-                # System Administrators bypass the gate and can approve the
-                # moment the application is submitted. Fingerprint Officers
-                # (and every other non-admin reviewer) must wait until
-                # created_at + 12 hours has elapsed.
+                # HARD LOCK, evaluated purely server-side from the stored row
+                # and the caller's role. System Administrators bypass the gate;
+                # every other role must wait until created_at + 12h, and a row
+                # without a usable timestamp stays locked (fail-closed).
+                verdict = review_gate_decision(app_row, user)
+                if verdict is not None:
+                    self.send_json(verdict[0], verdict[1]); c.close(); return
                 bypassed = is_admin_user(user)
-                if not bypassed:
-                    # HARD LOCK — enforced purely server-side, never relying on
-                    # any client-side role check. time_delta is measured from
-                    # the stored submission timestamp; a row without one is
-                    # treated as "not yet reviewed" and stays locked.
-                    state = fingerprint_review_state(app_row)
-                    if state['review_locked']:
-                        detail = ('Review period active. Standard officers must wait 12 hours '
-                                  'before approving.')
-                        self.send_json(400, {
-                            'detail': detail,
-                            'error': detail,
-                            'code': 'review_period_active',
-                            'application_id': aid,
-                            'review_window_hours': state['review_window_hours'],
-                            'hours_remaining': state['hours_remaining'],
-                            'hours_elapsed': state['hours_elapsed'],
-                            'submitted_at': state['submitted_at'],
-                            'review_eligible_at': state['review_eligible_at'],
-                        }); c.close(); return
                 cert = app_row['certificate_number'] or ('CL-'+str(int(time.time()*1000))[-8:])
                 c.execute("UPDATE clearance_applications SET status='Approved',certificate_number=?,reviewed_at=CURRENT_TIMESTAMP WHERE application_id=?",
                           (cert,aid))
@@ -2531,6 +2612,7 @@ if __name__ == '__main__':
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
     print(f'  fingerprint review window: {FINGERPRINT_REVIEW_WINDOW_HOURS}h '
-          f'(SystemAdmin bypasses, every other role is locked)')
+          f'(admin/SystemAdmin bypasses, every other role is locked)')
+    print(f'  {review_lock_self_test()}')
     print(f'  clearance reasons: {", ".join(CLEARANCE_REASONS)}')
     ThreadingHTTPServer(('0.0.0.0', port), API).serve_forever()

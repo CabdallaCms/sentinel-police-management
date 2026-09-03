@@ -1836,6 +1836,36 @@ function reviewLockState(x){
     label:locked?`Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${remaining.toFixed(1)} hours remaining`:''};
 }
 
+// Renders the Approve / Certificate action for one register row.
+//
+//   isAdmin = currentUser.role === 'admin' || 'SystemAdmin'
+//   hoursElapsed = (now - created_at) / 1h
+//   isLocked = !isAdmin && (hoursElapsed < 12 || created_at missing)
+//
+// Fail-closed: a row without a usable created_at is treated as locked, and
+// the locked control carries disabled + pointer-events:none + opacity:0.5
+// so it is physically unclickable. Mirrors the server-side gate.
+function renderRegisterRow(item,currentUser){
+  const isAdmin = !!(currentUser && isAdminRole(currentUser.role));
+  const createdAtTime = stampToTime(item && item.created_at);   // ms or null
+  const hoursElapsed  = (createdAtTime!==null && createdAtTime>0)
+    ? (Date.now()-createdAtTime)/(1000*60*60) : 0;
+  const isLocked = !isAdmin && (hoursElapsed < REVIEW_LOCK_HOURS || !(createdAtTime>0));
+  const approved = item.status==='Approved' || item.status==='APPROVED';
+
+  let actionHtml='';
+  if(approved){
+    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(item.id)}">Certificate</a>`;
+  }else if(isLocked){
+    const remaining=Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed).toFixed(1);
+    actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;">&#128274; Review Locked (12h)</button>
+      <span class="badge amber" title="Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${remaining} hours remaining">${remaining}h remaining</span>`;
+  }else{
+    actionHtml=`<button class="btn small" onclick="approveFP('${esc(item.id)}')">${isAdmin?'&#10003; Approve Application (Admin bypass)':'&#10003; Approve'}</button>`;
+  }
+  return actionHtml;
+}
+
 function renderAll(){
   // The dashboard now pulls its metrics from /api/dashboard via
   // renderDashboard(); the legacy static KPI tiles have been removed
@@ -1846,22 +1876,12 @@ function renderAll(){
     renderDashboard();
   }
   renderPeople();
-  fpTable.innerHTML=db.fingerprint.map(x=>{let p=person(x.person);const approved=x.status==='Approved';
-   // Mandatory 12-hour review window: until it elapses a Fingerprint Officer
-   // cannot approve (System Administrators bypass the wait).
-   const lock=reviewLockState(x);
-   const locked=!approved&&lock.locked;
-   const lockNote=locked?`<br><span class="badge amber">&#128274; Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${esc(lock.hoursRemaining.toFixed(1))} hours remaining</span>`:'';
-   // Locked rows get a hard-disabled button: disabled="disabled" plus inline
-   // pointer-events/opacity so the control is physically unclickable even if
-   // an older stylesheet is cached by the browser.
-   const lockStyle='disabled="disabled" style="pointer-events:none;opacity:0.5;"';
+  fpTable.innerHTML=db.fingerprint.map(x=>{const p=person(x.person);
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
-   <td><span class="badge ${approved?'green':'blue'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:lockNote}</td>
+   <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td class="actions">
      <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
-     ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`
-       :`<button class="btn small" ${locked?lockStyle:''} title="${locked?esc(lock.label):'Approve this application'}" onclick="approveFP('${esc(x.id)}')">${locked?'&#128274; Review Locked (12h)':'&#10003; Approve'}</button>`}
+     ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
@@ -1929,16 +1949,21 @@ async function approveFP(id){
   // Client-side guard for the mandatory 12-hour review period. Non-admin
   // officers never even reach the network: the call is blocked here (and
   // the server rejects it with HTTP 400 if it ever does).
+  //
+  // FAIL-CLOSED: an unknown row (or a row whose status/created_at cannot be
+  // read safely) is treated as locked rather than approvable.
   const rec=(db.fingerprint||[]).find(a=>a.id===id);
-  if(rec&&rec.status!=='Approved'){
-    const lock=reviewLockState(rec);
-    if(lock.locked){
-      showFormError((lock.label||`Review Lock (${REVIEW_LOCK_HOURS}h Required)`)+
-        ' — this application cannot be approved until the mandatory review period has elapsed.',
-        {notice:'fpNotice',title:'Approval blocked'});
-      renderAll();
-      return;
-    }
+  const isAdmin=!!(currentUser&&isAdminRole(currentUser.role));
+  const createdAt=stampToTime(rec&&rec.created_at);
+  const hoursElapsed=(createdAt!==null&&createdAt>0)?(Date.now()-createdAt)/3600000:0;
+  const known=!!rec&&rec.status!=='Approved'&&rec.status!=='APPROVED';
+  if(!isAdmin && (!known || !(createdAt>0) || hoursElapsed<REVIEW_LOCK_HOURS)){
+    const remaining=(!known||!(createdAt>0))?REVIEW_LOCK_HOURS:Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed);
+    showFormError(`Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${remaining.toFixed(1)} hours remaining`+
+      ' — this application cannot be approved until the mandatory review period has elapsed.',
+      {notice:'fpNotice',title:'Approval blocked'});
+    renderAll();
+    return;
   }
   try{if(serverOn){
       // POST /api/fingerprint/applications/:id/approve — the clearance
@@ -1946,7 +1971,20 @@ async function approveFP(id){
       // 12-hour review period (HTTP 400); a System Administrator bypasses it.
       await api('/api/fingerprint/applications/'+id+'/approve',{method:'POST',body:'{}'});
       await syncServer();toast('Approved — certificate unlocked for printing')}
-  else{let x=db.fingerprint.find(a=>a.id===id);x.status='Approved';x.certificate='CL-'+Date.now().toString().slice(-6);persist();renderAll();toast('Approved; certificate '+x.certificate+' generated (local demo)')}}
+  else{
+    // Offline / demo path — the mandatory review window still applies here,
+    // otherwise signing out of the API would hand out instant approvals.
+    let x=db.fingerprint.find(a=>a.id===id);
+    if(!isAdmin){
+      const c2=stampToTime(x&&x.created_at);
+      const h2=(c2!==null&&c2>0)?(Date.now()-c2)/3600000:0;
+      if(!x||!(c2>0)||h2<REVIEW_LOCK_HOURS){
+        showFormError(`Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${Math.max(0,REVIEW_LOCK_HOURS-h2).toFixed(1)} hours remaining — approval blocked.`,{notice:'fpNotice',title:'Approval blocked'});
+        renderAll();
+        return;
+      }
+    }
+    x.status='Approved';x.certificate='CL-'+Date.now().toString().slice(-6);persist();renderAll();toast('Approved; certificate '+x.certificate+' generated (local demo)')}}
   catch(e){showFormError(e.message||('Application '+id+' could not be approved.'),{title:'Approval blocked'})}
 }
 
