@@ -32,7 +32,8 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .btn{background:var(--blue);color:#fff;border-radius:8px;padding:10px 14px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px}
 .btn:hover{filter:brightness(1.05)}.btn.secondary{background:#eef3ff;color:var(--blue)}.btn.ghost{background:#f4f6f9;color:#526075}
 .btn.danger{background:#fff0f1;color:var(--red)}.btn.green{background:#e3f7f1;color:var(--green)}.btn.small{padding:6px 10px;font-size:12px}
-.btn[disabled]{opacity:.45;cursor:not-allowed;filter:grayscale(.4)}.btn[disabled]:hover{filter:grayscale(.4)}
+.btn[disabled],button[disabled]{opacity:0.5;pointer-events:none;cursor:not-allowed;filter:grayscale(.4)}
+.btn[disabled]:hover,button[disabled]:hover{filter:grayscale(.4)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
 .form{display:grid;gap:14px}.field{display:grid;gap:6px}
 .field label{font-size:12px;font-weight:700;color:#4d5c73}
@@ -1816,10 +1817,14 @@ function reviewLockState(x){
   if(created!==null){
     remaining=Math.max(0,REVIEW_LOCK_HOURS-((Date.now()-created)/3600000));
     eligibleAt=new Date(created+REVIEW_LOCK_HOURS*3600000).toISOString();
-  }else if(x&&x.review&&typeof x.review.hours_remaining==='number'){
-    // No local timestamp (offline rows) — trust the server's window.
-    remaining=Math.max(0,x.review.hours_remaining);
-    eligibleAt=x.review.review_eligible_at||null;
+  }else{
+    // FAIL CLOSED: without a usable submission timestamp we cannot prove the
+    // mandatory window has elapsed (offline rows, rows cached in
+    // localStorage, or a response from an older build). Keep the approval
+    // locked and fall back to the server-computed window when it is present.
+    remaining=(x&&x.review&&typeof x.review.hours_remaining==='number')
+      ?Math.max(0,x.review.hours_remaining):REVIEW_LOCK_HOURS;
+    eligibleAt=(x&&x.review&&x.review.review_eligible_at)||null;
   }
   // The server gate is authoritative too: honour it when it still says locked.
   const serverLocked=!!(x&&x.review&&x.review.review_locked);
@@ -1847,12 +1852,16 @@ function renderAll(){
    const lock=reviewLockState(x);
    const locked=!approved&&lock.locked;
    const lockNote=locked?`<br><span class="badge amber">&#128274; Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${esc(lock.hoursRemaining.toFixed(1))} hours remaining</span>`:'';
+   // Locked rows get a hard-disabled button: disabled="disabled" plus inline
+   // pointer-events/opacity so the control is physically unclickable even if
+   // an older stylesheet is cached by the browser.
+   const lockStyle='disabled="disabled" style="pointer-events:none;opacity:0.5;"';
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
    <td><span class="badge ${approved?'green':'blue'}">${esc(x.status)}</span>${approved&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:lockNote}</td>
    <td class="actions">
      <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
      ${approved?`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(x.id)}">Certificate</a>`
-       :`<button class="btn small" ${locked?'disabled':''} title="${locked?esc(lock.label):'Approve this application'}" onclick="approveFP('${esc(x.id)}')">${locked?'&#128274; Approve (Locked)':'&#10003; Approve'}</button>`}
+       :`<button class="btn small" ${locked?lockStyle:''} title="${locked?esc(lock.label):'Approve this application'}" onclick="approveFP('${esc(x.id)}')">${locked?'&#128274; Review Locked (12h)':'&#10003; Approve'}</button>`}
    </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();

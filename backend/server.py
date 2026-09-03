@@ -206,6 +206,10 @@ ADMIN_ROLE_KEYS = {'admin', 'systemadmin', 'systemadministrator'}
 FINGERPRINT_ROLE_KEYS = {'fingerprint', 'fingerprintunit', 'fingerprintofficer',
                          'fingerprintunitofficer', 'fpofficer'}
 
+# Build marker — surfaced by /api/health and printed on startup so an operator
+# can confirm the running process carries the review-lock rules.
+BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
+
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
 # register; both prefixes resolve to the same handler and module gate.
 FINGERPRINT_API_ALIAS = '/api/fingerprint/applications'
@@ -276,14 +280,17 @@ def fingerprint_review_state(app, now=None):
     """12-hour review-window state for a clearance application row.
 
     `review_locked` is True while `created_at + 12h` is still in the future.
-    Rows without a parseable `created_at` (legacy data) are never locked.
+    Fail-closed: a row with a missing / unparseable `created_at` cannot prove
+    that the mandatory window has elapsed, so it stays locked. Admins remain
+    exempt — the bypass is applied by the caller, not by this helper.
     """
     hours = FINGERPRINT_REVIEW_WINDOW_HOURS
     created = parse_stamp(app.get('created_at') if app else None)
     if created is None:
         return {'review_window_hours': hours, 'review_eligible_at': None,
-                'hours_elapsed': None, 'hours_remaining': 0.0,
-                'review_locked': False, 'submitted_at': app.get('created_at') if app else None}
+                'hours_elapsed': None, 'hours_remaining': float(hours),
+                'review_locked': True, 'submitted_at_missing': True,
+                'submitted_at': app.get('created_at') if app else None}
     now_ts = time.time() if now is None else now
     elapsed = max(0.0, (now_ts - created) / 3600.0)
     remaining = max(0.0, hours - elapsed)
@@ -1765,7 +1772,15 @@ class API(BaseHTTPRequestHandler):
             if canonical_api_path(p.path) != p.path:
                 p = p._replace(path=canonical_api_path(p.path))
             if p.path == '/api/health':
-                return self.send_json(200, {'status':'ok','service':'sentinel-backend','database':'sqlite-development'})
+                # The build marker lets an operator confirm at a glance that
+                # the running process really is the build with the 12-hour
+                # fingerprint review lock (a stale process is the usual cause
+                # of "the fix did not take effect").
+                return self.send_json(200, {'status':'ok','service':'sentinel-backend',
+                                            'database':'sqlite-development',
+                                            'build':BUILD_TAG,
+                                            'fingerprint_review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
+                                            'clearance_reasons':list(CLEARANCE_REASONS)})
             user = require_auth(self); c = db()
             # RBAC module-gating. Every authenticated user can see /api/me and
             # the central /api/persons registry, but each unit endpoint is
@@ -2117,14 +2132,23 @@ class API(BaseHTTPRequestHandler):
                 # created_at + 12 hours has elapsed.
                 bypassed = is_admin_user(user)
                 if not bypassed:
+                    # HARD LOCK — enforced purely server-side, never relying on
+                    # any client-side role check. time_delta is measured from
+                    # the stored submission timestamp; a row without one is
+                    # treated as "not yet reviewed" and stays locked.
                     state = fingerprint_review_state(app_row)
                     if state['review_locked']:
+                        detail = ('Review period active. Standard officers must wait 12 hours '
+                                  'before approving.')
                         self.send_json(400, {
-                            'error': 'Application is under mandatory 12-hour review period.',
+                            'detail': detail,
+                            'error': detail,
                             'code': 'review_period_active',
                             'application_id': aid,
                             'review_window_hours': state['review_window_hours'],
                             'hours_remaining': state['hours_remaining'],
+                            'hours_elapsed': state['hours_elapsed'],
+                            'submitted_at': state['submitted_at'],
                             'review_eligible_at': state['review_eligible_at'],
                         }); c.close(); return
                 cert = app_row['certificate_number'] or ('CL-'+str(int(time.time()*1000))[-8:])
@@ -2505,4 +2529,8 @@ if __name__ == '__main__':
     init_db()
     port = int(os.environ.get('PORT','8001'))
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
+    print(f'  build {BUILD_TAG}')
+    print(f'  fingerprint review window: {FINGERPRINT_REVIEW_WINDOW_HOURS}h '
+          f'(SystemAdmin bypasses, every other role is locked)')
+    print(f'  clearance reasons: {", ".join(CLEARANCE_REASONS)}')
     ThreadingHTTPServer(('0.0.0.0', port), API).serve_forever()

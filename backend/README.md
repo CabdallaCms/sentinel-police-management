@@ -109,7 +109,17 @@ Every operational module (Airport, Checkpoint, Fingerprint, CID) uses the same S
   | Caller | Behaviour |
   |--------|-----------|
   | `SystemAdmin` (or any admin alias) | Approves immediately — the review window is bypassed (`review_period_bypassed: true`) |
-  | `FingerprintUnit` / `fingerprint_officer` (or any other non-admin reviewer) | Only once `now >= created_at + 12h`; otherwise HTTP 400 `Application is under mandatory 12-hour review period.` with `hours_remaining` and `review_eligible_at` |
+  | `FingerprintUnit` / `fingerprint_officer` (or any other non-admin reviewer) | Only once `now >= created_at + 12h`; otherwise **HTTP 400** with `{"detail": "Review period active. Standard officers must wait 12 hours before approving."}` plus `hours_remaining` / `review_eligible_at` |
+
+  The gate is evaluated **only** from the stored `created_at` and the
+  caller's server-side role — never from anything the client sends. It is
+  **fail-closed**: a row with a missing or unparseable `created_at` cannot
+  prove the window elapsed, so a standard officer is rejected (an admin,
+  who is exempt from the review period, is not).
+
+  `GET /api/health` reports `build`, `fingerprint_review_window_hours` and
+  `clearance_reasons`, and the same values are printed on startup — handy
+  for confirming the running process really is the build with the lock.
 
   The same rule is mirrored in the UI: `index.html` and `application.html`
   compare `created_at` with the current time for the signed-in user and

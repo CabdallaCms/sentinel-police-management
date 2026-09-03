@@ -204,10 +204,16 @@ function storedUser(){
 // Returns {locked, hoursRemaining, label}.
 function reviewLock(a){
   if(isAdmin) return {locked:false,hoursRemaining:0,label:''};
-  let remaining=0;
   const created=stampToTime(a&&a.created_at);
-  if(created!==null) remaining=Math.max(0,REVIEW_LOCK_HOURS-((Date.now()-created)/3600000));
-  else if(a&&a.review&&typeof a.review.hours_remaining==='number') remaining=Math.max(0,a.review.hours_remaining);
+  let remaining;
+  if(created!==null){
+    remaining=Math.max(0,REVIEW_LOCK_HOURS-((Date.now()-created)/3600000));
+  }else{
+    // FAIL CLOSED: no usable submission timestamp means the mandatory window
+    // cannot be proven to have elapsed, so the approval stays locked.
+    remaining=(a&&a.review&&typeof a.review.hours_remaining==='number')
+      ?Math.max(0,a.review.hours_remaining):REVIEW_LOCK_HOURS;
+  }
   // The server gate is authoritative as well — honour it when it says locked.
   if(remaining<=0&&a&&a.review&&a.review.review_locked&&typeof a.review.hours_remaining==='number'){
     remaining=Math.max(0,a.review.hours_remaining);
@@ -229,16 +235,19 @@ function render(a){
   // ---- approval lock for non-admin officers ----
   const lock=reviewLock(a);
   if(approved){
-    btn.disabled=false;btn.title='';
+    btn.disabled=false;btn.title='';btn.removeAttribute('disabled');btn.setAttribute('style','');
     btn.innerHTML='&#10003; Approve Application';
     lockbar(a.certificate_number?('Approved — certificate '+esc(a.certificate_number)+' is unlocked for printing.'):'');
   }else if(lock.locked){
-    btn.disabled=true;
+    // Hard-disabled: attribute + inline pointer-events/opacity so the control
+    // is physically unclickable even if an older stylesheet is cached.
+    btn.disabled=true;btn.setAttribute('disabled','disabled');
+    btn.setAttribute('style','pointer-events:none;opacity:0.5;');
     btn.title=lock.label;
-    btn.innerHTML='&#128274; Approve (Locked)';
+    btn.innerHTML='&#128274; Review Locked (12h)';
     lockbar('&#128274; '+esc(lock.label)+' — a System Administrator can bypass the mandatory review period.');
   }else{
-    btn.disabled=false;btn.title='';
+    btn.disabled=false;btn.title='';btn.removeAttribute('disabled');btn.setAttribute('style','');
     btn.innerHTML=isAdmin?'&#10003; Approve Application (Admin bypass)':'&#10003; Approve Application';
     lockbar('');
   }

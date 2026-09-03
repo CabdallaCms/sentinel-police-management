@@ -373,6 +373,95 @@ async function main() {
     if (!offline.localStorage.getItem('sentinel_token')) throw new Error('server-down load must keep the stored token');
     console.log('ok 7: server unreachable on load -> officer stays signed in (no signOut on transient failure)');
 
+    // ---- 8) Fingerprint mandatory 12-hour review lock (UI + API) ----------
+    // A non-admin officer must NEVER get a clickable Approve control on a
+    // freshly created application:
+    //   * the button is rendered with disabled="disabled" +
+    //     style="pointer-events:none;opacity:0.5;" and reads
+    //     "🔒 Review Locked (12h)";
+    //   * approveFP() refuses to call the API at all;
+    //   * the server still answers HTTP 400 with the mandated detail.
+    // A System Administrator gets an enabled button and can approve.
+    const loginAs = async (user) => (await (await fetch(base + '/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: 'ChangeMe123!' }),
+    })).json());
+
+    const createClearance = async (user, nationalId) => {
+      const auth = await loginAs(user);
+      const fd = new FormData();
+      const fields = {
+        first_name: 'Ui', second_name: 'Lock', third_name: 'Test', fourth_name: 'Case',
+        date_of_birth: '1992-02-02', national_id: nationalId, mother_name: 'Hooyo Lock',
+        residence: 'Hargeisa, Lock Ward', phone: '+252 63 555 0000', sex: 'Male',
+        email: 'ui.lock@example.com', purpose: 'Employment',
+        guardian_name: 'Guardian Lock', guardian_relationship: 'Uncle', guardian_id: 'GD-1',
+        guardian_occupation: 'Trader', guardian_address: 'Burao', guardian_phone: '+252 63 555 0001',
+      };
+      Object.entries(fields).forEach(([k, v]) => fd.append(k, v));
+      const pdf = new Blob(['%PDF-lock-test'], { type: 'application/pdf' });
+      ['doc_app_0', 'doc_app_1', 'doc_guard_0', 'doc_guard_1'].forEach((n) => fd.append(n, pdf, n + '.pdf'));
+      const r = await fetch(base + '/api/clearance-applications', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + auth.token }, body: fd,
+      });
+      if (!r.ok) throw new Error(`clearance create failed ${r.status}: ${await r.text()}`);
+      return await r.json();
+    };
+
+    const fpApp = await createClearance('fp.officer', '700' + String(Date.now()).slice(-5));
+
+    const renderRegisterAs = async (user) => {
+      const sb = buildSandbox({ port, storageDump: {}, consoleSink: [] });
+      loadApp(sb.sandbox);
+      sb.getElementById('loginUser').value = user;
+      sb.getElementById('loginPassword').value = 'ChangeMe123!';
+      await probe(sb.sandbox, 'submitLogin')({ preventDefault() {} });
+      await waitFor(() => probe(sb.sandbox, 'serverOn === true && !!sessionUser'), 'signed in ' + user);
+      await probe(sb.sandbox, 'syncServer()');
+      await waitFor(
+        () => probe(sb.sandbox, `(db.fingerprint||[]).some(x => x.id === '${fpApp.application_id}')`),
+        'fingerprint row synced for ' + user);
+      probe(sb.sandbox, 'renderAll()');
+      const html = sb.getElementById('fpTable').innerHTML;
+      const row = (html.match(/<tr>[\s\S]*?<\/tr>/g) || []).find((r) => r.includes(fpApp.application_id)) || '';
+      return { sb, html, row };
+    };
+
+    const officer = await renderRegisterAs('fp.officer');
+    if (!officer.row) throw new Error('application row missing from the officer register');
+    if (!/disabled="disabled"/.test(officer.row)) throw new Error('officer Approve button must be disabled: ' + officer.row);
+    if (!/pointer-events:none/.test(officer.row)) throw new Error('officer Approve button must set pointer-events:none: ' + officer.row);
+    if (!/opacity:0\.5/.test(officer.row)) throw new Error('officer Approve button must be dimmed (opacity 0.5): ' + officer.row);
+    if (!/Review Locked \(12h\)/.test(officer.row)) throw new Error('officer button must read "Review Locked (12h)": ' + officer.row);
+    if (!/Review Lock \(12h Required\) - 1[0-2](\.\d)? hours remaining/.test(officer.row))
+      throw new Error('review-lock badge with the remaining hours is missing: ' + officer.row);
+
+    // The click handler must not even attempt the request while locked.
+    const calls = [];
+    const origFetch = officer.sb.sandbox.fetch;
+    officer.sb.sandbox.fetch = (p, o) => { calls.push(String(p)); return origFetch(p, o); };
+    await probe(officer.sb.sandbox, `approveFP('${fpApp.application_id}')`);
+    if (calls.some((u) => u.includes('/approve')))
+      throw new Error('locked approveFP() must not call the approval API, saw: ' + calls.join(', '));
+
+    // ... and the server rejects it anyway (defence in depth).
+    const fpAuth = await loginAs('fp.officer');
+    const rejected = await fetch(base + '/api/fingerprint/applications/' + fpApp.application_id + '/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + fpAuth.token },
+      body: '{}',
+    });
+    if (rejected.status !== 400) throw new Error('server must reject the officer with 400, got ' + rejected.status);
+    const rejectedBody = await rejected.json();
+    if (rejectedBody.detail !== 'Review period active. Standard officers must wait 12 hours before approving.')
+      throw new Error('unexpected rejection payload: ' + JSON.stringify(rejectedBody));
+
+    const admin = await renderRegisterAs('admin');
+    if (!admin.row) throw new Error('application row missing from the admin register');
+    if (/disabled="disabled"/.test(admin.row)) throw new Error('admin Approve button must be enabled: ' + admin.row);
+    if (!/Approve/.test(admin.row)) throw new Error('admin Approve button is missing: ' + admin.row);
+    console.log('ok 8: fingerprint 12h review lock — officer Approve disabled/"Review Locked (12h)"/no API call/400, admin enabled');
+
     console.log('ALL FRONTEND SESSION TESTS PASSED');
     return 0;
   } finally {

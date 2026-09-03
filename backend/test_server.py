@@ -1157,6 +1157,10 @@ def main():
                 conn.close()
             return stamp
 
+        def review_error(r):
+            """Normalised review-period rejection message (accepts 'detail' / 'error')."""
+            return str((r or {}).get('detail') or (r or {}).get('error') or '').lower()
+
         def new_clearance(token, national_id, purpose='Employment',
                           first='Review', second='Period', third='Test', fourth='Case'):
             fields = {'first_name': first, 'second_name': second, 'third_name': third,
@@ -1198,7 +1202,11 @@ def main():
         s, r = request(base, 'POST', f'/api/fingerprint/applications/{officer_app}/approve',
                        tokens['fp.officer'], {})
         assert s == 400, f'officer instant approval must fail with 400, got {s}: {r}'
-        assert 'mandatory 12-hour review period' in r['error'].lower(), r
+        # Spec-mandated payload: HTTP 400 + {"detail": "Review period active.
+        # Standard officers must wait 12 hours before approving."}
+        assert r.get('detail') == ('Review period active. Standard officers must wait 12 hours '
+                                   'before approving.'), r
+        assert 'review period active' in review_error(r), r
         assert r.get('code') == 'review_period_active', r
         assert r.get('review_window_hours') == 12, r
         assert r.get('hours_remaining') and r['hours_remaining'] > 0, r
@@ -1231,6 +1239,31 @@ def main():
                             tokens['fp.officer'])
         assert s == 200 and detail['status'] == 'Approved' and detail['certificate_number'], detail
 
+        # --- Fail-closed: a row with NO submission stamp stays locked -------
+        # (legacy rows, or a row written by an older build). The elapsed time
+        # cannot be proven, so a standard officer is still rejected while an
+        # admin — who is exempt from the review period — is not.
+        s, created = new_clearance(tokens['admin'], '55500055', purpose='Travel')
+        assert s == 201, created
+        nostamp_app = created['application_id']
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
+            conn.execute('UPDATE clearance_applications SET created_at=NULL WHERE application_id=?',
+                         (nostamp_app,))
+            conn.commit()
+        finally:
+            conn.close()
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{nostamp_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 400 and 'review period active' in review_error(r), (s, r)
+        s, detail = request(base, 'GET', f'/api/clearance-applications/{nostamp_app}',
+                            tokens['fp.officer'])
+        assert s == 200 and detail['review']['review_locked'] is True, detail
+        assert detail['can_approve'] is False, detail
+        s, r = request(base, 'POST', f'/api/fingerprint/applications/{nostamp_app}/approve',
+                       tokens['admin'], {})
+        assert s == 201 and r['status'] == 'Approved', (s, r)
+
         # --- TEST 3: Admin instant approval straight after create -> OK ---
         s, created = new_clearance(tokens['admin'], '55500022', purpose='Travel')
         assert s == 201, created
@@ -1252,7 +1285,7 @@ def main():
         legacy_app = created['application_id']
         s, r = request(base, 'POST', f'/api/clearance-applications/{legacy_app}/approve',
                        tokens['fp.officer'], {})
-        assert s == 400 and 'mandatory 12-hour review period' in r['error'].lower(), (s, r)
+        assert s == 400 and 'review period active' in review_error(r), (s, r)
         # One minute short of the window is still locked ...
         backdate_application(legacy_app, 11.9)
         s, r = request(base, 'POST', f'/api/clearance-applications/{legacy_app}/approve',
@@ -1320,7 +1353,7 @@ def main():
         alias_app = created['application_id']
         s, r = request(base, 'POST', f'/api/fingerprint/applications/{alias_app}/approve',
                        legacy_token, {})
-        assert s == 400 and 'mandatory 12-hour review period' in r['error'].lower(), (s, r)
+        assert s == 400 and 'review period active' in review_error(r), (s, r)
         backdate_application(alias_app, 13)
         s, r = request(base, 'POST', f'/api/fingerprint/applications/{alias_app}/approve',
                        legacy_token, {})
