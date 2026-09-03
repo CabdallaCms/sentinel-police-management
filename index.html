@@ -1795,6 +1795,54 @@ function renderDashboardLocal(){
 // POST /api/fingerprint/applications/{id}/approve.
 // =====================================================================
 const REVIEW_LOCK_HOURS=12;
+// The build tag the backend must report from /api/health. A server that
+// answers without it (or with review_lock_active:false) is a STALE process
+// started before the review lock existed — it approves instantly, so the
+// UI refuses to offer an Approve button against it at all.
+const REQUIRED_BUILD_TAG='sentinel-fingerprint-review-lock-12h';
+let backendBuild=null;              // last /api/health payload (or null)
+let backendBuildChecked=false;      // true once /api/health has answered
+function backendBuildOk(){
+  return !!(backendBuild && backendBuild.build===REQUIRED_BUILD_TAG
+            && backendBuild.review_lock_active===true);
+}
+// True only once /api/health has answered AND the answer was the wrong build.
+// While the check is still in flight nothing is approvable, but the register
+// is not plastered with a scare banner on every page load.
+function backendIsStale(){
+  return backendBuildChecked && !backendBuildOk();
+}
+// Verify the running server really is the locked build. Fail-closed: until
+// (and unless) /api/health confirms it, every record stays locked.
+async function checkBackendBuild(){
+  try{
+    const r=await fetch('/api/health',{headers:{'Accept':'application/json'}});
+    if(r.ok) backendBuild=await r.json();
+    else backendBuild=null;
+  }catch(e){ backendBuild=null; }
+  backendBuildChecked=true;
+  renderStaleBackendBanner();
+  return backendBuildOk();
+}
+function renderStaleBackendBanner(){
+  if(!document || !document.body) return;    // not mounted yet (or a JS sandbox)
+  let el=document.getElementById('staleBackendBanner');
+  if(backendBuildOk()){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement('div');
+    el.id='staleBackendBanner';
+    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;'
+      +'background:#b91c1c;color:#fff;padding:10px 16px;font:600 13px/1.45 system-ui;'
+      +'box-shadow:0 2px 10px rgba(0,0,0,.35);text-align:center';
+    document.body.appendChild(el);
+  }
+  const seen=backendBuild&&backendBuild.build?String(backendBuild.build):'(no /api/health response)';
+  el.innerHTML='STALE BACKEND — the server on this port is not the review-lock build, '
+    +'so approvals are NOT gated. Expected build <code>'+REQUIRED_BUILD_TAG+'</code>, got '
+    +'<code>'+seen.replace(/</g,'&lt;')+'</code>. '
+    +'Stop every python process on this port and start backend/server.py again. '
+    +'Approvals are disabled until then.';
+}
 // Parse a stored timestamp. SQLite writes 'YYYY-MM-DD HH:MM:SS' in UTC
 // with no zone marker, so it is normalised to a UTC ISO string first.
 function stampToTime(v){
@@ -1854,11 +1902,16 @@ function renderRegisterRow(item,currentUser){
   const createdAtTime = stampToTime(item && item.created_at);   // ms or null
   const hoursElapsed  = (createdAtTime!==null && createdAtTime>0)
     ? (Date.now()-createdAtTime)/(1000*60*60) : 0;
-  const isLocked = !isAdmin && (hoursElapsed < REVIEW_LOCK_HOURS || !(createdAtTime>0));
-  const approved = item.status==='Approved' || item.status==='APPROVED';
+  // A stale backend cannot be trusted to enforce the window, so nothing is
+  // approvable until /api/health proves the running build carries the lock.
+  const staleBuild = backendIsStale();
+  const isLocked = staleBuild || (!isAdmin && (hoursElapsed < REVIEW_LOCK_HOURS || !(createdAtTime>0)));
+  const approved = !staleBuild && (item.status==='Approved' || item.status==='APPROVED');
 
   let actionHtml='';
-  if(approved){
+  if(staleBuild){
+    actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="The running backend is not the review-lock build — approvals are disabled.">&#128274; Stale backend — locked</button>`;
+  }else if(approved){
     actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(item.id)}">Certificate</a>`;
   }else if(isLocked){
     const remaining=Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed).toFixed(1);
@@ -1957,6 +2010,19 @@ async function approveFP(id){
   // FAIL-CLOSED: an unknown row (or a row whose status/created_at cannot be
   // read safely) is treated as locked rather than approvable.
   const rec=(db.fingerprint||[]).find(a=>a.id===id);
+  // Refuse to talk to a backend that is not the review-lock build: an old
+  // process would accept the approval instantly. Also blocks while the
+  // /api/health check is still in flight (fail-closed).
+  if(!backendBuildOk()){
+    showFormError(backendIsStale()
+      ? 'Stale backend — the server on this port is not build '
+        +REQUIRED_BUILD_TAG+', so the 12-hour review lock cannot be enforced. '
+        +'Stop every python process on this port and start backend/server.py again.'
+      : 'Checking the backend build… please retry in a moment. Until the server '
+        +'confirms it is build '+REQUIRED_BUILD_TAG+' no approval can be issued.',
+      {notice:'fpNotice',title:'Approval blocked'});
+    return;
+  }
   const isAdmin=!!(currentUser&&isAdminRole(currentUser.role));
   const createdAt=stampToTime(rec&&rec.created_at);
   const hoursElapsed=(createdAt!==null&&createdAt>0)?(Date.now()-createdAt)/3600000:0;
@@ -2544,6 +2610,10 @@ function doLogout(reason){
 let _initDone=false;
 async function initApp(){
   if(_initDone) return; _initDone=true;
+  // Confirm the running backend carries the review lock. Not awaited here so
+  // the shell paints instantly; until (and unless) /api/health confirms it,
+  // approveFP() refuses to issue any approval (fail-closed).
+  checkBackendBuild().then(()=>renderAll()).catch(()=>{});
   renderAll();   // paint the shell immediately (behind the login screen)
   const stored=loadStoredSession();
   if(!stored){

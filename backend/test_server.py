@@ -87,6 +87,20 @@ def main():
         else:
             raise RuntimeError('server did not start')
 
+        # /api/health is the operator's proof that the running process really
+        # is the review-lock build. A health response without the build tag (or
+        # with review_lock_active:false) means a stale server is answering.
+        status, health = request(base, 'GET', '/api/health')
+        assert status == 200, health
+        assert health['build'] == 'sentinel-fingerprint-review-lock-12h', health
+        assert health['review_lock_active'] is True, health
+        assert health['build_ok'] is True, health
+        assert health['fingerprint_review_window_hours'] == 12, health
+        assert health['pid'] == proc.pid, health          # the process we started
+        assert health['started_at'], health
+        assert health['clearance_reasons'] == ['Education', 'Travel', 'Employment',
+                                               'Citizenship', 'Licence'], health
+
         status, login = request(base, 'POST', '/api/login',
                                 body={'username': 'admin', 'password': 'ChangeMe123!'})
         assert status == 200 and login.get('token'), 'login failed'
@@ -1421,6 +1435,71 @@ def main():
         assert s == 200, detail
         assert detail.get('sex') == 'Male' and detail.get('email') == 'applicant@example.com', detail
         assert detail.get('created_at'), detail
+
+        # ---- audit tool -----------------------------------------------------
+        # A server started before the lock existed approved instantly. The
+        # audit must find those rows and be able to undo them.
+        s, audit_created = new_clearance(tokens['fp.officer'], '55509999', purpose='Travel',
+                                         first='Audit', second='Instant', third='Approval', fourth='Case')
+        assert s == 201, audit_created
+        audit_app = audit_created['application_id']
+        backdate_application(audit_app, 13)
+        s, _ = request(base, 'POST',
+                       f'/api/fingerprint/applications/{audit_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 201, s
+
+        audit = os.path.join(os.path.dirname(SERVER), 'audit_instant_approvals.py')
+        run = lambda *extra: subprocess.run(
+            [sys.executable, audit, '--db', db_path, '--json', *extra],
+            capture_output=True, text=True, timeout=120)
+
+        clean = run()
+        assert clean.returncode == 0, clean.stdout + clean.stderr
+        assert json.loads(clean.stdout)['violations'] == [], clean.stdout
+
+        # Rewrite the row to look like an instant approval (what a stale
+        # server leaves behind: reviewed_at == created_at) and re-audit.
+        now_stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
+            conn.execute('UPDATE clearance_applications SET created_at=?, reviewed_at=? '
+                         'WHERE application_id=?', (now_stamp, now_stamp, audit_app))
+            conn.commit()
+        finally:
+            conn.close()
+
+        found = run()
+        assert found.returncode == 1, found.stdout + found.stderr
+        violations = json.loads(found.stdout)['violations']
+        assert [v['application_id'] for v in violations] == [audit_app], violations
+        assert violations[0]['approved_by_role'] == 'FingerprintUnit', violations
+        assert violations[0]['hours_elapsed'] < 12, violations
+
+        reverted = run('--revert', '--yes')
+        assert reverted.returncode == 1, reverted.stdout + reverted.stderr  # still reports
+        conn = sqlite3.connect(db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute('SELECT status,certificate_number,reviewed_at '
+                               'FROM clearance_applications WHERE application_id=?',
+                               (audit_app,)).fetchone()
+            assert row['status'] == 'Pending Review', dict(row)
+            assert row['certificate_number'] is None, dict(row)
+            assert row['reviewed_at'] is None, dict(row)
+            events = [dict(r) for r in conn.execute(
+                "SELECT action,details FROM audit_events WHERE entity_id=? AND action='REVERT'",
+                (audit_app,))]
+            assert events, 'the revert must be recorded in audit_events'
+        finally:
+            conn.close()
+
+        # The reverted application is locked again until created_at + 12h.
+        s, r = request(base, 'POST',
+                       f'/api/fingerprint/applications/{audit_app}/approve',
+                       tokens['fp.officer'], {})
+        assert s == 400 and 'review period active' in review_error(r), (s, r)
+        print('ok: audit_instant_approvals detects and reverts premature approvals')
 
         print('ALL BACKEND TESTS PASSED')
         return 0

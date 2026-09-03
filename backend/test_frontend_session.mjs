@@ -462,6 +462,50 @@ async function main() {
     if (!/Approve/.test(admin.row)) throw new Error('admin Approve button is missing: ' + admin.row);
     console.log('ok 8: fingerprint 12h review lock — officer Approve disabled/"Review Locked (12h)"/no API call/400, admin enabled');
 
+    // ---- 9) STALE BACKEND guard -------------------------------------------
+    // A server started before the review lock existed reports a different
+    // build from /api/health and approves instantly. The UI must refuse to
+    // offer or issue an approval against it.
+    const sb9 = officer.sb.sandbox;
+    const healthTruth = (payload) => {
+      probe(sb9, `backendBuild=${JSON.stringify(payload)}; backendBuildChecked=true;`);
+      return probe(sb9, 'backendBuildOk()');
+    };
+    if (healthTruth(null) !== false)
+      throw new Error('an unknown /api/health must not count as the review-lock build');
+    if (healthTruth({ build: 'sentinel-legacy', review_lock_active: true }) !== false)
+      throw new Error('a stale build tag must not count as the review-lock build');
+    if (healthTruth({ build: 'sentinel-fingerprint-review-lock-12h', review_lock_active: false }) !== false)
+      throw new Error('review_lock_active:false must not count as the review-lock build');
+    if (healthTruth({ build: 'sentinel-fingerprint-review-lock-12h', review_lock_active: true }) !== true)
+      throw new Error('the real build must be recognised as locked');
+
+    // Force the stale state and re-render the register: even an ADMIN and a
+    // row older than 12h must stay locked while the backend is unverified.
+    probe(sb9, "backendBuild={build:'sentinel-legacy',review_lock_active:true}; backendBuildChecked=true;");
+    probe(sb9, 'renderAll()');
+    const staleRow = (sb9.document.getElementById('fpTable').innerHTML
+      .match(/<tr>[\s\S]*?<\/tr>/g) || []).find((r) => r.includes(fpApp.application_id)) || '';
+    if (!/Stale backend/.test(staleRow))
+      throw new Error('register must show the stale-backend lock: ' + staleRow);
+    if (!/disabled="disabled"/.test(staleRow))
+      throw new Error('stale-backend register row must be disabled: ' + staleRow);
+
+    const staleCalls = [];
+    const origFetch9 = sb9.fetch;
+    sb9.fetch = (p, o) => { staleCalls.push(String(p)); return origFetch9(p, o); };
+    await probe(sb9, `approveFP('${fpApp.application_id}')`);
+    sb9.fetch = origFetch9;
+    if (staleCalls.some((u) => u.includes('/approve')))
+      throw new Error('approveFP() must not call the API against a stale build, saw: ' + staleCalls.join(', '));
+    console.log('ok 9: stale backend (wrong /api/health build) — register locked, no approval request issued');
+
+    // and once the real build answers again, the admin bypass comes back
+    probe(sb9, "backendBuild={build:'sentinel-fingerprint-review-lock-12h',review_lock_active:true}; backendBuildChecked=true;");
+    if (probe(sb9, 'backendBuildOk()') !== true)
+      throw new Error('backendBuildOk() must recover once the correct build answers');
+    console.log('ok 10: correct /api/health build restores normal (lock-aware) rendering');
+
     console.log('ALL FRONTEND SESSION TESTS PASSED');
     return 0;
   } finally {

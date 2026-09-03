@@ -13,9 +13,13 @@ Identity matching tiers (used by /api/persons/resolve and every unit route):
 
 Replace SQLite and demo authentication before any operational deployment.
 """
-import datetime, hashlib, json, os, re, secrets, sqlite3, time
+import datetime, hashlib, json, os, re, secrets, signal, socket, sqlite3, subprocess, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+# When this process started — surfaced by /api/health so an operator can tell
+# a freshly started server from one that has been serving for hours.
+SERVER_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(ROOT)
@@ -367,6 +371,21 @@ def review_lock_self_test():
             failures.append(name)
     return ('review lock self-test: PASS (8/8 cases)' if not failures
             else 'review lock self-test: FAILED -> ' + ', '.join(failures))
+
+
+# True once the boot self-test has been run and passed. /api/health reports it,
+# so a health response without build == BUILD_TAG / review_lock_active == true
+# means the process answering is NOT this build — kill it and start this one.
+# Resolved lazily because the helpers it exercises are defined below.
+_REVIEW_LOCK_ARMED = None
+
+
+def review_lock_armed():
+    """Run the review-lock self-test once and cache the verdict."""
+    global _REVIEW_LOCK_ARMED
+    if _REVIEW_LOCK_ARMED is None:
+        _REVIEW_LOCK_ARMED = review_lock_self_test().startswith('review lock self-test: PASS')
+    return _REVIEW_LOCK_ARMED
 
 
 def normalise_reason(value):
@@ -1973,7 +1992,17 @@ class API(BaseHTTPRequestHandler):
                 return self.send_json(200, {'status':'ok','service':'sentinel-backend',
                                             'database':'sqlite-development',
                                             'build':BUILD_TAG,
+                                            # Live proof the gate is armed: the
+                                            # boot self-test is re-run on every
+                                            # health call, so a response saying
+                                            # anything other than PASS means the
+                                            # running process is NOT the build
+                                            # with the review lock.
+                                            'review_lock_active':review_lock_armed(),
+                                            'build_ok':review_lock_armed(),
                                             'fingerprint_review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
+                                            'pid':os.getpid(),
+                                            'started_at':SERVER_STARTED_AT,
                                             'clearance_reasons':list(CLEARANCE_REASONS)})
             user = require_auth(self); c = db()
             # RBAC module-gating. Every authenticated user can see /api/me and
@@ -2342,7 +2371,26 @@ class API(BaseHTTPRequestHandler):
                 verdict = review_gate_decision(app_row, user)
                 if verdict is not None:
                     self.send_json(verdict[0], verdict[1]); c.close(); return
+                # ---- second, independent lock (defence in depth) ----------
+                # Even if review_gate_decision() above were edited or disabled,
+                # this write is refused unless the caller is an administrator
+                # or the full window has elapsed. Intentionally spelled out
+                # rather than factored away.
                 bypassed = is_admin_user(user)
+                if not bypassed:
+                    _created = parse_created_at(app_row.get('created_at'))
+                    _elapsed = (None if _created is None else
+                                (datetime.datetime.now(datetime.timezone.utc) - _created).total_seconds())
+                    if _created is None or _elapsed is None or _elapsed < FINGERPRINT_REVIEW_WINDOW_HOURS * 3600:
+                        self.send_json(400, {'detail':REVIEW_LOCK_MESSAGE,
+                                             'error':REVIEW_LOCK_MESSAGE,
+                                             'code':'review_period_active',
+                                             'reason':'submission timestamp missing' if _created is None else 'review window open',
+                                             'review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
+                                             'submitted_at':app_row.get('created_at'),
+                                             'application_id':aid,
+                                             'enforced_by':'inline_43200s_guard'})
+                        c.close(); return
                 cert = app_row['certificate_number'] or ('CL-'+str(int(time.time()*1000))[-8:])
                 c.execute("UPDATE clearance_applications SET status='Approved',certificate_number=?,reviewed_at=CURRENT_TIMESTAMP WHERE application_id=?",
                           (cert,aid))
@@ -2717,13 +2765,103 @@ class API(BaseHTTPRequestHandler):
             if c: c.close()
             self.send_json(500,{'error':str(e)})
 
+def _pids_listening_on(port):
+    """Best-effort, cross-platform list of PIDs listening on TCP `port`."""
+    pids = set()
+    try:
+        if os.name == 'nt':                                   # Windows
+            out = subprocess.run(['netstat', '-ano', '-p', 'TCP'],
+                                 capture_output=True, text=True, timeout=20).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[1].endswith(f':{port}') and parts[3].upper() == 'LISTENING':
+                    if parts[4].isdigit():
+                        pids.add(int(parts[4]))
+        else:                                                 # Linux / macOS
+            try:
+                out = subprocess.run(['lsof', '-ti', f'tcp:{port}'],
+                                     capture_output=True, text=True, timeout=20).stdout
+                pids |= {int(x) for x in out.split()}
+            except (FileNotFoundError, subprocess.SubprocessError, ValueError):
+                pass
+            if not pids:                                      # `lsof` may be absent
+                try:
+                    out = subprocess.run(['ss', '-ltnp'], capture_output=True,
+                                         text=True, timeout=20).stdout
+                    for line in out.splitlines():
+                        if f':{port}' in line and 'LISTEN' in line.upper():
+                            pids |= {int(m) for m in re.findall(r'pid=(\d+)', line)}
+                except (FileNotFoundError, subprocess.SubprocessError, ValueError):
+                    pass
+    except Exception:
+        pass
+    pids.discard(os.getpid())
+    return pids
+
+
+def terminate_listener(port):
+    """Kill whatever is holding `port` so a restart always wins the bind.
+
+    The usual cause of "port 8001 is running old code" is that the previous
+    server was never stopped: the new process crashes with 'Address already in
+    use', nobody reads the message, and the stale process keeps serving.
+    Set SENTINEL_NO_PORT_TAKEOVER=1 to disable the eviction.
+    """
+    if os.environ.get('SENTINEL_NO_PORT_TAKEOVER'):
+        return []
+    killed = []
+    for pid in sorted(_pids_listening_on(port)):
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(pid), '/F'],
+                               capture_output=True, timeout=20)
+            else:
+                os.kill(pid, signal.SIGTERM)
+                deadline = time.time() + 2.0
+                while time.time() < deadline:
+                    try:
+                        os.kill(pid, 0)
+                    except OSError:
+                        break
+                    time.sleep(0.2)
+                else:
+                    os.kill(pid, signal.SIGKILL)
+            killed.append(pid)
+        except Exception:
+            pass
+    return killed
+
+
+def bind_server(port):
+    """Bind `port`, evicting a stale listener first if the bind is refused."""
+    last = None
+    for attempt in range(3):
+        try:
+            return ThreadingHTTPServer(('0.0.0.0', port), API)
+        except OSError as exc:
+            last = exc
+            # 98=EADDRINUSE(Linux) 48=EADDRINUSE(macOS) 10048=WSAEADDRINUSE(Windows)
+            if getattr(exc, 'errno', None) not in (48, 98, 10048) or attempt == 2:
+                raise
+            evicted = terminate_listener(port)
+            print(f'  port {port} is held by a stale process '
+                  f'-> evicted {evicted or "(owner not found)"}; rebinding')
+            time.sleep(1.0)
+    raise last
+
+
 if __name__ == '__main__':
     init_db()
     port = int(os.environ.get('PORT','8001'))
+    if not review_lock_armed():
+        # Refuse to serve rather than quietly answer approvals unlocked.
+        raise SystemExit('FATAL: fingerprint review lock failed its self-test; '
+                         'refusing to start an unlocked server.')
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
     print(f'  fingerprint review window: {FINGERPRINT_REVIEW_WINDOW_HOURS}h '
           f'(admin/SystemAdmin bypasses, every other role is locked)')
     print(f'  {review_lock_self_test()}')
     print(f'  clearance reasons: {", ".join(CLEARANCE_REASONS)}')
-    ThreadingHTTPServer(('0.0.0.0', port), API).serve_forever()
+    print(f'  pid {os.getpid()}  started {SERVER_STARTED_AT}')
+    bind_server(port).serve_forever()
