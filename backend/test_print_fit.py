@@ -131,8 +131,12 @@ check('application.html: blueprint @page rule (@page{size:A4;margin:0})',
       '@page{size:A4;margin:0}' in app_print.replace(' ', ''))
 check('application.html: blueprint .page print padding (6mm 8mm 4mm 8mm)',
       'padding:6mm8mm4mm8mm' in app_print.replace(' ', ''))
-check('application.html: SINGLE-SHEET FIX (.page min-height dropped on paper)',
-      'min-height:0' in app_print.replace(' ', '') and 'height:auto' in app_print.replace(' ', ''))
+check('application.html: SINGLE-SHEET + FOOTER PIN (min-height 283mm on paper, ~14mm spill slack)',
+      'min-height:283mm' in app_print.replace(' ', '') and 'margin:0' in app_print.replace(' ', '')
+      and 'margin-top:auto' in css_block(app, '.foot').replace(' ', '')
+      and bool(re.search(r'\.page\{[^}]*flex-direction:column', app))       # screen sheet is a flex column
+      and bool(re.search(r'\.content\{[^}]*flex:1', app))                   # content stretches
+      and 'margin-top:auto' in app.split('</style>')[0].split('.foot{')[-1].split('}')[0])
 # certificate.html — blueprint top-level @page + print block
 check('certificate.html: blueprint @page rule (size: A4 portrait; margin: 0)',
       bool(re.search(r'@page\s*\{\s*size:\s*A4 portrait\s*;\s*margin:\s*0\s*;\s*\}', cert)))
@@ -215,9 +219,9 @@ check('application.html: generous exec cell padding (6px 10px) + section margins
       'padding:6px10px' in css_block(app, '.grid.exec td').replace(' ', '')
       and 'margin-top:10px' in css_block(app, '.sec').replace(' ', '')
       and 'margin-bottom:4px' in css_block(app, '.sec').replace(' ', ''))
-check('application.html: QAYBTA 04 declarations airier (line-height 1.45, 11px signature lines)',
+check('application.html: QAYBTA 04 declarations airier (line-height 1.45, 13px signature lines)',
       'line-height:1.45' in css_block(app, '.stm .body').replace(' ', '')
-      and abs(num(css_block(app, '.sig .sl'), 'height', 0) - 11 * PX_TO_MM) < 0.01)
+      and abs(num(css_block(app, '.sig .sl'), 'height', 0) - 13 * PX_TO_MM) < 0.01)
 check('application.html: Full Legal Name and Mother\'s Full Name share one row',
       bool(re.search(r'id="appFullName">- </td>\s*(?:\n.*)?<td class="lab-cell">Magaca Hooyada', app))
       or ('id="appFullName"' in app.split('id="appMotherName"')[0].rsplit('<tr', 1)[-1]
@@ -347,14 +351,16 @@ def budget_application():
     row_1l = (line_mm(exec_lab, 7.5, 1.25)
               + 2 * num(exec_td, 'padding-top', 1.59) + 1 * PX_TO_MM)
     h += 8 * row_2l + 2 * row_1l            # 7 (QAYBTA 01) + 1 (02) + 3 (03) + 1 (03) pair rows
-    # Section 04: two declaration boxes (3 body lines + signature line each)
+    # Section 04: two declaration boxes (3 body lines + signature line each;
+    # signature line boxes have 13px of writing room)
     stm, body, sig = css_block(app, '.stm'), css_block(app, '.stm .body'), css_block(app, '.sig')
     one = (2 * num(stm, 'padding-top', 1.32) + 1 * PX_TO_MM
            + 3 * line_mm(body, 8, 1.45)
-           + num(sig, 'margin-top', 1.59) + 11 * PX_TO_MM + line_mm(sig, 8.5, 1.4))
+           + num(sig, 'margin-top', 2.12) + 13 * PX_TO_MM + line_mm(sig, 8.5, 1.5))
     h += 2 * one + 2 * num(stm, 'margin-top', 0.79)
-    # footer
-    h += (num(css_block(app, '.foot'), 'margin-top', 1.59) + 2 * PX_TO_MM
+    # footer: margin-top:auto pins it to the bottom page boundary on paper,
+    # so it contributes no flow height of its own (auto is absorbed)
+    h += (2 * PX_TO_MM
           + line_mm(css_block(app, '.foot .body'), 8.5, 1.35) + 8 * PX_TO_MM)
     return h
 

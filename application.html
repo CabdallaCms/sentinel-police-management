@@ -29,13 +29,17 @@
   .page{
     width:210mm;min-height:297mm;margin:0 auto;padding:8mm 10mm 6mm 10mm;
     background:#fff;position:relative;
+    display:flex;flex-direction:column;
   }
   /* SINGLE-PAGE GUARANTEE: on paper the sheet must size to its content.
      min-height:297mm with @page margin:0 fills the box to exactly one page,
      so any engine rounding spills a blank second sheet — drop it in print. */
   @media print{
     @page{size:A4;margin:0}
-    .page{padding:6mm 8mm 4mm 8mm;min-height:0;height:auto;margin:0;box-shadow:none}
+    /* min-height 283mm = footer bottom lands at ~283mm (inside the 280-285mm
+       band) while leaving ~14mm of spill slack below QAYBTA 04's content
+       (border-box: 283mm + nothing else vs the 297mm page). */
+    .page{padding:6mm 8mm 4mm 8mm;min-height:283mm;height:auto;margin:0;box-shadow:none}
   }
 
   .watermark{
@@ -48,7 +52,7 @@
     pointer-events:none;
   }
   .watermark img{width:150mm;height:auto}
-  .content{position:relative;z-index:1}
+  .content{position:relative;z-index:1;flex:1;display:flex;flex-direction:column}
 
   .hdr{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:3px;margin-bottom:4px}
   .hdr .t1{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;letter-spacing:.2px;color:var(--navy)}
@@ -89,12 +93,15 @@
   .stm.orange{background:var(--orange-bg);border-color:var(--orange);border-left-color:var(--orange)}
   .stm .t{font-style:italic;font-weight:700;font-size:9pt}
   .stm .body{font-style:italic;color:var(--muted-2);font-size:8pt;line-height:1.45}
-  .sig{margin-top:6px;font-size:8.5pt;line-height:1.4}
+  .sig{margin-top:8px;font-size:8.5pt;line-height:1.5}
   .sig b{font-weight:700}
-  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:11px;margin:0 2px;vertical-align:bottom}
+  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:13px;margin:0 2px;vertical-align:bottom}
   .sig .sl.sh{width:28mm}
 
-  .foot{margin-top:6px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
+  /* Footer pinned to the bottom page boundary: margin-top:auto inside the
+     flex .content absorbs whatever space remains below QAYBTA 04, so the
+     bar lands at the ~283mm mark on paper instead of trailing the content. */
+  .foot{margin-top:auto;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
   .foot .stripe{height:2px;background:linear-gradient(to right,var(--navy) 0%,var(--gold) 50%,var(--green) 100%)}
   .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:4px 10px;text-align:center;font-size:8.5pt;font-weight:700;letter-spacing:.1px}
   .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:8pt;margin:0 6px}
