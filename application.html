@@ -74,6 +74,11 @@
 
   .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:8.5pt}
   .grid td{border:1px solid var(--border);padding:2px 6px;vertical-align:top}
+  /* Executive layout for QAYBTA 01: tinted field-title column, uniform cell
+     padding, consistent entry alignment and clean ruled borders. */
+  .grid.exec td{padding:3px 8px;vertical-align:middle}
+  .grid.exec td.lab-cell{background:var(--label-bg);width:36%;font-weight:700;font-size:7.5pt;letter-spacing:.3px;color:var(--muted-2);text-transform:uppercase;text-align:left}
+  .grid.exec td.entry{font-weight:600;font-size:9.5pt;color:var(--navy);text-align:left;background:#fff}
   .lab{font-weight:700;color:var(--text)}
   .line{display:block;border-bottom:1px solid var(--muted-2);height:12px;margin-top:4px}
   .w50{width:50%}
@@ -152,16 +157,18 @@ PHOTO
   <p class="intro">Foomkan waxa uu si dijitaal ah u bilaabayaa habraaca hubinta taariikhda amniga. Si taxaddar leh u buuxi xogaha aqoonsigaaga qaranka (NIRA/ID) ama Baasaboorka.</p>
 
   <div class="sec">QAYBTA 01  |  XOGTA AQOONSIGA CODSAHA</div>
-  <table class="grid">
-    <tr><td colspan="2"><span class="lab">MAGACA SHARCIGA AH OO BUUXA (FULL LEGAL NAME):</span><div style="font-weight:600;font-size:9.5pt;color:var(--navy);margin-top:1px;" id="appFullName">-</div></td></tr>
-    <tr><td colspan="2"><span class="lab">MAGACA HOOYADA OO BUUXA (MOTHER'S FULL NAME):</span><div style="font-weight:600;margin-top:2px;" id="appMotherName">-</div></td></tr>
-    <tr><td><span class="lab">LAMBARKA AQOONSIGA QARANKA (NIRA):</span><div style="font-weight:600;margin-top:2px;" id="appNationalId">-</div></td>
-        <td><span class="lab">LAMBARKA BAASABOORKA (HADDII UU JIRO):</span><div style="font-weight:600;margin-top:2px;" id="appPassport">-</div></td></tr>
-    <tr><td><span class="lab">TAARIIKHDA DHALASHADA (DD/MM/YYYY):</span><div style="font-weight:600;margin-top:2px;" id="appDob">-</div></td>
-        <td><span class="lab">GOOBTA DHALASHADA:</span><div style="font-weight:600;margin-top:2px;" id="appPob">-</div></td></tr>
-    <tr><td><span class="lab">JINSI (LAB / DHEDDIG):</span><div style="font-weight:600;margin-top:2px;" id="appGender">-</div></td>
-        <td><span class="lab">LAMBARKA TELEFOONKA | EMAIL:</span><div style="font-weight:600;margin-top:2px;"><span id="appPhone">-</span> | <span id="appEmail">-</span></div></td></tr>
-    <tr><td colspan="2"><span class="lab">CINWAANKA DEGAANAANSHAHA EE HADDA:</span><div style="font-weight:600;margin-top:2px;" id="appAddress">-</div></td></tr>
+  <table class="grid exec">
+    <tr><td class="lab-cell">Magaca Sharciga ah oo Buuxa (Full Legal Name)</td><td class="entry" id="appFullName">-</td></tr>
+    <tr><td class="lab-cell">Magaca Hooyada oo Buuxa (Mother's Full Name)</td><td class="entry" id="appMotherName">-</td></tr>
+    <tr><td class="lab-cell">Lambarka Aqoonsiga Qaranka (NIRA)</td><td class="entry" id="appNationalId">-</td>
+        <td class="lab-cell">Lambarka Baasaboorka (Haddii uu Jiro)</td><td class="entry" id="appPassport">-</td></tr>
+    <tr><td class="lab-cell">Taariikhda Dhalashada (DD/MM/YYYY)</td><td class="entry" id="appDob">-</td>
+        <td class="lab-cell">Goobta Dhalashada</td><td class="entry" id="appPob">-</td></tr>
+    <tr><td class="lab-cell">Jinsi (Lab / Dheddig)</td><td class="entry" id="appGender">-</td>
+        <td class="lab-cell">Shaqada (Occupation)</td><td class="entry" id="appOccupation">-</td></tr>
+    <tr><td class="lab-cell">Lambarka Telefoonka</td><td class="entry" id="appPhone">-</td>
+        <td class="lab-cell">Email</td><td class="entry" id="appEmail">-</td></tr>
+    <tr><td class="lab-cell">Cinwaanka Degaanaanshaha ee Hadda</td><td class="entry" id="appAddress">-</td></tr>
   </table>
 
   <div class="sec">QAYBTA 02  |  UJEEDDADA CODSIGA</div>
@@ -326,6 +333,7 @@ function render(a){
   fill('appDob',dmy(a.date_of_birth));
   fill('appPob',a.place_of_birth);
   fill('appGender',a.sex);
+  fill('appOccupation',a.occupation);
   fill('appPhone',a.phone);
   fill('appEmail',a.email);
   fill('appAddress',a.residence||a.current_address);

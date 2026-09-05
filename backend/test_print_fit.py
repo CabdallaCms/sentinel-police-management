@@ -183,11 +183,14 @@ check('certificate.html: watermark opacity 0.08 (inside the 0.08-0.12 band)',
       opacity is not None and OPACITY_MIN <= opacity <= OPACITY_MAX, f'opacity={opacity}')
 check('certificate.html: crest in the letterhead masthead (.logo-wrap img)',
       '.logo-wrap img' in cert and num(css_block(cert, '.letterhead .logo-wrap img'), 'width') > 0)
+check('certificate.html: letterhead text scaled to the logo (EN 16.5pt / AR 18.5pt)',
+      '16.5pt' in css_block(cert, '.letterhead .left-text .line1')
+      and '18.5pt' in css_block(cert, '.letterhead .right-text'))
 check('certificate.html: watermark above the sheet (blueprint z-index 10)',
       'z-index:10' in cert_wm.replace(' ', ''))
 sig = css_block(cert, '.sig-block')
 check('certificate.html: signature block centred above the footer bar',
-      'margin:26pxauto0auto' in sig.replace(' ', '') and 'text-align:center' in sig.replace(' ', ''))
+      'margin:30pxauto0auto' in sig.replace(' ', '') and 'text-align:center' in sig.replace(' ', ''))
 
 # ---------------------------------------------------------------------------
 # 3.5 Official emblem asset (blue-and-silver circular seal, transparent bg)
@@ -207,12 +210,20 @@ check('images/police_logo.png: alpha channel (transparent outside the ring)',
 # ---------------------------------------------------------------------------
 APP_IDS = ['statusBadge', 'approveBtn', 'lockbar', 'toast', 'photoContainer',
            'appFullName', 'appMotherName', 'appNationalId', 'appPassport',
-           'appDob', 'appPob', 'appGender', 'appPhone', 'appEmail', 'appAddress',
-           'appPurpose',
+           'appDob', 'appPob', 'appGender', 'appOccupation', 'appPhone',
+           'appEmail', 'appAddress', 'appPurpose',
            'guarantorName', 'guarantorId', 'guarantorRel', 'guarantorPhone',
            'guarantorAddr', 'guarantorOcc']
 for el in APP_IDS:
     check(f'application.html: #{el} present', f'id="{el}"' in app)
+
+# executive QAYBTA 01 layout
+check('application.html: QAYBTA 01 uses the executive grid (tinted label column)',
+      'grid exec' in app and 'lab-cell' in app and 'td class="entry"' in app)
+check('application.html: QAYBTA 01 field titles render uppercase (text-transform)',
+      'text-transform:uppercase' in css_block(app, '.grid.exec td.lab-cell').replace(' ', ''))
+check('application.html: occupation field bound in QAYBTA 01',
+      "fill('appOccupation'" in app)
 
 CERT_IDS = ['statusBadge', 'printBtn', 'sheet', 'certNumber', 'certIssued',
             'certFullName', 'certMotherName', 'certDob', 'certPob',
@@ -251,7 +262,7 @@ for marker in ['CODSIGA SHAHAADADA DAMBI-LA\'AANTA',
                'NORTHEASTERN POLICE FORCE • CRIMINAL INVESTIGATION DIRECTORATE (2026)',
                'PCC-2026-DIGITAL-01',
                'QAYBTA 01', 'QAYBTA 02', 'QAYBTA 03', 'QAYBTA 04',
-               'MAGACA SHARCIGA AH OO BUUXA', 'DAMMIINKA (GUARANTOR)',
+               'Magaca Sharciga ah oo Buuxa (Full Legal Name)', 'DAMMIINKA (GUARANTOR)',
                'OGOLAANSHAHA &amp; SAXIIXA DAMMIINKA', 'OGOLAANSHAHA &amp; SAXIIXA CODSAHA',
                'Hoggaanka Baadhista Dembiyada Ee DG.Waqooyi Bari Soomaaliya',
                'Waaxda Faraha Iyo Hubinta', '+252-2754131',
@@ -295,13 +306,18 @@ def budget_application():
     # four section bars (3px vertical padding each)
     sec = css_block(app, '.sec')
     h += 4 * (line_mm(sec, 9, 1.3) + 6 * PX_TO_MM + num(sec, 'margin-top', 0.79))
-    # grid rows: bold label stacked over the 9.5pt value line (inline style)
-    row_h = (line_mm(css_block(app, '.lab'), 8.5, 1.3) + 9.5 * PT_TO_MM * 1.3
-             + 2 * PX_TO_MM + 6 * PX_TO_MM + 1 * PX_TO_MM)
-    h += 6 * row_h + 2 * 9.5 * PT_TO_MM * 1.3       # Section 01 + 2 wrap allowances
+    # QAYBTA 01 executive grid: side-by-side label/entry cells — row height is
+    # the taller of the 7.5pt label and 9.5pt entry + uniform 3px padding
+    exec_lab, exec_td = css_block(app, '.grid.exec td.lab-cell'), css_block(app, '.grid.exec td')
+    exec_row = max(line_mm(exec_lab, 7.5, 1.35), line_mm(css_block(app, '.grid.exec td.entry'), 9.5, 1.3)) \
+        + 2 * num(exec_td, 'padding-top', 1.06) + 1 * PX_TO_MM
+    h += 5 * exec_row + 2 * exec_row        # 7 rows + 2 wrap allowances
+    # stacked rows remain in QAYBTA 03 (label over entry)
+    row_h = (line_mm(css_block(app, '.lab'), 8.5, 1.3) + 8.5 * PT_TO_MM * 1.3
+             + 2 * PX_TO_MM + 4 * PX_TO_MM + 1 * PX_TO_MM)
+    h += 3 * row_h + 8.5 * PT_TO_MM * 1.3           # Section 03 + 1 wrap allowance
     # Section 02 purpose box
     h += 10 * PT_TO_MM * 1.35 + 8 * PX_TO_MM + 2 * PX_TO_MM
-    h += 3 * row_h + 9.5 * PT_TO_MM * 1.3           # Section 03 + 1 wrap allowance
     # Section 04: two declaration boxes (3 body lines + signature line each)
     stm, body, sig = css_block(app, '.stm'), css_block(app, '.stm .body'), css_block(app, '.sig')
     one = (2 * num(stm, 'padding-top', 0.79) + 1 * PX_TO_MM
