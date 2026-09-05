@@ -36,12 +36,12 @@
      so any engine rounding spills a blank second sheet — drop it in print. */
   @media print{
     @page{size:A4 portrait;margin:0}
-    /* ZERO page expansion on paper: no hardcoded sheet min-height (the old
-       283mm box was enough to spill a 2nd sheet on engine rounding) and a
-       hard 280mm ceiling so the engine can never spawn page 2. The flex
-       column + margin-top:auto footer then rests at the bottom of page 1
-       naturally, without forcing overflow. */
-    .page{padding:6mm 8mm 4mm 8mm;min-height:0;height:auto;max-height:280mm;margin:0;box-shadow:none}
+    /* Vertical balance on paper: the sheet box is pinned to 276mm — enough
+       for margin-top:auto on .foot to push the blue bar down to the bottom
+       margin, while keeping 21mm of rounding slack under the 297mm page
+       (the previous 283mm pin left only 14mm and spilled on some engines).
+       max-height:280mm stays as a hard 1-page guarantee. */
+    .page{padding:6mm 8mm 4mm 8mm;min-height:276mm;height:auto;max-height:280mm;margin:0;box-shadow:none}
   }
 
   .watermark{
@@ -56,24 +56,24 @@
   .watermark img{width:150mm;height:auto}
   .content{position:relative;z-index:1;flex:1;display:flex;flex-direction:column}
 
-  .hdr{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:3px;margin-bottom:4px}
+  .hdr{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:4px;margin-bottom:5px}
   .hdr .t1{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;letter-spacing:.2px;color:var(--navy)}
   .hdr .t2{font-family:Arial,sans-serif;font-size:9.5pt;font-weight:700;color:var(--green);margin-top:1px;letter-spacing:.1px}
-  .title{text-align:center;font-size:15pt;font-weight:700;color:var(--navy);margin:4px 0 3px 0;letter-spacing:.4px;font-family:Georgia,"Times New Roman",serif}
+  .title{text-align:center;font-size:15.5pt;font-weight:700;color:var(--navy);margin:5px 0 4px 0;letter-spacing:.4px;font-family:Georgia,"Times New Roman",serif}
 
-  .photo-wrap{text-align:center;margin:2px 0 3px 0}
+  .photo-wrap{text-align:center;margin:3px 0 4px 0}
   .photo-frame{display:inline-block}
   .photo{width:28mm;height:36mm;border:1.5px solid var(--navy);background:#fff;position:relative;overflow:hidden}
   .photo img{width:100%;height:100%;object-fit:cover}
   .photo .ph-lbl{position:absolute;inset:auto 0 3px 0;text-align:center;font-family:Arial,sans-serif;font-size:6pt;color:#7a8aa3;letter-spacing:.3px;line-height:1.2;font-weight:700}
-  .photo-cap{font-family:Arial,sans-serif;font-size:7pt;color:var(--muted);font-style:italic;margin-top:1px}
+  .photo-cap{font-family:Arial,sans-serif;font-size:7pt;color:var(--muted);font-style:italic;margin-top:2px}
 
-  .intro{font-size:8.5pt;text-align:justify;color:var(--muted-2);margin:2px 0 4px 0}
+  .intro{font-size:8.5pt;text-align:justify;color:var(--muted-2);margin:3px 0 5px 0}
 
   .sec{
     background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;
     font-family:Arial,sans-serif;font-weight:700;font-size:9pt;padding:4px 10px;
-    margin-top:6px;margin-bottom:2px;position:relative;padding-left:16px;letter-spacing:.1px;
+    margin-top:8px;margin-bottom:4px;position:relative;padding-left:16px;letter-spacing:.1px;
   }
   .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:10px;background:var(--gold)}
   .sec .sub{font-weight:400;font-style:italic;font-size:9pt;color:#dbe5f4;margin-left:4px}
@@ -83,24 +83,24 @@
   /* Executive layout shared by QAYBTA 01/02/03: strict side-by-side pairs —
      tinted label cells (25%) with uppercase titles, equal-width entry
      cells (25%), generous uniform padding and clean ruled borders. */
-  .grid.exec td{padding:3.5px 8px;vertical-align:middle}
-  .grid.exec td.lab-cell{background:var(--label-bg);width:25%;font-weight:700;font-size:7.5pt;letter-spacing:.3px;color:var(--muted-2);text-transform:uppercase;text-align:left;line-height:1.25}
+  .grid.exec td{padding:5px 8px;vertical-align:middle}
+  .grid.exec td.lab-cell{background:var(--label-bg);width:25%;font-weight:700;font-size:7.5pt;letter-spacing:.3px;color:var(--muted-2);text-transform:uppercase;text-align:left;line-height:1.35}
   .grid.exec td.entry{font-weight:600;font-size:9.5pt;color:var(--navy);text-align:left;background:#fff;width:25%}
   .lab{font-weight:700;color:var(--text)}
   .line{display:block;border-bottom:1px solid var(--muted-2);height:12px;margin-top:4px}
   .w50{width:50%}
   .inline-lab b{font-weight:700}
-  .stm{padding:5px 10px 5px 12px;font-size:9pt;margin-top:3px;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid;line-height:1.45}
+  .stm{padding:7px 10px 7px 12px;font-size:9pt;margin-top:5px;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid;line-height:1.45}
   .stm.green{background:var(--green-bg);border-color:var(--green);border-left-color:var(--green)}
   .stm.orange{background:var(--orange-bg);border-color:var(--orange);border-left-color:var(--orange)}
   .stm .t{font-style:italic;font-weight:700;font-size:9pt}
-  .stm .body{font-style:italic;color:var(--muted-2);font-size:8pt;line-height:1.45}
-  .sig{margin-top:8px;font-size:8.5pt;line-height:1.5}
+  .stm .body{font-style:italic;color:var(--muted-2);font-size:8pt;line-height:1.5}
+  .sig{margin-top:10px;font-size:8.5pt;line-height:1.6}
   .sig b{font-weight:700}
-  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:13px;margin:0 2px;vertical-align:bottom}
+  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:14px;margin:0 2px;vertical-align:bottom}
   .sig .sl.sh{width:28mm}
 
-  /* Footer pinned to the bottom page boundary: margin-top:auto inside the
+  /* Footer pushed to the bottom page margin: margin-top:auto inside the
      flex .content absorbs whatever space remains below QAYBTA 04, so the
      bar lands at the ~283mm mark on paper instead of trailing the content. */
   .foot{margin-top:auto;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}

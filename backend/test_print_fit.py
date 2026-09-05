@@ -131,8 +131,8 @@ check('application.html: print @page rule (size:A4 portrait; margin:0)',
       '@page{size:A4portrait;margin:0}' in app_print.replace(' ', ''))
 check('application.html: print .page padding kept (6mm 8mm 4mm 8mm)',
       'padding:6mm8mm4mm8mm' in app_print.replace(' ', ''))
-check('application.html: ZERO page expansion (min-height:0, hard max-height:280mm)',
-      'min-height:0' in app_print.replace(' ', '') and 'max-height:280mm' in app_print.replace(' ', '')
+check('application.html: balanced paper box (min-height 276mm, hard ceiling 280mm, 21mm rounding slack)',
+      'min-height:276mm' in app_print.replace(' ', '') and 'max-height:280mm' in app_print.replace(' ', '')
       and 'height:auto' in app_print.replace(' ', ''))
 # certificate.html — blueprint top-level @page + print block
 check('certificate.html: blueprint @page rule (size: A4 portrait; margin: 0)',
@@ -212,13 +212,13 @@ check('application.html: QAYBTA 03 balanced pairs (Name+ID, Relationship+Phone, 
           '<td class="lab-cell">Xiriirka Codsaha', '<td class="lab-cell">Telefoonka ee Laga Helayo',
           '<td class="lab-cell">Cinwaanka Degaanaanshaha ee Hadda (Current Address)',
           '<td class="lab-cell">Shaqada (Occupation)']))
-check('application.html: trimmed exec cell padding (3.5px 8px) + section margins (6px/2px)',
-      'padding:3.5px8px' in css_block(app, '.grid.exec td').replace(' ', '')
-      and 'margin-top:6px' in css_block(app, '.sec').replace(' ', '')
-      and 'margin-bottom:2px' in css_block(app, '.sec').replace(' ', ''))
-check('application.html: QAYBTA 04 declarations airier (line-height 1.45, 13px signature lines)',
-      'line-height:1.45' in css_block(app, '.stm .body').replace(' ', '')
-      and abs(num(css_block(app, '.sig .sl'), 'height', 0) - 13 * PX_TO_MM) < 0.01)
+check('application.html: balanced exec cell padding (4.5px 8px) + section margins (8px/4px)',
+      'padding:5px8px' in css_block(app, '.grid.exec td').replace(' ', '')
+      and 'margin-top:8px' in css_block(app, '.sec').replace(' ', '')
+      and 'margin-bottom:4px' in css_block(app, '.sec').replace(' ', ''))
+check('application.html: QAYBTA 04 declarations breathe (box padding 7px, 14px signature lines)',
+      'padding:7px10px' in css_block(app, '.stm').replace(' ', '')
+      and abs(num(css_block(app, '.sig .sl'), 'height', 0) - 14 * PX_TO_MM) < 0.01)
 check('application.html: Full Legal Name and Mother\'s Full Name share one row',
       bool(re.search(r'id="appFullName">- </td>\s*(?:\n.*)?<td class="lab-cell">Magaca Hooyada', app))
       or ('id="appFullName"' in app.split('id="appMotherName"')[0].rsplit('<tr', 1)[-1]
@@ -326,34 +326,34 @@ def budget_application():
     # header: 2 lines + underline padding + rule + bottom margin
     h += (line_mm(css_block(app, '.hdr .t1'), 9, 1.3)
           + line_mm(css_block(app, '.hdr .t2'), 9.5, 1.3)
-          + 3 * PX_TO_MM + 2 * PX_TO_MM + num(css_block(app, '.hdr'), 'margin-bottom', 1.06))
+          + 4 * PX_TO_MM + 2 * PX_TO_MM + num(css_block(app, '.hdr'), 'margin-bottom', 1.32))
     # title + margins
     ti = css_block(app, '.title')
-    h += line_mm(ti, 15, 1.3) + num(ti, 'margin-top', 1.06) + num(ti, 'margin-bottom', 0.79)
+    h += line_mm(ti, 15.5, 1.3) + num(ti, 'margin-top', 1.32) + num(ti, 'margin-bottom', 1.06)
     # photo: 36mm box + border + caption + wrap margins
     h += (36.0 + 3 * PX_TO_MM + line_mm(css_block(app, '.photo-cap'), 7, 1.35)
-          + 1 * PX_TO_MM + 2 * PX_TO_MM + 3 * PX_TO_MM)
+          + 1 * PX_TO_MM + 3 * PX_TO_MM + 5 * PX_TO_MM)
     # intro: 2 justified lines + margins
-    h += 2 * line_mm(css_block(app, '.intro'), 8.5, 1.3) + 2 * PX_TO_MM + 4 * PX_TO_MM
-    # four section bars (4px vertical padding, 6px top / 2px bottom margins)
+    h += 2 * line_mm(css_block(app, '.intro'), 8.5, 1.3) + 3 * PX_TO_MM + 5 * PX_TO_MM
+    # four section bars (4px vertical padding, 8px top / 4px bottom margins)
     sec = css_block(app, '.sec')
     h += 4 * (line_mm(sec, 9, 1.3) + 2 * num(sec, 'padding-top', 1.06)
-              + num(sec, 'margin-top', 1.59) + num(sec, 'margin-bottom', 0.53))
+              + num(sec, 'margin-top', 2.12) + num(sec, 'margin-bottom', 1.06))
     # Executive grid QAYBTA 01/02/03: strict side-by-side pairs. With the
     # uppercase small-caps labels (~26 chars/line at 25% width) 8 of the 10
     # pair rows carry a 2-line label; 2 rows are single-line.
     exec_lab, exec_td = css_block(app, '.grid.exec td.lab-cell'), css_block(app, '.grid.exec td')
-    row_2l = (2 * line_mm(exec_lab, 7.5, 1.25)
-              + 2 * num(exec_td, 'padding-top', 0.93) + 1 * PX_TO_MM)
-    row_1l = (line_mm(exec_lab, 7.5, 1.25)
+    row_2l = (2 * line_mm(exec_lab, 7.5, 1.35)
+              + 2 * num(exec_td, 'padding-top', 1.32) + 1 * PX_TO_MM)
+    row_1l = (line_mm(exec_lab, 7.5, 1.35)
               + 2 * num(exec_td, 'padding-top', 0.93) + 1 * PX_TO_MM)
     h += 8 * row_2l + 2 * row_1l            # 7 (QAYBTA 01) + 1 (02) + 3 (03) + 1 (03) pair rows
     # Section 04: two declaration boxes (3 body lines + signature line each;
     # signature line boxes have 13px of writing room)
     stm, body, sig = css_block(app, '.stm'), css_block(app, '.stm .body'), css_block(app, '.sig')
-    one = (2 * num(stm, 'padding-top', 1.32) + 1 * PX_TO_MM
-           + 3 * line_mm(body, 8, 1.45)
-           + num(sig, 'margin-top', 2.12) + 13 * PX_TO_MM + line_mm(sig, 8.5, 1.5))
+    one = (2 * num(stm, 'padding-top', 1.85) + 1 * PX_TO_MM
+           + 3 * line_mm(body, 8, 1.5)
+           + num(sig, 'margin-top', 2.65) + 14 * PX_TO_MM + line_mm(sig, 8.5, 1.6))
     h += 2 * one + 2 * num(stm, 'margin-top', 0.79)
     # footer: margin-top:auto pins it to the bottom page boundary on paper,
     # so it contributes no flow height of its own (auto is absorbed)
@@ -416,8 +416,8 @@ check('application.html: worst-case print height fits one A4 page (+safety)',
       b_app <= avail - SAFETY_MM)
 check('certificate.html: worst-case print height fits one A4 page (+safety)',
       b_cert <= avail - SAFETY_MM)
-check('application.html: strict single-page budget (<= 270mm)',
-      b_app <= 270.0, f'{b_app:.1f}mm')
+check('application.html: vertical fill on target (265-275mm band, < 280mm ceiling)',
+      265.0 <= b_app <= 275.0, f'{b_app:.1f}mm')
 check('application.html: flex footer rests at the bottom of page 1 (margin-top:auto, no overflow)',
       'margin-top:auto' in css_block(app, '.foot').replace(' ', '')
       and bool(re.search(r'\.page\{[^}]*flex-direction:column', app))       # screen sheet is a flex column
