@@ -3,66 +3,97 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Good Conduct / Clearance Certificate</title>
+<title>Certificate of Good Conduct</title>
 <style>
+  /* Official Fingerprint Unit branding — Northeastern Police Force / CID.
+     Palette mirrors the official emblem: navy shield, gold ring, green banner. */
   :root{
-    --navy:#0f2855; --navy-2:#14346b; --gold:#c9a227; --green:#0e6b4a;
-    --orange:#b7650e; --border:#b8c5da; --label-bg:#eef2fa;
+    --navy:#0f2855; --navy-2:#14346b; --gold:#c9a227; --gold-soft:#e3cf8e;
+    --green:#0e6b4a; --orange:#b7650e; --border:#b8c5da; --label-bg:#eef2fa;
     --text:#0b1a30; --muted:#4a5a78; --muted-2:#2c3e5c; --paper:#ffffff;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:#e9edf4;font-family:"Georgia","Times New Roman",Times,serif;color:var(--text);font-size:11pt;line-height:1.4}
   /* A4 sheet. Print sizing is owned by @page below; on screen we preview the sheet. */
-  .page{width:210mm;min-height:297mm;margin:6mm auto;padding:8mm 9mm 6mm 9mm;background:#fff;position:relative;box-shadow:0 2px 16px rgba(15,40,85,.22)}
+  .page{width:210mm;min-height:297mm;margin:6mm auto;padding:8mm;background:#fff;position:relative;box-shadow:0 2px 16px rgba(15,40,85,.22)}
 
   /* --- EXACT A4 PRINT RULES -------------------------------------------------
      One page, A4 portrait, 8mm margins, colors printed exactly as rendered
-     (the double border, gold rule, seal and watermark must survive printing),
-     and every piece of web chrome (toolbar / buttons / badges) is removed
-     from the paper. */
+     (the frames, gold rules, seal and watermark must survive printing), and
+     every piece of web chrome (toolbar / buttons / badges) is removed from
+     the paper. */
   @media print{
     @page{size:A4 portrait;margin:8mm}
     *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
     html,body{background:#fff;width:auto}
     .page{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
     .toolbar,.btn,.badge{display:none!important}
-    .frame,.kv tr,.stmt,.bottom,.foot{page-break-inside:avoid}
+    .cert-inner,.d-item,.cert-signatures,.cert-issue,.foot{page-break-inside:avoid}
   }
 
-  /* --- official emblem occurrences: the letterhead masthead logo above, plus
-         this centred, low-opacity watermark behind the certificate body ----- */
-  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:130mm;opacity:0.08;z-index:0;pointer-events:none}
+  /* --- official emblem occurrences: the crest in the top masthead above, plus
+         this centred, low-opacity watermark behind the certificate body -----
+     opacity sits in the spec band (0.08–0.12) and mix-blend-mode:multiply
+     guarantees the crest reads on white paper even if a future logo export
+     loses its alpha channel. ------------------------------------------------ */
+  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:140mm;opacity:0.09;z-index:0;pointer-events:none;mix-blend-mode:multiply}
   .watermark img{width:100%;height:auto;display:block}
   .content{position:relative;z-index:1}
 
-  .frame{border:6px double var(--navy);border-radius:6px;padding:5mm 6mm 5mm 6mm;position:relative}
-  .frame::after{content:"";position:absolute;inset:3px;border:1px solid var(--gold);border-radius:3px;pointer-events:none}
-  .letterhead{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:5px}
-  .letterhead .logo-wrap{margin:0 auto 2px auto;line-height:0}
-  .letterhead .logo-wrap img{width:22mm;height:auto}
-  .letterhead .t1{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;letter-spacing:.2px;color:var(--navy)}
-  .letterhead .t2{font-family:Arial,sans-serif;font-size:9.5pt;font-weight:700;color:var(--green);margin-top:1px}
-  .letterhead .t3{font-family:Arial,sans-serif;font-size:7.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:1.4px;margin-top:2px}
-  .title{text-align:center;font-size:18pt;font-weight:700;letter-spacing:3px;color:var(--navy);margin:6px 0 2px 0}
-  .ref{text-align:center;font-family:Arial,sans-serif;font-size:8.5pt;color:var(--muted);margin-bottom:4px}
-  .ref b{color:var(--navy)}
-  .body-text{font-size:10.5pt;line-height:1.7;margin:8px 4px 4px 4px;text-align:justify}
-  .name-line{font-weight:800;font-size:13pt;color:var(--navy);border-bottom:2px solid var(--navy);padding:0 6px}
-  .kv{width:100%;border-collapse:collapse;margin:10px 0 5px 0;font-family:Arial,sans-serif;font-size:9pt;line-height:1.3;border:1px solid var(--border)}
-  .kv td{border:1px solid var(--border);padding:3px 8px;vertical-align:top}
-  .kv .k{font-weight:700;color:var(--muted-2);width:34%;background:var(--label-bg)}
-  .kv .v{font-weight:600;color:var(--text);word-break:break-word}
-  .stmt{margin-top:8px;padding:5px 10px;background:#fff7e6;border-left:4px solid var(--orange);font-family:Arial,sans-serif;font-size:8.5pt;font-style:italic;color:var(--muted-2)}
-  .bottom{display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px;gap:20px}
-  .sign{font-family:Arial,sans-serif;font-size:8.5pt;color:var(--muted);max-width:80mm}
-  .sign .line{height:12mm;border-bottom:1px solid var(--text);margin-bottom:4px}
-  .seal{text-align:right;flex:none}
-  .seal .stamp{display:inline-grid;place-items:center;width:30mm;height:30mm;border:3px solid var(--green);color:var(--green);border-radius:50%;font-family:Arial,sans-serif;font-weight:900;font-size:8pt;text-align:center;transform:rotate(-12deg);opacity:.85;line-height:1.15}
-  .foot{margin-top:8px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
+  /* --- ornate double frame (outer navy + inner gold rule + corner marks) ---- */
+  .cert-frame{position:relative;border:4px solid var(--navy);padding:2.2mm;background:#fff}
+  .cert-inner{position:relative;border:1.5px solid var(--gold);padding:5.5mm 7mm 5mm 7mm}
+  .cert-inner::before,.cert-inner::after{content:"";position:absolute;width:7mm;height:7mm;border:2px solid var(--gold);pointer-events:none}
+  .cert-inner::before{top:1.2mm;left:1.2mm;border-right:0;border-bottom:0}
+  .cert-inner::after{bottom:1.2mm;right:1.2mm;border-left:0;border-top:0}
+
+  /* --- masthead with the police crest --------------------------------------- */
+  .cert-masthead{text-align:center;border-bottom:1.5px solid var(--gold);padding-bottom:2.5mm}
+  .crest{line-height:0;margin:0 auto 1.5mm auto}
+  .crest img{width:23mm;height:auto}
+  .cm-t1{font-family:Arial,sans-serif;font-size:13pt;font-weight:800;letter-spacing:2.2px;color:var(--navy)}
+  .cm-t2{font-family:Arial,sans-serif;font-size:10pt;font-weight:700;letter-spacing:.5px;color:var(--green);margin-top:1px}
+  .cm-t3{font-family:Arial,sans-serif;font-size:7.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:1.6px;margin-top:2px}
+
+  /* --- title band ------------------------------------------------------------ */
+  .cert-title{display:flex;align-items:center;gap:4mm;margin:4.5mm 0 1mm 0}
+  .cert-title::before,.cert-title::after{content:"";flex:1;height:1.5px;background:linear-gradient(to right,transparent,var(--gold));min-width:8mm}
+  .cert-title::after{background:linear-gradient(to left,transparent,var(--gold))}
+  .cert-title h1{font-size:19.5pt;font-weight:700;letter-spacing:3.5px;color:var(--navy);text-align:center;white-space:nowrap}
+  .cert-sub{text-align:center;font-style:italic;font-size:10pt;color:var(--muted-2);margin-bottom:1.5mm}
+
+  /* --- certificate name + prose ---------------------------------------------- */
+  .cert-name-row{text-align:center;margin:1mm 0 2mm 0}
+  .cert-name{display:inline-block;font-size:17.5pt;font-weight:800;font-style:italic;color:var(--navy);border-bottom:2px solid var(--gold);padding:0 8mm 1mm 8mm;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cert-prose{font-size:10.5pt;line-height:1.6;text-align:center;margin:0 4mm}
+  .cert-prose b{color:var(--navy)}
+
+  /* --- details panel: refined rules, not a plain table ------------------------ */
+  .details{width:96%;margin:3.5mm auto 0 auto;border-top:1.5px solid var(--gold);border-bottom:1.5px solid var(--gold);padding:2.2mm 2mm;display:grid;grid-template-columns:1fr 1fr;column-gap:8mm;row-gap:1.1mm;font-family:Arial,sans-serif}
+  .d-item .dl{display:block;font-size:6.6pt;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:var(--muted)}
+  .d-item .dv{display:block;font-size:9.5pt;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* --- issue ribbon ------------------------------------------------------------ */
+  .cert-issue{margin:3.2mm auto 0 auto;width:max-content;max-width:100%;border:1.5px solid var(--gold);border-radius:3px;background:#fbf7ea;padding:1.4mm 7mm;font-family:Arial,sans-serif;font-size:8.5pt;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cert-issue .no{color:var(--green)}
+
+  /* --- signatures + official seal ---------------------------------------------- */
+  .cert-signatures{display:flex;justify-content:space-between;align-items:flex-end;gap:6mm;margin-top:5mm}
+  .sig-block{flex:1;text-align:center;font-family:Arial,sans-serif;min-width:0}
+  .sig-script{font-family:"Segoe Script","Brush Script MT","Lucida Handwriting",cursive;font-size:14pt;color:var(--navy);height:8.5mm;line-height:1.15;white-space:nowrap;overflow:hidden}
+  .sig-line{height:5.5mm;border-bottom:1.5px solid var(--text);margin:0 4mm 1.2mm 4mm}
+  .sig-role{font-size:7.4pt;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted-2)}
+  .seal-wrap{flex:none;position:relative;width:33mm;height:33mm;margin:0 1mm}
+  .seal{position:absolute;inset:0;margin:auto;width:31mm;height:31mm;border:3px double var(--green);color:var(--green);border-radius:50%;display:grid;place-items:center;font-family:Arial,sans-serif;font-weight:900;font-size:7.5pt;letter-spacing:.6px;line-height:1.3;text-align:center;transform:rotate(-14deg);opacity:.9}
+  .seal .tick{font-size:11pt;color:var(--gold)}
+  .cert-declare{margin-top:3.5mm;text-align:center;font-family:Arial,sans-serif;font-size:7.8pt;font-style:italic;color:var(--muted)}
+
+  /* --- official footer ----------------------------------------------------------- */
+  .foot{margin-top:3.5mm;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
   .foot .stripe{height:2px;background:linear-gradient(to right,var(--navy) 0%,var(--gold) 50%,var(--green) 100%)}
-  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:4px 10px;text-align:center;font-size:8.5pt;font-weight:700;}
-  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:8pt;margin:0 6px}
-  .foot .phone{color:#ffd96b;font-weight:700;}
+  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:3px 10px;text-align:center;font-size:8pt;font-weight:700;white-space:nowrap}
+  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:7.5pt;margin:0 6px}
+  .foot .phone{color:#ffd96b;font-weight:700}
 
   /* ---- screen-only chrome: never printed, keeps the A4 sheet clean ---- */
   .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);background:#fafcff;font-family:Arial,sans-serif}
@@ -75,7 +106,6 @@
   .lock h2{margin:14px 0 8px;color:var(--text)}
   .lock p{color:var(--muted);max-width:460px;margin:8px auto}
   .lock .note{max-width:460px;margin:14px auto;padding:10px 14px;background:#fff8ec;border:1px solid #f2ddae;border-radius:10px;color:#7a5b17;font-size:12px}
-  @media print{.toolbar{display:none!important}}
 </style>
 </head>
 <body>
@@ -92,7 +122,7 @@
 <script>
 const id=new URLSearchParams(location.search).get('id');
 const REVIEW_LOCK_HOURS=12;
-function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]))}
 function dash(v){return (v===null||v===undefined||String(v).trim()==='')?'&mdash;':esc(v)}
 function dmy(v){
   if(!v) return '&mdash;';
@@ -103,7 +133,7 @@ function dmy(v){
   if(isNaN(d.getTime())) return esc(String(v).slice(0,10));
   return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();
 }
-function row(k,v){return '<tr><td class="k">'+k+'</td><td class="v">'+dash(v)+'</td></tr>'}
+function ditem(k,v){return '<div class="d-item"><span class="dl">'+k+'</span><span class="dv">'+dash(v)+'</span></div>'}
 
 function locked(a){
   const badge=document.getElementById('statusBadge');
@@ -127,45 +157,61 @@ function certificate(a){
   document.getElementById('statusBadge').className='badge green';
   document.getElementById('statusBadge').textContent='Approved';
   document.getElementById('printBtn').style.display='';
-  const guardian=[a.guardian_name,a.guardian_relationship?'('+a.guardian_relationship+')':''].filter(Boolean).join(' ');
+  const guardian=[dash(a.guardian_name),a.guardian_relationship?esc('('+a.guardian_relationship+')'):''].filter(x=>x&&x!=='&mdash;').join(' ');
   document.getElementById('sheet').innerHTML=
   '<div class="page">'+
     '<div class="watermark"><img src="images/police_logo.png" alt="Police Watermark"></div>'+
     '<div class="content">'+
-      '<div class="frame">'+
-        '<div class="letterhead">'+
-          '<div class="logo-wrap"><img src="images/police_logo.png" alt="Police Logo"></div>'+
-          '<div class="t1">NORTHEASTERN POLICE FORCE &bull; CRIMINAL INVESTIGATION DIRECTORATE (2026)</div>'+
-          '<div class="t2">Criminal Investigation Directorate (CID) &nbsp;|&nbsp; Code: PCC-2026-DIGITAL-01</div>'+
-          '<div class="t3">Fingerprint &amp; Verification Unit</div>'+
+      '<div class="cert-frame"><div class="cert-inner">'+
+        '<div class="cert-masthead">'+
+          '<div class="crest"><img src="images/police_logo.png" alt="Police Crest"></div>'+
+          '<div class="cm-t1">NORTHEASTERN POLICE FORCE</div>'+
+          '<div class="cm-t2">CRIMINAL INVESTIGATION DIRECTORATE (CID)</div>'+
+          '<div class="cm-t3">Fingerprint &amp; Verification Unit &nbsp;&bull;&nbsp; North East State of Somalia</div>'+
         '</div>'+
-        '<h1 class="title">CLEARANCE CERTIFICATE</h1>'+
-        '<div class="ref">Certificate No. <b>'+esc(a.certificate_number)+'</b> &middot; Application '+esc(a.application_id)+'</div>'+
-        '<div class="body-text">This is to certify that <span class="name-line">'+esc(a.full_name)+'</span>, '+
-          'holder of National ID <b>'+esc(a.national_id)+'</b>'+
+        '<div class="cert-title"><h1>CERTIFICATE OF GOOD CONDUCT</h1></div>'+
+        '<div class="cert-sub">This is to certify that</div>'+
+        '<div class="cert-name-row"><span class="cert-name">'+esc(a.full_name)+'</span></div>'+
+        '<div class="cert-prose">'+
+          (a.sex==='Female'?'daughter':'son/daughter')+' of <b>'+dash(a.mother_name)+'</b>, holder of National ID <b>'+dash(a.national_id)+'</b>'+
           (a.passport_id?(' and Passport <b>'+esc(a.passport_id)+'</b>'):'')+
-          ', has been cleared by the Fingerprint Unit for the purpose of <b>'+esc(a.purpose)+'</b>. '+
-          'No adverse criminal record is held against the above-named person in the records of the CID Criminal Unit as of the date of issue.</div>'+
-        '<table class="kv">'+
-          row('Full legal name',a.full_name)+
-          row("Mother's full name",a.mother_name)+
-          row('National ID (NIRA)',a.national_id)+
-          row('Passport number',a.passport_id)+
-          row('Date of birth (DD/MM/YYYY)',dmy(a.date_of_birth))+
-          row('Place of birth',a.place_of_birth)+
-          row('Current residential address',a.residence||a.current_address)+
-          row('Occupation',a.occupation)+
-          row('Purpose of application',a.purpose)+
-          row('Guarantor',guardian)+
-          row('Application submitted',dmy(a.created_at))+
-          row('Certificate issued on',dmy(a.reviewed_at||a.updated_at))+
-        '</table>'+
-        '<div class="stmt">This certificate is issued on the basis of the records available to the Criminal Investigation Directorate at the time of issue and does not exempt the holder from any lawful security procedure.</div>'+
-        '<div class="bottom">'+
-          '<div class="sign"><div class="line"></div>Authorized officer signature, name &amp; stamp</div>'+
-          '<div class="seal"><span class="stamp">POLICE<br>CLEARED<br>&#10003;</span></div>'+
+          ', born on <b>'+dmy(a.date_of_birth)+'</b> at <b>'+dash(a.place_of_birth)+'</b>, has been screened by the '+
+          'Fingerprint &amp; Verification Unit for the purpose of <b>'+dash(a.purpose)+'</b>, and '+
+          '<b>no adverse criminal record</b> is held against the above-named person in the records of the '+
+          'Criminal Investigation Directorate as of the date of issue.'+
         '</div>'+
-      '</div>'+
+        '<div class="details">'+
+          ditem("Mother's full name",a.mother_name)+
+          ditem('National ID (NIRA)',a.national_id)+
+          ditem('Passport number',a.passport_id)+
+          ditem('Date of birth',dmy(a.date_of_birth))+
+          ditem('Place of birth',a.place_of_birth)+
+          ditem('Current residence',a.residence||a.current_address)+
+          ditem('Occupation',a.occupation)+
+          ditem('Purpose of application',a.purpose)+
+          ditem('Guarantor',guardian)+
+          ditem('Application submitted',dmy(a.created_at))+
+          ditem('Certificate issued on',dmy(a.reviewed_at||a.updated_at))+
+          ditem('Status','CLEARED')+
+        '</div>'+
+        '<div class="cert-issue">Certificate No. <span class="no">'+esc(a.certificate_number)+'</span>'+
+          ' &nbsp;&middot;&nbsp; Application '+esc(a.application_id)+
+          ' &nbsp;&middot;&nbsp; Issued '+dmy(a.reviewed_at||a.updated_at)+'</div>'+
+        '<div class="cert-signatures">'+
+          '<div class="sig-block">'+
+            '<div class="sig-script">'+esc(a.reviewed_by_name||'')+'</div>'+
+            '<div class="sig-line"></div>'+
+            '<div class="sig-role">Chairperson &mdash; Fingerprint &amp; Verification Unit</div>'+
+          '</div>'+
+          '<div class="seal-wrap"><div class="seal">POLICE<br>CLEARED<br><span class="tick">&#10003;</span><br>CID &bull; 2026</div></div>'+
+          '<div class="sig-block">'+
+            '<div class="sig-script"></div>'+
+            '<div class="sig-line"></div>'+
+            '<div class="sig-role">Director &mdash; Criminal Investigation Directorate</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="cert-declare">This certificate is issued on the basis of the records available to the Criminal Investigation Directorate at the time of issue and does not exempt the holder from any lawful security procedure.</div>'+
+      '</div></div>'+
       '<div class="foot"><div class="stripe"></div><div class="body">'+
         'Criminal Investigation Directorate - North East State of Somalia'+
         '<span class="pill">Fingerprint &amp; Verification Unit</span>'+

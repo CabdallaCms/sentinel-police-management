@@ -31,8 +31,11 @@
     tr,.stm,.sec,.grid,.foot,.meta,.chips{page-break-inside:avoid}
   }
 
-  /* --- official emblem: ONLY ever a centred, low-opacity watermark ---------- */
-  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:130mm;opacity:0.07;z-index:0;pointer-events:none}
+  /* --- official emblem: ONLY ever a centred, low-opacity watermark ----------
+     opacity sits in the spec band (0.08–0.12) and mix-blend-mode:multiply
+     guarantees the crest shows on white paper even if a future logo export
+     loses its alpha channel (white background melts into the sheet). ------- */
+  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:138mm;opacity:0.10;z-index:0;pointer-events:none;mix-blend-mode:multiply}
   .watermark img{width:100%;height:auto;display:block}
   .content{position:relative;z-index:1}
 
@@ -65,10 +68,13 @@
   .sec{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;font-family:Arial,sans-serif;font-weight:700;font-size:9pt;padding:2.5px 10px;margin-top:1.6mm;position:relative;padding-left:16px;line-height:1.2}
   .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:9px;background:var(--gold)}
   .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:8.5pt;line-height:1.25}
-  .grid td{border:1px solid var(--border);padding:1.5px 6px;vertical-align:top}
-  .lab{display:block;font-weight:700;color:var(--text);font-size:7.5pt;letter-spacing:.2px;line-height:1.2}
-  .val{font-weight:600;font-size:9pt;line-height:1.25;color:var(--navy);margin-top:1px}
-  .val.plain{color:var(--text)}
+  .grid td{border:1px solid var(--border);padding:1.5px 6px;vertical-align:baseline;white-space:nowrap;overflow:hidden}
+  /* Official pre-printed form style: bold label followed by the officer's
+     entry on the same ruled line — every registration field maps 1:1. */
+  .k{display:inline-block;font-weight:700;color:var(--text);font-size:7.5pt;letter-spacing:.2px;line-height:1.35}
+  .v{font-weight:600;font-size:9pt;color:var(--navy)}
+  .v.plain{color:var(--text)}
+  .v.max{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   /* --- purpose selector chips ---------------------------------------------- */
   .purpose-box{border:1px solid var(--border);background:#fff;padding:1.8mm 3mm;font-family:Arial,sans-serif}
@@ -78,6 +84,7 @@
   .chip.active::before{content:"\2713 ";color:var(--gold)}
   .purpose-line{margin-top:1.4mm;padding-top:1mm;border-top:1px dashed var(--border);font-size:8pt;color:var(--muted);line-height:1.3}
   .purpose-line b{color:var(--navy);font-size:9pt}
+  .doc-row{margin-top:1.2mm;padding-top:1mm;border-top:1px dotted var(--border);font-size:8pt;line-height:1.35}
 
   /* --- declarations & signatures -------------------------------------------- */
   .stm{padding:2mm 3mm 2mm 4mm;font-size:8.5pt;margin-top:1.5mm;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid}
@@ -159,32 +166,36 @@ PHOTO<br><span style="font-weight:400">35&times;45 mm</span></div>
 
   <div class="sec">SECTION 01 &nbsp;|&nbsp; APPLICANT IDENTIFICATION DETAILS</div>
   <table class="grid">
-    <tr><td colspan="2"><span class="lab">FULL LEGAL NAME (FIRST &bull; SECOND &bull; THIRD &bull; FOURTH NAME):</span><div class="val" id="appFullName">-</div></td></tr>
-    <tr><td colspan="2"><span class="lab">MOTHER'S FULL NAME:</span><div class="val plain" id="appMotherName">-</div></td></tr>
-    <tr><td><span class="lab">NATIONAL ID NUMBER (NIRA):</span><div class="val plain" id="appNationalId">-</div></td>
-        <td><span class="lab">PASSPORT NUMBER (IF APPLICABLE):</span><div class="val plain" id="appPassport">-</div></td></tr>
-    <tr><td><span class="lab">DATE OF BIRTH (DD/MM/YYYY):</span><div class="val plain" id="appDob">-</div></td>
-        <td><span class="lab">PLACE OF BIRTH:</span><div class="val plain" id="appPob">-</div></td></tr>
-    <tr><td><span class="lab">GENDER (MALE / FEMALE):</span><div class="val plain" id="appGender">-</div></td>
-        <td><span class="lab">PHONE NUMBER | EMAIL:</span><div class="val plain" id="appContact">-</div></td></tr>
-    <tr><td colspan="2"><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div class="val plain" id="appAddress">-</div></td></tr>
-    <tr><td colspan="2"><span class="lab">OCCUPATION:</span><div class="val plain" id="appOccupation">-</div></td></tr>
+    <tr><td colspan="2"><span class="k">FULL LEGAL NAME (FIRST &bull; SECOND &bull; THIRD &bull; FOURTH):</span> <span class="v max" id="appFullName">-</span></td></tr>
+    <tr><td colspan="2"><span class="k">MOTHER'S FULL NAME:</span> <span class="v plain max" id="appMotherName">-</span></td></tr>
+    <tr><td><span class="k">NATIONAL ID No. (NIRA):</span> <span class="v plain" id="appNationalId">-</span></td>
+        <td><span class="k">PASSPORT No. (IF ANY):</span> <span class="v plain" id="appPassport">-</span></td></tr>
+    <tr><td><span class="k">DATE OF BIRTH (DD/MM/YYYY):</span> <span class="v plain" id="appDob">-</span></td>
+        <td><span class="k">PLACE OF BIRTH:</span> <span class="v plain" id="appPob">-</span></td></tr>
+    <tr><td><span class="k">GENDER (MALE / FEMALE):</span> <span class="v plain" id="appGender">-</span></td>
+        <td><span class="k">OCCUPATION:</span> <span class="v plain" id="appOccupation">-</span></td></tr>
+    <tr><td><span class="k">PHONE NUMBER:</span> <span class="v plain" id="appPhone">-</span></td>
+        <td><span class="k">EMAIL:</span> <span class="v plain" id="appEmail">-</span></td></tr>
+    <tr><td colspan="2"><span class="k">CURRENT RESIDENTIAL ADDRESS:</span> <span class="v plain max" id="appAddress">-</span></td></tr>
   </table>
 
-  <div class="sec">SECTION 02 &nbsp;|&nbsp; PURPOSE OF APPLICATION</div>
+  <div class="sec">SECTION 02 &nbsp;|&nbsp; PURPOSE OF APPLICATION &amp; SUPPORTING DOCUMENTS</div>
   <div class="purpose-box">
     <div class="chips" id="purposeChips"></div>
     <div class="purpose-line">RECORDED PURPOSE OF APPLICATION: <b id="appPurpose">Employment</b></div>
+    <div class="doc-row"><span class="k">SUPPORTING DOCUMENT NOTES:</span> <span class="v plain max" id="appNotes">-</span></div>
+    <div class="doc-row"><span class="k">APPLICANT ATTACHMENTS:</span> <span class="v plain max" id="appAppDocs">-</span></div>
+    <div class="doc-row"><span class="k">GUARDIAN ATTACHMENTS:</span> <span class="v plain max" id="appGuardDocs">-</span></div>
   </div>
 
   <div class="sec">SECTION 03 &nbsp;|&nbsp; GUARDIAN / GUARANTOR DETAILS</div>
   <table class="grid">
-    <tr><td><span class="lab">GUARANTOR FULL NAME:</span><div class="val plain" id="guarantorName">-</div></td>
-        <td><span class="lab">NATIONAL ID (NIRA):</span><div class="val plain" id="guarantorId">-</div></td></tr>
-    <tr><td><span class="lab">RELATIONSHIP TO APPLICANT:</span><div class="val plain" id="guarantorRel">-</div></td>
-        <td><span class="lab">CONTACT PHONE:</span><div class="val plain" id="guarantorPhone">-</div></td></tr>
-    <tr><td><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div class="val plain" id="guarantorAddr">-</div></td>
-        <td><span class="lab">OCCUPATION:</span><div class="val plain" id="guarantorOcc">-</div></td></tr>
+    <tr><td><span class="k">GUARANTOR FULL NAME:</span> <span class="v plain" id="guarantorName">-</span></td>
+        <td><span class="k">NATIONAL ID (NIRA):</span> <span class="v plain" id="guarantorId">-</span></td></tr>
+    <tr><td><span class="k">RELATIONSHIP TO APPLICANT:</span> <span class="v plain" id="guarantorRel">-</span></td>
+        <td><span class="k">CONTACT PHONE:</span> <span class="v plain" id="guarantorPhone">-</span></td></tr>
+    <tr><td><span class="k">CURRENT RESIDENTIAL ADDRESS:</span> <span class="v plain" id="guarantorAddr">-</span></td>
+        <td><span class="k">OCCUPATION:</span> <span class="v plain" id="guarantorOcc">-</span></td></tr>
   </table>
 
   <div class="sec">SECTION 04 &nbsp;|&nbsp; CONSENT &amp; SIGNATURES</div>
@@ -228,6 +239,18 @@ function fill(fieldId,value){
   const el=document.getElementById(fieldId);
   if(!el) return;
   el.textContent=(value!==null&&value!==undefined&&String(value).trim()!=='')?String(value):'-';
+}
+// Attachment lists are stored as JSON ([{path,name},...]) — render the
+// original file names the officer uploaded during registration.
+function docNames(v){
+  let list=null;
+  try{ list=(typeof v==='string')?JSON.parse(v):v; }catch(_){ list=null; }
+  if(Array.isArray(list)&&list.length){
+    const names=list.map(x=>(x&&(x.name||x.path))||'').filter(Boolean);
+    if(names.length) return names.join(', ');
+  }
+  const raw=(v===null||v===undefined)?'':String(v).trim();
+  return (raw&&raw!=='[]'&&raw!=='null')?raw:'';
 }
 // 'YYYY-MM-DD' (SQLite / ISO) -> 'DD/MM/YYYY'
 function dmy(v){
@@ -345,12 +368,16 @@ function render(a){
   fill('appDob',dmy(a.date_of_birth));
   fill('appPob',a.place_of_birth);
   fill('appGender',a.sex);
-  fill('appContact',[a.phone,a.email].filter(x=>x&&String(x).trim()).join(' | '));
+  fill('appPhone',a.phone);
+  fill('appEmail',a.email);
   fill('appAddress',a.residence||a.current_address);
   fill('appOccupation',a.occupation);
-  // ---- Section 02 — purpose selector chips + recorded value ----
+  // ---- Section 02 — purpose chips, notes and attachment checklists ----
   renderPurposeChips(a.purpose);
   fill('appPurpose',a.purpose||'Employment');
+  fill('appNotes',a.notes);
+  fill('appAppDocs',docNames(a.applicant_docs));
+  fill('appGuardDocs',docNames(a.guardian_docs));
   // ---- Section 03 — guardian / guarantor ----
   fill('guarantorName',a.guardian_name);
   fill('guarantorId',a.guardian_id);

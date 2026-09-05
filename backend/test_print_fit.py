@@ -33,6 +33,7 @@ PX_TO_MM = 25.4 / 96.0          # CSS px at 96dpi
 A4_H_MM, A4_W_MM = 297.0, 210.0
 PAGE_MARGIN_MM = 8.0            # @page margin from the spec
 SAFETY_MM = 8.0                 # engine rounding slack we insist on
+OPACITY_MIN, OPACITY_MAX = 0.08, 0.12   # watermark band from the spec
 
 FAILURES = []
 
@@ -122,11 +123,15 @@ check('application.html: watermark is centred (top/left 50% + translate)',
       'top:50%' in app_wm.replace(' ', '') and 'left:50%' in app_wm.replace(' ', '')
       and 'translate(-50%,-50%)' in app_wm.replace(' ', ''))
 opacity = unitless(app_wm, 'opacity')
-check('application.html: watermark is low-opacity (<= 0.10)', opacity is not None and 0 < opacity <= 0.10,
-      f'opacity={opacity}')
+check('application.html: watermark opacity inside the 0.08-0.12 spec band',
+      opacity is not None and OPACITY_MIN <= opacity <= OPACITY_MAX, f'opacity={opacity}')
+check('application.html: watermark blends onto the paper (mix-blend-mode:multiply)',
+      'mix-blend-mode:multiply' in app_wm.replace(' ', ''))
+check('application.html: watermark sits behind the content (z-index 0 + overlay)',
+      'z-index:0' in app_wm.replace(' ', '') and 'z-index:1' in css_block(app, '.content').replace(' ', ''))
 app_body = app.split('</head>')[1]
 check('application.html: no header/letterhead logo element',
-      'header-logo' not in app_body and 'logo-wrap' not in app_body)
+      'header-logo' not in app_body and 'logo-wrap' not in app_body and 'crest' not in app_body)
 
 check('certificate.html: emblem appears exactly TWICE (masthead + watermark)',
       cert.count('images/police_logo.png') == 2)
@@ -135,18 +140,25 @@ check('certificate.html: watermark is centred (top/left 50% + translate)',
       'top:50%' in cert_wm.replace(' ', '') and 'left:50%' in cert_wm.replace(' ', '')
       and 'translate(-50%,-50%)' in cert_wm.replace(' ', ''))
 opacity = unitless(cert_wm, 'opacity')
-check('certificate.html: watermark is low-opacity (<= 0.10)', opacity is not None and 0 < opacity <= 0.10,
-      f'opacity={opacity}')
-check('certificate.html: letterhead masthead logo present',
-      '.letterhead .logo-wrap img' in cert)
+check('certificate.html: watermark opacity inside the 0.08-0.12 spec band',
+      opacity is not None and OPACITY_MIN <= opacity <= OPACITY_MAX, f'opacity={opacity}')
+check('certificate.html: watermark blends onto the paper (mix-blend-mode:multiply)',
+      'mix-blend-mode:multiply' in cert_wm.replace(' ', ''))
+check('certificate.html: crest in the top masthead',
+      '.crest img' in cert and 'cert-masthead' in cert)
+check('certificate.html: official title (CERTIFICATE OF GOOD CONDUCT)',
+      'CERTIFICATE OF GOOD CONDUCT' in cert)
+check('certificate.html: ornate frame + seal + dual signatures present',
+      '.cert-frame' in cert and '.seal' in cert and '.sig-block' in cert)
 
 # ---------------------------------------------------------------------------
 # 3. Dynamic bindings, endpoints, auth and the 12h review lock
 # ---------------------------------------------------------------------------
 APP_IDS = ['statusBadge', 'approveBtn', 'lockbar', 'toast', 'photoContainer',
            'appFullName', 'appMotherName', 'appNationalId', 'appPassport',
-           'appDob', 'appPob', 'appGender', 'appContact', 'appAddress',
-           'appOccupation', 'appPurpose', 'purposeChips',
+           'appDob', 'appPob', 'appGender', 'appPhone', 'appEmail', 'appAddress',
+           'appOccupation', 'appPurpose', 'purposeChips', 'appNotes',
+           'appAppDocs', 'appGuardDocs',
            'guarantorName', 'guarantorId', 'guarantorRel', 'guarantorPhone',
            'guarantorAddr', 'guarantorOcc',
            'appSerial', 'appSubmitted', 'qrBox']
@@ -201,27 +213,27 @@ def budget_application():
           + line_mm(css_block(app, '.masthead .t2'), 10, 1.15)
           + line_mm(css_block(app, '.masthead .t3'), 7.5, 1.15)
           + 4 * PX_TO_MM + 3 * PX_TO_MM)
-    # title + its margins (shorthand `margin:3mm 0 1.5mm 0`)
-    h += line_mm(css_block(app, '.title'), 15, 1.35) + 3.0 + 1.5
+    # title + its margins (shorthand `margin:2.5mm 0 1.2mm 0`)
+    h += line_mm(css_block(app, '.title'), 15, 1.35) + 2.5 + 1.2
     # meta row: the 45mm portrait photo cell dominates; caption single line
     h += 45 + 3 * PX_TO_MM + line_mm(css_block(app, '.photo-cap'), 6.5, 1.35) + 1.0
     h += 2.0  # .meta margin-bottom (`margin:0 0 2mm 0`)
     # four section bars
     sec = css_block(app, '.sec')
     h += 4 * (line_mm(sec, 9, 1.2) + 5 * PX_TO_MM + num(sec, 'margin-top'))
-    # value/label row metrics (grid rows are label-over-value stacks)
-    lab, val = css_block(app, '.lab'), css_block(app, '.val')
-    row_h = line_mm(lab, 7.5, 1.2) + line_mm(val, 9, 1.25) + 4 * PX_TO_MM + 1 * PX_TO_MM
-    h += 7 * row_h + 2 * line_mm(val, 9, 1.25)      # Section 01: 7 rows + 2 wrap allowances
-    # Section 02: chips row + recorded-purpose line + box padding
-    chips, pline, pbox = css_block(app, '.chip'), css_block(app, '.purpose-line'), css_block(app, '.purpose-box')
-    h += line_mm(chips, 8, 1.3) + 3 * PX_TO_MM + 2.8 * PX_TO_MM
-    h += (line_mm(pline, 8, 1.3) + num(pline, 'margin-top') + num(pline, 'padding-top') + 1 * PX_TO_MM
-          + 2 * num(pbox, 'padding-top', 1.8))
-    h += 3 * row_h + line_mm(val, 9, 1.25)          # Section 03: 3 rows + 1 wrap allowance
-    # Section 04: two declaration blocks — body line counts derived per box
-    # from the actual declaration text (conservative 0.58em avg char width,
-    # +1 slack line each)
+    # ruled grid rows: bold label + entry on ONE line (~9pt leading + padding)
+    row_h = line_mm(css_block(app, '.v'), 9, 1.25) + 3 * PX_TO_MM + 1 * PX_TO_MM
+    h += 7 * row_h + 2 * row_h        # Section 01: 7 rows + 2 wrap allowances
+    # Section 02: chips row + recorded purpose + notes + 2 attachment rows
+    chips, pline, pbox, drow = (css_block(app, '.chip'), css_block(app, '.purpose-line'),
+                                css_block(app, '.purpose-box'), css_block(app, '.doc-row'))
+    h += (line_mm(chips, 8, 1.3) + 3 * PX_TO_MM + 2.8 * PX_TO_MM
+          + line_mm(pline, 8, 1.3) + num(pline, 'margin-top') + num(pline, 'padding-top') + 1 * PX_TO_MM
+          + 3 * (line_mm(drow, 8, 1.35) + num(drow, 'margin-top') + num(drow, 'padding-top') + 1 * PX_TO_MM)
+          + 2 * num(pbox, 'padding-top', 1.8) + 1 * PX_TO_MM)
+    h += 3 * row_h + 2 * row_h        # Section 03: 3 rows + 2 wrap allowances
+    # Section 04: two declaration boxes — body lines derived per box from the
+    # actual text (0.58em avg char width, +1 slack line each)
     stm, body, sig = css_block(app, '.stm'), css_block(app, '.stm .body'), css_block(app, '.sig')
     fs_body = num(body, 'font-size', 7.8 * PT_TO_MM)
     width_mm = A4_W_MM - 2 * PAGE_MARGIN_MM - 7.0            # page minus stm padding/border
@@ -241,33 +253,53 @@ def budget_application():
 
 
 def budget_certificate():
-    """Conservative worst-case printed height of certificate.html, in mm."""
+    """Conservative worst-case printed height of the rebuilt certificate, in mm."""
     h = 0.0
-    frame = css_block(cert, '.frame')
-    h += 2 * num(frame, 'padding-top', 5.0) + 2 * 6 * PX_TO_MM      # padding + double border
-    # letterhead: square emblem + 3 lines + rules
-    h += (num(css_block(cert, '.letterhead .logo-wrap img'), 'width', 22.0)
-          + line_mm(css_block(cert, '.letterhead .t1'), 9)
-          + line_mm(css_block(cert, '.letterhead .t2'), 9.5)
-          + line_mm(css_block(cert, '.letterhead .t3'), 7.5)
-          + 5 * PX_TO_MM + 2 * PX_TO_MM)
-    h += line_mm(css_block(cert, '.title'), 18, 1.2) + 8 * PX_TO_MM
-    h += line_mm(css_block(cert, '.ref'), 8.5, 1.35) + 4 * PX_TO_MM
-    # certification paragraph: ~440 chars -> 6 lines at 10.5pt / 1.7 (over-estimate)
-    h += 6 * line_mm(css_block(cert, '.body-text'), 10.5, 1.7) + 12 * PX_TO_MM
-    # kv table: 12 rows, 2 of them wrap to a second line (14 row-heights)
-    row = line_mm(css_block(cert, '.kv'), 9, 1.3) + 6 * PX_TO_MM + 1 * PX_TO_MM
-    h += 14 * row
-    # statement + signature block / seal
-    h += (2 * line_mm(css_block(cert, '.stmt'), 8.5, 1.35) + 10 * PX_TO_MM
-          + num(css_block(cert, '.stmt'), 'margin-top'))
-    h += (num(css_block(cert, '.sign .line'), 'height', 12.0)
-          + line_mm(css_block(cert, '.sign'), 8.5, 1.35)
-          + num(css_block(cert, '.bottom'), 'margin-top'))
-    h += num(css_block(cert, '.seal .stamp'), 'width', 30.0)        # rotated seal
-    # footer
-    h += (2 * PX_TO_MM + line_mm(css_block(cert, '.foot .body'), 8.5, 1.35)
-          + 8 * PX_TO_MM + num(css_block(cert, '.foot'), 'margin-top'))
+    # ornate frame chrome: outer border+padding and inner rule+padding, top+bottom
+    frame, inner = css_block(cert, '.cert-frame'), css_block(cert, '.cert-inner')
+    chrome_v = (4 * PX_TO_MM + num(frame, 'padding-top', 2.2) + 1.5 * PX_TO_MM
+                + num(inner, 'padding-top', 5.5))
+    chrome_b = (4 * PX_TO_MM + num(frame, 'padding-top', 2.2) + 1.5 * PX_TO_MM
+                + num(inner, 'padding-top', 5.0))
+    h += chrome_v + chrome_b
+    # masthead: crest + 3 lines + padding + gold rule
+    h += (num(css_block(cert, '.crest img'), 'width', 23.0)
+          + line_mm(css_block(cert, '.cm-t1'), 13, 1.2)
+          + line_mm(css_block(cert, '.cm-t2'), 10, 1.2)
+          + line_mm(css_block(cert, '.cm-t3'), 7.5, 1.2)
+          + num(css_block(cert, '.cert-masthead'), 'padding-top', 2.5) + 1.5 * PX_TO_MM)
+    # title band + italic lead-in + centred name with gold underline
+    h += (line_mm(css_block(cert, '.cert-title h1'), 19.5, 1.2) + 4.5 + 1.0
+          + line_mm(css_block(cert, '.cert-sub'), 10, 1.4) + 1.5
+          + line_mm(css_block(cert, '.cert-name'), 17.5, 1.2) + 1.0 + 2.0)
+    # certification prose: ~480 chars over ~100 chars/line at 10.5pt/1.6
+    prose = css_block(cert, '.cert-prose')
+    fs_prose = num(prose, 'font-size', 10.5 * PT_TO_MM)
+    chars_per_line = max(40.0, (A4_W_MM - 2 * PAGE_MARGIN_MM - 8.0) / (0.50 * fs_prose))
+    prose_text = re.sub(r'<[^>]+>', '', re.search(r'<div class="cert-prose">(.*?)</div>', cert, re.S).group(1))
+    prose_lines = min(10, -(-len(prose_text.strip()) // int(chars_per_line)))
+    h += prose_lines * line_mm(prose, 10.5, 1.6)
+    # details panel: 12 grid slots in 6 rows (label + value + row gap)
+    d_dl, d_dv = css_block(cert, '.d-item .dl'), css_block(cert, '.d-item .dv')
+    rows = -(-cert.count('ditem(') // 2)
+    h += (rows * (line_mm(d_dl, 6.6, 1.2) + line_mm(d_dv, 9.5, 1.2)
+                  + num(css_block(cert, '.details'), 'padding-top', 2.2) / 2.0 + 1.1)
+          + 2 * num(css_block(cert, '.details'), 'padding-top', 2.2) + 2 * 1.5 * PX_TO_MM)
+    # issue ribbon
+    issue = css_block(cert, '.cert-issue')
+    h += (num(issue, 'margin-top', 3.2) + 2 * num(issue, 'padding-top', 1.4)
+          + line_mm(issue, 8.5, 1.3) + 1.5 * PX_TO_MM)
+    # signatures row: the 33mm seal block dominates the two signature stacks
+    h += (num(css_block(cert, '.cert-signatures'), 'margin-top', 5.0)
+          + num(css_block(cert, '.seal'), 'width', 31.0)
+          + num(css_block(cert, '.sig-script'), 'height', 8.5) * 0      # parallel to seal
+          + num(css_block(cert, '.sig-line'), 'height', 5.5) + 1.2
+          + line_mm(css_block(cert, '.sig-role'), 7.4, 1.2))
+    # declaration + footer
+    h += (num(css_block(cert, '.cert-declare'), 'margin-top', 3.5)
+          + 2 * line_mm(css_block(cert, '.cert-declare'), 7.8, 1.3))
+    h += (2 * PX_TO_MM + line_mm(css_block(cert, '.foot .body'), 8, 1.3)
+          + 6 * PX_TO_MM + num(css_block(cert, '.foot'), 'margin-top'))
     return h
 
 
