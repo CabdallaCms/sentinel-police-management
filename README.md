@@ -58,8 +58,9 @@ The interface uses **no native browser dialogs**. All create/edit actions happen
 
 - The expanded clearance application captures applicant data (full name, mother's name, DOB/POB, residence, occupation, passport, National ID, photo, gender, email, clearance reason) plus **4 applicant file slots (≥2 required)** and guardian data (name, relationship, ID, occupation, address, contact) with **3 guardian file slots (≥2 required)**.
 - The **clearance reason** dropdown offers exactly five mandatory reasons — **Education, Travel, Employment, Citizenship, Licence**. The API rejects any other value with HTTP 400.
-- **`application.html`** — the printable Day-1 "Good Conduct Certificate Application" (A4, English) the applicant verifies, with an **Approve Application** action for authorized officers. It carries the police emblem **twice**: a crisp top-centre letterhead logo and a faint centred watermark (`images/police_logo.png`, opacity 0.08).
-- **`certificate.html`** — the official Day-2 clearance certificate. It is **locked until an officer approves** the application, then unlocks for printing. It uses the same emblem twice: the `.letterhead .logo-wrap` header emblem and the centred watermark (opacity 0.09).
+- **`application.html`** — the printable Day-1 "Good Conduct Certificate Application" (A4, English) the applicant verifies, with an **Approve Application** action for authorized officers. The police emblem (`images/police_logo.png`) appears **only as the centred, low-opacity watermark** behind the body content — the masthead is text-only. It carries a 35×45 mm applicant photograph box, purpose **selector chips** (the five clearance reasons with the recorded value highlighted), and **serial number / QR verification placeholders** bound to the application id. All web chrome (toolbar, buttons, badges, review-lock banner, toast) is hidden when printing.
+- **`certificate.html`** — the official Day-2 clearance certificate. It is **locked until an officer approves** the application, then unlocks for printing. It carries the emblem **twice**: the `.letterhead .logo-wrap` header emblem and the centred watermark (opacity 0.08).
+- **A4 print contract (both documents).** `@media print { @page { size: A4 portrait; margin: 8mm; } print-color-adjust: exact; }` — one page, exact brand colors (navy/gold/green bars, chips, seal, watermark survive printing), no second-page spillover (the on-screen sheet's `min-height`/margins are dropped on paper). `backend/test_print_fit.py` pins the rule, the emblem placement, every DOM binding/endpoint, and a worst-case single-page height budget computed from the stylesheet.
 - **Mandatory 12-hour review period.** A clearance application can only be approved once `created_at + 12 hours` has elapsed. A **Fingerprint Officer** attempting an earlier approval gets HTTP 400 `Application is under mandatory 12-hour review period.`; a **System Administrator** bypasses the wait and can approve immediately. The lock is enforced in **three** places:
   - the backend gate on `POST /api/fingerprint/applications/{id}/approve`;
   - the **Fingerprint register table** in `index.html`, where the Approve button is disabled and replaced by a `🔒 Review Lock (12h Required) - X hours remaining` badge the moment the application is created (admins see an enabled button with an "Admin bypass" label);
@@ -185,6 +186,14 @@ node backend/test_frontend_session.mjs
 ```
 
 Verifies the checkpoint-officer refresh journey: sign in as `cp.south`, token/user persisted to `sentinel_token` / `sentinel_user`, page refresh re-hydrates the session before the API sync (no auto-signout, no 401/404), the checkpoint count survives the refresh, an empty server sync never wipes local rows, a bogus token signs out only via an explicit `/api/me` 401, and a server-down load keeps the officer signed in.
+
+Print-template contract tests (standard library only):
+
+```bash
+python3 backend/test_print_fit.py
+```
+
+Pins the official-template rules for `application.html` / `certificate.html`: the exact `@page { size: A4 portrait; margin: 8mm }` + `print-color-adjust: exact` print block, all web chrome hidden when printing, the emblem placement (application: watermark only; certificate: masthead + watermark), every dynamic DOM binding (4-part legal name, DOB, National ID/Passport, phone, address, gender, occupation, purpose chips, guardian/guarantor, 35×45 mm photo box, serial/QR placeholders), the preserved endpoints/auth checks/12-hour review-lock logic, and a conservative worst-case height budget proving each document fits one A4 page.
 
 ## Demo workflow
 

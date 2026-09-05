@@ -5,51 +5,97 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Good Conduct Certificate Application</title>
 <style>
+  /* Official Fingerprint Unit branding — Northeastern Police Force / CID.
+     Palette mirrors the official emblem: navy shield, gold ring, green banner. */
   :root{
     --navy:#0f2855; --navy-2:#14346b; --gold:#c9a227; --green:#0e6b4a;
     --orange:#b7650e; --green-bg:#ecfdf5; --orange-bg:#fff7e6; --border:#b8c5da;
     --label-bg:#eef2fa; --text:#0b1a30; --muted:#4a5a78; --muted-2:#2c3e5c; --paper:#ffffff;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#fff;font-family:"Georgia","Times New Roman",Times,serif;color:var(--text);font-size:10pt;line-height:1.35}
-  .page{width:210mm;min-height:297mm;margin:0 auto;padding:8mm 10mm 6mm 10mm;background:#fff;position:relative;}
-  @media print{@page{size:A4;margin:0}.page{padding:6mm 8mm 4mm 8mm}}
-  .watermark{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);z-index:2;opacity:0.08;pointer-events:none;}
-  .watermark img{width:150mm;height:auto}
+  body{background:#e9edf4;font-family:"Georgia","Times New Roman",Times,serif;color:var(--text);font-size:10pt;line-height:1.35}
+  /* A4 sheet. Print sizing is owned by @page below; on screen we preview the sheet. */
+  .page{width:210mm;min-height:297mm;margin:6mm auto;padding:9mm 10mm 7mm 10mm;background:var(--paper);position:relative;box-shadow:0 2px 16px rgba(15,40,85,.22)}
+
+  /* --- EXACT A4 PRINT RULES -------------------------------------------------
+     One page, A4 portrait, 8mm margins, colors printed exactly as rendered
+     (the navy/gold bars, chips, stamp and watermark must survive printing),
+     and every piece of web chrome (toolbar / buttons / badges / banners /
+     toasts) is removed from the paper. */
+  @media print{
+    @page{size:A4 portrait;margin:8mm}
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    html,body{background:#fff;width:auto}
+    .page{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
+    .toolbar,.lockbar,.toast,.btn,.badge{display:none!important}
+    tr,.stm,.sec,.grid,.foot,.meta,.chips{page-break-inside:avoid}
+  }
+
+  /* --- official emblem: ONLY ever a centred, low-opacity watermark ---------- */
+  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:130mm;opacity:0.07;z-index:0;pointer-events:none}
+  .watermark img{width:100%;height:auto;display:block}
   .content{position:relative;z-index:1}
-  .header-logo{text-align:center;margin-bottom:4px}
-  .header-logo img{width:28mm;height:auto}
-  .hdr{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:4px;margin-bottom:6px}
-  .hdr .t1{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;color:var(--navy)}
-  .hdr .t2{font-family:Arial,sans-serif;font-size:9.5pt;font-weight:700;color:var(--green);margin-top:1px}
-  .title{text-align:center;font-size:16pt;font-weight:700;color:var(--navy);margin:6px 0 4px 0;}
-  .photo-wrap{text-align:center;margin:2px 0 4px 0}
-  .photo-frame{display:inline-block}
-  .photo{width:28mm;height:36mm;border:1.5px solid var(--navy);background:#fff;position:relative;overflow:hidden}
+
+  /* --- masthead (text-only; the emblem is reserved for the watermark) ------- */
+  .masthead{text-align:center;border-bottom:3px double var(--navy);padding-bottom:4px}
+  .masthead .t1{font-family:Arial,sans-serif;font-size:12.5pt;font-weight:800;letter-spacing:1.5px;color:var(--navy)}
+  .masthead .t2{font-family:Arial,sans-serif;font-size:10pt;font-weight:700;letter-spacing:.4px;color:var(--green);margin-top:1px}
+  .masthead .t3{font-family:Arial,sans-serif;font-size:7.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-top:2px}
+  .title{text-align:center;font-size:15pt;font-weight:700;letter-spacing:.5px;color:var(--navy);margin:2.5mm 0 1.2mm 0}
+
+  /* --- top meta row: photo | instructions | serial + QR --------------------- */
+  .meta{display:flex;gap:6mm;align-items:stretch;margin:0 0 2mm 0}
+  .photo-cell{flex:none;width:40mm;text-align:center}
+  .photo{width:35mm;height:45mm;border:1.5px solid var(--navy);background:#fff;position:relative;overflow:hidden;margin:0 auto}
   .photo img{width:100%;height:100%;object-fit:cover}
-  .photo .ph-lbl{position:absolute;inset:auto 0 3px 0;text-align:center;font-family:Arial,sans-serif;font-size:6pt;color:#7a8aa3;font-weight:700}
-  .photo-cap{font-family:Arial,sans-serif;font-size:7pt;color:var(--muted);font-style:italic;margin-top:1px}
-  .intro{font-size:9pt;text-align:justify;color:var(--muted-2);margin:2px 0 6px 0}
-  .sec{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;font-family:Arial,sans-serif;font-weight:700;font-size:9.5pt;padding:4px 10px;margin-top:4px;position:relative;padding-left:16px;}
-  .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:10px;background:var(--gold)}
-  .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:9pt}
-  .grid td{border:1px solid var(--border);padding:3px 6px;vertical-align:top}
-  .lab{font-weight:700;color:var(--text)}
-  .inline-lab b{font-weight:700}
-  .stm{padding:4px 10px 4px 12px;font-size:9pt;margin-top:2px;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid}
+  .photo .ph-lbl{position:absolute;inset:auto 0 3px 0;text-align:center;font-family:Arial,sans-serif;font-size:6pt;color:#7a8aa3;font-weight:700;line-height:1.25}
+  .photo-cap{font-family:Arial,sans-serif;font-size:6.5pt;color:var(--muted);font-style:italic;margin-top:0.8mm;white-space:nowrap}
+  .intro-cell{flex:1;min-width:0}
+  .intro{font-size:8.5pt;text-align:justify;color:var(--muted-2)}
+  .intro-note{margin-top:2mm;font-family:Arial,sans-serif;font-size:7.5pt;color:var(--muted);border-top:1px solid var(--border);padding-top:1.5mm}
+  .qr-cell{flex:none;width:34mm;text-align:center;font-family:Arial,sans-serif}
+  .qr{width:23mm;height:23mm;margin:0 auto;border:1px solid var(--border);padding:1mm;background:#fff}
+  .qr svg{width:100%;height:100%;display:block}
+  .qr-cap{font-size:6pt;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:0.8mm}
+  .serial-lab{font-size:6.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:1mm}
+  .serial-val{font-size:9.5pt;font-weight:800;color:var(--navy);letter-spacing:.5px}
+  .serial-date{font-size:7.5pt;font-weight:700;color:var(--muted-2)}
+
+  /* --- section bars + ruled grids ------------------------------------------ */
+  .sec{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;font-family:Arial,sans-serif;font-weight:700;font-size:9pt;padding:2.5px 10px;margin-top:1.6mm;position:relative;padding-left:16px;line-height:1.2}
+  .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:9px;background:var(--gold)}
+  .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:8.5pt;line-height:1.25}
+  .grid td{border:1px solid var(--border);padding:1.5px 6px;vertical-align:top}
+  .lab{display:block;font-weight:700;color:var(--text);font-size:7.5pt;letter-spacing:.2px;line-height:1.2}
+  .val{font-weight:600;font-size:9pt;line-height:1.25;color:var(--navy);margin-top:1px}
+  .val.plain{color:var(--text)}
+
+  /* --- purpose selector chips ---------------------------------------------- */
+  .purpose-box{border:1px solid var(--border);background:#fff;padding:1.8mm 3mm;font-family:Arial,sans-serif}
+  .chips{display:flex;flex-wrap:wrap;gap:1.8mm}
+  .chip{font-size:8pt;font-weight:700;border:1.4px solid var(--border);border-radius:99px;padding:1.5px 9px;color:var(--muted-2);background:#f7f9fd;letter-spacing:.2px;line-height:1.3}
+  .chip.active{background:var(--navy);border-color:var(--navy);color:#fff}
+  .chip.active::before{content:"\2713 ";color:var(--gold)}
+  .purpose-line{margin-top:1.4mm;padding-top:1mm;border-top:1px dashed var(--border);font-size:8pt;color:var(--muted);line-height:1.3}
+  .purpose-line b{color:var(--navy);font-size:9pt}
+
+  /* --- declarations & signatures -------------------------------------------- */
+  .stm{padding:2mm 3mm 2mm 4mm;font-size:8.5pt;margin-top:1.5mm;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid}
   .stm.green{background:var(--green-bg);border-color:var(--green);border-left-color:var(--green)}
   .stm.orange{background:var(--orange-bg);border-color:var(--orange);border-left-color:var(--orange)}
-  .stm .t{font-style:italic;font-weight:700;font-size:9pt}
-  .stm .body{font-style:italic;color:var(--muted-2);font-size:8.5pt}
-  .sig{margin-top:4px;font-size:8.5pt}
+  .stm .t{font-style:italic;font-weight:700;font-size:8.5pt}
+  .stm .body{font-style:italic;color:var(--muted-2);font-size:7.8pt;line-height:1.25}
+  .sig{margin-top:1.4mm;font-size:8pt;line-height:1.3}
   .sig b{font-weight:700}
-  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:10px;margin:0 2px;vertical-align:bottom}
-  .sig .sl.sh{width:28mm}
-  .foot{margin-top:8px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
+  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:8px;margin:0 2px;vertical-align:bottom}
+  .sig .sl.sh{width:26mm}
+
+  /* --- official footer ------------------------------------------------------- */
+  .foot{margin-top:2mm;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
   .foot .stripe{height:2px;background:linear-gradient(to right,var(--navy) 0%,var(--gold) 50%,var(--green) 100%)}
-  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:4px 10px;text-align:center;font-size:8.5pt;font-weight:700;}
-  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:8pt;margin:0 6px}
-  .foot .phone{color:#ffd96b;font-weight:700;}
+  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:3px 10px;text-align:center;font-size:8pt;font-weight:700;white-space:nowrap}
+  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:7.5pt;margin:0 6px}
+  .foot .phone{color:#ffd96b;font-weight:700}
 
   /* ---- screen-only chrome: never printed, keeps the A4 sheet clean ---- */
   .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);background:#fafcff;font-family:Arial,sans-serif}
@@ -62,7 +108,6 @@
   .lockbar.on{display:block}
   .lockbar.err{background:#fdecee;border-color:#f3c3c8;color:#8a2230}
   .toast{position:fixed;right:24px;bottom:24px;background:#132642;color:#fff;padding:13px 17px;border-radius:10px;display:none;font-size:13px;font-family:Arial,sans-serif;max-width:420px;z-index:50}
-  @media print{.toolbar,.lockbar,.toast{display:none!important}}
 </style>
 </head>
 <body>
@@ -78,51 +123,70 @@
 <div class="lockbar" id="lockbar"></div>
 
 <div class="page">
+  <!-- Official emblem — the ONLY logo occurrence on this document:
+       a centred, low-opacity watermark behind the body content. -->
   <div class="watermark"><img src="images/police_logo.png" alt="Police Watermark"></div>
   <div class="content">
-  <div class="header-logo"><img src="images/police_logo.png" alt="Police Logo"></div>
-  <div class="hdr">
-    <div class="t1">NORTHEASTERN POLICE FORCE &bull; CRIMINAL INVESTIGATION DIRECTORATE (2026)</div>
-    <div class="t2">Criminal Investigation Directorate (CID) &nbsp;|&nbsp; Code: PCC-2026-DIGITAL-01</div>
+
+  <div class="masthead">
+    <div class="t1">NORTHEASTERN POLICE FORCE</div>
+    <div class="t2">CRIMINAL INVESTIGATION DIRECTORATE (CID)</div>
+    <div class="t3">Fingerprint &amp; Verification Unit &nbsp;&bull;&nbsp; North East State of Somalia &nbsp;&bull;&nbsp; PCC-2026-DIGITAL-01</div>
   </div>
   <h1 class="title">GOOD CONDUCT CERTIFICATE APPLICATION</h1>
-  <div class="photo-wrap">
-    <div class="photo-frame">
+
+  <div class="meta">
+    <div class="photo-cell">
       <div class="photo" id="photoContainer">
-        <div class="ph-lbl">PASSPORT
-PHOTO
-<span style="font-weight:400">35&times;45 mm</span></div>
+        <div class="ph-lbl">APPLICANT
+PHOTO<br><span style="font-weight:400">35&times;45 mm</span></div>
       </div>
+      <div class="photo-cap">Passport photo (35 &times; 45 mm)</div>
     </div>
-    <div class="photo-cap">Attach passport size photo (35mm &times; 45mm)</div>
+    <div class="intro-cell">
+      <p class="intro">This form digitally initiates the security background check procedure. Please carefully complete your national identification (NIRA/ID) or passport details. All particulars must match the applicant&rsquo;s official legal documents; false declarations are prosecuted under the Security Procedures Act.</p>
+      <div class="intro-note"><b>OFFICE USE ONLY:</b> this application enters a mandatory 12-hour review period before approval. The clearance certificate is issued separately after vetting by the Fingerprint &amp; Verification Unit.</div>
+    </div>
+    <div class="qr-cell">
+      <div class="qr" id="qrBox" title="Verification QR placeholder — encodes the application serial"><svg class="qr-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><path d="M0 0h7v1h-7zM9 0h1v1h-1zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h1v1h-1zM10 1h2v1h-2zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM8 2h1v1h-1zM10 2h2v1h-2zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM10 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM11 4h2v1h-2zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM11 5h1v1h-1zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h3v1h-3zM14 6h7v1h-7zM9 7h1v1h-1zM11 7h2v1h-2zM1 8h1v1h-1zM4 8h3v1h-3zM20 8h1v1h-1zM0 9h2v1h-2zM4 9h1v1h-1zM7 9h1v1h-1zM9 9h1v1h-1zM14 9h2v1h-2zM0 10h2v1h-2zM5 10h2v1h-2zM9 10h1v1h-1zM13 10h1v1h-1zM16 10h2v1h-2zM19 10h1v1h-1zM0 11h1v1h-1zM2 11h1v1h-1zM5 11h1v1h-1zM7 11h1v1h-1zM11 11h1v1h-1zM18 11h3v1h-3zM1 12h1v1h-1zM4 12h4v1h-4zM9 12h1v1h-1zM11 12h2v1h-2zM17 12h2v1h-2zM20 12h1v1h-1zM12 13h3v1h-3zM19 13h2v1h-2zM0 14h7v1h-7zM10 14h1v1h-1zM13 14h2v1h-2zM17 14h4v1h-4zM0 15h1v1h-1zM6 15h1v1h-1zM8 15h1v1h-1zM10 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM18 15h1v1h-1zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM8 16h1v1h-1zM12 16h1v1h-1zM19 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM9 17h1v1h-1zM12 17h1v1h-1zM15 17h1v1h-1zM19 17h2v1h-2zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM8 18h6v1h-6zM16 18h2v1h-2zM0 19h1v1h-1zM6 19h1v1h-1zM12 19h3v1h-3zM16 19h1v1h-1zM19 19h2v1h-2zM0 20h7v1h-7zM8 20h1v1h-1zM12 20h3v1h-3zM16 20h2v1h-2zM19 20h2v1h-2z" fill="#122642"/></svg></div>
+      <div class="qr-cap">Scan to verify</div>
+      <div class="serial-lab">Serial No.</div>
+      <div class="serial-val" id="appSerial">&mdash;</div>
+      <div class="serial-lab">Submitted</div>
+      <div class="serial-date" id="appSubmitted">&mdash;</div>
+    </div>
   </div>
-  <p class="intro">This form digitally initiates the security background check procedure. Please carefully complete your national identification (NIRA/ID) or passport details.</p>
+
   <div class="sec">SECTION 01 &nbsp;|&nbsp; APPLICANT IDENTIFICATION DETAILS</div>
   <table class="grid">
-    <tr><td colspan="2"><span class="lab">FULL LEGAL NAME:</span><div id="appFullName" style="font-weight:600;font-size:10pt;color:var(--navy);margin-top:2px;">-</div></td></tr>
-    <tr><td colspan="2"><span class="lab">MOTHER'S FULL NAME:</span><div id="appMotherName" style="font-weight:600;margin-top:2px;">-</div></td></tr>
-    <tr><td><span class="lab">NATIONAL ID NUMBER (NIRA):</span><div id="appNationalId" style="font-weight:600;margin-top:2px;">-</div></td>
-        <td><span class="lab">PASSPORT NUMBER (IF APPLICABLE):</span><div id="appPassport" style="font-weight:600;margin-top:2px;">-</div></td></tr>
-    <tr><td><span class="lab">DATE OF BIRTH (DD/MM/YYYY):</span><div id="appDob" style="font-weight:600;margin-top:2px;">-</div></td>
-        <td><span class="lab">PLACE OF BIRTH:</span><div id="appPob" style="font-weight:600;margin-top:2px;">-</div></td></tr>
-    <tr><td><span class="lab">GENDER (MALE / FEMALE):</span><div id="appGender" style="font-weight:600;margin-top:2px;">-</div></td>
-        <td><span class="lab">PHONE NUMBER | EMAIL:</span><div id="appContact" style="font-weight:600;margin-top:2px;">-</div></td></tr>
-    <tr><td colspan="2"><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div id="appAddress" style="font-weight:600;margin-top:2px;">-</div></td></tr>
+    <tr><td colspan="2"><span class="lab">FULL LEGAL NAME (FIRST &bull; SECOND &bull; THIRD &bull; FOURTH NAME):</span><div class="val" id="appFullName">-</div></td></tr>
+    <tr><td colspan="2"><span class="lab">MOTHER'S FULL NAME:</span><div class="val plain" id="appMotherName">-</div></td></tr>
+    <tr><td><span class="lab">NATIONAL ID NUMBER (NIRA):</span><div class="val plain" id="appNationalId">-</div></td>
+        <td><span class="lab">PASSPORT NUMBER (IF APPLICABLE):</span><div class="val plain" id="appPassport">-</div></td></tr>
+    <tr><td><span class="lab">DATE OF BIRTH (DD/MM/YYYY):</span><div class="val plain" id="appDob">-</div></td>
+        <td><span class="lab">PLACE OF BIRTH:</span><div class="val plain" id="appPob">-</div></td></tr>
+    <tr><td><span class="lab">GENDER (MALE / FEMALE):</span><div class="val plain" id="appGender">-</div></td>
+        <td><span class="lab">PHONE NUMBER | EMAIL:</span><div class="val plain" id="appContact">-</div></td></tr>
+    <tr><td colspan="2"><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div class="val plain" id="appAddress">-</div></td></tr>
+    <tr><td colspan="2"><span class="lab">OCCUPATION:</span><div class="val plain" id="appOccupation">-</div></td></tr>
   </table>
+
   <div class="sec">SECTION 02 &nbsp;|&nbsp; PURPOSE OF APPLICATION</div>
-  <div style="border:1px solid var(--border);background:#fff;padding:4px 10px;font-family:Arial,sans-serif;font-size:10pt;">
-    <strong>Intended Purpose:</strong>
-    <span id="appPurpose" style="font-weight:700;color:var(--navy);">Employment</span>
+  <div class="purpose-box">
+    <div class="chips" id="purposeChips"></div>
+    <div class="purpose-line">RECORDED PURPOSE OF APPLICATION: <b id="appPurpose">Employment</b></div>
   </div>
-  <div class="sec">SECTION 03 &nbsp;|&nbsp; GUARANTOR DETAILS</div>
+
+  <div class="sec">SECTION 03 &nbsp;|&nbsp; GUARDIAN / GUARANTOR DETAILS</div>
   <table class="grid">
-    <tr><td class="inline-lab"><b>GUARANTOR FULL NAME:</b><div id="guarantorName" style="font-weight:600;margin-top:2px;">-</div></td>
-        <td class="inline-lab"><b>NATIONAL ID (NIRA):</b><div id="guarantorId" style="font-weight:600;margin-top:2px;">-</div></td></tr>
-    <tr><td class="inline-lab"><b>RELATIONSHIP TO APPLICANT:</b><div id="guarantorRel" style="font-weight:600;margin-top:2px;">-</div></td>
-        <td class="inline-lab"><b>CONTACT PHONE:</b><div id="guarantorPhone" style="font-weight:600;margin-top:2px;">-</div></td></tr>
-    <tr><td><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div id="guarantorAddr" style="font-weight:600;margin-top:2px;">-</div></td>
-        <td><span class="lab">OCCUPATION:</span><div id="guarantorOcc" style="font-weight:600;margin-top:2px;">-</div></td></tr>
+    <tr><td><span class="lab">GUARANTOR FULL NAME:</span><div class="val plain" id="guarantorName">-</div></td>
+        <td><span class="lab">NATIONAL ID (NIRA):</span><div class="val plain" id="guarantorId">-</div></td></tr>
+    <tr><td><span class="lab">RELATIONSHIP TO APPLICANT:</span><div class="val plain" id="guarantorRel">-</div></td>
+        <td><span class="lab">CONTACT PHONE:</span><div class="val plain" id="guarantorPhone">-</div></td></tr>
+    <tr><td><span class="lab">CURRENT RESIDENTIAL ADDRESS:</span><div class="val plain" id="guarantorAddr">-</div></td>
+        <td><span class="lab">OCCUPATION:</span><div class="val plain" id="guarantorOcc">-</div></td></tr>
   </table>
+
   <div class="sec">SECTION 04 &nbsp;|&nbsp; CONSENT &amp; SIGNATURES</div>
   <div class="stm green">
     <span class="t">GUARANTOR CONSENT &amp; DECLARATION:</span>
@@ -134,6 +198,7 @@ PHOTO
     <span class="body"> I declare that the information provided above is accurate and matches my official legal documents. I grant permission to the Police Force to store my biometric data and screen it against security and criminal database records.</span>
     <div class="sig"><b>APPLICANT SIGNATURE:</b><span class="sl"></span><b>DATE:</b><span class="sl sh"></span></div>
   </div>
+
   <div class="foot">
     <div class="stripe"></div>
     <div class="body">
@@ -142,6 +207,7 @@ PHOTO
       <span class="phone">&#9742; +252-2754131</span>
     </div>
   </div>
+
   </div>
 </div>
 
@@ -156,7 +222,7 @@ const STANDARD_ROLE='fingerprint_officer';
 let currentRole=STANDARD_ROLE;
 let isAdmin=false;
 
-function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]))}
 // The template ships with '-' placeholders; keep that convention for blanks.
 function fill(fieldId,value){
   const el=document.getElementById(fieldId);
@@ -178,6 +244,20 @@ function lockbar(html,isError){
   const el=document.getElementById('lockbar');
   el.innerHTML=html||'';
   el.className='lockbar'+(html?' on':'')+(isError?' err':'');
+}
+
+// ---- purpose selector chips ----------------------------------------------
+// Mirrors the server-side CLEARANCE_REASONS whitelist; the value recorded on
+// the application is highlighted, and any legacy value is appended so it can
+// never disappear from the printed form.
+const PURPOSE_CHIPS=['Education','Travel','Employment','Citizenship','Licence'];
+function renderPurposeChips(value){
+  const wrap=document.getElementById('purposeChips');
+  if(!wrap) return;
+  const val=(value===null||value===undefined)?'':String(value).trim();
+  const list=PURPOSE_CHIPS.slice();
+  if(val&&!list.some(p=>p.toLowerCase()===val.toLowerCase())) list.push(val);
+  wrap.innerHTML=list.map(p=>'<span class="chip'+(val&&p.toLowerCase()===val.toLowerCase()?' active':'')+'">'+esc(p)+'</span>').join('');
 }
 
 // ---- mandatory 12-hour review lock ---------------------------------------
@@ -255,8 +335,10 @@ function render(a){
     lockbar('');
   }
 
-  // ---- Section 01 — applicant identification ----
-  fill('appFullName',a.full_name);
+  // ---- Section 01 — applicant identification (4-part legal name) ----
+  const nameParts=[a.first_name,a.second_name,a.third_name,a.fourth_name]
+    .filter(x=>x&&String(x).trim());
+  fill('appFullName',(a.full_name&&String(a.full_name).trim())||nameParts.join(' '));
   fill('appMotherName',a.mother_name);
   fill('appNationalId',a.national_id);
   fill('appPassport',a.passport_id);
@@ -265,17 +347,22 @@ function render(a){
   fill('appGender',a.sex);
   fill('appContact',[a.phone,a.email].filter(x=>x&&String(x).trim()).join(' | '));
   fill('appAddress',a.residence||a.current_address);
-  // ---- Section 02 — purpose ----
+  fill('appOccupation',a.occupation);
+  // ---- Section 02 — purpose selector chips + recorded value ----
+  renderPurposeChips(a.purpose);
   fill('appPurpose',a.purpose||'Employment');
-  // ---- Section 03 — guarantor ----
+  // ---- Section 03 — guardian / guarantor ----
   fill('guarantorName',a.guardian_name);
   fill('guarantorId',a.guardian_id);
   fill('guarantorRel',a.guardian_relationship);
   fill('guarantorPhone',a.guardian_phone);
   fill('guarantorAddr',a.guardian_address);
   fill('guarantorOcc',a.guardian_occupation);
+  // ---- serial number / QR code placeholders ----
+  fill('appSerial',a.application_id||id);
+  fill('appSubmitted',dmy(a.created_at));
 
-  // ---- passport photo ----
+  // ---- applicant photograph (35×45 mm box) ----
   const photo=a.applicant_photo||a.photo_path;
   if(photo){
     const box=document.getElementById('photoContainer');
