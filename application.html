@@ -35,11 +35,13 @@
      min-height:297mm with @page margin:0 fills the box to exactly one page,
      so any engine rounding spills a blank second sheet — drop it in print. */
   @media print{
-    @page{size:A4;margin:0}
-    /* min-height 283mm = footer bottom lands at ~283mm (inside the 280-285mm
-       band) while leaving ~14mm of spill slack below QAYBTA 04's content
-       (border-box: 283mm + nothing else vs the 297mm page). */
-    .page{padding:6mm 8mm 4mm 8mm;min-height:283mm;height:auto;margin:0;box-shadow:none}
+    @page{size:A4 portrait;margin:0}
+    /* ZERO page expansion on paper: no hardcoded sheet min-height (the old
+       283mm box was enough to spill a 2nd sheet on engine rounding) and a
+       hard 280mm ceiling so the engine can never spawn page 2. The flex
+       column + margin-top:auto footer then rests at the bottom of page 1
+       naturally, without forcing overflow. */
+    .page{padding:6mm 8mm 4mm 8mm;min-height:0;height:auto;max-height:280mm;margin:0;box-shadow:none}
   }
 
   .watermark{
@@ -71,7 +73,7 @@
   .sec{
     background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;
     font-family:Arial,sans-serif;font-weight:700;font-size:9pt;padding:4px 10px;
-    margin-top:10px;margin-bottom:4px;position:relative;padding-left:16px;letter-spacing:.1px;
+    margin-top:6px;margin-bottom:2px;position:relative;padding-left:16px;letter-spacing:.1px;
   }
   .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:10px;background:var(--gold)}
   .sec .sub{font-weight:400;font-style:italic;font-size:9pt;color:#dbe5f4;margin-left:4px}
@@ -81,7 +83,7 @@
   /* Executive layout shared by QAYBTA 01/02/03: strict side-by-side pairs —
      tinted label cells (25%) with uppercase titles, equal-width entry
      cells (25%), generous uniform padding and clean ruled borders. */
-  .grid.exec td{padding:6px 10px;vertical-align:middle}
+  .grid.exec td{padding:3.5px 8px;vertical-align:middle}
   .grid.exec td.lab-cell{background:var(--label-bg);width:25%;font-weight:700;font-size:7.5pt;letter-spacing:.3px;color:var(--muted-2);text-transform:uppercase;text-align:left;line-height:1.25}
   .grid.exec td.entry{font-weight:600;font-size:9.5pt;color:var(--navy);text-align:left;background:#fff;width:25%}
   .lab{font-weight:700;color:var(--text)}
