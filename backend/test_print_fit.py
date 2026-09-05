@@ -131,6 +131,8 @@ check('application.html: blueprint @page rule (@page{size:A4;margin:0})',
       '@page{size:A4;margin:0}' in app_print.replace(' ', ''))
 check('application.html: blueprint .page print padding (6mm 8mm 4mm 8mm)',
       'padding:6mm8mm4mm8mm' in app_print.replace(' ', ''))
+check('application.html: SINGLE-SHEET FIX (.page min-height dropped on paper)',
+      'min-height:0' in app_print.replace(' ', '') and 'height:auto' in app_print.replace(' ', ''))
 # certificate.html — blueprint top-level @page + print block
 check('certificate.html: blueprint @page rule (size: A4 portrait; margin: 0)',
       bool(re.search(r'@page\s*\{\s*size:\s*A4 portrait\s*;\s*margin:\s*0\s*;\s*\}', cert)))
@@ -179,10 +181,26 @@ check('certificate.html: watermark at top 52% / left 50% + translate (blueprint)
 opacity = unitless(cert_wm, 'opacity')
 check('certificate.html: watermark opacity 0.08 (inside the 0.08-0.12 band)',
       opacity is not None and OPACITY_MIN <= opacity <= OPACITY_MAX, f'opacity={opacity}')
-check('certificate.html: crest in the letterhead masthead (.logo-wrap img, 120px)',
+check('certificate.html: crest in the letterhead masthead (.logo-wrap img)',
       '.logo-wrap img' in cert and num(css_block(cert, '.letterhead .logo-wrap img'), 'width') > 0)
 check('certificate.html: watermark above the sheet (blueprint z-index 10)',
       'z-index:10' in cert_wm.replace(' ', ''))
+sig = css_block(cert, '.sig-block')
+check('certificate.html: signature block centred above the footer bar',
+      'margin:26pxauto0auto' in sig.replace(' ', '') and 'text-align:center' in sig.replace(' ', ''))
+
+# ---------------------------------------------------------------------------
+# 3.5 Official emblem asset (blue-and-silver circular seal, transparent bg)
+# ---------------------------------------------------------------------------
+import struct as _struct
+with open(os.path.join(PROJECT, 'images', 'police_logo.png'), 'rb') as _f:
+    _png = _f.read()
+_w, _h = _struct.unpack('>II', _png[16:24])
+check('images/police_logo.png: PNG asset present and square (seal)',
+      _png[:8] == b'\x89PNG\r\n\x1a\n' and _w == _h and _w >= 512,
+      f'{_w}x{_h}')
+check('images/police_logo.png: alpha channel (transparent outside the ring)',
+      _png[25] == 6, f'colortype={_png[25]}')
 
 # ---------------------------------------------------------------------------
 # 3. Dynamic bindings, endpoints, auth and the 12h review lock
@@ -263,35 +281,35 @@ def budget_application():
     """Conservative worst-case printed height of application.html, in mm."""
     h = 0.0
     # header: 2 lines + underline padding + rule + bottom margin
-    h += (line_mm(css_block(app, '.hdr .t1'), 9, 1.35)
-          + line_mm(css_block(app, '.hdr .t2'), 9.5, 1.35)
-          + 4 * PX_TO_MM + 2 * PX_TO_MM + num(css_block(app, '.hdr'), 'margin-bottom', 1.59))
+    h += (line_mm(css_block(app, '.hdr .t1'), 9, 1.3)
+          + line_mm(css_block(app, '.hdr .t2'), 9.5, 1.3)
+          + 3 * PX_TO_MM + 2 * PX_TO_MM + num(css_block(app, '.hdr'), 'margin-bottom', 1.06))
     # title + margins
     ti = css_block(app, '.title')
-    h += line_mm(ti, 16, 1.35) + num(ti, 'margin-top', 1.59) + num(ti, 'margin-bottom', 1.06)
+    h += line_mm(ti, 15, 1.3) + num(ti, 'margin-top', 1.06) + num(ti, 'margin-bottom', 0.79)
     # photo: 36mm box + border + caption + wrap margins
     h += (36.0 + 3 * PX_TO_MM + line_mm(css_block(app, '.photo-cap'), 7, 1.35)
-          + 1 * PX_TO_MM + 2 * PX_TO_MM + 4 * PX_TO_MM)
+          + 1 * PX_TO_MM + 2 * PX_TO_MM + 3 * PX_TO_MM)
     # intro: 2 justified lines + margins
-    h += 2 * line_mm(css_block(app, '.intro'), 9, 1.35) + 2 * PX_TO_MM + 6 * PX_TO_MM
-    # four section bars
+    h += 2 * line_mm(css_block(app, '.intro'), 8.5, 1.3) + 2 * PX_TO_MM + 4 * PX_TO_MM
+    # four section bars (3px vertical padding each)
     sec = css_block(app, '.sec')
-    h += 4 * (line_mm(sec, 9.5, 1.35) + 8 * PX_TO_MM + num(sec, 'margin-top', 1.06))
-    # grid rows: bold label stacked over the 10pt value line (inline style)
-    row_h = (line_mm(css_block(app, '.lab'), 9, 1.35) + 10 * PT_TO_MM * 1.35
+    h += 4 * (line_mm(sec, 9, 1.3) + 6 * PX_TO_MM + num(sec, 'margin-top', 0.79))
+    # grid rows: bold label stacked over the 9.5pt value line (inline style)
+    row_h = (line_mm(css_block(app, '.lab'), 8.5, 1.3) + 9.5 * PT_TO_MM * 1.3
              + 2 * PX_TO_MM + 6 * PX_TO_MM + 1 * PX_TO_MM)
-    h += 6 * row_h + 2 * 10 * PT_TO_MM * 1.35       # Section 01 + 2 wrap allowances
+    h += 6 * row_h + 2 * 9.5 * PT_TO_MM * 1.3       # Section 01 + 2 wrap allowances
     # Section 02 purpose box
     h += 10 * PT_TO_MM * 1.35 + 8 * PX_TO_MM + 2 * PX_TO_MM
-    h += 3 * row_h + 10 * PT_TO_MM * 1.35           # Section 03 + 1 wrap allowance
+    h += 3 * row_h + 9.5 * PT_TO_MM * 1.3           # Section 03 + 1 wrap allowance
     # Section 04: two declaration boxes (3 body lines + signature line each)
     stm, body, sig = css_block(app, '.stm'), css_block(app, '.stm .body'), css_block(app, '.sig')
-    one = (2 * num(stm, 'padding-top', 1.06) + 1 * PX_TO_MM
-           + 3 * line_mm(body, 8.5, 1.35)
-           + num(sig, 'margin-top', 1.06) + 10 * PX_TO_MM + line_mm(sig, 8.5, 1.35))
+    one = (2 * num(stm, 'padding-top', 0.79) + 1 * PX_TO_MM
+           + 3 * line_mm(body, 8, 1.3)
+           + num(sig, 'margin-top', 0.79) + 9 * PX_TO_MM + line_mm(sig, 8.5, 1.3))
     h += 2 * one + 2 * num(stm, 'margin-top', 0.53)
     # footer
-    h += (num(css_block(app, '.foot'), 'margin-top', 2.12) + 2 * PX_TO_MM
+    h += (num(css_block(app, '.foot'), 'margin-top', 1.32) + 2 * PX_TO_MM
           + line_mm(css_block(app, '.foot .body'), 8.5, 1.35) + 8 * PX_TO_MM)
     return h
 
@@ -299,41 +317,41 @@ def budget_application():
 def budget_certificate():
     """Conservative worst-case printed height of certificate.html, in mm."""
     h = 0.0
-    # letterhead block (blueprint min-height)
-    h += num(css_block(cert, '.letterhead'), 'min-height', 31.75)
+    # letterhead block (blueprint min-height, scaled up to fill the page)
+    h += num(css_block(cert, '.letterhead'), 'min-height', 35.7)
     # two Somali header lines + divider + margins
     hl = css_block(cert, '.header-line')
-    h += 2 * (line_mm(hl, 11, 1.3) + num(hl, 'margin-top', 1.06))
+    h += 2 * (line_mm(hl, 11, 1.45) + num(hl, 'margin-top', 1.06))
     dv = css_block(cert, '.divider')
     h += num(dv, 'height', 0.53) + num(dv, 'margin-top', 1.59) + num(dv, 'margin-bottom', 2.12)
     # titles
-    h += (line_mm(css_block(cert, '.main-title'), 14, 1.4) + 2 * PX_TO_MM
-          + line_mm(css_block(cert, '.sub-title'), 10, 1.4) + 1 * PX_TO_MM)
+    h += (line_mm(css_block(cert, '.main-title'), 16, 1.45) + 4 * PX_TO_MM
+          + line_mm(css_block(cert, '.sub-title'), 10.5, 1.45) + 2 * PX_TO_MM)
     # HQ line + meta + to-whom
-    h += (num(css_block(cert, '.hq-line'), 'margin-top', 3.17) + line_mm(css_block(cert, '.hq-line'), 10, 1.4))
-    h += (num(css_block(cert, '.cert-meta'), 'margin-top', 0.53) + line_mm(css_block(cert, '.cert-meta'), 10, 1.4))
+    h += (num(css_block(cert, '.hq-line'), 'margin-top', 3.7) + line_mm(css_block(cert, '.hq-line'), 10.5, 1.45))
+    h += (num(css_block(cert, '.cert-meta'), 'margin-top', 0.79) + line_mm(css_block(cert, '.cert-meta'), 10.5, 1.45))
     tw = css_block(cert, '.to-whom')
-    h += num(tw, 'margin-top', 3.17) + line_mm(tw, 10.5, 1.4)
+    h += num(tw, 'margin-top', 4.23) + line_mm(tw, 11, 1.45)
     # intro body: 3 justified lines
     bt = css_block(cert, '.body-text')
-    h += 3 * line_mm(bt, 9.5, 1.4) + num(bt, 'margin-top', 1.59)
+    h += 3 * line_mm(bt, 10, 1.45) + num(bt, 'margin-top', 1.85)
     # details table: 10 rows (header + 9 fields) beside a 150px photo box
     dtd = css_block(cert, 'table.details td')
-    rows_h = 10 * (line_mm(dtd, 10, 1.4) + 4 * PX_TO_MM)
+    rows_h = 10 * (line_mm(dtd, 10.5, 1.45) + 6 * PX_TO_MM) + 5 * PX_TO_MM
     photo_h = num(css_block(cert, '.photo-box'), 'height', 39.69) + 2 * PX_TO_MM
-    h += max(rows_h, photo_h) + num(css_block(cert, '.details-wrap'), 'margin-top', 2.65)
+    h += max(rows_h, photo_h) + num(css_block(cert, '.details-wrap'), 'margin-top', 3.17)
     # search-result heading + 5 lines
     sh = css_block(cert, '.section-heading')
-    h += num(sh, 'margin-top', 3.7) + line_mm(sh, 10.5, 1.4)
-    h += 5 * line_mm(bt, 9.5, 1.4) + num(bt, 'margin-top', 1.59)
+    h += num(sh, 'margin-top', 4.76) + line_mm(sh, 11, 1.45)
+    h += 5 * line_mm(bt, 10, 1.45) + num(bt, 'margin-top', 1.85)
     # purpose + validity meta rows
     mr = css_block(cert, '.meta-row')
-    h += 2 * (num(mr, 'margin-top', 1.59) + line_mm(mr, 10, 1.4))
-    # signature block
+    h += 2 * (num(mr, 'margin-top', 2.12) + line_mm(mr, 10.5, 1.45))
+    # signature block (centered)
     sb = css_block(cert, '.sig-block')
-    h += (num(sb, 'margin-top', 4.76) + line_mm(css_block(cert, '.sig-line'), 10, 1.4)
-          + 4 * PX_TO_MM + line_mm(css_block(cert, '.closing-name'), 10, 1.4) + 2 * PX_TO_MM
-          + line_mm(css_block(cert, '.closing-role'), 9.5, 1.4) + 1 * PX_TO_MM)
+    h += (num(sb, 'margin-top', 6.88) + line_mm(css_block(cert, '.sig-line'), 10.5, 1.45)
+          + 4 * PX_TO_MM + line_mm(css_block(cert, '.closing-name'), 10.5, 1.45) + 2 * PX_TO_MM
+          + line_mm(css_block(cert, '.closing-role'), 10, 1.45) + 1 * PX_TO_MM)
     # footer-bar is absolutely positioned -> no flow height
     return h
 
