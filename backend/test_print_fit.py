@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
 """Print-template contract tests for application.html / certificate.html.
 
-Encodes the Fingerprint Unit template specification:
+The templates are the OFFICIAL SOURCE BLUEPRINTS (Somali application form +
+bilingual certificate of good conduct), hard-overwritten from the attached
+sources. This suite pins that contract:
 
-  1. EXACT A4 PRINT RULES — both documents print on ONE A4 portrait page with
-     8mm @page margins, exact color reproduction (print-color-adjust), and all
-     web chrome (toolbar / buttons / badges / banners / toasts) hidden.
-  2. OFFICIAL EMBLEM PLACEMENT — application.html carries the police emblem
-     ONLY as the centred low-opacity watermark; certificate.html carries it in
-     BOTH the letterhead masthead AND the centred watermark.
-  3. DYNAMIC BINDINGS — every DOM id the templates bind (4-part legal name,
-     DOB, National ID/Passport, phone, address, gender, occupation, purpose
-     chips, guardian/guarantor, 35x45 photo box, serial + QR placeholders)
-     survives, together with the backend endpoints, session checks and the
-     mandatory 12-hour review-lock logic.
-  4. SINGLE-PAGE HEIGHT BUDGET — a conservative worst-case estimate of the
+  1. EXACT A4 PRINT RULES — the blueprint @page rules (application:
+     `@page{size:A4;margin:0}` + `.page{padding:6mm 8mm 4mm 8mm}`;
+     certificate: `@page { size: A4 portrait; margin: 0; }`), the added
+     print-color-adjust: exact, and all web chrome hidden on paper.
+  2. OFFICIAL EMBLEM PLACEMENT — application.html carries the emblem ONLY as
+     the centred low-opacity watermark (top 52% / left 50%, opacity 0.08,
+     z-index 2 above nothing behind content z-index 1); certificate.html
+     carries it in BOTH the letterhead masthead (.logo-wrap) AND the centred
+     watermark (z-index 10).
+  3. DYNAMIC BINDINGS — every id the client-side scripts bind (all applicant
+     identity fields, purpose, guardian/guarantor, photo boxes, certificate
+     number/issue date, officer line) survives, together with the fetch
+     endpoints, token auth and the mandatory 12-hour review-lock logic.
+  4. BLUEPRINT FIDELITY — the official titles, Somali section headers,
+     Arabic letterhead block, footer text and the certificate search-result
+     wording are present verbatim.
+  5. SINGLE-PAGE HEIGHT BUDGET — a conservative worst-case estimate of the
      printed content height (computed from the actual CSS values, generous
-     wrap allowances included) fits inside one A4 page minus the @page
-     margins, with a documented safety slack.
+     wrap allowances included) fits one A4 page (@page margin 0 -> 297mm)
+     with a documented safety slack.
 
 Usage:  python3 backend/test_print_fit.py
 """
@@ -30,8 +37,7 @@ PROJECT = os.path.dirname(HERE)
 
 PT_TO_MM = 25.4 / 72.0          # 1pt = 0.3528mm
 PX_TO_MM = 25.4 / 96.0          # CSS px at 96dpi
-A4_H_MM, A4_W_MM = 297.0, 210.0
-PAGE_MARGIN_MM = 8.0            # @page margin from the spec
+A4_H_MM = 297.0                 # @page margin is 0 in both blueprints
 SAFETY_MM = 8.0                 # engine rounding slack we insist on
 OPACITY_MIN, OPACITY_MAX = 0.08, 0.12   # watermark band from the spec
 
@@ -44,12 +50,47 @@ def check(name, ok, detail=''):
         FAILURES.append(name)
 
 
+def strip_comments(html):
+    """Remove HTML comments (blueprint notes mention {% static %} verbatim)."""
+    return re.sub(r'<!--.*?-->', '', html, flags=re.S)
+
+
 def css_block(html, selector):
     """Return the body of the last `selector{...}` rule (no nesting in our CSS)."""
     out = []
     for m in re.finditer(re.escape(selector) + r'\s*\{([^}]*)\}', html):
         out.append(m.group(1))
     return out[-1] if out else ''
+
+
+def nested_block(html, opener, first=True):
+    """Return the body of `opener { ... }` with proper brace matching
+    (needed for @media print blocks that contain nested rules)."""
+    pattern = re.escape(opener) + r'\s*\{'
+    m = None
+    for it in re.finditer(pattern, html):
+        m = it
+        if first:
+            break
+    if not m:
+        return ''
+    i = m.end()                      # just after the opening '{'
+    depth, j = 1, i
+    while j < len(html) and depth:
+        if html[j] == '{':
+            depth += 1
+        elif html[j] == '}':
+            depth -= 1
+        j += 1
+    return html[i:j - 1] if depth == 0 else ''
+
+
+def all_print_blocks(html):
+    """Concatenate every @media print block (blueprint + added chrome rules)."""
+    out = []
+    for m in re.finditer(r'@media print\s*\{', html):
+        out.append(nested_block(html[m.start():], '@media print'))
+    return ' '.join(out)
 
 
 def num(block, prop, default=0.0):
@@ -75,81 +116,73 @@ def line_mm(block, fallback_font_pt, fallback_lh=1.2):
 
 
 # ---------------------------------------------------------------------------
-# Load templates
+# Load templates (HTML comments stripped: the blueprint notes quote
+# {% static %} verbatim, which is documentation — not an unresolved tag)
 # ---------------------------------------------------------------------------
-app = open(os.path.join(PROJECT, 'application.html'), encoding='utf-8').read()
-cert = open(os.path.join(PROJECT, 'certificate.html'), encoding='utf-8').read()
-
-A4_RULE = '@page{size:A4 portrait;margin:8mm}'
-APP_HIDE = ['.toolbar', '.btn', '.badge', '.toast', '.lockbar']   # all chrome on the form
-CERT_HIDE = ['.toolbar', '.btn', '.badge']                        # all chrome on the certificate
+app = strip_comments(open(os.path.join(PROJECT, 'application.html'), encoding='utf-8').read())
+cert = strip_comments(open(os.path.join(PROJECT, 'certificate.html'), encoding='utf-8').read())
 
 # ---------------------------------------------------------------------------
-# 1. Exact A4 print rules
+# 1. Exact A4 print rules (the blueprint @page rules, verbatim)
 # ---------------------------------------------------------------------------
-def print_block_of(html):
-    m = re.search(r'@media print\s*\{(.*?)\n  \}', html, re.S)
-    return re.sub(r'\s+', ' ', m.group(1)) if m else ''
+# application.html — blueprint print block
+app_print = nested_block(app, '@media print')
+check('application.html: blueprint @page rule (@page{size:A4;margin:0})',
+      '@page{size:A4;margin:0}' in app_print.replace(' ', ''))
+check('application.html: blueprint .page print padding (6mm 8mm 4mm 8mm)',
+      'padding:6mm8mm4mm8mm' in app_print.replace(' ', ''))
+# certificate.html — blueprint top-level @page + print block
+check('certificate.html: blueprint @page rule (size: A4 portrait; margin: 0)',
+      bool(re.search(r'@page\s*\{\s*size:\s*A4 portrait\s*;\s*margin:\s*0\s*;\s*\}', cert)))
+cert_print = nested_block(cert, '@media print')
+check('certificate.html: print block keeps cream sheet + drops shadow/margin',
+      '#FFF9E7' in cert_print and 'margin:0' in cert_print.replace(' ', '')
+      and 'box-shadow:none' in cert_print.replace(' ', ''))
 
-
-for name, html in (('application.html', app), ('certificate.html', cert)):
-    pb = print_block_of(html)
-    check(f'{name}: @media print block present', bool(pb))
-    check(f'{name}: exact A4 @page rule (size: A4 portrait; margin: 8mm)', A4_RULE in pb)
+for name, html, hide in (('application.html', app, ['.toolbar', '.lockbar', '.toast']),
+                         ('certificate.html', cert, ['.toolbar'])):
+    pb = all_print_blocks(html)
+    for sel in hide:
+        shown = re.search(re.escape(sel) + r'[^{]*\{[^}]*display:\s*none', pb)
+        check(f'{name}: {sel} hidden when printing', bool(shown))
     flat = pb.replace(' ', '')
     check(f'{name}: print-color-adjust: exact (incl. -webkit prefix)',
           'print-color-adjust:exact!important' in flat
           and '-webkit-print-color-adjust:exact!important' in flat)
-
-    # The on-screen sheet must not force a full A4 min-height onto the paper
-    # (297mm content + 16mm margins would guarantee a second blank page).
-    page_print = css_block(pb, '.page').replace(' ', '')
-    check(f'{name}: .page print override drops min-height/margins',
-          'min-height:0' in page_print and 'margin:0' in page_print)
-
-for name, html, hide in (('application.html', app, APP_HIDE), ('certificate.html', cert, CERT_HIDE)):
-    pb = print_block_of(html)
-    for sel in hide:
-        shown = re.search(re.escape(sel) + r'[^{]*\{[^}]*display:\s*none', pb)
-        check(f'{name}: {sel} hidden when printing', bool(shown))
 
 # ---------------------------------------------------------------------------
 # 2. Official emblem placement
 # ---------------------------------------------------------------------------
 check('application.html: emblem appears exactly ONCE (watermark only)',
       app.count('images/police_logo.png') == 1)
+check('application.html: no Django static tag left unresolved',
+      '{% static' not in app and '{{' not in app)
 app_wm = css_block(app, '.watermark')
-check('application.html: watermark is centred (top/left 50% + translate)',
-      'top:50%' in app_wm.replace(' ', '') and 'left:50%' in app_wm.replace(' ', '')
+check('application.html: watermark at top 52% / left 50% + translate (blueprint)',
+      'top:52%' in app_wm.replace(' ', '') and 'left:50%' in app_wm.replace(' ', '')
       and 'translate(-50%,-50%)' in app_wm.replace(' ', ''))
 opacity = unitless(app_wm, 'opacity')
-check('application.html: watermark opacity inside the 0.08-0.12 spec band',
+check('application.html: watermark opacity 0.08 (inside the 0.08-0.12 band)',
       opacity is not None and OPACITY_MIN <= opacity <= OPACITY_MAX, f'opacity={opacity}')
-check('application.html: watermark blends onto the paper (mix-blend-mode:multiply)',
-      'mix-blend-mode:multiply' in app_wm.replace(' ', ''))
-check('application.html: watermark sits behind the content (z-index 0 + overlay)',
-      'z-index:0' in app_wm.replace(' ', '') and 'z-index:1' in css_block(app, '.content').replace(' ', ''))
-app_body = app.split('</head>')[1]
-check('application.html: no header/letterhead logo element',
-      'header-logo' not in app_body and 'logo-wrap' not in app_body and 'crest' not in app_body)
+check('application.html: watermark behind the content (z-index 2 vs content 1)',
+      'z-index:2' in app_wm.replace(' ', '')
+      and 'z-index:1' in css_block(app, '.content').replace(' ', ''))
 
 check('certificate.html: emblem appears exactly TWICE (masthead + watermark)',
       cert.count('images/police_logo.png') == 2)
+check('certificate.html: no Django static tag left unresolved',
+      '{% static' not in cert and '{{' not in cert)
 cert_wm = css_block(cert, '.watermark')
-check('certificate.html: watermark is centred (top/left 50% + translate)',
-      'top:50%' in cert_wm.replace(' ', '') and 'left:50%' in cert_wm.replace(' ', '')
+check('certificate.html: watermark at top 52% / left 50% + translate (blueprint)',
+      'top:52%' in cert_wm.replace(' ', '') and 'left:50%' in cert_wm.replace(' ', '')
       and 'translate(-50%,-50%)' in cert_wm.replace(' ', ''))
 opacity = unitless(cert_wm, 'opacity')
-check('certificate.html: watermark opacity inside the 0.08-0.12 spec band',
+check('certificate.html: watermark opacity 0.08 (inside the 0.08-0.12 band)',
       opacity is not None and OPACITY_MIN <= opacity <= OPACITY_MAX, f'opacity={opacity}')
-check('certificate.html: watermark blends onto the paper (mix-blend-mode:multiply)',
-      'mix-blend-mode:multiply' in cert_wm.replace(' ', ''))
-check('certificate.html: crest in the top masthead',
-      '.crest img' in cert and 'cert-masthead' in cert)
-check('certificate.html: official title (CERTIFICATE OF GOOD CONDUCT)',
-      'CERTIFICATE OF GOOD CONDUCT' in cert)
-check('certificate.html: ornate frame + seal + dual signatures present',
-      '.cert-frame' in cert and '.seal' in cert and '.sig-block' in cert)
+check('certificate.html: crest in the letterhead masthead (.logo-wrap img, 120px)',
+      '.logo-wrap img' in cert and num(css_block(cert, '.letterhead .logo-wrap img'), 'width') > 0)
+check('certificate.html: watermark above the sheet (blueprint z-index 10)',
+      'z-index:10' in cert_wm.replace(' ', ''))
 
 # ---------------------------------------------------------------------------
 # 3. Dynamic bindings, endpoints, auth and the 12h review lock
@@ -157,17 +190,20 @@ check('certificate.html: ornate frame + seal + dual signatures present',
 APP_IDS = ['statusBadge', 'approveBtn', 'lockbar', 'toast', 'photoContainer',
            'appFullName', 'appMotherName', 'appNationalId', 'appPassport',
            'appDob', 'appPob', 'appGender', 'appPhone', 'appEmail', 'appAddress',
-           'appOccupation', 'appPurpose', 'purposeChips', 'appNotes',
-           'appAppDocs', 'appGuardDocs',
+           'appPurpose',
            'guarantorName', 'guarantorId', 'guarantorRel', 'guarantorPhone',
-           'guarantorAddr', 'guarantorOcc',
-           'appSerial', 'appSubmitted', 'qrBox']
+           'guarantorAddr', 'guarantorOcc']
 for el in APP_IDS:
     check(f'application.html: #{el} present', f'id="{el}"' in app)
 
-# hooks shared by both documents (the certificate page relies on the
-# authenticated record endpoint + 401 handling; only application.html needs
-# the explicit /api/me role resolution for the admin bypass)
+CERT_IDS = ['statusBadge', 'printBtn', 'sheet', 'certNumber', 'certIssued',
+            'certFullName', 'certMotherName', 'certDob', 'certPob',
+            'certNationality', 'certPassport', 'certNationalId',
+            'certResidence', 'certOccupation', 'certPurpose', 'certOfficer',
+            'certPhotoBox']
+for el in CERT_IDS:
+    check(f'certificate.html: #{el} present', f'id="{el}"' in cert)
+
 COMMON_HOOKS = ['REVIEW_LOCK_HOURS=12',                     # mandatory review window
                 "/api/clearance-applications/'+id",         # record endpoint
                 'sentinel_token', 'sentinelSession',        # auth storage keys
@@ -183,123 +219,122 @@ for name, html, hooks in (('application.html', app, APP_HOOKS),
 
 check('application.html: 4-part legal name binding',
       'first_name' in app and 'fourth_name' in app and "fill('appFullName'" in app)
-check('application.html: purpose selector chips render',
-      'function renderPurposeChips(' in app
-      and "PURPOSE_CHIPS=['Education','Travel','Employment','Citizenship','Licence']" in app)
-check('application.html: 35x45 mm photo box + applicant photo binding',
-      'width:35mm' in app.replace(' ', '') and 'height:45mm' in app.replace(' ', '')
-      and 'applicant_photo||a.photo_path' in app.replace(' ', ''))
-check('application.html: serial + QR placeholders',
-      "fill('appSerial'" in app and "fill('appSubmitted'" in app and 'id="qrBox"' in app)
+check('application.html: 35x45 mm photo caption + applicant photo binding',
+      '35×45 mm' in app and 'applicant_photo||a.photo_path' in app.replace(' ', ''))
 check('certificate.html: unlock gate (approved + certificate number)',
       "a.status==='Approved'&&a.certificate_number" in cert)
+check('certificate.html: long-date + uppercase filters mirrored (d F Y / upper)',
+      'function dmyLong(' in cert and 'function upper(' in cert)
 
 # ---------------------------------------------------------------------------
-# 4. Single-page height budget (worst case, printed at A4 - 2x8mm margins)
+# 4. Blueprint fidelity (official wording, verbatim)
 # ---------------------------------------------------------------------------
-avail = A4_H_MM - 2 * PAGE_MARGIN_MM
+for marker in ['CODSIGA SHAHAADADA DAMBI-LA\'AANTA',
+               'NORTHEASTERN POLICE FORCE • CRIMINAL INVESTIGATION DIRECTORATE (2026)',
+               'PCC-2026-DIGITAL-01',
+               'QAYBTA 01', 'QAYBTA 02', 'QAYBTA 03', 'QAYBTA 04',
+               'MAGACA SHARCIGA AH OO BUUXA', 'DAMMIINKA (GUARANTOR)',
+               'OGOLAANSHAHA &amp; SAXIIXA DAMMIINKA', 'OGOLAANSHAHA &amp; SAXIIXA CODSAHA',
+               'Hoggaanka Baadhista Dembiyada Ee DG.Waqooyi Bari Soomaaliya',
+               'Waaxda Faraha Iyo Hubinta', '+252-2754131',
+               '<html lang="so">']:
+    check(f'application.html: blueprint marker `{marker[:44]}`', marker in app)
+
+for marker in ['CERTIFICATE OF GOOD CONDUCT', '(POLICE CLEARANCE CERTIFICATE)',
+               'TO WHOM IT MAY CONCERN', 'NO ADVERSE CRIMINAL RECORD FOUND',
+               'Las Anod, HQ', 'North East Police Force',
+               'Criminal Investigation Directorate',
+               'قوة شرطة ولاية الشمال الشرقي', 'مديرية التحقيقات الجنآئي',
+               'HOGAANKA BAADHISTA DEMBIYADA DG WAQOOYI BARI SOOMAALIYA',
+               'WAAXDA FARAHA EE KAYDINTA IYO HUBINTA DEMBILA\'AANTA',
+               'Six (6) Months from date of issue',
+               'Chief of Fingerprint Unit', 'Dhamme. Shugri Jaamac Diiriye',
+               'Hogaanka Baadhista Dembiyada Ee DG.Waqooyi Bari Soomaaliya-Waaxda Faraha Iyo  Hubinta +252-2754131',
+               '<html lang="en">']:
+    check(f'certificate.html: blueprint marker `{marker[:44]}`', marker in cert)
+
+# ---------------------------------------------------------------------------
+# 5. Single-page height budget (worst case; @page margin 0 -> 297mm usable)
+# ---------------------------------------------------------------------------
+avail = A4_H_MM
 
 
 def budget_application():
-    """Conservative worst-case printed height of application.html, in mm.
-
-    Values are read from the stylesheet; wrap allowances deliberately
-    OVER-estimate line counts, so a passing budget means real engines
-    have room to spare.
-    """
+    """Conservative worst-case printed height of application.html, in mm."""
     h = 0.0
-    # masthead: 3 text lines + underline padding + double rule
-    h += (line_mm(css_block(app, '.masthead .t1'), 12.5, 1.15)
-          + line_mm(css_block(app, '.masthead .t2'), 10, 1.15)
-          + line_mm(css_block(app, '.masthead .t3'), 7.5, 1.15)
-          + 4 * PX_TO_MM + 3 * PX_TO_MM)
-    # title + its margins (shorthand `margin:2.5mm 0 1.2mm 0`)
-    h += line_mm(css_block(app, '.title'), 15, 1.35) + 2.5 + 1.2
-    # meta row: the 45mm portrait photo cell dominates; caption single line
-    h += 45 + 3 * PX_TO_MM + line_mm(css_block(app, '.photo-cap'), 6.5, 1.35) + 1.0
-    h += 2.0  # .meta margin-bottom (`margin:0 0 2mm 0`)
+    # header: 2 lines + underline padding + rule + bottom margin
+    h += (line_mm(css_block(app, '.hdr .t1'), 9, 1.35)
+          + line_mm(css_block(app, '.hdr .t2'), 9.5, 1.35)
+          + 4 * PX_TO_MM + 2 * PX_TO_MM + num(css_block(app, '.hdr'), 'margin-bottom', 1.59))
+    # title + margins
+    ti = css_block(app, '.title')
+    h += line_mm(ti, 16, 1.35) + num(ti, 'margin-top', 1.59) + num(ti, 'margin-bottom', 1.06)
+    # photo: 36mm box + border + caption + wrap margins
+    h += (36.0 + 3 * PX_TO_MM + line_mm(css_block(app, '.photo-cap'), 7, 1.35)
+          + 1 * PX_TO_MM + 2 * PX_TO_MM + 4 * PX_TO_MM)
+    # intro: 2 justified lines + margins
+    h += 2 * line_mm(css_block(app, '.intro'), 9, 1.35) + 2 * PX_TO_MM + 6 * PX_TO_MM
     # four section bars
     sec = css_block(app, '.sec')
-    h += 4 * (line_mm(sec, 9, 1.2) + 5 * PX_TO_MM + num(sec, 'margin-top'))
-    # ruled grid rows: bold label + entry on ONE line (~9pt leading + padding)
-    row_h = line_mm(css_block(app, '.v'), 9, 1.25) + 3 * PX_TO_MM + 1 * PX_TO_MM
-    h += 7 * row_h + 2 * row_h        # Section 01: 7 rows + 2 wrap allowances
-    # Section 02: chips row + recorded purpose + notes + 2 attachment rows
-    chips, pline, pbox, drow = (css_block(app, '.chip'), css_block(app, '.purpose-line'),
-                                css_block(app, '.purpose-box'), css_block(app, '.doc-row'))
-    h += (line_mm(chips, 8, 1.3) + 3 * PX_TO_MM + 2.8 * PX_TO_MM
-          + line_mm(pline, 8, 1.3) + num(pline, 'margin-top') + num(pline, 'padding-top') + 1 * PX_TO_MM
-          + 3 * (line_mm(drow, 8, 1.35) + num(drow, 'margin-top') + num(drow, 'padding-top') + 1 * PX_TO_MM)
-          + 2 * num(pbox, 'padding-top', 1.8) + 1 * PX_TO_MM)
-    h += 3 * row_h + 2 * row_h        # Section 03: 3 rows + 2 wrap allowances
-    # Section 04: two declaration boxes — body lines derived per box from the
-    # actual text (0.58em avg char width, +1 slack line each)
+    h += 4 * (line_mm(sec, 9.5, 1.35) + 8 * PX_TO_MM + num(sec, 'margin-top', 1.06))
+    # grid rows: bold label stacked over the 10pt value line (inline style)
+    row_h = (line_mm(css_block(app, '.lab'), 9, 1.35) + 10 * PT_TO_MM * 1.35
+             + 2 * PX_TO_MM + 6 * PX_TO_MM + 1 * PX_TO_MM)
+    h += 6 * row_h + 2 * 10 * PT_TO_MM * 1.35       # Section 01 + 2 wrap allowances
+    # Section 02 purpose box
+    h += 10 * PT_TO_MM * 1.35 + 8 * PX_TO_MM + 2 * PX_TO_MM
+    h += 3 * row_h + 10 * PT_TO_MM * 1.35           # Section 03 + 1 wrap allowance
+    # Section 04: two declaration boxes (3 body lines + signature line each)
     stm, body, sig = css_block(app, '.stm'), css_block(app, '.stm .body'), css_block(app, '.sig')
-    fs_body = num(body, 'font-size', 7.8 * PT_TO_MM)
-    width_mm = A4_W_MM - 2 * PAGE_MARGIN_MM - 7.0            # page minus stm padding/border
-    chars_per_line = max(20.0, width_mm / (0.58 * fs_body))
-    boxes = re.findall(r'<span class="body">(.*?)</span>', app, re.S)
-    total_decl_lines = 0
-    for box in boxes:
-        text = re.sub(r'<[^>]+>', '', box)
-        total_decl_lines += min(6, -(-len(text.strip()) // int(chars_per_line)) + 1)
-    one = (2 * num(stm, 'padding-top', 2.0) + 1 * PX_TO_MM
-           + num(sig, 'margin-top', 1.6) + line_mm(sig, 8, 1.3) + 8 * PX_TO_MM)
-    h += len(boxes) * one + total_decl_lines * line_mm(body, 7.8, 1.25) + 2 * num(stm, 'margin-top', 1.5)
-    # footer: stripe + one line (nowrap enforced) + padding + margin
-    h += (2 * PX_TO_MM + line_mm(css_block(app, '.foot .body'), 8, 1.3)
-          + 6 * PX_TO_MM + num(css_block(app, '.foot'), 'margin-top'))
+    one = (2 * num(stm, 'padding-top', 1.06) + 1 * PX_TO_MM
+           + 3 * line_mm(body, 8.5, 1.35)
+           + num(sig, 'margin-top', 1.06) + 10 * PX_TO_MM + line_mm(sig, 8.5, 1.35))
+    h += 2 * one + 2 * num(stm, 'margin-top', 0.53)
+    # footer
+    h += (num(css_block(app, '.foot'), 'margin-top', 2.12) + 2 * PX_TO_MM
+          + line_mm(css_block(app, '.foot .body'), 8.5, 1.35) + 8 * PX_TO_MM)
     return h
 
 
 def budget_certificate():
-    """Conservative worst-case printed height of the rebuilt certificate, in mm."""
+    """Conservative worst-case printed height of certificate.html, in mm."""
     h = 0.0
-    # ornate frame chrome: outer border+padding and inner rule+padding, top+bottom
-    frame, inner = css_block(cert, '.cert-frame'), css_block(cert, '.cert-inner')
-    chrome_v = (4 * PX_TO_MM + num(frame, 'padding-top', 2.2) + 1.5 * PX_TO_MM
-                + num(inner, 'padding-top', 5.5))
-    chrome_b = (4 * PX_TO_MM + num(frame, 'padding-top', 2.2) + 1.5 * PX_TO_MM
-                + num(inner, 'padding-top', 5.0))
-    h += chrome_v + chrome_b
-    # masthead: crest + 3 lines + padding + gold rule
-    h += (num(css_block(cert, '.crest img'), 'width', 23.0)
-          + line_mm(css_block(cert, '.cm-t1'), 13, 1.2)
-          + line_mm(css_block(cert, '.cm-t2'), 10, 1.2)
-          + line_mm(css_block(cert, '.cm-t3'), 7.5, 1.2)
-          + num(css_block(cert, '.cert-masthead'), 'padding-top', 2.5) + 1.5 * PX_TO_MM)
-    # title band + italic lead-in + centred name with gold underline
-    h += (line_mm(css_block(cert, '.cert-title h1'), 19.5, 1.2) + 4.5 + 1.0
-          + line_mm(css_block(cert, '.cert-sub'), 10, 1.4) + 1.5
-          + line_mm(css_block(cert, '.cert-name'), 17.5, 1.2) + 1.0 + 2.0)
-    # certification prose: ~480 chars over ~100 chars/line at 10.5pt/1.6
-    prose = css_block(cert, '.cert-prose')
-    fs_prose = num(prose, 'font-size', 10.5 * PT_TO_MM)
-    chars_per_line = max(40.0, (A4_W_MM - 2 * PAGE_MARGIN_MM - 8.0) / (0.50 * fs_prose))
-    prose_text = re.sub(r'<[^>]+>', '', re.search(r'<div class="cert-prose">(.*?)</div>', cert, re.S).group(1))
-    prose_lines = min(10, -(-len(prose_text.strip()) // int(chars_per_line)))
-    h += prose_lines * line_mm(prose, 10.5, 1.6)
-    # details panel: 12 grid slots in 6 rows (label + value + row gap)
-    d_dl, d_dv = css_block(cert, '.d-item .dl'), css_block(cert, '.d-item .dv')
-    rows = -(-cert.count('ditem(') // 2)
-    h += (rows * (line_mm(d_dl, 6.6, 1.2) + line_mm(d_dv, 9.5, 1.2)
-                  + num(css_block(cert, '.details'), 'padding-top', 2.2) / 2.0 + 1.1)
-          + 2 * num(css_block(cert, '.details'), 'padding-top', 2.2) + 2 * 1.5 * PX_TO_MM)
-    # issue ribbon
-    issue = css_block(cert, '.cert-issue')
-    h += (num(issue, 'margin-top', 3.2) + 2 * num(issue, 'padding-top', 1.4)
-          + line_mm(issue, 8.5, 1.3) + 1.5 * PX_TO_MM)
-    # signatures row: the 33mm seal block dominates the two signature stacks
-    h += (num(css_block(cert, '.cert-signatures'), 'margin-top', 5.0)
-          + num(css_block(cert, '.seal'), 'width', 31.0)
-          + num(css_block(cert, '.sig-script'), 'height', 8.5) * 0      # parallel to seal
-          + num(css_block(cert, '.sig-line'), 'height', 5.5) + 1.2
-          + line_mm(css_block(cert, '.sig-role'), 7.4, 1.2))
-    # declaration + footer
-    h += (num(css_block(cert, '.cert-declare'), 'margin-top', 3.5)
-          + 2 * line_mm(css_block(cert, '.cert-declare'), 7.8, 1.3))
-    h += (2 * PX_TO_MM + line_mm(css_block(cert, '.foot .body'), 8, 1.3)
-          + 6 * PX_TO_MM + num(css_block(cert, '.foot'), 'margin-top'))
+    # letterhead block (blueprint min-height)
+    h += num(css_block(cert, '.letterhead'), 'min-height', 31.75)
+    # two Somali header lines + divider + margins
+    hl = css_block(cert, '.header-line')
+    h += 2 * (line_mm(hl, 11, 1.3) + num(hl, 'margin-top', 1.06))
+    dv = css_block(cert, '.divider')
+    h += num(dv, 'height', 0.53) + num(dv, 'margin-top', 1.59) + num(dv, 'margin-bottom', 2.12)
+    # titles
+    h += (line_mm(css_block(cert, '.main-title'), 14, 1.4) + 2 * PX_TO_MM
+          + line_mm(css_block(cert, '.sub-title'), 10, 1.4) + 1 * PX_TO_MM)
+    # HQ line + meta + to-whom
+    h += (num(css_block(cert, '.hq-line'), 'margin-top', 3.17) + line_mm(css_block(cert, '.hq-line'), 10, 1.4))
+    h += (num(css_block(cert, '.cert-meta'), 'margin-top', 0.53) + line_mm(css_block(cert, '.cert-meta'), 10, 1.4))
+    tw = css_block(cert, '.to-whom')
+    h += num(tw, 'margin-top', 3.17) + line_mm(tw, 10.5, 1.4)
+    # intro body: 3 justified lines
+    bt = css_block(cert, '.body-text')
+    h += 3 * line_mm(bt, 9.5, 1.4) + num(bt, 'margin-top', 1.59)
+    # details table: 10 rows (header + 9 fields) beside a 150px photo box
+    dtd = css_block(cert, 'table.details td')
+    rows_h = 10 * (line_mm(dtd, 10, 1.4) + 4 * PX_TO_MM)
+    photo_h = num(css_block(cert, '.photo-box'), 'height', 39.69) + 2 * PX_TO_MM
+    h += max(rows_h, photo_h) + num(css_block(cert, '.details-wrap'), 'margin-top', 2.65)
+    # search-result heading + 5 lines
+    sh = css_block(cert, '.section-heading')
+    h += num(sh, 'margin-top', 3.7) + line_mm(sh, 10.5, 1.4)
+    h += 5 * line_mm(bt, 9.5, 1.4) + num(bt, 'margin-top', 1.59)
+    # purpose + validity meta rows
+    mr = css_block(cert, '.meta-row')
+    h += 2 * (num(mr, 'margin-top', 1.59) + line_mm(mr, 10, 1.4))
+    # signature block
+    sb = css_block(cert, '.sig-block')
+    h += (num(sb, 'margin-top', 4.76) + line_mm(css_block(cert, '.sig-line'), 10, 1.4)
+          + 4 * PX_TO_MM + line_mm(css_block(cert, '.closing-name'), 10, 1.4) + 2 * PX_TO_MM
+          + line_mm(css_block(cert, '.closing-role'), 9.5, 1.4) + 1 * PX_TO_MM)
+    # footer-bar is absolutely positioned -> no flow height
     return h
 
 

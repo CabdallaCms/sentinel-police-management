@@ -1,110 +1,95 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="so">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Good Conduct Certificate Application</title>
+<title>Codsiga Shahaadada Dambi-la'aanta</title>
+<!-- Source blueprint: {% load static %} — Django static tag resolved for this
+     stdlib server: {% static 'images/police_logo.png' %} -> images/police_logo.png.
+     All {{ application.* }} template expressions are bound client-side by the
+     script below (ids), without changing the blueprint HTML/CSS structure. -->
 <style>
-  /* Official Fingerprint Unit branding — Northeastern Police Force / CID.
-     Palette mirrors the official emblem: navy shield, gold ring, green banner. */
   :root{
-    --navy:#0f2855; --navy-2:#14346b; --gold:#c9a227; --green:#0e6b4a;
-    --orange:#b7650e; --green-bg:#ecfdf5; --orange-bg:#fff7e6; --border:#b8c5da;
-    --label-bg:#eef2fa; --text:#0b1a30; --muted:#4a5a78; --muted-2:#2c3e5c; --paper:#ffffff;
+    --navy:#0f2855;
+    --navy-2:#14346b;
+    --gold:#c9a227;
+    --green:#0e6b4a;
+    --orange:#b7650e;
+    --green-bg:#ecfdf5;
+    --orange-bg:#fff7e6;
+    --border:#b8c5da;
+    --label-bg:#eef2fa;
+    --text:#0b1a30;
+    --muted:#4a5a78;
+    --muted-2:#2c3e5c;
+    --paper:#ffffff;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#e9edf4;font-family:"Georgia","Times New Roman",Times,serif;color:var(--text);font-size:10pt;line-height:1.35}
-  /* A4 sheet. Print sizing is owned by @page below; on screen we preview the sheet. */
-  .page{width:210mm;min-height:297mm;margin:6mm auto;padding:9mm 10mm 7mm 10mm;background:var(--paper);position:relative;box-shadow:0 2px 16px rgba(15,40,85,.22)}
-
-  /* --- EXACT A4 PRINT RULES -------------------------------------------------
-     One page, A4 portrait, 8mm margins, colors printed exactly as rendered
-     (the navy/gold bars, chips, stamp and watermark must survive printing),
-     and every piece of web chrome (toolbar / buttons / badges / banners /
-     toasts) is removed from the paper. */
-  @media print{
-    @page{size:A4 portrait;margin:8mm}
-    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-    html,body{background:#fff;width:auto}
-    .page{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}
-    .toolbar,.lockbar,.toast,.btn,.badge{display:none!important}
-    tr,.stm,.sec,.grid,.foot,.meta,.chips{page-break-inside:avoid}
+  body{background:#fff;font-family:"Georgia","Times New Roman",Times,serif;color:var(--text);font-size:10pt;line-height:1.35}
+  .page{
+    width:210mm;min-height:297mm;margin:0 auto;padding:8mm 10mm 6mm 10mm;
+    background:#fff;position:relative;
   }
+  @media print{@page{size:A4;margin:0}.page{padding:6mm 8mm 4mm 8mm}}
 
-  /* --- official emblem: ONLY ever a centred, low-opacity watermark ----------
-     opacity sits in the spec band (0.08–0.12) and mix-blend-mode:multiply
-     guarantees the crest shows on white paper even if a future logo export
-     loses its alpha channel (white background melts into the sheet). ------- */
-  .watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:138mm;opacity:0.10;z-index:0;pointer-events:none;mix-blend-mode:multiply}
-  .watermark img{width:100%;height:auto;display:block}
+  .watermark{
+    position:absolute;
+    top:52%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    z-index:2;
+    opacity:0.08;
+    pointer-events:none;
+  }
+  .watermark img{width:150mm;height:auto}
   .content{position:relative;z-index:1}
 
-  /* --- masthead (text-only; the emblem is reserved for the watermark) ------- */
-  .masthead{text-align:center;border-bottom:3px double var(--navy);padding-bottom:4px}
-  .masthead .t1{font-family:Arial,sans-serif;font-size:12.5pt;font-weight:800;letter-spacing:1.5px;color:var(--navy)}
-  .masthead .t2{font-family:Arial,sans-serif;font-size:10pt;font-weight:700;letter-spacing:.4px;color:var(--green);margin-top:1px}
-  .masthead .t3{font-family:Arial,sans-serif;font-size:7.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-top:2px}
-  .title{text-align:center;font-size:15pt;font-weight:700;letter-spacing:.5px;color:var(--navy);margin:2.5mm 0 1.2mm 0}
+  .hdr{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:4px;margin-bottom:6px}
+  .hdr .t1{font-family:Arial,sans-serif;font-size:9pt;font-weight:700;letter-spacing:.2px;color:var(--navy)}
+  .hdr .t2{font-family:Arial,sans-serif;font-size:9.5pt;font-weight:700;color:var(--green);margin-top:1px;letter-spacing:.1px}
+  .title{text-align:center;font-size:16pt;font-weight:700;color:var(--navy);margin:6px 0 4px 0;letter-spacing:.4px;font-family:Georgia,"Times New Roman",serif}
 
-  /* --- top meta row: photo | instructions | serial + QR --------------------- */
-  .meta{display:flex;gap:6mm;align-items:stretch;margin:0 0 2mm 0}
-  .photo-cell{flex:none;width:40mm;text-align:center}
-  .photo{width:35mm;height:45mm;border:1.5px solid var(--navy);background:#fff;position:relative;overflow:hidden;margin:0 auto}
+  .photo-wrap{text-align:center;margin:2px 0 4px 0}
+  .photo-frame{display:inline-block}
+  .photo{width:28mm;height:36mm;border:1.5px solid var(--navy);background:#fff;position:relative;overflow:hidden}
   .photo img{width:100%;height:100%;object-fit:cover}
-  .photo .ph-lbl{position:absolute;inset:auto 0 3px 0;text-align:center;font-family:Arial,sans-serif;font-size:6pt;color:#7a8aa3;font-weight:700;line-height:1.25}
-  .photo-cap{font-family:Arial,sans-serif;font-size:6.5pt;color:var(--muted);font-style:italic;margin-top:0.8mm;white-space:nowrap}
-  .intro-cell{flex:1;min-width:0}
-  .intro{font-size:8.5pt;text-align:justify;color:var(--muted-2)}
-  .intro-note{margin-top:2mm;font-family:Arial,sans-serif;font-size:7.5pt;color:var(--muted);border-top:1px solid var(--border);padding-top:1.5mm}
-  .qr-cell{flex:none;width:34mm;text-align:center;font-family:Arial,sans-serif}
-  .qr{width:23mm;height:23mm;margin:0 auto;border:1px solid var(--border);padding:1mm;background:#fff}
-  .qr svg{width:100%;height:100%;display:block}
-  .qr-cap{font-size:6pt;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:0.8mm}
-  .serial-lab{font-size:6.5pt;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:1mm}
-  .serial-val{font-size:9.5pt;font-weight:800;color:var(--navy);letter-spacing:.5px}
-  .serial-date{font-size:7.5pt;font-weight:700;color:var(--muted-2)}
+  .photo .ph-lbl{position:absolute;inset:auto 0 3px 0;text-align:center;font-family:Arial,sans-serif;font-size:6pt;color:#7a8aa3;letter-spacing:.3px;line-height:1.2;font-weight:700}
+  .photo-cap{font-family:Arial,sans-serif;font-size:7pt;color:var(--muted);font-style:italic;margin-top:1px}
 
-  /* --- section bars + ruled grids ------------------------------------------ */
-  .sec{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;font-family:Arial,sans-serif;font-weight:700;font-size:9pt;padding:2.5px 10px;margin-top:1.6mm;position:relative;padding-left:16px;line-height:1.2}
-  .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:9px;background:var(--gold)}
-  .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:8.5pt;line-height:1.25}
-  .grid td{border:1px solid var(--border);padding:1.5px 6px;vertical-align:baseline;white-space:nowrap;overflow:hidden}
-  /* Official pre-printed form style: bold label followed by the officer's
-     entry on the same ruled line — every registration field maps 1:1. */
-  .k{display:inline-block;font-weight:700;color:var(--text);font-size:7.5pt;letter-spacing:.2px;line-height:1.35}
-  .v{font-weight:600;font-size:9pt;color:var(--navy)}
-  .v.plain{color:var(--text)}
-  .v.max{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .intro{font-size:9pt;text-align:justify;color:var(--muted-2);margin:2px 0 6px 0}
 
-  /* --- purpose selector chips ---------------------------------------------- */
-  .purpose-box{border:1px solid var(--border);background:#fff;padding:1.8mm 3mm;font-family:Arial,sans-serif}
-  .chips{display:flex;flex-wrap:wrap;gap:1.8mm}
-  .chip{font-size:8pt;font-weight:700;border:1.4px solid var(--border);border-radius:99px;padding:1.5px 9px;color:var(--muted-2);background:#f7f9fd;letter-spacing:.2px;line-height:1.3}
-  .chip.active{background:var(--navy);border-color:var(--navy);color:#fff}
-  .chip.active::before{content:"\2713 ";color:var(--gold)}
-  .purpose-line{margin-top:1.4mm;padding-top:1mm;border-top:1px dashed var(--border);font-size:8pt;color:var(--muted);line-height:1.3}
-  .purpose-line b{color:var(--navy);font-size:9pt}
-  .doc-row{margin-top:1.2mm;padding-top:1mm;border-top:1px dotted var(--border);font-size:8pt;line-height:1.35}
+  .sec{
+    background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;
+    font-family:Arial,sans-serif;font-weight:700;font-size:9.5pt;padding:4px 10px;
+    margin-top:4px;position:relative;padding-left:16px;letter-spacing:.1px;
+  }
+  .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:10px;background:var(--gold)}
+  .sec .sub{font-weight:400;font-style:italic;font-size:9pt;color:#dbe5f4;margin-left:4px}
 
-  /* --- declarations & signatures -------------------------------------------- */
-  .stm{padding:2mm 3mm 2mm 4mm;font-size:8.5pt;margin-top:1.5mm;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid}
+  .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:9pt}
+  .grid td{border:1px solid var(--border);padding:3px 6px;vertical-align:top}
+  .lab{font-weight:700;color:var(--text)}
+  .line{display:block;border-bottom:1px solid var(--muted-2);height:12px;margin-top:4px}
+  .w50{width:50%}
+  .inline-lab b{font-weight:700}
+  .stm{padding:4px 10px 4px 12px;font-size:9pt;margin-top:2px;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid}
   .stm.green{background:var(--green-bg);border-color:var(--green);border-left-color:var(--green)}
   .stm.orange{background:var(--orange-bg);border-color:var(--orange);border-left-color:var(--orange)}
-  .stm .t{font-style:italic;font-weight:700;font-size:8.5pt}
-  .stm .body{font-style:italic;color:var(--muted-2);font-size:7.8pt;line-height:1.25}
-  .sig{margin-top:1.4mm;font-size:8pt;line-height:1.3}
+  .stm .t{font-style:italic;font-weight:700;font-size:9pt}
+  .stm .body{font-style:italic;color:var(--muted-2);font-size:8.5pt}
+  .sig{margin-top:4px;font-size:8.5pt}
   .sig b{font-weight:700}
-  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:8px;margin:0 2px;vertical-align:bottom}
-  .sig .sl.sh{width:26mm}
+  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:10px;margin:0 2px;vertical-align:bottom}
+  .sig .sl.sh{width:28mm}
 
-  /* --- official footer ------------------------------------------------------- */
-  .foot{margin-top:2mm;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
+  .foot{margin-top:8px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
   .foot .stripe{height:2px;background:linear-gradient(to right,var(--navy) 0%,var(--gold) 50%,var(--green) 100%)}
-  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:3px 10px;text-align:center;font-size:8pt;font-weight:700;white-space:nowrap}
-  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:7.5pt;margin:0 6px}
-  .foot .phone{color:#ffd96b;font-weight:700}
+  .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:4px 10px;text-align:center;font-size:8.5pt;font-weight:700;letter-spacing:.1px}
+  .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:8pt;margin:0 6px}
+  .foot .phone{color:#ffd96b;font-weight:700;letter-spacing:.2px}
 
-  /* ---- screen-only chrome: never printed, keeps the A4 sheet clean ---- */
+  /* ---- ADDED for the client-side JS workflow (screen-only chrome).
+     Not part of the printable sheet: hidden when printing, colors exact. ---- */
   .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);background:#fafcff;font-family:Arial,sans-serif}
   .btn{border:0;border-radius:8px;padding:9px 15px;font-weight:700;font-size:13px;cursor:pointer;color:#fff;background:var(--navy);text-decoration:none;display:inline-block}
   .btn.ghost{background:#eef1f6;color:#33415c}.btn.green{background:var(--green)}
@@ -115,6 +100,10 @@
   .lockbar.on{display:block}
   .lockbar.err{background:#fdecee;border-color:#f3c3c8;color:#8a2230}
   .toast{position:fixed;right:24px;bottom:24px;background:#132642;color:#fff;padding:13px 17px;border-radius:10px;display:none;font-size:13px;font-family:Arial,sans-serif;max-width:420px;z-index:50}
+  @media print{
+    .toolbar,.lockbar,.toast{display:none!important}
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  }
 </style>
 </head>
 <body>
@@ -130,92 +119,81 @@
 <div class="lockbar" id="lockbar"></div>
 
 <div class="page">
-  <!-- Official emblem — the ONLY logo occurrence on this document:
-       a centred, low-opacity watermark behind the body content. -->
-  <div class="watermark"><img src="images/police_logo.png" alt="Police Watermark"></div>
+  <div class="watermark">
+    <img src="images/police_logo.png" alt="">
+  </div>
+
   <div class="content">
 
-  <div class="masthead">
-    <div class="t1">NORTHEASTERN POLICE FORCE</div>
-    <div class="t2">CRIMINAL INVESTIGATION DIRECTORATE (CID)</div>
-    <div class="t3">Fingerprint &amp; Verification Unit &nbsp;&bull;&nbsp; North East State of Somalia &nbsp;&bull;&nbsp; PCC-2026-DIGITAL-01</div>
+  <div class="hdr">
+    <div class="t1">NORTHEASTERN POLICE FORCE • CRIMINAL INVESTIGATION DIRECTORATE (2026)</div>
+    <div class="t2">Hoggaanka Baarista Dambiyada (CID)  |  Code: PCC-2026-DIGITAL-01</div>
   </div>
-  <h1 class="title">GOOD CONDUCT CERTIFICATE APPLICATION</h1>
 
-  <div class="meta">
-    <div class="photo-cell">
+  <h1 class="title">CODSIGA SHAHAADADA DAMBI-LA'AANTA</h1>
+
+  <div class="photo-wrap">
+    <div class="photo-frame">
       <div class="photo" id="photoContainer">
-        <div class="ph-lbl">APPLICANT
-PHOTO<br><span style="font-weight:400">35&times;45 mm</span></div>
+        <div class="ph-lbl">PASSPORT
+PHOTO
+<span style="font-weight:400">35×45 mm</span></div>
       </div>
-      <div class="photo-cap">Passport photo (35 &times; 45 mm)</div>
     </div>
-    <div class="intro-cell">
-      <p class="intro">This form digitally initiates the security background check procedure. Please carefully complete your national identification (NIRA/ID) or passport details. All particulars must match the applicant&rsquo;s official legal documents; false declarations are prosecuted under the Security Procedures Act.</p>
-      <div class="intro-note"><b>OFFICE USE ONLY:</b> this application enters a mandatory 12-hour review period before approval. The clearance certificate is issued separately after vetting by the Fingerprint &amp; Verification Unit.</div>
-    </div>
-    <div class="qr-cell">
-      <div class="qr" id="qrBox" title="Verification QR placeholder — encodes the application serial"><svg class="qr-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><path d="M0 0h7v1h-7zM9 0h1v1h-1zM14 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h1v1h-1zM10 1h2v1h-2zM14 1h1v1h-1zM20 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM8 2h1v1h-1zM10 2h2v1h-2zM14 2h1v1h-1zM16 2h3v1h-3zM20 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h1v1h-1zM10 3h1v1h-1zM14 3h1v1h-1zM16 3h3v1h-3zM20 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM11 4h2v1h-2zM14 4h1v1h-1zM16 4h3v1h-3zM20 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM11 5h1v1h-1zM14 5h1v1h-1zM20 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h3v1h-3zM14 6h7v1h-7zM9 7h1v1h-1zM11 7h2v1h-2zM1 8h1v1h-1zM4 8h3v1h-3zM20 8h1v1h-1zM0 9h2v1h-2zM4 9h1v1h-1zM7 9h1v1h-1zM9 9h1v1h-1zM14 9h2v1h-2zM0 10h2v1h-2zM5 10h2v1h-2zM9 10h1v1h-1zM13 10h1v1h-1zM16 10h2v1h-2zM19 10h1v1h-1zM0 11h1v1h-1zM2 11h1v1h-1zM5 11h1v1h-1zM7 11h1v1h-1zM11 11h1v1h-1zM18 11h3v1h-3zM1 12h1v1h-1zM4 12h4v1h-4zM9 12h1v1h-1zM11 12h2v1h-2zM17 12h2v1h-2zM20 12h1v1h-1zM12 13h3v1h-3zM19 13h2v1h-2zM0 14h7v1h-7zM10 14h1v1h-1zM13 14h2v1h-2zM17 14h4v1h-4zM0 15h1v1h-1zM6 15h1v1h-1zM8 15h1v1h-1zM10 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM18 15h1v1h-1zM0 16h1v1h-1zM2 16h3v1h-3zM6 16h1v1h-1zM8 16h1v1h-1zM12 16h1v1h-1zM19 16h1v1h-1zM0 17h1v1h-1zM2 17h3v1h-3zM6 17h1v1h-1zM9 17h1v1h-1zM12 17h1v1h-1zM15 17h1v1h-1zM19 17h2v1h-2zM0 18h1v1h-1zM2 18h3v1h-3zM6 18h1v1h-1zM8 18h6v1h-6zM16 18h2v1h-2zM0 19h1v1h-1zM6 19h1v1h-1zM12 19h3v1h-3zM16 19h1v1h-1zM19 19h2v1h-2zM0 20h7v1h-7zM8 20h1v1h-1zM12 20h3v1h-3zM16 20h2v1h-2zM19 20h2v1h-2z" fill="#122642"/></svg></div>
-      <div class="qr-cap">Scan to verify</div>
-      <div class="serial-lab">Serial No.</div>
-      <div class="serial-val" id="appSerial">&mdash;</div>
-      <div class="serial-lab">Submitted</div>
-      <div class="serial-date" id="appSubmitted">&mdash;</div>
-    </div>
+    <div class="photo-cap">Ku dhaji sawirka cabbirka baasaboorka (35mm × 45mm)</div>
   </div>
 
-  <div class="sec">SECTION 01 &nbsp;|&nbsp; APPLICANT IDENTIFICATION DETAILS</div>
+  <p class="intro">Foomkan waxa uu si dijitaal ah u bilaabayaa habraaca hubinta taariikhda amniga. Si taxaddar leh u buuxi xogaha aqoonsigaaga qaranka (NIRA/ID) ama Baasaboorka.</p>
+
+  <div class="sec">QAYBTA 01  |  XOGTA AQOONSIGA CODSAHA</div>
   <table class="grid">
-    <tr><td colspan="2"><span class="k">FULL LEGAL NAME (FIRST &bull; SECOND &bull; THIRD &bull; FOURTH):</span> <span class="v max" id="appFullName">-</span></td></tr>
-    <tr><td colspan="2"><span class="k">MOTHER'S FULL NAME:</span> <span class="v plain max" id="appMotherName">-</span></td></tr>
-    <tr><td><span class="k">NATIONAL ID No. (NIRA):</span> <span class="v plain" id="appNationalId">-</span></td>
-        <td><span class="k">PASSPORT No. (IF ANY):</span> <span class="v plain" id="appPassport">-</span></td></tr>
-    <tr><td><span class="k">DATE OF BIRTH (DD/MM/YYYY):</span> <span class="v plain" id="appDob">-</span></td>
-        <td><span class="k">PLACE OF BIRTH:</span> <span class="v plain" id="appPob">-</span></td></tr>
-    <tr><td><span class="k">GENDER (MALE / FEMALE):</span> <span class="v plain" id="appGender">-</span></td>
-        <td><span class="k">OCCUPATION:</span> <span class="v plain" id="appOccupation">-</span></td></tr>
-    <tr><td><span class="k">PHONE NUMBER:</span> <span class="v plain" id="appPhone">-</span></td>
-        <td><span class="k">EMAIL:</span> <span class="v plain" id="appEmail">-</span></td></tr>
-    <tr><td colspan="2"><span class="k">CURRENT RESIDENTIAL ADDRESS:</span> <span class="v plain max" id="appAddress">-</span></td></tr>
+    <tr><td colspan="2"><span class="lab">MAGACA SHARCIGA AH OO BUUXA (FULL LEGAL NAME):</span><div style="font-weight:600;font-size:10pt;color:var(--navy);margin-top:2px;" id="appFullName">-</div></td></tr>
+    <tr><td colspan="2"><span class="lab">MAGACA HOOYADA OO BUUXA (MOTHER'S FULL NAME):</span><div style="font-weight:600;margin-top:2px;" id="appMotherName">-</div></td></tr>
+    <tr><td><span class="lab">LAMBARKA AQOONSIGA QARANKA (NIRA):</span><div style="font-weight:600;margin-top:2px;" id="appNationalId">-</div></td>
+        <td><span class="lab">LAMBARKA BAASABOORKA (HADDII UU JIRO):</span><div style="font-weight:600;margin-top:2px;" id="appPassport">-</div></td></tr>
+    <tr><td><span class="lab">TAARIIKHDA DHALASHADA (DD/MM/YYYY):</span><div style="font-weight:600;margin-top:2px;" id="appDob">-</div></td>
+        <td><span class="lab">GOOBTA DHALASHADA:</span><div style="font-weight:600;margin-top:2px;" id="appPob">-</div></td></tr>
+    <tr><td><span class="lab">JINSI (LAB / DHEDDIG):</span><div style="font-weight:600;margin-top:2px;" id="appGender">-</div></td>
+        <td><span class="lab">LAMBARKA TELEFOONKA | EMAIL:</span><div style="font-weight:600;margin-top:2px;"><span id="appPhone">-</span> | <span id="appEmail">-</span></div></td></tr>
+    <tr><td colspan="2"><span class="lab">CINWAANKA DEGAANAANSHAHA EE HADDA:</span><div style="font-weight:600;margin-top:2px;" id="appAddress">-</div></td></tr>
   </table>
 
-  <div class="sec">SECTION 02 &nbsp;|&nbsp; PURPOSE OF APPLICATION &amp; SUPPORTING DOCUMENTS</div>
-  <div class="purpose-box">
-    <div class="chips" id="purposeChips"></div>
-    <div class="purpose-line">RECORDED PURPOSE OF APPLICATION: <b id="appPurpose">Employment</b></div>
-    <div class="doc-row"><span class="k">SUPPORTING DOCUMENT NOTES:</span> <span class="v plain max" id="appNotes">-</span></div>
-    <div class="doc-row"><span class="k">APPLICANT ATTACHMENTS:</span> <span class="v plain max" id="appAppDocs">-</span></div>
-    <div class="doc-row"><span class="k">GUARDIAN ATTACHMENTS:</span> <span class="v plain max" id="appGuardDocs">-</span></div>
+  <div class="sec">QAYBTA 02  |  UJEEDDADA CODSIGA</div>
+  <div style="border:1px solid var(--border);background:#fff;padding:4px 10px;font-family:Arial,sans-serif;font-size:10pt;">
+    <strong>Ujeeddada la doonayo:</strong>
+    <span style="font-weight:700;color:var(--navy);" id="appPurpose">Employment Verification</span>
   </div>
 
-  <div class="sec">SECTION 03 &nbsp;|&nbsp; GUARDIAN / GUARANTOR DETAILS</div>
+  <div class="sec">QAYBTA 03  |  DAMMIINKA (GUARANTOR)</div>
   <table class="grid">
-    <tr><td><span class="k">GUARANTOR FULL NAME:</span> <span class="v plain" id="guarantorName">-</span></td>
-        <td><span class="k">NATIONAL ID (NIRA):</span> <span class="v plain" id="guarantorId">-</span></td></tr>
-    <tr><td><span class="k">RELATIONSHIP TO APPLICANT:</span> <span class="v plain" id="guarantorRel">-</span></td>
-        <td><span class="k">CONTACT PHONE:</span> <span class="v plain" id="guarantorPhone">-</span></td></tr>
-    <tr><td><span class="k">CURRENT RESIDENTIAL ADDRESS:</span> <span class="v plain" id="guarantorAddr">-</span></td>
-        <td><span class="k">OCCUPATION:</span> <span class="v plain" id="guarantorOcc">-</span></td></tr>
+    <tr><td class="inline-lab"><b>MAGACA BUUXA OO DAMMIINKA:</b><div style="font-weight:600;margin-top:2px;" id="guarantorName">-</div></td>
+        <td class="inline-lab"><b>LAMBARKA AQOONSIGA (NIRA):</b><div style="font-weight:600;margin-top:2px;" id="guarantorId">-</div></td></tr>
+    <tr><td class="inline-lab"><b>XIRIIRKA CODSAHA:</b><div style="font-weight:600;margin-top:2px;" id="guarantorRel">-</div></td>
+        <td class="inline-lab"><b>TELEFOONKA EE LAGA HELAYO:</b><div style="font-weight:600;margin-top:2px;" id="guarantorPhone">-</div></td></tr>
+    <tr><td><span class="lab">CINWAANKA DEGAANAANSHAHA EE HADDA:</span><div style="font-weight:600;margin-top:2px;" id="guarantorAddr">-</div></td>
+        <td><span class="lab">SHAQADA:</span><div style="font-weight:600;margin-top:2px;" id="guarantorOcc">-</div></td></tr>
   </table>
 
-  <div class="sec">SECTION 04 &nbsp;|&nbsp; CONSENT &amp; SIGNATURES</div>
+  <div class="sec">QAYBTA 04  |  OGOLAANSHAHA &amp; SAXIIX</div>
+
   <div class="stm green">
-    <span class="t">GUARANTOR CONSENT &amp; DECLARATION:</span>
-    <span class="body"> "I hereby verify and act as GUARANTOR for the identity and information of the applicant listed above. I confirm that this data is accurate, and I assume full responsibility for any discrepancies."</span>
-    <div class="sig"><b>GUARANTOR SIGNATURE:</b><span class="sl"></span><b>DATE:</b><span class="sl sh"></span></div>
+    <span class="t">OGOLAANSHAHA &amp; SAXIIXA DAMMIINKA:</span>
+    <span class="body"> "Waxaan halkan ka xaqiijinayaa oo aan DAMMIIN ka ahay aqoonsiga iyo Warbixinta codsaha ee kor kuxusan, waxaan qirayaa in xogtaasi ay tahay mid sax ah, wixii ka khaldamana aan masuul ka ahay"</span>
+    <div class="sig"><b>SAXIIXA DAMMIINKA:</b><span class="sl"></span><b>TAARIIKHDA:</b><span class="sl sh"></span></div>
   </div>
+
   <div class="stm orange">
-    <span class="t">APPLICANT CONSENT &amp; DECLARATION:</span>
-    <span class="body"> I declare that the information provided above is accurate and matches my official legal documents. I grant permission to the Police Force to store my biometric data and screen it against security and criminal database records.</span>
-    <div class="sig"><b>APPLICANT SIGNATURE:</b><span class="sl"></span><b>DATE:</b><span class="sl sh"></span></div>
+    <span class="t">OGOLAANSHAHA &amp; SAXIIXA CODSAHA:</span>
+    <span class="body"> Waxaan caddaynayaa in xogta aan kor ku bixiyay ay tahay sax, ayna la mid tahay dokumentiyadayda sharciga ah. Waxaan oggolaansho u siinayaa Boolisku in ay kaydiyaan xogtayda bayoomatariga ah ayna ka baaraan diiwaanada Danbiyad ee hay'adaha Amniga .</span>
+    <div class="sig"><b>SAXIIXA CODSAHA:</b><span class="sl"></span><b>TAARIIKHDA:</b><span class="sl sh"></span></div>
   </div>
 
   <div class="foot">
     <div class="stripe"></div>
     <div class="body">
-      Criminal Investigation Directorate - North East State of Somalia
-      <span class="pill">Fingerprint &amp; Verification Unit</span>
-      <span class="phone">&#9742; +252-2754131</span>
+      Hoggaanka Baadhista Dembiyada Ee DG.Waqooyi Bari Soomaaliya
+      <span class="pill">Waaxda Faraha Iyo Hubinta</span>
+      <span class="phone">☎ +252-2754131</span>
     </div>
   </div>
 
@@ -240,18 +218,6 @@ function fill(fieldId,value){
   if(!el) return;
   el.textContent=(value!==null&&value!==undefined&&String(value).trim()!=='')?String(value):'-';
 }
-// Attachment lists are stored as JSON ([{path,name},...]) — render the
-// original file names the officer uploaded during registration.
-function docNames(v){
-  let list=null;
-  try{ list=(typeof v==='string')?JSON.parse(v):v; }catch(_){ list=null; }
-  if(Array.isArray(list)&&list.length){
-    const names=list.map(x=>(x&&(x.name||x.path))||'').filter(Boolean);
-    if(names.length) return names.join(', ');
-  }
-  const raw=(v===null||v===undefined)?'':String(v).trim();
-  return (raw&&raw!=='[]'&&raw!=='null')?raw:'';
-}
 // 'YYYY-MM-DD' (SQLite / ISO) -> 'DD/MM/YYYY'
 function dmy(v){
   if(!v) return '-';
@@ -267,20 +233,6 @@ function lockbar(html,isError){
   const el=document.getElementById('lockbar');
   el.innerHTML=html||'';
   el.className='lockbar'+(html?' on':'')+(isError?' err':'');
-}
-
-// ---- purpose selector chips ----------------------------------------------
-// Mirrors the server-side CLEARANCE_REASONS whitelist; the value recorded on
-// the application is highlighted, and any legacy value is appended so it can
-// never disappear from the printed form.
-const PURPOSE_CHIPS=['Education','Travel','Employment','Citizenship','Licence'];
-function renderPurposeChips(value){
-  const wrap=document.getElementById('purposeChips');
-  if(!wrap) return;
-  const val=(value===null||value===undefined)?'':String(value).trim();
-  const list=PURPOSE_CHIPS.slice();
-  if(val&&!list.some(p=>p.toLowerCase()===val.toLowerCase())) list.push(val);
-  wrap.innerHTML=list.map(p=>'<span class="chip'+(val&&p.toLowerCase()===val.toLowerCase()?' active':'')+'">'+esc(p)+'</span>').join('');
 }
 
 // ---- mandatory 12-hour review lock ---------------------------------------
@@ -358,7 +310,7 @@ function render(a){
     lockbar('');
   }
 
-  // ---- Section 01 — applicant identification (4-part legal name) ----
+  // ---- QAYBTA 01 — applicant identification ----
   const nameParts=[a.first_name,a.second_name,a.third_name,a.fourth_name]
     .filter(x=>x&&String(x).trim());
   fill('appFullName',(a.full_name&&String(a.full_name).trim())||nameParts.join(' '));
@@ -371,25 +323,17 @@ function render(a){
   fill('appPhone',a.phone);
   fill('appEmail',a.email);
   fill('appAddress',a.residence||a.current_address);
-  fill('appOccupation',a.occupation);
-  // ---- Section 02 — purpose chips, notes and attachment checklists ----
-  renderPurposeChips(a.purpose);
-  fill('appPurpose',a.purpose||'Employment');
-  fill('appNotes',a.notes);
-  fill('appAppDocs',docNames(a.applicant_docs));
-  fill('appGuardDocs',docNames(a.guardian_docs));
-  // ---- Section 03 — guardian / guarantor ----
+  // ---- QAYBTA 02 — purpose ----
+  fill('appPurpose',a.purpose||'Employment Verification');
+  // ---- QAYBTA 03 — guardian / guarantor ----
   fill('guarantorName',a.guardian_name);
   fill('guarantorId',a.guardian_id);
   fill('guarantorRel',a.guardian_relationship);
   fill('guarantorPhone',a.guardian_phone);
   fill('guarantorAddr',a.guardian_address);
   fill('guarantorOcc',a.guardian_occupation);
-  // ---- serial number / QR code placeholders ----
-  fill('appSerial',a.application_id||id);
-  fill('appSubmitted',dmy(a.created_at));
 
-  // ---- applicant photograph (35×45 mm box) ----
+  // ---- applicant photograph ----
   const photo=a.applicant_photo||a.photo_path;
   if(photo){
     const box=document.getElementById('photoContainer');
