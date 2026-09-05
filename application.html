@@ -66,35 +66,35 @@
 
   .sec{
     background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;
-    font-family:Arial,sans-serif;font-weight:700;font-size:9pt;padding:3px 10px;
-    margin-top:3px;position:relative;padding-left:16px;letter-spacing:.1px;
+    font-family:Arial,sans-serif;font-weight:700;font-size:9pt;padding:4px 10px;
+    margin-top:10px;margin-bottom:4px;position:relative;padding-left:16px;letter-spacing:.1px;
   }
   .sec::before{content:"";position:absolute;left:4px;top:50%;transform:translateY(-50%);width:8px;height:10px;background:var(--gold)}
   .sec .sub{font-weight:400;font-style:italic;font-size:9pt;color:#dbe5f4;margin-left:4px}
 
   .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:8.5pt}
   .grid td{border:1px solid var(--border);padding:2px 6px;vertical-align:top}
-  /* Executive layout for QAYBTA 01: strict side-by-side 2-column grid —
+  /* Executive layout shared by QAYBTA 01/02/03: strict side-by-side pairs —
      tinted label cells (25%) with uppercase titles, equal-width entry
-     cells (25%) beside them, uniform padding and clean ruled borders. */
-  .grid.exec td{padding:3px 8px;vertical-align:middle}
+     cells (25%), generous uniform padding and clean ruled borders. */
+  .grid.exec td{padding:6px 10px;vertical-align:middle}
   .grid.exec td.lab-cell{background:var(--label-bg);width:25%;font-weight:700;font-size:7.5pt;letter-spacing:.3px;color:var(--muted-2);text-transform:uppercase;text-align:left;line-height:1.25}
   .grid.exec td.entry{font-weight:600;font-size:9.5pt;color:var(--navy);text-align:left;background:#fff;width:25%}
   .lab{font-weight:700;color:var(--text)}
   .line{display:block;border-bottom:1px solid var(--muted-2);height:12px;margin-top:4px}
   .w50{width:50%}
   .inline-lab b{font-weight:700}
-  .stm{padding:3px 10px 3px 12px;font-size:9pt;margin-top:2px;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid}
+  .stm{padding:5px 10px 5px 12px;font-size:9pt;margin-top:3px;font-family:Arial,sans-serif;border:1px solid;border-left:4px solid;line-height:1.45}
   .stm.green{background:var(--green-bg);border-color:var(--green);border-left-color:var(--green)}
   .stm.orange{background:var(--orange-bg);border-color:var(--orange);border-left-color:var(--orange)}
   .stm .t{font-style:italic;font-weight:700;font-size:9pt}
-  .stm .body{font-style:italic;color:var(--muted-2);font-size:8pt}
-  .sig{margin-top:3px;font-size:8.5pt}
+  .stm .body{font-style:italic;color:var(--muted-2);font-size:8pt;line-height:1.45}
+  .sig{margin-top:6px;font-size:8.5pt;line-height:1.4}
   .sig b{font-weight:700}
-  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:9px;margin:0 2px;vertical-align:bottom}
+  .sig .sl{display:inline-block;border-bottom:1px solid var(--text);width:40mm;height:11px;margin:0 2px;vertical-align:bottom}
   .sig .sl.sh{width:28mm}
 
-  .foot{margin-top:5px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
+  .foot{margin-top:6px;border-radius:3px;overflow:hidden;font-family:Arial,sans-serif}
   .foot .stripe{height:2px;background:linear-gradient(to right,var(--navy) 0%,var(--gold) 50%,var(--green) 100%)}
   .foot .body{background:linear-gradient(to right,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:4px 10px;text-align:center;font-size:8.5pt;font-weight:700;letter-spacing:.1px}
   .foot .pill{display:inline-block;background:var(--gold);color:var(--navy);font-weight:700;padding:1px 8px;border-radius:8px;font-size:8pt;margin:0 6px}
@@ -173,19 +173,18 @@ PHOTO
   </table>
 
   <div class="sec">QAYBTA 02  |  UJEEDDADA CODSIGA</div>
-  <div style="border:1px solid var(--border);background:#fff;padding:4px 10px;font-family:Arial,sans-serif;font-size:10pt;">
-    <strong>Ujeeddada la doonayo:</strong>
-    <span style="font-weight:700;color:var(--navy);" id="appPurpose">Employment Verification</span>
-  </div>
+  <table class="grid exec">
+    <tr><td class="lab-cell">Ujeeddada la doonayo (Purpose of Application)</td><td class="entry" colspan="3" id="appPurpose">Employment Verification</td></tr>
+  </table>
 
   <div class="sec">QAYBTA 03  |  DAMMIINKA (GUARANTOR)</div>
-  <table class="grid">
-    <tr><td class="inline-lab"><b>MAGACA BUUXA OO DAMMIINKA:</b><div style="font-weight:600;margin-top:2px;" id="guarantorName">-</div></td>
-        <td class="inline-lab"><b>LAMBARKA AQOONSIGA (NIRA):</b><div style="font-weight:600;margin-top:2px;" id="guarantorId">-</div></td></tr>
-    <tr><td class="inline-lab"><b>XIRIIRKA CODSAHA:</b><div style="font-weight:600;margin-top:2px;" id="guarantorRel">-</div></td>
-        <td class="inline-lab"><b>TELEFOONKA EE LAGA HELAYO:</b><div style="font-weight:600;margin-top:2px;" id="guarantorPhone">-</div></td></tr>
-    <tr><td><span class="lab">CINWAANKA DEGAANAANSHAHA EE HADDA:</span><div style="font-weight:600;margin-top:2px;" id="guarantorAddr">-</div></td>
-        <td><span class="lab">SHAQADA:</span><div style="font-weight:600;margin-top:2px;" id="guarantorOcc">-</div></td></tr>
+  <table class="grid exec">
+    <tr><td class="lab-cell">Magaca Buuxa oo Dambiinka (Guarantor Full Name)</td><td class="entry" id="guarantorName">-</td>
+        <td class="lab-cell">Lambarka Aqoonsiga (NIRA)</td><td class="entry" id="guarantorId">-</td></tr>
+    <tr><td class="lab-cell">Xiriirka Codsaha (Relationship)</td><td class="entry" id="guarantorRel">-</td>
+        <td class="lab-cell">Telefoonka ee Laga Helayo (Contact Phone)</td><td class="entry" id="guarantorPhone">-</td></tr>
+    <tr><td class="lab-cell">Cinwaanka Degaanaanshaha ee Hadda (Current Address)</td><td class="entry" id="guarantorAddr">-</td>
+        <td class="lab-cell">Shaqada (Occupation)</td><td class="entry" id="guarantorOcc">-</td></tr>
   </table>
 
   <div class="sec">QAYBTA 04  |  OGOLAANSHAHA &amp; SAXIIX</div>

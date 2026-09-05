@@ -202,6 +202,22 @@ check('certificate.html: signature line enlarged (11.5pt + wider spacing)',
 check('application.html: QAYBTA 01 labels sit in dedicated tinted cells (25%)',
       'width:25%' in css_block(app, '.grid.exec td.lab-cell').replace(' ', '')
       and 'background:var(--label-bg)' in css_block(app, '.grid.exec td.lab-cell').replace(' ', ''))
+check('application.html: QAYBTA 02 uses the executive key-value row',
+      '<td class="lab-cell">Ujeeddada la doonayo' in app and 'id="appPurpose"' in app
+      and 'purpose-box' not in app.split('</head>')[1])
+check('application.html: QAYBTA 03 balanced pairs (Name+ID, Relationship+Phone, Address+Occupation)',
+      all(m in app for m in [
+          '<td class="lab-cell">Magaca Buuxa oo Dambiinka', '<td class="lab-cell">Lambarka Aqoonsiga (NIRA)',
+          '<td class="lab-cell">Xiriirka Codsaha', '<td class="lab-cell">Telefoonka ee Laga Helayo',
+          '<td class="lab-cell">Cinwaanka Degaanaanshaha ee Hadda (Current Address)',
+          '<td class="lab-cell">Shaqada (Occupation)']))
+check('application.html: generous exec cell padding (6px 10px) + section margins (10px/4px)',
+      'padding:6px10px' in css_block(app, '.grid.exec td').replace(' ', '')
+      and 'margin-top:10px' in css_block(app, '.sec').replace(' ', '')
+      and 'margin-bottom:4px' in css_block(app, '.sec').replace(' ', ''))
+check('application.html: QAYBTA 04 declarations airier (line-height 1.45, 11px signature lines)',
+      'line-height:1.45' in css_block(app, '.stm .body').replace(' ', '')
+      and abs(num(css_block(app, '.sig .sl'), 'height', 0) - 11 * PX_TO_MM) < 0.01)
 check('application.html: Full Legal Name and Mother\'s Full Name share one row',
       bool(re.search(r'id="appFullName">- </td>\s*(?:\n.*)?<td class="lab-cell">Magaca Hooyada', app))
       or ('id="appFullName"' in app.split('id="appMotherName"')[0].rsplit('<tr', 1)[-1]
@@ -318,31 +334,27 @@ def budget_application():
           + 1 * PX_TO_MM + 2 * PX_TO_MM + 3 * PX_TO_MM)
     # intro: 2 justified lines + margins
     h += 2 * line_mm(css_block(app, '.intro'), 8.5, 1.3) + 2 * PX_TO_MM + 4 * PX_TO_MM
-    # four section bars (3px vertical padding each)
+    # four section bars (4px vertical padding, 10px top / 4px bottom margins)
     sec = css_block(app, '.sec')
-    h += 4 * (line_mm(sec, 9, 1.3) + 6 * PX_TO_MM + num(sec, 'margin-top', 0.79))
-    # QAYBTA 01 executive grid: strict side-by-side pairs — row height is the
-    # taller of the 7.5pt (possibly 2-line) label and the 9.5pt entry
+    h += 4 * (line_mm(sec, 9, 1.3) + 2 * num(sec, 'padding-top', 1.06)
+              + num(sec, 'margin-top', 2.65) + num(sec, 'margin-bottom', 1.06))
+    # Executive grid QAYBTA 01/02/03: strict side-by-side pairs. With the
+    # uppercase small-caps labels (~26 chars/line at 25% width) 8 of the 10
+    # pair rows carry a 2-line label; 2 rows are single-line.
     exec_lab, exec_td = css_block(app, '.grid.exec td.lab-cell'), css_block(app, '.grid.exec td')
-    exec_row = max(line_mm(exec_lab, 7.5, 1.35), line_mm(css_block(app, '.grid.exec td.entry'), 9.5, 1.3)) \
-        + 2 * num(exec_td, 'padding-top', 1.06) + 1 * PX_TO_MM
-    h += (7 * exec_row                                  # 6 pair rows + address row
-          + 2 * line_mm(exec_lab, 7.5, 1.35)            # 2 label wrap allowances
-          + line_mm(css_block(app, '.grid.exec td.entry'), 9.5, 1.3))  # 1 entry wrap allowance
-    # stacked rows remain in QAYBTA 03 (label over entry)
-    row_h = (line_mm(css_block(app, '.lab'), 8.5, 1.3) + 8.5 * PT_TO_MM * 1.3
-             + 2 * PX_TO_MM + 4 * PX_TO_MM + 1 * PX_TO_MM)
-    h += 3 * row_h + 8.5 * PT_TO_MM * 1.3           # Section 03 + 1 wrap allowance
-    # Section 02 purpose box
-    h += 10 * PT_TO_MM * 1.35 + 8 * PX_TO_MM + 2 * PX_TO_MM
+    row_2l = (2 * line_mm(exec_lab, 7.5, 1.25)
+              + 2 * num(exec_td, 'padding-top', 1.59) + 1 * PX_TO_MM)
+    row_1l = (line_mm(exec_lab, 7.5, 1.25)
+              + 2 * num(exec_td, 'padding-top', 1.59) + 1 * PX_TO_MM)
+    h += 8 * row_2l + 2 * row_1l            # 7 (QAYBTA 01) + 1 (02) + 3 (03) + 1 (03) pair rows
     # Section 04: two declaration boxes (3 body lines + signature line each)
     stm, body, sig = css_block(app, '.stm'), css_block(app, '.stm .body'), css_block(app, '.sig')
-    one = (2 * num(stm, 'padding-top', 0.79) + 1 * PX_TO_MM
-           + 3 * line_mm(body, 8, 1.3)
-           + num(sig, 'margin-top', 0.79) + 9 * PX_TO_MM + line_mm(sig, 8.5, 1.3))
-    h += 2 * one + 2 * num(stm, 'margin-top', 0.53)
+    one = (2 * num(stm, 'padding-top', 1.32) + 1 * PX_TO_MM
+           + 3 * line_mm(body, 8, 1.45)
+           + num(sig, 'margin-top', 1.59) + 11 * PX_TO_MM + line_mm(sig, 8.5, 1.4))
+    h += 2 * one + 2 * num(stm, 'margin-top', 0.79)
     # footer
-    h += (num(css_block(app, '.foot'), 'margin-top', 1.32) + 2 * PX_TO_MM
+    h += (num(css_block(app, '.foot'), 'margin-top', 1.59) + 2 * PX_TO_MM
           + line_mm(css_block(app, '.foot .body'), 8.5, 1.35) + 8 * PX_TO_MM)
     return h
 
@@ -401,8 +413,8 @@ check('application.html: worst-case print height fits one A4 page (+safety)',
       b_app <= avail - SAFETY_MM)
 check('certificate.html: worst-case print height fits one A4 page (+safety)',
       b_cert <= avail - SAFETY_MM)
-check('application.html: QAYBTA 01 within the strict 1-page envelope (<= 265mm)',
-      b_app <= 265.0, f'{b_app:.1f}mm')
+check('application.html: filled but strictly 1 page (245-286mm envelope)',
+      245.0 <= b_app <= 286.0, f'{b_app:.1f}mm')
 check('certificate.html: filled-page envelope 270-284mm (no dead void, 1 sheet)',
       270.0 <= b_cert <= 284.0, f'{b_cert:.1f}mm')
 
