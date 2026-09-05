@@ -74,11 +74,12 @@
 
   .grid{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);font-family:Arial,sans-serif;font-size:8.5pt}
   .grid td{border:1px solid var(--border);padding:2px 6px;vertical-align:top}
-  /* Executive layout for QAYBTA 01: tinted field-title column, uniform cell
-     padding, consistent entry alignment and clean ruled borders. */
+  /* Executive layout for QAYBTA 01: strict side-by-side 2-column grid —
+     tinted label cells (25%) with uppercase titles, equal-width entry
+     cells (25%) beside them, uniform padding and clean ruled borders. */
   .grid.exec td{padding:3px 8px;vertical-align:middle}
-  .grid.exec td.lab-cell{background:var(--label-bg);width:36%;font-weight:700;font-size:7.5pt;letter-spacing:.3px;color:var(--muted-2);text-transform:uppercase;text-align:left}
-  .grid.exec td.entry{font-weight:600;font-size:9.5pt;color:var(--navy);text-align:left;background:#fff}
+  .grid.exec td.lab-cell{background:var(--label-bg);width:25%;font-weight:700;font-size:7.5pt;letter-spacing:.3px;color:var(--muted-2);text-transform:uppercase;text-align:left;line-height:1.25}
+  .grid.exec td.entry{font-weight:600;font-size:9.5pt;color:var(--navy);text-align:left;background:#fff;width:25%}
   .lab{font-weight:700;color:var(--text)}
   .line{display:block;border-bottom:1px solid var(--muted-2);height:12px;margin-top:4px}
   .w50{width:50%}
@@ -158,8 +159,8 @@ PHOTO
 
   <div class="sec">QAYBTA 01  |  XOGTA AQOONSIGA CODSAHA</div>
   <table class="grid exec">
-    <tr><td class="lab-cell">Magaca Sharciga ah oo Buuxa (Full Legal Name)</td><td class="entry" id="appFullName">-</td></tr>
-    <tr><td class="lab-cell">Magaca Hooyada oo Buuxa (Mother's Full Name)</td><td class="entry" id="appMotherName">-</td></tr>
+    <tr><td class="lab-cell">Magaca Sharciga ah oo Buuxa (Full Legal Name)</td><td class="entry" id="appFullName">-</td>
+        <td class="lab-cell">Magaca Hooyada oo Buuxa (Mother's Full Name)</td><td class="entry" id="appMotherName">-</td></tr>
     <tr><td class="lab-cell">Lambarka Aqoonsiga Qaranka (NIRA)</td><td class="entry" id="appNationalId">-</td>
         <td class="lab-cell">Lambarka Baasaboorka (Haddii uu Jiro)</td><td class="entry" id="appPassport">-</td></tr>
     <tr><td class="lab-cell">Taariikhda Dhalashada (DD/MM/YYYY)</td><td class="entry" id="appDob">-</td>
@@ -168,7 +169,7 @@ PHOTO
         <td class="lab-cell">Shaqada (Occupation)</td><td class="entry" id="appOccupation">-</td></tr>
     <tr><td class="lab-cell">Lambarka Telefoonka</td><td class="entry" id="appPhone">-</td>
         <td class="lab-cell">Email</td><td class="entry" id="appEmail">-</td></tr>
-    <tr><td class="lab-cell">Cinwaanka Degaanaanshaha ee Hadda</td><td class="entry" id="appAddress">-</td></tr>
+    <tr><td class="lab-cell">Cinwaanka Degaanaanshaha ee Hadda</td><td class="entry" colspan="3" id="appAddress">-</td></tr>
   </table>
 
   <div class="sec">QAYBTA 02  |  UJEEDDADA CODSIGA</div>

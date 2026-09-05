@@ -37,7 +37,7 @@ PROJECT = os.path.dirname(HERE)
 
 PT_TO_MM = 25.4 / 72.0          # 1pt = 0.3528mm
 PX_TO_MM = 25.4 / 96.0          # CSS px at 96dpi
-A4_H_MM = 297.0                 # @page margin is 0 in both blueprints
+A4_H_MM, A4_W_MM = 297.0, 210.0  # @page margin is 0 in both blueprints
 SAFETY_MM = 8.0                 # engine rounding slack we insist on
 OPACITY_MIN, OPACITY_MAX = 0.08, 0.12   # watermark band from the spec
 
@@ -189,8 +189,23 @@ check('certificate.html: letterhead text scaled to the logo (EN 16.5pt / AR 18.5
 check('certificate.html: watermark above the sheet (blueprint z-index 10)',
       'z-index:10' in cert_wm.replace(' ', ''))
 sig = css_block(cert, '.sig-block')
-check('certificate.html: signature block centred above the footer bar',
-      'margin:30pxauto0auto' in sig.replace(' ', '') and 'text-align:center' in sig.replace(' ', ''))
+check('certificate.html: signature block centred + pushed toward the footer bar',
+      'margin:38pxauto0auto' in sig.replace(' ', '') and 'text-align:center' in sig.replace(' ', ''))
+check('certificate.html: officer name 11.5pt bold',
+      '11.5pt' in css_block(cert, '.closing-name') and 'font-weight:700' in css_block(cert, '.closing-name'))
+check('certificate.html: officer title 10.5pt uppercase',
+      '10.5pt' in css_block(cert, '.closing-role')
+      and 'text-transform:uppercase' in css_block(cert, '.closing-role').replace(' ', ''))
+check('certificate.html: signature line enlarged (11.5pt + wider spacing)',
+      '11.5pt' in css_block(cert, '.sig-line')
+      and 'margin-bottom:6px' in css_block(cert, '.sig-line').replace(' ', ''))
+check('application.html: QAYBTA 01 labels sit in dedicated tinted cells (25%)',
+      'width:25%' in css_block(app, '.grid.exec td.lab-cell').replace(' ', '')
+      and 'background:var(--label-bg)' in css_block(app, '.grid.exec td.lab-cell').replace(' ', ''))
+check('application.html: Full Legal Name and Mother\'s Full Name share one row',
+      bool(re.search(r'id="appFullName">- </td>\s*(?:\n.*)?<td class="lab-cell">Magaca Hooyada', app))
+      or ('id="appFullName"' in app.split('id="appMotherName"')[0].rsplit('<tr', 1)[-1]
+          and '<td class="lab-cell">Magaca Hooyada' in app.split('id="appMotherName"')[0].rsplit('<tr', 1)[-1]))
 
 # ---------------------------------------------------------------------------
 # 3.5 Official emblem asset (blue-and-silver circular seal, transparent bg)
@@ -306,12 +321,14 @@ def budget_application():
     # four section bars (3px vertical padding each)
     sec = css_block(app, '.sec')
     h += 4 * (line_mm(sec, 9, 1.3) + 6 * PX_TO_MM + num(sec, 'margin-top', 0.79))
-    # QAYBTA 01 executive grid: side-by-side label/entry cells — row height is
-    # the taller of the 7.5pt label and 9.5pt entry + uniform 3px padding
+    # QAYBTA 01 executive grid: strict side-by-side pairs — row height is the
+    # taller of the 7.5pt (possibly 2-line) label and the 9.5pt entry
     exec_lab, exec_td = css_block(app, '.grid.exec td.lab-cell'), css_block(app, '.grid.exec td')
     exec_row = max(line_mm(exec_lab, 7.5, 1.35), line_mm(css_block(app, '.grid.exec td.entry'), 9.5, 1.3)) \
         + 2 * num(exec_td, 'padding-top', 1.06) + 1 * PX_TO_MM
-    h += 5 * exec_row + 2 * exec_row        # 7 rows + 2 wrap allowances
+    h += (7 * exec_row                                  # 6 pair rows + address row
+          + 2 * line_mm(exec_lab, 7.5, 1.35)            # 2 label wrap allowances
+          + line_mm(css_block(app, '.grid.exec td.entry'), 9.5, 1.3))  # 1 entry wrap allowance
     # stacked rows remain in QAYBTA 03 (label over entry)
     row_h = (line_mm(css_block(app, '.lab'), 8.5, 1.3) + 8.5 * PT_TO_MM * 1.3
              + 2 * PX_TO_MM + 4 * PX_TO_MM + 1 * PX_TO_MM)
@@ -348,26 +365,31 @@ def budget_certificate():
     h += (num(css_block(cert, '.cert-meta'), 'margin-top', 0.79) + line_mm(css_block(cert, '.cert-meta'), 10.5, 1.45))
     tw = css_block(cert, '.to-whom')
     h += num(tw, 'margin-top', 4.23) + line_mm(tw, 11, 1.45)
-    # intro body: 3 justified lines
+    # intro + search-result paragraphs: text-aware line counts (0.52em avg
+    # Arial char width at the printed text width, conservative ceil)
     bt = css_block(cert, '.body-text')
-    h += 3 * line_mm(bt, 10, 1.45) + num(bt, 'margin-top', 1.85)
+    fs_bt = num(bt, 'font-size', 11 * PT_TO_MM)
+    page_text_w = A4_W_MM - 24.0                      # print .page side padding
+    cpl = max(40.0, page_text_w / (0.52 * fs_bt))
+    paras = re.findall(r'<p class="body-text">(.*?)</p>', cert, re.S)
+    bt_lines = sum(-(-len(re.sub(r'<[^>]+>', '', p).strip()) // int(cpl)) for p in paras)
+    h += bt_lines * line_mm(bt, 11, 1.52) + num(bt, 'margin-top', 1.85)
     # details table: 10 rows (header + 9 fields) beside a 150px photo box
     dtd = css_block(cert, 'table.details td')
-    rows_h = 10 * (line_mm(dtd, 10.5, 1.45) + 6 * PX_TO_MM) + 5 * PX_TO_MM
+    rows_h = 10 * (line_mm(dtd, 11, 1.52) + 8 * PX_TO_MM) + 5 * PX_TO_MM
     photo_h = num(css_block(cert, '.photo-box'), 'height', 39.69) + 2 * PX_TO_MM
     h += max(rows_h, photo_h) + num(css_block(cert, '.details-wrap'), 'margin-top', 3.17)
-    # search-result heading + 5 lines
+    # search-result heading
     sh = css_block(cert, '.section-heading')
-    h += num(sh, 'margin-top', 4.76) + line_mm(sh, 11, 1.45)
-    h += 5 * line_mm(bt, 10, 1.45) + num(bt, 'margin-top', 1.85)
+    h += num(sh, 'margin-top', 4.76) + line_mm(sh, 11.5, 1.52)
     # purpose + validity meta rows
     mr = css_block(cert, '.meta-row')
-    h += 2 * (num(mr, 'margin-top', 2.12) + line_mm(mr, 10.5, 1.45))
-    # signature block (centered)
+    h += 2 * (num(mr, 'margin-top', 2.12) + line_mm(mr, 11, 1.52))
+    # signature block (centered, pushed toward the footer bar)
     sb = css_block(cert, '.sig-block')
-    h += (num(sb, 'margin-top', 6.88) + line_mm(css_block(cert, '.sig-line'), 10.5, 1.45)
-          + 4 * PX_TO_MM + line_mm(css_block(cert, '.closing-name'), 10.5, 1.45) + 2 * PX_TO_MM
-          + line_mm(css_block(cert, '.closing-role'), 10, 1.45) + 1 * PX_TO_MM)
+    h += (num(sb, 'margin-top', 10.05) + line_mm(css_block(cert, '.sig-line'), 11.5, 1.52)
+          + 6 * PX_TO_MM + line_mm(css_block(cert, '.closing-name'), 11.5, 1.52) + 2 * PX_TO_MM
+          + line_mm(css_block(cert, '.closing-role'), 10.5, 1.52) + 1 * PX_TO_MM)
     # footer-bar is absolutely positioned -> no flow height
     return h
 
@@ -379,6 +401,10 @@ check('application.html: worst-case print height fits one A4 page (+safety)',
       b_app <= avail - SAFETY_MM)
 check('certificate.html: worst-case print height fits one A4 page (+safety)',
       b_cert <= avail - SAFETY_MM)
+check('application.html: QAYBTA 01 within the strict 1-page envelope (<= 265mm)',
+      b_app <= 265.0, f'{b_app:.1f}mm')
+check('certificate.html: filled-page envelope 270-284mm (no dead void, 1 sheet)',
+      270.0 <= b_cert <= 284.0, f'{b_cert:.1f}mm')
 
 print()
 if FAILURES:
@@ -387,3 +413,22 @@ if FAILURES:
         print('  -', f)
     sys.exit(1)
 print('ALL PRINT TEMPLATE TESTS PASSED')
+
+
+# ---------------------------------------------------------------------------
+# unittest entry point — supports:  python -m unittest backend.test_print_fit
+# (the procedural suite above runs at import and exits non-zero on failure;
+# the TestCase below re-executes it in a subprocess and asserts the verdict.)
+# ---------------------------------------------------------------------------
+import subprocess
+import unittest
+
+
+class PrintTemplateContract(unittest.TestCase):
+    """All layout assertions of the procedural suite above must pass."""
+
+    def test_layout_assertions_pass(self):
+        r = subprocess.run([sys.executable, os.path.join(HERE, 'test_print_fit.py')],
+                           capture_output=True, text=True, cwd=PROJECT)
+        self.assertEqual(r.returncode, 0,
+                         'print-template layout assertions failed:\n' + r.stdout + r.stderr)
