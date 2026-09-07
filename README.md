@@ -5,13 +5,74 @@ A working browser-based prototype for a central police management platform. It i
 ## Included units
 
 - Central Person Registry
+- Central Police Search (officers, stations, cars by Region / District)
 - Fingerprint Unit and clearance applications
 - Clearance approval and certificate number generation
 - CID criminal cases
 - Suspect list
 - South, West and East Checkpoints
 - Hargeisa Local Airport passenger register
+- Police Registrations & Management (stations, officers, cars)
 - Dashboard and cross-unit activity feed
+
+### Sidebar structure (collapsible groups)
+
+The flat navigation is grouped into collapsible sections; each group
+collapses/expands with its chevron and remembers its state across sessions.
+Existing page routes (`people`, `fingerprint`, `cid`, `checkpoints`,
+`airport`, `analytics`, `admin`, the case workspace) are unchanged — only the
+labels/grouping moved:
+
+- **Dashboard**
+- **Central Search**
+  - Central Person Search (`people`)
+  - Central Police Search (`policesearch`) — filter officers, stations and
+    cars by Region / District
+- **CID (Criminal Investigation Directorate)**
+  - Fingerprint Unit (`fingerprint`)
+  - Crime Department (`cid`)
+  - Checkpoint Unit (`checkpoints`)
+  - Airport Unit (`airport`)
+- **Police Registrations & Management**
+  - Police Stations Registration (`stations`)
+  - Police Officers Registration (`officers`)
+  - Police Cars Registration (`cars`)
+- **Administration** (System Administrators only)
+  - Analytics, User Management
+
+## Shared location hierarchy (Region → District → Village/Town)
+
+All registration modules share one location schema across **Sool, Sanaag and
+Togdheer**, stored as a parent/child chain in the `locations` table and served
+dynamically by `GET /api/locations` (readable by every authenticated role):
+
+- **Region** → **District** (cascading) → **Village/Town** (cascading).
+- The district lists follow the commonly cited administrative divisions and
+  each district lists its main towns/villages (e.g. Sool → Las Anod → Las
+  Anod / Tukaraq / Boocame / Yagoori …). The seed is initial reference data —
+  extend the `locations` table and every dropdown picks the change up without
+  a frontend deploy.
+- The frontend ships a **reusable cascading picker** —
+  `mountLocationPicker(container, {required, allOption, labels, onChange})` in
+  `index.html` — used by the Police Stations form and the Central Police
+  Search filters, and ready for any future registration module. It falls back
+  to an identical built-in seed when the backend is unreachable.
+
+### Police Registrations & Management
+
+- **Police Stations Registration** captures **Station Name, Station Code,
+  Region, District and Village/Town** (the Region/District chain is validated
+  server-side; duplicate station codes are rejected).
+- **Police Officers Registration** and **Police Cars Registration** are linked
+  to an **assigned Police Station** and automatically **inherit its Region,
+  District and Village/Town** — the location is read-only in the form and is
+  denormalised onto the officer/car record when saved.
+- **Central Police Search** filters officers, stations and cars by
+  Region/District plus free text (name, badge, rank, station, plate…).
+- The modules are provisioned to System Administrators for now (see RBAC);
+  demo seed data (one station per region, plus officers and cars) is created
+  on first run.
+
 
 ## Central-person linking model
 
@@ -144,7 +205,7 @@ control and location-isolated checkpoints:
 
 | Username     | Role                | Scope / Module             |
 |--------------|---------------------|----------------------------|
-| `admin`      | System Administrator| All modules + analytics + user management |
+| `admin`      | System Administrator| All modules + analytics + user management + police registrations |
 | `fp.officer` | Fingerprint Unit    | Fingerprint only           |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
@@ -177,7 +238,7 @@ Backend API suite (standard library only; boots the server against a temporary d
 python3 backend/test_server.py
 ```
 
-Covers the identity-resolution tiers, unit-record routes, RBAC module gating, location-scoped checkpoint reads/writes, role-alias normalization (`cp_south` / `CheckpointEast` → `checkpoint_officer` with the scope preserved), the `/api/dashboard` contract for every role and the analytics aggregation.
+Covers the identity-resolution tiers, unit-record routes, RBAC module gating, location-scoped checkpoint reads/writes, role-alias normalization (`cp_south` / `CheckpointEast` → `checkpoint_officer` with the scope preserved), the `/api/dashboard` contract for every role, the analytics aggregation, and the Region → District → Village hierarchy + police stations/officers/cars registration endpoints (cascade validation, inherited station locations, duplicate code/plate rejections and the Central Police Search filters).
 
 Frontend session smoke test (Node ≥ 18; executes the real inline script against the real backend in a VM sandbox):
 
@@ -205,6 +266,7 @@ Pins the official-template rules for `application.html` / `certificate.html`: th
 6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. The **Suspect reason / alert details** field is **mandatory when no Crime Case is linked**; when a case IS linked it can be left empty and automatically defaults to `Linked to CID case {code} — {category}`. Submitting with an exact match reuses the existing central record.
 7. Open a case workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert; the case is optional, and a participant note is required when no case is linked), and upload evidence (tab 3).
 8. Open **Checkpoints → Record stop** for a listed suspect and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts. The checkpoint modal is a **full traveler + guardian screening layout**: traveler (4-part name, DOB, place of birth, current/permanent address, purpose of visit, real-time photo, optional National ID/Passport, **≥1 of 2 document slots**), guardian (name, relationship, contact, permanent address, occupation, optional IDs, **≥1 of 2 document slots**). Smart identity resolution auto-fills **both** traveler and guardian, and all uploaded files are stored in `backend/uploads/` and referenced from the stored event.
+9. Sign in as `admin` and open **Police Registrations & Management → Police Stations Registration**. Pick Region `Sool` → District `Hudun` → Village `Hudun` in the cascading dropdown and save a station. Register an officer against it — the form shows the inherited `Sool › Hudun › Hudun` location read-only. Then open **Central Search → Central Police Search**, filter by Region `Sool` / District `Hudun`, and see the station, its officers and its cars.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 
@@ -241,4 +303,4 @@ Before operational use, the hardening work **must** include, at minimum:
 The local-storage fallback in the frontend is for demo convenience only and is
 not appropriate for live police operations or multiple computers.
 
-The current data model is intentionally compatible with a relational implementation using tables such as `persons`, `unit_records`, `airport_passengers`, `clearance_applications`, `crime_cases`, `case_participants`, `suspect_alerts`, `checkpoint_events`, `locations`, `users`, and `audit_events`.
+The current data model is intentionally compatible with a relational implementation using tables such as `persons`, `unit_records`, `airport_passengers`, `clearance_applications`, `crime_cases`, `case_participants`, `suspect_alerts`, `checkpoint_events`, `locations` (now the hierarchical Region → District → Village/Town tree plus the Checkpoint codes), `police_stations`, `police_officers`, `police_cars`, `users`, and `audit_events`.

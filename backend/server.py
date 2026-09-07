@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS users(
 );
 CREATE TABLE IF NOT EXISTS locations(
   id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL,
-  label TEXT NOT NULL, kind TEXT NOT NULL
+  label TEXT NOT NULL, kind TEXT NOT NULL,
+  parent_id INTEGER REFERENCES locations(id),
+  path TEXT, sort_order INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS persons(
   id INTEGER PRIMARY KEY, person_id TEXT UNIQUE NOT NULL,
@@ -115,6 +117,36 @@ CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS police_stations(
+  id INTEGER PRIMARY KEY, station_id TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL, code TEXT NOT NULL,
+  region TEXT NOT NULL, district TEXT NOT NULL, village TEXT,
+  phone TEXT, notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS police_officers(
+  id INTEGER PRIMARY KEY, officer_id TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL, rank TEXT, badge_number TEXT,
+  station_ref INTEGER NOT NULL REFERENCES police_stations(id),
+  /* Regional assignment — inherited from the linked police station on
+     create, so an officer's Region / District / Village always resolve
+     through their assigned station. */
+  region TEXT, district TEXT, village TEXT,
+  phone TEXT, status TEXT NOT NULL DEFAULT 'Active',
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS police_cars(
+  id INTEGER PRIMARY KEY, car_id TEXT UNIQUE NOT NULL,
+  plate_number TEXT NOT NULL, vehicle_type TEXT, model TEXT,
+  station_ref INTEGER NOT NULL REFERENCES police_stations(id),
+  /* Regional assignment — inherited from the linked police station. */
+  region TEXT, district TEXT, village TEXT,
+  status TEXT NOT NULL DEFAULT 'Active', notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS audit_events(
   id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id),
   action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT,
@@ -126,6 +158,14 @@ CREATE TABLE IF NOT EXISTS audit_events(
 ADDED_COLUMNS = {
     'users': [
         ('location_scope', "ALTER TABLE users ADD COLUMN location_scope TEXT"),
+    ],
+    'locations': [
+        # Hierarchical Region -> District -> Village/Town schema. The
+        # `parent_id` chain stores the tree; `path` is the human-readable
+        # 'Region / District / Village' breadcrumb kept in sync on seed.
+        ('parent_id', "ALTER TABLE locations ADD COLUMN parent_id INTEGER REFERENCES locations(id)"),
+        ('path', "ALTER TABLE locations ADD COLUMN path TEXT"),
+        ('sort_order', "ALTER TABLE locations ADD COLUMN sort_order INTEGER DEFAULT 0"),
     ],
     'persons': [
         ('first_name', "ALTER TABLE persons ADD COLUMN first_name TEXT"),
@@ -608,7 +648,12 @@ ROLE_LABELS = {
 # everything; unit users get their single module; checkpoint users only get
 # the Checkpoint module and their own location scope.
 ROLE_MODULES = {
-    ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints'},
+    # 'stations' / 'officers' / 'cars' = the Police Registrations & Management
+    # modules; 'policesearch' = the Central Police Search page. They are
+    # provisioned to System Administrators for now — grant them to additional
+    # roles by extending the role's set below.
+    ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
+                 'stations', 'officers', 'cars', 'policesearch'},
     ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint'},
     ROLE_AIRPORT: {'dashboard', 'people', 'airport'},
     ROLE_CID: {'dashboard', 'people', 'cid'},
@@ -945,6 +990,136 @@ def migrate(c):
     finally:
         c.execute('PRAGMA foreign_keys=ON')
 
+# ---------------------------------------------------------------------------
+# Location hierarchy — Region -> District -> Village/Town.
+# ---------------------------------------------------------------------------
+# Shared location schema backing the registration modules (police stations,
+# officers and cars) across the three operational regions: Sool, Sanaag and
+# Togdheer. The seed below is initial REFERENCE data (districts follow the
+# commonly cited administrative divisions; each district lists its main
+# towns/villages). It is stored in the `locations` table as a parent/child
+# chain (kind = 'Region' | 'District' | 'Village'), is served dynamically by
+# GET /api/locations, and can be extended without touching the code — the
+# cascading frontend dropdowns read whatever the table contains.
+LOCATION_TREE_SEED = (
+    ('Sool', (
+        ('Las Anod', ('Las Anod', 'Tukaraq', 'Boocame', 'Yagoori',
+                      'Guumays', 'Adhicadeeye', 'Saaxdheer')),
+        ('Aynabo', ('Aynabo', 'Dabataag', 'Qoriley')),
+        ('Hudun', ('Hudun', 'Dhumay', 'Kulal')),
+        ('Taleh', ('Taleh', "Bo'ame", 'Godaalo', 'Hallin', 'Sarmaanyo')),
+    )),
+    ('Sanaag', (
+        ('Erigavo', ('Erigavo', 'Maydh', 'El Ayo', 'Xiis', 'Yufle', 'Armale')),
+        ('El Afweyn', ('El Afweyn', 'Huluul', 'Fadhigaab')),
+        ('Badhan', ('Badhan', 'Damala Xagare', 'Laas Domaare')),
+        ('Las Qoray', ('Las Qoray', 'Masagan')),
+        ('Dhahar', ('Dhahar', 'Kulmiye')),
+        ('Gar Adag', ('Gar Adag', 'Midigale')),
+        ('Hingalol', ('Hingalol',)),
+        ('El Buh', ('El Buh',)),
+        ('Buraan', ('Buraan',)),
+        ('Hadaaftimo', ('Hadaaftimo',)),
+        ('Yubbe', ('Yubbe',)),
+    )),
+    ('Togdheer', (
+        ('Burao', ('Burao', 'Yirowe', 'Fiqi Ayuub', 'Qoryaale')),
+        ('Sheikh', ('Sheikh',)),
+        ('Oodweyne', ('Oodweyne',)),
+        ('Buhoodle', ('Buhoodle', 'Widhwidh', 'Qorilugud', 'Haji Salah',
+                      'Balidhiig')),
+    )),
+)
+
+
+def _location_slug(value):
+    return re.sub(r'[^a-z0-9]+', '-', str(value).lower()).strip('-')
+
+
+def seed_admin_locations(c):
+    """Idempotently seed the Region -> District -> Village hierarchy (the
+    pre-existing Checkpoint location rows are left untouched)."""
+    for r_idx, (region, districts) in enumerate(LOCATION_TREE_SEED):
+        rcode = 'rg-' + _location_slug(region)
+        c.execute('''INSERT OR IGNORE INTO locations(code,label,kind,parent_id,path,sort_order)
+                     VALUES(?,?,?,NULL,?,?)''', (rcode, region, 'Region', region, r_idx))
+        rid = c.execute('SELECT id FROM locations WHERE code=?', (rcode,)).fetchone()[0]
+        for d_idx, (district, villages) in enumerate(districts):
+            dcode = rcode + '-dt-' + _location_slug(district)
+            dpath = f'{region} / {district}'
+            c.execute('''INSERT OR IGNORE INTO locations(code,label,kind,parent_id,path,sort_order)
+                         VALUES(?,?,?,?,?,?)''', (dcode, district, 'District', rid, dpath, d_idx))
+            did = c.execute('SELECT id FROM locations WHERE code=?', (dcode,)).fetchone()[0]
+            for v_idx, village in enumerate(villages):
+                vcode = dcode + '-vl-' + _location_slug(village)
+                c.execute('''INSERT OR IGNORE INTO locations(code,label,kind,parent_id,path,sort_order)
+                             VALUES(?,?,?,?,?,?)''',
+                          (vcode, village, 'Village', did, dpath + ' / ' + village, v_idx))
+
+
+def find_location(c, label, kind, parent_id=None):
+    """Case-insensitive, whitespace-tolerant lookup of one location row by
+    display label, kind and (for District/Village) its parent."""
+    label = str(label or '').strip()
+    if not label:
+        return None
+    if parent_id is None and kind == 'Region':
+        return c.execute('''SELECT * FROM locations WHERE kind='Region'
+                            AND LOWER(TRIM(label))=LOWER(TRIM(?)) LIMIT 1''',
+                         (label,)).fetchone()
+    return c.execute('''SELECT * FROM locations WHERE kind=? AND parent_id=?
+                        AND LOWER(TRIM(label))=LOWER(TRIM(?)) LIMIT 1''',
+                     (kind, parent_id, label)).fetchone()
+
+
+def resolve_location_chain(c, region, district, village=''):
+    """Validate a Region -> District -> Village/Town chain against the
+    hierarchy and return the canonical (region, district, village) labels.
+
+    Region and District are REQUIRED and must exist (a District must belong
+    to the given Region). The Village/Town is optional free text — when it
+    matches a seeded village of that district it is normalised to the
+    canonical label, otherwise it is stored verbatim (extensible schema).
+    """
+    region_row = find_location(c, region, 'Region')
+    if not region_row:
+        raise ValueError('Unknown region. Select one of: '
+                         + ', '.join(r[0] for r in LOCATION_TREE_SEED))
+    district_row = find_location(c, district, 'District', region_row['id'])
+    if not district_row:
+        raise ValueError(f"Unknown district for {region_row['label']}. "
+                         'Select a district from the region cascade.')
+    village_label = str(village or '').strip()
+    if village_label:
+        village_row = find_location(c, village_label, 'Village', district_row['id'])
+        if village_row:
+            village_label = village_row['label']
+    return region_row['label'], district_row['label'], village_label
+
+
+def next_register_id(c, table, column, prefix):
+    """Sequential human-friendly id for the police registers ('PS-0001',
+    'PO-0001', 'PC-0001') that survives deletions (max suffix + 1)."""
+    row = c.execute(f'SELECT {column} FROM {table} ORDER BY id DESC LIMIT 1').fetchone()
+    n = 0
+    if row and row[0]:
+        m = re.search(r'(\d+)$', str(row[0]))
+        if m:
+            n = int(m.group(1))
+    return f'{prefix}-{n + 1:04d}'
+
+
+def station_by_ref(c, ref):
+    """Resolve a police station by its register id ('PS-0001') or its short
+    station code ('LN-01'), case/whitespace tolerant."""
+    ref = str(ref or '').strip()
+    if not ref:
+        return None
+    return c.execute('''SELECT * FROM police_stations
+                        WHERE station_id=? OR LOWER(TRIM(code))=LOWER(TRIM(?)) LIMIT 1''',
+                     (ref, ref)).fetchone()
+
+
 def init_db():
     c = db()
     c.executescript(SCHEMA)
@@ -956,6 +1131,10 @@ def init_db():
                              ('West', 'West Checkpoint')):
             c.execute('INSERT INTO locations(code,label,kind) VALUES(?,?,?)',
                       (code, label, 'Checkpoint'))
+    # Region -> District -> Village/Town hierarchy (Sool, Sanaag, Togdheer).
+    # Runs on every boot and is idempotent, so extending LOCATION_TREE_SEED
+    # (or adding rows to `locations`) upgrades existing databases too.
+    seed_admin_locations(c)
     # Normalise the legacy admin account + seed a representative user per role
     # so the RBAC flow is exercised by default. The existing admin keeps its
     # password (idempotent — we only re-tag it on first run).
@@ -1012,6 +1191,49 @@ def init_db():
             checkpoint_location,screening_result,action_taken,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)""",
                   ('CP-'+secrets.token_hex(4),susp_pid,'South','South','South Checkpoint',
                    'Flagged match','Supervisor contacted',admin_id,'2026-08-30 08:42:00'))
+    # Foundational police-registration seed: one station per region so the
+    # Region -> District -> Village cascade, the station linkage and the
+    # Central Police Search have data to demonstrate against on first run.
+    if c.execute('SELECT COUNT(*) FROM police_stations').fetchone()[0] == 0:
+        demo_stations = (
+            ('PS-0001', 'Las Anod Central Station', 'SLN-01',
+             'Sool', 'Las Anod', 'Las Anod', '+252 63 555 0301'),
+            ('PS-0002', 'Erigavo District Station', 'SER-01',
+             'Sanaag', 'Erigavo', 'Erigavo', '+252 63 555 0302'),
+            ('PS-0003', 'Burao Central Station', 'TBR-01',
+             'Togdheer', 'Burao', 'Burao', '+252 63 555 0303'),
+        )
+        for sid, name, code, region, district, village, phone in demo_stations:
+            c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,phone)
+                         VALUES(?,?,?,?,?,?,?)''',
+                      (sid, name, code, region, district, village, phone))
+        admin_ref = c.execute("SELECT id FROM police_stations WHERE station_id='PS-0001'").fetchone()[0]
+        erigavo_ref = c.execute("SELECT id FROM police_stations WHERE station_id='PS-0002'").fetchone()[0]
+        burao_ref = c.execute("SELECT id FROM police_stations WHERE station_id='PS-0003'").fetchone()[0]
+        demo_officers = (
+            ('PO-0001', 'Cali Jaamac Maxamed', 'Sergeant', 'SLN-1101', admin_ref,
+             'Sool', 'Las Anod', 'Las Anod', '+252 63 555 0311'),
+            ('PO-0002', 'Hodan Yuusuf Cabdi', 'Constable', 'SER-1102', erigavo_ref,
+             'Sanaag', 'Erigavo', 'Erigavo', '+252 63 555 0312'),
+            ('PO-0003', 'Axmed Ismaaciil Warsame', 'Inspector', 'TBR-1103', burao_ref,
+             'Togdheer', 'Burao', 'Burao', '+252 63 555 0313'),
+        )
+        for oid, name, rank, badge, ref, region, district, village, phone in demo_officers:
+            c.execute('''INSERT INTO police_officers(officer_id,full_name,rank,badge_number,
+                         station_ref,region,district,village,phone) VALUES(?,?,?,?,?,?,?,?,?)''',
+                      (oid, name, rank, badge, ref, region, district, village, phone))
+        demo_cars = (
+            ('PC-0001', 'SLN-4521', 'Patrol Car', 'Toyota Land Cruiser', admin_ref,
+             'Sool', 'Las Anod', 'Las Anod', 'Active'),
+            ('PC-0002', 'SER-4522', 'Patrol Pickup', 'Ford Ranger', erigavo_ref,
+             'Sanaag', 'Erigavo', 'Erigavo', 'Active'),
+            ('PC-0003', 'TBR-4523', 'Prison Van', 'Toyota Hiace', burao_ref,
+             'Togdheer', 'Burao', 'Burao', 'Maintenance'),
+        )
+        for cid, plate, vtype, model, ref, region, district, village, status in demo_cars:
+            c.execute('''INSERT INTO police_cars(car_id,plate_number,vehicle_type,model,
+                         station_ref,region,district,village,status) VALUES(?,?,?,?,?,?,?,?,?)''',
+                      (cid, plate, vtype, model, ref, region, district, village, status))
     c.commit(); c.close()
 
 # ---- helpers ----------------------------------------------------------------
@@ -1570,6 +1792,10 @@ def build_dashboard(c, user):
         quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
     if is_admin or is_checkpoint:
         quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
+    # Police Registrations & Management + Central Police Search (admins for now).
+    if is_admin:
+        quick.append({'id':'add_station','label':'+ Police station','kind':'secondary','page':'stations','module':'stations'})
+        quick.append({'id':'police_search','label':'Police search','kind':'secondary','page':'policesearch','module':'policesearch'})
 
     # ---- Real-time activity stream (filtered to the user's scope) ---------
     events = _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_scope_sql)
@@ -2017,6 +2243,10 @@ class API(BaseHTTPRequestHandler):
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
                 '/api/admin/analytics': 'analytics',
+                '/api/police/stations': 'stations',
+                '/api/police/officers': 'officers',
+                '/api/police/cars': 'cars',
+                '/api/police/search': 'policesearch',
             }
             base = '/' + p.path.split('/')[1] + '/' + (p.path.split('/')[2] if len(p.path.split('/')) > 2 else '')
             for prefix, mod in module_for_path.items():
@@ -2215,6 +2445,100 @@ class API(BaseHTTPRequestHandler):
                 result = {'items': items,
                           'scope': scope,
                           'visible_locations': [scope] if scope else list(CHECKPOINT_LOCATIONS)}
+            elif p.path == '/api/locations':
+                # Shared Region -> District -> Village/Town hierarchy. Read is
+                # available to every authenticated user (the cascading
+                # dropdowns are embedded in several modules); there is no
+                # unit-level gate on the read path.
+                rows = c.execute('''SELECT id,code,label,kind,parent_id,path,sort_order
+                    FROM locations ORDER BY sort_order, id''').fetchall()
+                items = [rowdict(r) for r in rows]
+                nodes = {r['id']: {**r, 'children': []}
+                         for r in items if r['kind'] in ('Region', 'District', 'Village')}
+                tree = []
+                for r in items:
+                    if r['kind'] == 'Region':
+                        tree.append(nodes[r['id']])
+                    elif r['kind'] in ('District', 'Village'):
+                        parent = nodes.get(r['parent_id'])
+                        if parent is not None:
+                            parent['children'].append(nodes[r['id']])
+                result = {'items': items, 'tree': tree}
+            elif p.path == '/api/police/stations':
+                rows = c.execute('''SELECT ps.station_id,ps.name,ps.code,ps.region,ps.district,
+                    ps.village,ps.phone,ps.notes,ps.created_at,
+                    (SELECT COUNT(*) FROM police_officers po WHERE po.station_ref=ps.id) AS officer_count,
+                    (SELECT COUNT(*) FROM police_cars pc WHERE pc.station_ref=ps.id) AS car_count
+                    FROM police_stations ps ORDER BY ps.id DESC''').fetchall()
+                result = {'items': [rowdict(r) for r in rows]}
+            elif p.path == '/api/police/officers':
+                rows = c.execute('''SELECT po.officer_id,po.full_name,po.rank,po.badge_number,
+                    po.region,po.district,po.village,po.phone,po.status,po.created_at,
+                    ps.station_id AS station_code,ps.name AS station_name,ps.code AS station_short_code
+                    FROM police_officers po JOIN police_stations ps ON ps.id=po.station_ref
+                    ORDER BY po.id DESC''').fetchall()
+                result = {'items': [rowdict(r) for r in rows]}
+            elif p.path == '/api/police/cars':
+                rows = c.execute('''SELECT pc.car_id,pc.plate_number,pc.vehicle_type,pc.model,
+                    pc.region,pc.district,pc.village,pc.status,pc.notes,pc.created_at,
+                    ps.station_id AS station_code,ps.name AS station_name,ps.code AS station_short_code
+                    FROM police_cars pc JOIN police_stations ps ON ps.id=pc.station_ref
+                    ORDER BY pc.id DESC''').fetchall()
+                result = {'items': [rowdict(r) for r in rows]}
+            elif p.path == '/api/police/search':
+                # Central Police Search — filter officers, stations and cars by
+                # Region / District plus a free-text query (name, badge, code,
+                # plate, station...). Module-gated to 'policesearch'.
+                qs = parse_qs(p.query)
+                text = re.sub(r'\s+', ' ', qs.get('q', [''])[0]).strip()
+                region = str(qs.get('region', [''])[0] or '').strip()
+                district = str(qs.get('district', [''])[0] or '').strip()
+                like = f'%{text}%'
+
+                def scoped(base_sql, params, col_prefix=''):
+                    # Applies the shared Region/District filters to the
+                    # inherited location columns (optionally table-prefixed).
+                    sql = base_sql
+                    region_col = (col_prefix + '.' if col_prefix else '') + 'region'
+                    district_col = (col_prefix + '.' if col_prefix else '') + 'district'
+                    if region:
+                        sql += f' AND LOWER(TRIM({region_col}))=LOWER(TRIM(?))'
+                        params.append(region)
+                    if district:
+                        sql += f' AND LOWER(TRIM({district_col}))=LOWER(TRIM(?))'
+                        params.append(district)
+                    return sql, params
+
+                st_sql, st_params = scoped(
+                    '''SELECT station_id,name,code,region,district,village,phone
+                       FROM police_stations WHERE 1=1''', [])
+                of_sql, of_params = scoped(
+                    '''SELECT po.officer_id,po.full_name,po.rank,po.badge_number,po.region,
+                       po.district,po.village,po.phone,po.status,
+                       ps.station_id AS station_code,ps.name AS station_name
+                       FROM police_officers po JOIN police_stations ps ON ps.id=po.station_ref
+                       WHERE 1=1''', [], 'po')
+                cr_sql, cr_params = scoped(
+                    '''SELECT pc.car_id,pc.plate_number,pc.vehicle_type,pc.model,pc.region,
+                       pc.district,pc.village,pc.status,
+                       ps.station_id AS station_code,ps.name AS station_name
+                       FROM police_cars pc JOIN police_stations ps ON ps.id=pc.station_ref
+                       WHERE 1=1''', [], 'pc')
+                if text:
+                    st_sql += ' AND (name LIKE ? OR code LIKE ? OR region LIKE ? OR district LIKE ? OR village LIKE ?)'
+                    st_params += [like] * 5
+                    of_sql += ''' AND (po.full_name LIKE ? OR po.rank LIKE ? OR po.badge_number LIKE ?
+                        OR po.region LIKE ? OR po.district LIKE ? OR po.village LIKE ? OR ps.name LIKE ? OR ps.code LIKE ?)'''
+                    of_params += [like] * 8
+                    cr_sql += ''' AND (pc.plate_number LIKE ? OR pc.vehicle_type LIKE ? OR pc.model LIKE ?
+                        OR pc.region LIKE ? OR pc.district LIKE ? OR pc.village LIKE ? OR ps.name LIKE ? OR ps.code LIKE ?)'''
+                    cr_params += [like] * 8
+                stations = [rowdict(r) for r in c.execute(st_sql, st_params).fetchall()]
+                officers = [rowdict(r) for r in c.execute(of_sql, of_params).fetchall()]
+                cars = [rowdict(r) for r in c.execute(cr_sql, cr_params).fetchall()]
+                result = {'stations': stations, 'officers': officers, 'cars': cars,
+                          'filters': {'q': text, 'region': region, 'district': district},
+                          'counts': {'stations': len(stations), 'officers': len(officers), 'cars': len(cars)}}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
@@ -2264,6 +2588,10 @@ class API(BaseHTTPRequestHandler):
                 '/api/crime-cases': 'cid',
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
+                '/api/police/stations': 'stations',
+                '/api/police/officers': 'officers',
+                '/api/police/cars': 'cars',
+                '/api/police/search': 'policesearch',
                 '/api/admin/users': 'admin',
             }
             for prefix, mod in post_module_for_path.items():
@@ -2640,6 +2968,96 @@ class API(BaseHTTPRequestHandler):
                           'guardian_person_id':guardian_person['person_id'] if guardian_person else None,
                           'traveler_docs':len(tr_docs),'guardian_docs':len(gd_docs),
                           'identity':identity_result(c,data,person)}
+            elif p.path == '/api/police/stations':
+                # Police Stations Registration — Name, Code and the shared
+                # Region -> District -> Village/Town location chain.
+                data = body_json(self)
+                name = re.sub(r'\s+', ' ', str(data.get('name') or data.get('station_name') or '')).strip()
+                code = str(data.get('code') or data.get('station_code') or '').strip().upper()
+                if not name:
+                    raise ValueError('Station name is required')
+                if not code:
+                    raise ValueError('Station code is required')
+                if c.execute('SELECT 1 FROM police_stations WHERE LOWER(TRIM(code))=LOWER(TRIM(?))',
+                             (code,)).fetchone():
+                    raise ValueError(f'Station code {code} is already registered')
+                region, district, village = resolve_location_chain(
+                    c, data.get('region'), data.get('district'), data.get('village'))
+                sid = next_register_id(c, 'police_stations', 'station_id', 'PS')
+                c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,
+                    village,phone,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?)''',
+                    (sid, name, code, region, district, village,
+                     str(data.get('phone') or '').strip(),
+                     str(data.get('notes') or '').strip(), user['id']))
+                audit(c, user, 'CREATE', 'police_station', sid,
+                      f'{name} · {region} / {district}'); c.commit()
+                result = {'station_id': sid, 'name': name, 'code': code,
+                          'region': region, 'district': district, 'village': village}
+            elif p.path == '/api/police/officers':
+                # Police Officers Registration — the officer is linked to an
+                # assigned police station and AUTOMATICALLY inherits its
+                # Region / District / Village (never supplied by the caller).
+                data = body_json(self)
+                full_name = re.sub(r'\s+', ' ', str(data.get('full_name') or data.get('name') or '')).strip()
+                if not full_name:
+                    raise ValueError('Officer full name is required')
+                station = station_by_ref(c, data.get('station_id') or data.get('station'))
+                if not station:
+                    raise ValueError('Assigned police station is required (unknown station id or code)')
+                oid = next_register_id(c, 'police_officers', 'officer_id', 'PO')
+                c.execute('''INSERT INTO police_officers(officer_id,full_name,rank,badge_number,
+                    station_ref,region,district,village,phone,status,created_by)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                    (oid, full_name,
+                     str(data.get('rank') or '').strip(),
+                     str(data.get('badge_number') or data.get('badge') or '').strip(),
+                     station['id'],
+                     station['region'], station['district'], station['village'],
+                     str(data.get('phone') or '').strip(),
+                     str(data.get('status') or 'Active').strip() or 'Active',
+                     user['id']))
+                audit(c, user, 'CREATE', 'police_officer', oid,
+                      f"{full_name} · assigned to {station['name']} ({station['station_id']})")
+                c.commit()
+                result = {'officer_id': oid, 'full_name': full_name,
+                          'station_id': station['station_id'], 'station_name': station['name'],
+                          # Inherited regional assignment:
+                          'region': station['region'], 'district': station['district'],
+                          'village': station['village'],
+                          'inherited_from_station': True}
+            elif p.path == '/api/police/cars':
+                # Police Cars Registration — same station linkage; the car
+                # inherits the station's Region / District / Village.
+                data = body_json(self)
+                plate = re.sub(r'\s+', ' ', str(data.get('plate_number') or data.get('plate') or '')).strip().upper()
+                if not plate:
+                    raise ValueError('Plate number is required')
+                if c.execute('SELECT 1 FROM police_cars WHERE LOWER(TRIM(plate_number))=LOWER(TRIM(?))',
+                             (plate,)).fetchone():
+                    raise ValueError(f'Plate number {plate} is already registered')
+                station = station_by_ref(c, data.get('station_id') or data.get('station'))
+                if not station:
+                    raise ValueError('Assigned police station is required (unknown station id or code)')
+                cid = next_register_id(c, 'police_cars', 'car_id', 'PC')
+                c.execute('''INSERT INTO police_cars(car_id,plate_number,vehicle_type,model,
+                    station_ref,region,district,village,status,notes,created_by)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                    (cid, plate,
+                     str(data.get('vehicle_type') or data.get('type') or '').strip(),
+                     str(data.get('model') or '').strip(),
+                     station['id'],
+                     station['region'], station['district'], station['village'],
+                     str(data.get('status') or 'Active').strip() or 'Active',
+                     str(data.get('notes') or '').strip(), user['id']))
+                audit(c, user, 'CREATE', 'police_car', cid,
+                      f"{plate} · assigned to {station['name']} ({station['station_id']})")
+                c.commit()
+                result = {'car_id': cid, 'plate_number': plate,
+                          'station_id': station['station_id'], 'station_name': station['name'],
+                          # Inherited regional assignment:
+                          'region': station['region'], 'district': station['district'],
+                          'village': station['village'],
+                          'inherited_from_station': True}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)

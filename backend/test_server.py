@@ -393,8 +393,12 @@ def main():
             assert r['user']['location_scope'] == scope, (u, r['user'])
             expected_mods = {'dashboard'}
             if role == 'SystemAdmin':
+                # Police Registrations & Management modules (stations,
+                # officers, cars) + Central Police Search are provisioned to
+                # System Administrators alongside the operational units.
                 expected_mods |= {'admin', 'analytics', 'airport', 'checkpoints',
-                                  'cid', 'fingerprint', 'people'}
+                                  'cid', 'fingerprint', 'people',
+                                  'stations', 'officers', 'cars', 'policesearch'}
             elif role == 'FingerprintUnit':
                 expected_mods |= {'fingerprint', 'people'}
             elif role == 'AirportControl':
@@ -465,7 +469,8 @@ def main():
                                   'pending_clearances', 'active_alerts'}, d_admin['cards']
         admin_quick = {q['id'] for q in d_admin['quick_actions']}
         assert admin_quick == {'add_airport', 'add_clearance',
-                                'add_case', 'add_checkpoint'}, d_admin['quick_actions']
+                                'add_case', 'add_checkpoint',
+                                'add_station', 'police_search'}, d_admin['quick_actions']
         # Activity feed for an admin is a cross-unit feed (all 4 modules
         # can be present in the same response).
         admin_mods = {e['module'] for e in d_admin['activity']}
@@ -714,8 +719,9 @@ def main():
             f"admin cards not global: {admin_card_ids}"
         assert d_admin['is_admin'] is True
         assert d_admin['location_scope'] is None
-        # And the quick actions must be all 4 — admin has all of them.
-        assert {q['id'] for q in d_admin['quick_actions']} == {'add_airport','add_clearance','add_case','add_checkpoint'}
+        # And the quick actions must be all 4 operational ones + the police
+        # registration / search actions — admin has all of them.
+        assert {q['id'] for q in d_admin['quick_actions']} == {'add_airport','add_clearance','add_case','add_checkpoint','add_station','police_search'}
         # Admin can read all location events including the South one.
         s, cps_admin = request(base, 'GET', '/api/checkpoint-events', admin_token2)
         assert s == 200
@@ -1500,6 +1506,109 @@ def main():
                        tokens['fp.officer'], {})
         assert s == 400 and 'review period active' in review_error(r), (s, r)
         print('ok: audit_instant_approvals detects and reverts premature approvals')
+
+        # ----------------------------------------------------------------
+        # Location hierarchy (Region -> District -> Village/Town) shared by
+        # the registration modules + Police Registrations & Central Police
+        # Search.
+        # ----------------------------------------------------------------
+        s, locs = request(base, 'GET', '/api/locations', token)
+        assert s == 200, locs
+        regions = [n['label'] for n in locs['tree']]
+        assert regions == ['Sool', 'Sanaag', 'Togdheer'], regions
+        sool = next(n for n in locs['tree'] if n['label'] == 'Sool')
+        assert [d['label'] for d in sool['children']] == ['Las Anod', 'Aynabo', 'Hudun', 'Taleh']
+        lasanod = next(d for d in sool['children'] if d['label'] == 'Las Anod')
+        lv = [v['label'] for v in lasanod['children']]
+        assert 'Las Anod' in lv and 'Tukaraq' in lv, lv
+        sanaag = next(n for n in locs['tree'] if n['label'] == 'Sanaag')
+        assert 'Erigavo' in [d['label'] for d in sanaag['children']]
+        togdheer = next(n for n in locs['tree'] if n['label'] == 'Togdheer')
+        assert [d['label'] for d in togdheer['children']] == ['Burao', 'Sheikh', 'Oodweyne', 'Buhoodle']
+        # parent chain integrity: regions have no parent; districts/villages do.
+        assert all(i['parent_id'] is None for i in locs['items'] if i['kind'] == 'Region')
+        assert all(i['parent_id'] for i in locs['items'] if i['kind'] in ('District', 'Village'))
+        # Every authenticated role may read the hierarchy (cascade dropdowns).
+        s, locs_fp = request(base, 'GET', '/api/locations', tokens['fp.officer'])
+        assert s == 200 and locs_fp['tree'], s
+
+        # Seeded demo registers (one station per region).
+        s, sts = request(base, 'GET', '/api/police/stations', token)
+        assert s == 200 and len(sts['items']) == 3, sts
+        assert {x['code'] for x in sts['items']} == {'SLN-01', 'SER-01', 'TBR-01'}
+        assert all(x['region'] in regions for x in sts['items']), sts['items']
+
+        # Station create — cascade-validated Region/District/Village.
+        s, st = request(base, 'POST', '/api/police/stations', token,
+                        {'name': 'Hudun Station', 'code': 'SHD-02', 'region': 'Sool',
+                         'district': 'Hudun', 'village': 'Hudun'})
+        assert s == 201 and st['station_id'] == 'PS-0004', st
+        assert (st['region'], st['district'], st['village']) == ('Sool', 'Hudun', 'Hudun'), st
+
+        # District must belong to the selected region.
+        s, bad = request(base, 'POST', '/api/police/stations', token,
+                         {'name': 'X Station', 'code': 'X-99', 'region': 'Sool',
+                          'district': 'Burao'})
+        assert s == 400 and 'Unknown district' in bad['error'], (s, bad)
+        # Unknown region rejected with the region list.
+        s, bad = request(base, 'POST', '/api/police/stations', token,
+                         {'name': 'X Station', 'code': 'X-98', 'region': 'Maroodi Jeex',
+                          'district': 'Hargeisa'})
+        assert s == 400 and 'Unknown region' in bad['error'], (s, bad)
+        # Duplicate station code rejected (case-insensitive).
+        s, dup = request(base, 'POST', '/api/police/stations', token,
+                         {'name': 'Y Station', 'code': 'shd-02', 'region': 'Sool',
+                          'district': 'Hudun'})
+        assert s == 400 and 'already registered' in dup['error'], (s, dup)
+
+        # Officer create — linked to a station, location INHERITED from it.
+        s, off = request(base, 'POST', '/api/police/officers', token,
+                         {'full_name': 'Test Officer A', 'rank': 'Constable',
+                          'badge_number': 'SHD-2001', 'station_id': 'PS-0004'})
+        assert s == 201 and off['officer_id'] == 'PO-0004', off
+        assert off['inherited_from_station'] is True, off
+        assert (off['region'], off['district'], off['village']) == ('Sool', 'Hudun', 'Hudun'), off
+        # Unknown station ref rejected.
+        s, bad = request(base, 'POST', '/api/police/officers', token,
+                         {'full_name': 'Test Officer B', 'station_id': 'PS-9999'})
+        assert s == 400 and 'station' in bad['error'], (s, bad)
+
+        # Car create — by station short code; inherits the same chain.
+        s, car = request(base, 'POST', '/api/police/cars', token,
+                         {'plate_number': 'shd-9001', 'vehicle_type': 'Motorcycle',
+                          'station': 'SHD-02'})
+        assert s == 201 and car['car_id'] == 'PC-0004', car
+        assert car['plate_number'] == 'SHD-9001' and car['station_id'] == 'PS-0004', car
+        assert (car['region'], car['district'], car['village']) == ('Sool', 'Hudun', 'Hudun'), car
+        # Duplicate plate rejected.
+        s, dup = request(base, 'POST', '/api/police/cars', token,
+                         {'plate_number': 'SHD-9001', 'station': 'PS-0004'})
+        assert s == 400 and 'already registered' in dup['error'], (s, dup)
+
+        # Central Police Search — region/district scoping across all three
+        # registers + free-text matching.
+        s, sr = request(base, 'GET', '/api/police/search?region=Sool&district=Hudun', token)
+        assert s == 200, sr
+        assert [x['name'] for x in sr['stations']] == ['Hudun Station'], sr
+        assert [x['full_name'] for x in sr['officers']] == ['Test Officer A'], sr
+        assert [x['plate_number'] for x in sr['cars']] == ['SHD-9001'], sr
+        s, sr = request(base, 'GET', '/api/police/search?region=Togdheer', token)
+        assert sr['counts'] == {'stations': 1, 'officers': 1, 'cars': 1}, sr
+        s, sr = request(base, 'GET', '/api/police/search?q=sergeant', token)
+        assert sr['counts']['officers'] == 1, sr
+        assert any(o['full_name'] == 'Cali Jaamac Maxamed' for o in sr['officers']), sr
+
+        # RBAC: the police modules are admin-provisioned. A Fingerprint
+        # officer is locked out of the endpoints (their /api/me modules do
+        # not include stations/officers/cars/policesearch — asserted above).
+        for path in ('/api/police/stations', '/api/police/officers',
+                     '/api/police/cars', '/api/police/search'):
+            s, r = request(base, 'GET', path, tokens['fp.officer'])
+            assert s == 401, (path, s, r)
+        s, r = request(base, 'POST', '/api/police/stations', tokens['fp.officer'],
+                       {'name': 'Z', 'code': 'Z-1', 'region': 'Sool', 'district': 'Hudun'})
+        assert s == 401, (s, r)
+        print('ok: location hierarchy + police stations/officers/cars + central police search')
 
         print('ALL BACKEND TESTS PASSED')
         return 0
