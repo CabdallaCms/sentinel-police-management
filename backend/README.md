@@ -25,7 +25,7 @@ password `ChangeMe123!`:
 
 | Username     | Role                | Scope / Module             |
 |--------------|---------------------|----------------------------|
-| `admin`      | System Administrator| All modules + analytics + user management |
+| `admin`      | System Administrator| All modules + analytics + user management + police registrations |
 | `fp.officer` | Fingerprint Unit    | Fingerprint only           |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
@@ -46,8 +46,11 @@ Change or remove these accounts before any real deployment.
 Every authenticated request is scoped to the user's role. The full role set is:
 
 - `SystemAdmin` — full access, including `/api/admin/*` (User Management and
-  Executive Analytics) and `GET /api/checkpoint-events` (sees all locations).
-- `FingerprintUnit` — only `/api/clearance-applications*`.
+  Executive Analytics), `GET /api/checkpoint-events` (sees all locations) and
+  the Police Registrations & Management modules (`stations`, `officers`,
+  `cars`) plus Central Police Search (`policesearch`).
+- `FingerprintUnit` — only `/api/clearance-applications*` (plus the shared,
+  read-only `/api/locations` hierarchy every authenticated role can read).
 - `AirportControl` — only `/api/airport-records*`.
 - `CIDUnit` — only `/api/crime-cases*` and `/api/suspect-alerts*`.
 - `CheckpointSouth` / `CheckpointEast` / `CheckpointWest` — only
@@ -55,6 +58,10 @@ Every authenticated request is scoped to the user's role. The full role set is:
   officer cannot see, create, or amend any event at the East or West
   checkpoint. The `GET` response carries a `scope` and `visible_locations`
   field so the client can render the active filter.
+
+To grant the registration modules to another role, extend that role's set in
+`ROLE_MODULES` (`stations`, `officers`, `cars`, `policesearch`) — the sidebar
+groups and endpoint gates both key off the same list.
 
 `/api/me` returns the current user, the role-derived `modules` list, the
 `visibility` summary (`is_admin`, `can_manage_users`, `can_view_analytics`,
@@ -123,6 +130,12 @@ render every record **locked**.
 - `POST /api/clearance-applications` (authenticated, `multipart/form-data` — applicant identity fields, 4 applicant docs and 3 guardian docs with **at least 2 of each required**, optional photo; identity is resolved/auto-created. `purpose` (clearance reason) is **mandatory** and must be one of `Education`, `Travel`, `Employment`, `Citizenship`, `Licence`; the submission timestamp is stored explicitly in `created_at`)
 - `GET /api/clearance-applications/{application_id}` (authenticated — full detail for the printable pages, plus the `review` block and `can_approve` flag for the 12-hour gate)
 - `POST /api/clearance-applications/{id}/approve` (authenticated — issues the certificate number and unlocks the certificate, subject to the mandatory 12-hour review period)
+- `GET /api/locations` (authenticated — the shared **Region → District → Village/Town** hierarchy across Sool, Sanaag and Togdheer; returns the flat `items` list and a nested `tree` for the cascading dropdowns. Every authenticated role may read it)
+- `GET /api/police/stations` · `GET /api/police/officers` · `GET /api/police/cars` (module-gated to `stations` / `officers` / `cars` — System Administrators for now)
+- `POST /api/police/stations` (module-gated — Station Name, Station Code and the Region → District → Village/Town chain; Region/District are validated against the hierarchy, duplicate station codes are rejected with 400, and register ids are sequential `PS-0001…`)
+- `POST /api/police/officers` (module-gated — full name, rank, badge and the **assigned station**; the officer **inherits the station's Region / District / Village automatically** and the response echoes the inherited chain with `inherited_from_station: true`)
+- `POST /api/police/cars` (module-gated — plate (unique), vehicle type, model and the **assigned station**; the car inherits the station location the same way, ids `PC-0001…`)
+- `GET /api/police/search?q=&region=&district=` (module-gated to `policesearch` — Central Police Search across stations, officers and cars, filtered by Region/District plus free text on name, badge, rank, station, code, plate…)
 
   `/api/fingerprint/applications` is an alias for `/api/clearance-applications`; every route below it (including `/api/fingerprint/applications/{id}/approve`) behaves identically and is gated by the same `fingerprint` module rule.
 
