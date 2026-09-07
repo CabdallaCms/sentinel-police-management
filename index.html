@@ -699,13 +699,14 @@ checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flag
 // Region → District → Village location; officers and cars only store
 // their station and inherit the location from it (see inheritedCells()).
 stations:[
-{id:'ST-001',name:'Hargeisa Central Station',code:'SAN-C-01',region:'Sanaag',district:'Cayn',village:'Hargeisa',notes:''},
-{id:'ST-002',name:'Burao Station',code:'SAN-C-02',region:'Sanaag',district:'Gacanlibo',village:'Burao',notes:''},
-{id:'ST-003',name:'Erigavo Station',code:'SAN-C-03',region:'Sanaag',district:'Harardhere',village:'Erigavo',notes:''},
+{id:'ST-001',name:'Ceerigaabo Central Station',code:'SAN-C-01',region:'Sanaag',district:'Ceerigaabo',village:'Ceerigaabo',notes:''},
+{id:'ST-002',name:'Badhan Station',code:'SAN-C-02',region:'Sanaag',district:'Badhan',village:'Badhan',notes:''},
+{id:'ST-003',name:'Caynabo Station',code:'SOO-C-03',region:'Sool',district:'Caynabo',village:'Caynabo',notes:''},
 {id:'ST-004',name:'Las Anod Station',code:'SOO-C-01',region:'Sool',district:'Laascaanood',village:'Laascaanood',notes:''},
-{id:'ST-005',name:'Gaalkacyo Station',code:'TOG-C-01',region:'East Togdheer',district:'Gaalkacyo',village:'Gaalkacyo',notes:''},
-{id:'ST-006',name:'Buuhoodle Station',code:'ETG-C-02',region:'East Togdheer',district:'Buuhoodle',village:'Widh Widh',notes:''},
-{id:'ST-007',name:'Adhi Cadeeye Outpost',code:'SOO-C-02',region:'Sool',district:'Laascaanood',village:'Adhi Cadeeye',notes:''}],
+{id:'ST-005',name:'Burao Station',code:'TOG-C-01',region:'East Togdheer',district:'Burao',village:'Burao',notes:''},
+{id:'ST-006',name:'Oodweyne Station',code:'TOG-C-02',region:'East Togdheer',district:'Oodweyne',village:'Oodweyne',notes:''},
+{id:'ST-007',name:'Buuhoodle Station',code:'ETG-C-03',region:'East Togdheer',district:'Buuhoodle',village:'Widh Widh',notes:''},
+{id:'ST-008',name:'Adhi Cadeeye Outpost',code:'SOO-C-02',region:'Sool',district:'Laascaanood',village:'Adhi Cadeeye',notes:''}],
 officers:[
 {id:'OF-0001',name:'Maxamed Faarax Nuur',badge:'PL-1001',rank:'Station Commander',phone:'+252 63 555 0101',station:'ST-001'},
 {id:'OF-0002',name:'Amina Suleymaan Cabdi',badge:'PL-1002',rank:'Sergeant',phone:'+252 63 555 0102',station:'ST-002'},
@@ -921,9 +922,14 @@ function toggleNavGroup(name){
 // LOCATIONS, so extending the gazetteer here is all that is needed to
 // make a new district selectable everywhere.
 const LOCATIONS=[
-  {region:'Sool',districts:['Laascaanood','Nugaal']},
-  {region:'Sanaag',districts:['Cayn','Gacanlibo','Harardhere','Ceelbuur','Calailooy','Dhahar','Buurhanbe']},
-  {region:'East Togdheer',districts:['Gaalkacyo','Gargaar','Xarun Adan Yabaas','Qosley','Barkad','Ceel-cas','El-Ayo','Guban','Hobeeyo','Maroodi Jeex','Xagaa','Buuhoodle']}
+  // District lists follow the standard administrative gazetteers
+  // (Wikipedia "Sool" / "States and regions of Somalia" / EUAA COI 2025):
+  //  - Sool: Laascaanood, Caynabo, Xudun, Taleex
+  //  - Sanaag: Ceerigaabo (Erigavo), Ceel Afweyn (El Afweyn), Garadag, Badhan, Dhahar
+  //  - East Togdheer: Burao, Oodweyne, Buuhoodle
+  {region:'Sool',districts:['Laascaanood','Caynabo','Xudun','Taleex']},
+  {region:'Sanaag',districts:['Ceerigaabo','Ceel Afweyn','Garadag','Badhan','Dhahar']},
+  {region:'East Togdheer',districts:['Burao','Oodweyne','Buuhoodle']}
 ];
 function locationRegions(){return LOCATIONS.map(r=>r.region)}
 function locationDistricts(region){
