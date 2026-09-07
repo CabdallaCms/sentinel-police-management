@@ -551,7 +551,7 @@ body.modal-open{overflow:hidden}
 </form>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station anchors its officers and cars to a Region → District → Village</div></div></div>
+<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
 </div>
 </div>
@@ -561,7 +561,7 @@ body.modal-open{overflow:hidden}
 <section id="officers" class="page">
 <div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Register police officer</h2><div class="sub">Assign to a station — the location is inherited automatically</div></div></div>
+<div class="panel-head"><div><h2>Register police officer</h2><div class="sub">Assign to a station — its location pre-fills the fields, which you may override</div></div></div>
 <div id="offNotice" class="notice"></div>
 <form class="form" id="offForm" onsubmit="saveOfficer(event)">
 <div class="grid2">
@@ -572,13 +572,13 @@ body.modal-open{overflow:hidden}
 </div>
 <div class="section-label">Assignment</div>
 <div class="field"><label>Assigned police station *</label><select id="offStation"></select></div>
-<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Inherited location:</b> the station's Region, District and Village/Town are carried onto the officer record automatically — these fields are read-only.</div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Location:</b> picking a station pre-fills its Region, District and Village/Town as defaults — you can change or override any of the three. The values you save are stored on the officer record.</div>
 <div id="off-loc" class="loc-grid"></div>
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetOfficerForm()">Clear</button><button class="btn" type="submit">Register officer</button></div>
 </form>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Location shown is inherited from the assigned station</div></div></div>
+<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Region/District/Village as stored on each record (pre-filled from the station, editable at entry)</div></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Badge</th><th>Rank</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
 </div>
@@ -588,7 +588,7 @@ body.modal-open{overflow:hidden}
 <section id="cars" class="page">
 <div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Register police car</h2><div class="sub">Assign to a station — the location is inherited automatically</div></div></div>
+<div class="panel-head"><div><h2>Register police car</h2><div class="sub">Assign to a station — its location pre-fills the fields, which you may override</div></div></div>
 <div id="carNotice" class="notice"></div>
 <form class="form" id="carForm" onsubmit="saveCar(event)">
 <div class="grid2">
@@ -599,13 +599,13 @@ body.modal-open{overflow:hidden}
 </div>
 <div class="section-label">Assignment</div>
 <div class="field"><label>Assigned police station *</label><select id="carStation"></select></div>
-<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Inherited location:</b> the station's Region, District and Village/Town are carried onto the car record automatically — these fields are read-only.</div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Location:</b> picking a station pre-fills its Region, District and Village/Town as defaults — you can change or override any of the three. The values you save are stored on the car record.</div>
 <div id="car-loc" class="loc-grid"></div>
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register car</button></div>
 </form>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered cars</h2><div class="sub">Location shown is inherited from the assigned station</div></div></div>
+<div class="panel-head"><div><h2>Registered cars</h2><div class="sub">Region/District/Village as stored on each record (pre-filled from the station, editable at entry)</div></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="carsTable"></tbody></table></div>
 </div>
 </div>
@@ -695,9 +695,11 @@ cases:[{id:'CID-2026-008',category:'Property crime',location:'Hargeisa Central',
 {id:'CID-2026-009',category:'Fraud',location:'Jigjiga Yar',status:'Submitted for Prosecution',summary:'Advance-fee fraud reported by a local business owner.',participants:[],evidence:[]}],
 suspects:[{person:'P-0002',case:'CID-2026-008',role:'Suspect',alert:'Active alert',origin:'Case Link'}],
 checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted'}],
-// Regional registration modules. Stations carry the explicit
-// Region → District → Village location; officers and cars only store
-// their station and inherit the location from it (see inheritedCells()).
+// Regional registration modules. Every record (station, officer, car)
+// stores its Region → District → Village location explicitly. For
+// officers and cars the location is pre-filled from the assigned station
+// at entry time but can be overridden — the saved values are what the
+// tables and Central Police Search display (see recordLocation()).
 stations:[
 {id:'ST-001',name:'Ceerigaabo Central Station',code:'SAN-C-01',region:'Sanaag',district:'Ceerigaabo',village:'Ceerigaabo',notes:''},
 {id:'ST-002',name:'Badhan Station',code:'SAN-C-02',region:'Sanaag',district:'Badhan',village:'Badhan',notes:''},
@@ -708,15 +710,15 @@ stations:[
 {id:'ST-007',name:'Buuhoodle Station',code:'ETG-C-03',region:'East Togdheer',district:'Buuhoodle',village:'Widh Widh',notes:''},
 {id:'ST-008',name:'Adhi Cadeeye Outpost',code:'SOO-C-02',region:'Sool',district:'Laascaanood',village:'Adhi Cadeeye',notes:''}],
 officers:[
-{id:'OF-0001',name:'Maxamed Faarax Nuur',badge:'PL-1001',rank:'Station Commander',phone:'+252 63 555 0101',station:'ST-001'},
-{id:'OF-0002',name:'Amina Suleymaan Cabdi',badge:'PL-1002',rank:'Sergeant',phone:'+252 63 555 0102',station:'ST-002'},
-{id:'OF-0003',name:'Hassan Cabdi Xirsi',badge:'PL-1003',rank:'Officer',phone:'+252 63 555 0103',station:'ST-004'},
-{id:'OF-0004',name:'Sahra Axmed Yuusuf',badge:'PL-1004',rank:'Officer',phone:'+252 63 555 0104',station:'ST-005'}],
+{id:'OF-0001',name:'Maxamed Faarax Nuur',badge:'PL-1001',rank:'Station Commander',phone:'+252 63 555 0101',station:'ST-001',region:'Sanaag',district:'Ceerigaabo',village:'Ceerigaabo'},
+{id:'OF-0002',name:'Amina Suleymaan Cabdi',badge:'PL-1002',rank:'Sergeant',phone:'+252 63 555 0102',station:'ST-002',region:'Sanaag',district:'Badhan',village:'Badhan'},
+{id:'OF-0003',name:'Hassan Cabdi Xirsi',badge:'PL-1003',rank:'Officer',phone:'+252 63 555 0103',station:'ST-004',region:'Sool',district:'Laascaanood',village:'Laascaanood'},
+{id:'OF-0004',name:'Sahra Axmed Yuusuf',badge:'PL-1004',rank:'Officer',phone:'+252 63 555 0104',station:'ST-005',region:'East Togdheer',district:'Burao',village:'Burao'}],
 cars:[
-{id:'CR-0001',plate:'PL-1001-26',type:'Patrol',make:'Toyota',model:'Hilux · 2024',station:'ST-001'},
-{id:'CR-0002',plate:'PL-1002-25',type:'Patrol',make:'Nissan',model:'Pickup · 2023',station:'ST-002'},
-{id:'CR-0003',plate:'PL-1005-26',type:'Motorcycle',make:'Honda',model:'CRF · 2025',station:'ST-004'},
-{id:'CR-0004',plate:'PL-1008-24',type:'Van',make:'Mercedes',model:'Sprinter · 2022',station:'ST-005'}]};
+{id:'CR-0001',plate:'PL-1001-26',type:'Patrol',make:'Toyota',model:'Hilux · 2024',station:'ST-001',region:'Sanaag',district:'Ceerigaabo',village:'Ceerigaabo'},
+{id:'CR-0002',plate:'PL-1002-25',type:'Patrol',make:'Nissan',model:'Pickup · 2023',station:'ST-002',region:'Sanaag',district:'Badhan',village:'Badhan'},
+{id:'CR-0003',plate:'PL-1005-26',type:'Motorcycle',make:'Honda',model:'CRF · 2025',station:'ST-004',region:'Sool',district:'Laascaanood',village:'Laascaanood'},
+{id:'CR-0004',plate:'PL-1008-24',type:'Van',make:'Mercedes',model:'Sprinter · 2022',station:'ST-005',region:'East Togdheer',district:'Burao',village:'Burao'}]};
 let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 // Backfill the regional registration collections for databases persisted
 // before the stations / officers / cars modules existed.
@@ -957,7 +959,7 @@ function locationLabel(loc){
 // opts:
 //   withAll   — "All …" placeholders (filters, e.g. Central Police Search;
 //               blank = no filter on that level)
-//   disabled  — render all three levels locked (inherited location blocks)
+//   disabled  — render all three levels locked (fixed-location contexts)
 //   value     — {region,district,village} to preselect
 //   onchange  — callback({region,district,village}) after any level changes
 function locationDropdowns(prefix,opts={}){
@@ -967,7 +969,7 @@ function locationDropdowns(prefix,opts={}){
     region:opts.withAll?'All regions':'— select region —',
     district:opts.withAll?'All districts':'— select district —',
     village:opts.withAll?'All / type a village or town':'e.g. Adhi Cadeeye',
-    villageLocked:'Inherited from station'
+    villageLocked:'Set from station'
   };
   const locked=!!opts.disabled;
   const optsHtml=(values,placeholder)=>
@@ -1024,9 +1026,11 @@ function setLocation(prefix,loc){
   const v=document.getElementById(prefix+'-village');
   if(v)v.value=loc.village||'';
 }
-// Paint an inherited (read-only) location block from an assigned station's
-// explicit location.
-function paintInheritedLocation(prefix,loc){
+// Paint a station's location into a (possibly editable) location block as
+// DEFAULT values. Used when an officer/car form picks an assigned station:
+// the fields are pre-filled from the station but the officer may still
+// override any of them — the values finally saved are stored on the record.
+function paintLocationDefaults(prefix,loc){
   setLocation(prefix,loc||{region:'',district:'',village:''});
 }
 // Validation shared by the registration forms.
@@ -1038,10 +1042,11 @@ function requireLocation(prefix){
   return{ok:true,loc:l};
 }
 
-// ---- station registry + location inheritance --------------------------------
-// Stations are the location anchor: officers and cars store only their
-// station id and inherit Region/District/Village from it, so a station move
-// re-anchors every assigned record automatically.
+// ---- station registry + location defaults -----------------------------------
+// Stations carry their own Region/District/Village. Officer and car records
+// store their location EXPLICITLY (typed into the form, pre-filled from the
+// assigned station as a default, overridable) — see recordLocation(),
+// wireStationLocationDefaults() and saveOfficer()/saveCar().
 function stationById(id){return (db.stations||[]).find(s=>s.id===id)||null}
 function stationOptions(selectedId){
   const list=db.stations||[];
@@ -1055,14 +1060,16 @@ function refreshStationSelects(){
     if(el)el.innerHTML=stationOptions(el.value);
   });
 }
-// Wire a station <select> to an inherited-location dropdown block: picking a
-// station fills the (locked) Region/District/Village selects with its location.
-function wireStationInheritance(stationSelectId,prefix){
+// Wire a station <select> to an editable location block: picking a station
+// pre-fills the Region/District/Village fields with the station's location
+// as a starting point; the officer can then change or override any of the
+// three (the finally typed values are what get saved on the record).
+function wireStationLocationDefaults(stationSelectId,prefix){
   const sel=document.getElementById(stationSelectId);
   if(!sel)return;
   const refresh=()=>{
     const st=stationById(sel.value);
-    paintInheritedLocation(prefix, st?{region:st.region,district:st.district,village:st.village}:{region:'',district:'',village:''});
+    paintLocationDefaults(prefix, st?{region:st.region,district:st.district,village:st.village}:{region:'',district:'',village:''});
   };
   sel.onchange=refresh;
   refresh();
@@ -3390,20 +3397,28 @@ async function submitEditUser(uid){
 }
 
 // ============================ registration modules (stations / officers / cars) ============================
-// The three regional registration modules share the LOCATIONS schema and
-// the station anchor: a station stores an explicit Region → District →
-// Village/Town; officers and cars store only their station id and inherit
-// the location (inheritedCells()). Data lives in the local db (localStorage)
-// until server endpoints for these registers are added.
+// The three regional registration modules share the LOCATIONS schema. Every
+// record stores its Region → District → Village/Town location explicitly;
+// for officers and cars the form pre-fills the values from the assigned
+// station but the officer may override them — the saved values are what the
+// tables and Central Police Search use. Data lives in the local db
+// (localStorage) until server endpoints for these registers are added.
 function nextId(prefix,list){
   const n=(list||[]).length+1;
   return prefix+'-'+String(n).padStart(prefix==='ST'?3:4,'0');
 }
-// Region/District/Village columns inherited from the record's station.
-function inheritedCells(o){
+// The location stored on an officer/car record. Legacy rows saved before
+// locations were stored per record fall back to their station's location.
+function recordLocation(o){
+  if(o.region||o.district||o.village)return{region:o.region||'',district:o.district||'',village:o.village||''};
   const st=stationById(o.station);
-  if(!st)return '<td colspan="3" class="muted">— unassigned —</td>';
-  return `<td><span class="badge blue">${esc(st.region)}</span></td><td>${esc(st.district)}</td><td>${esc(st.village)}</td>`;
+  return st?{region:st.region,district:st.district,village:st.village}:{region:'',district:'',village:''};
+}
+// Region/District/Village columns from the record's own stored location.
+function locationCells(o){
+  const l=recordLocation(o);
+  if(!l.region&&!l.district&&!l.village)return '<td colspan="3" class="muted">— no location —</td>';
+  return `<td><span class="badge blue">${esc(l.region)}</span></td><td>${esc(l.district)}</td><td>${esc(l.village)}</td>`;
 }
 function renderStationsTable(){
   const tb=document.getElementById('stationsTable');if(!tb)return;
@@ -3420,7 +3435,7 @@ function renderOfficersTable(){
     return `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.phone||'')}</small></td>
     <td>${esc(o.badge)}</td><td>${esc(o.rank)}</td>
     <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':'<span class="muted">—</span>'}</td>
-    ${inheritedCells(o)}</tr>`}).join('');
+    ${locationCells(o)}</tr>`}).join('');
   tb.innerHTML=rows||'<tr><td colspan="7" class="empty">No officers registered yet</td></tr>';
 }
 function renderCarsTable(){
@@ -3429,7 +3444,7 @@ function renderCarsTable(){
     return `<tr><td><b>${esc(c.plate)}</b></td>
     <td>${esc(c.type)}${c.make||c.model?`<br><small class="muted">${esc([c.make,c.model].filter(Boolean).join(' '))}</small>`:''}</td>
     <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':'<span class="muted">—</span>'}</td>
-    ${inheritedCells(c)}</tr>`}).join('');
+    ${locationCells(c)}</tr>`}).join('');
   tb.innerHTML=rows||'<tr><td colspan="6" class="empty">No cars registered yet</td></tr>';
 }
 // ---- Central Police Search: one location filter across all three registers ----
@@ -3462,14 +3477,16 @@ function renderPoliceSearch(){
     head.innerHTML='<tr><th>Officer</th><th>Badge</th><th>Rank</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr>';
     const list=(db.officers||[]).filter(o=>{
       const st=stationOf(o);
-      return psLocMatch(st?{region:st.region,district:st.district,village:st.village}:{},f)
+      // Filter on the officer record's own stored location (recordLocation
+      // falls back to the station only for legacy rows without one).
+      return psLocMatch(recordLocation(o),f)
         && textMatch(o.name,o.badge,o.rank,o.phone,st&&st.name,st&&st.code);
     });
     count=list.length;
     rows=list.map(o=>{const st=stationOf(o);
       return `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.phone||'')}</small></td>
       <td>${esc(o.badge)}</td><td>${esc(o.rank)}</td>
-      <td>${st?esc(st.name):'—'}</td>${inheritedCells(o)}</tr>`}).join('');
+      <td>${st?esc(st.name):'—'}</td>${locationCells(o)}</tr>`}).join('');
   }else if(psType==='stations'){
     head.innerHTML='<tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Officers</th><th>Cars</th></tr>';
     const list=(db.stations||[]).filter(s=>psLocMatch(s,f)&&textMatch(s.name,s.code,s.notes));
@@ -3483,14 +3500,16 @@ function renderPoliceSearch(){
     head.innerHTML='<tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr>';
     const list=(db.cars||[]).filter(c=>{
       const st=stationOf(c);
-      return psLocMatch(st?{region:st.region,district:st.district,village:st.village}:{},f)
+      // Filter on the car record's own stored location (recordLocation
+      // falls back to the station only for legacy rows without one).
+      return psLocMatch(recordLocation(c),f)
         && textMatch(c.plate,c.type,c.make,c.model,st&&st.name,st&&st.code);
     });
     count=list.length;
     rows=list.map(c=>{const st=stationOf(c);
       return `<tr><td><b>${esc(c.plate)}</b></td>
       <td>${esc(c.type)}${c.make||c.model?` <small class="muted">${esc([c.make,c.model].filter(Boolean).join(' '))}</small>`:''}</td>
-      <td>${st?esc(st.name):'—'}</td>${inheritedCells(c)}</tr>`}).join('');
+      <td>${st?esc(st.name):'—'}</td>${locationCells(c)}</tr>`}).join('');
   }
   tb.innerHTML=rows||'<tr><td colspan="7" class="empty">No records match the current filter</td></tr>';
   const cnt=document.getElementById('psCount');
@@ -3526,17 +3545,24 @@ function saveOfficer(e){
   if(!stationId){showFormError('Assign the officer to a police station.',{names:['offStation'],notice:'offNotice'});return}
   const dup=(db.officers||[]).find(o=>normTxt(o.badge)===normTxt(badge));
   if(dup){showFormError('Badge '+badge+' is already assigned to '+dup.name+'.',{names:['offBadge'],notice:'offNotice'});return}
+  const rl=requireLocation('off');
+  if(!rl.ok){showFormError(rl.msg,{prefix:'off',names:['region','district','village'],notice:'offNotice'});return}
   const st=stationById(stationId);
+  // The officer's location is stored EXPLICITLY on the record — the
+  // values actually entered in the form (pre-filled from the station,
+  // possibly overridden). The tables and Central Police Search display
+  // these stored values, not the station's live location.
   db.officers=(db.officers||[]).concat({id:nextId('OF',db.officers),name,badge,rank:offRank.value,
-    phone:offPhone.value.trim(),station:stationId});
+    phone:offPhone.value.trim(),station:stationId,
+    region:rl.loc.region,district:rl.loc.district,village:rl.loc.village});
   persist();resetOfficerForm();
   renderOfficersTable();renderPoliceSearch();
-  toast('Officer registered',name+' · '+badge+' — assigned to '+st.name+' ('+locationLabel(st)+')');
+  toast('Officer registered',name+' · '+badge+' — assigned to '+st.name+' ('+locationLabel(rl.loc)+')');
 }
 function resetOfficerForm(){
   offName.value='';offBadge.value='';offRank.value='Officer';offPhone.value='';
   offStation.value='';
-  paintInheritedLocation('off',{region:'',district:'',village:''});
+  paintLocationDefaults('off',{region:'',district:'',village:''});
   offNotice.className='notice';offNotice.style.display='none';
 }
 // ---- car registration ----------------------------------------------------------
@@ -3547,17 +3573,24 @@ function saveCar(e){
   if(!stationId){showFormError('Assign the car to a police station.',{names:['carStation'],notice:'carNotice'});return}
   const dup=(db.cars||[]).find(c=>normTxt(c.plate)===normTxt(plate));
   if(dup){showFormError('Plate '+plate+' is already registered.',{names:['carPlate'],notice:'carNotice'});return}
+  const rl=requireLocation('car');
+  if(!rl.ok){showFormError(rl.msg,{prefix:'car',names:['region','district','village'],notice:'carNotice'});return}
   const st=stationById(stationId);
+  // The car's location is stored EXPLICITLY on the record — the values
+  // actually entered in the form (pre-filled from the station, possibly
+  // overridden). The tables and Central Police Search display these
+  // stored values, not the station's live location.
   db.cars=(db.cars||[]).concat({id:nextId('CR',db.cars),plate,type:carType.value,
-    make:carMake.value.trim(),model:carModel.value.trim(),station:stationId});
+    make:carMake.value.trim(),model:carModel.value.trim(),station:stationId,
+    region:rl.loc.region,district:rl.loc.district,village:rl.loc.village});
   persist();resetCarForm();
   renderCarsTable();renderPoliceSearch();
-  toast('Car registered',plate+' — assigned to '+st.name+' ('+locationLabel(st)+')');
+  toast('Car registered',plate+' — assigned to '+st.name+' ('+locationLabel(rl.loc)+')');
 }
 function resetCarForm(){
   carPlate.value='';carType.value='Patrol';carMake.value='';carModel.value='';
   carStation.value='';
-  paintInheritedLocation('car',{region:'',district:'',village:''});
+  paintLocationDefaults('car',{region:'',district:'',village:''});
   carNotice.className='notice';carNotice.style.display='none';
 }
 
@@ -3568,16 +3601,16 @@ document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:tru
 document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
 document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
 // Regional registration modules: build the shared Region → District →
-// Village dropdowns (stations form editable; officer / car forms show the
-// locked, station-inherited block; police search gets "All …" filter
-// levels) and wire the station pickers to their inheritance blocks.
+// Village dropdowns (station / officer / car forms all editable; police
+// search gets "All …" filter levels) and wire each station picker so
+// picking a station pre-fills its location as editable defaults.
 locationDropdowns('st');
-locationDropdowns('off',{disabled:true});
-locationDropdowns('car',{disabled:true});
+locationDropdowns('off');
+locationDropdowns('car');
 locationDropdowns('ps',{withAll:true,onchange:renderPoliceSearch});
 refreshStationSelects();
-wireStationInheritance('offStation','off');
-wireStationInheritance('carStation','car');
+wireStationLocationDefaults('offStation','off');
+wireStationLocationDefaults('carStation','car');
 applyNavForRole();   // hide admin pages until sign-in
 // Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
 // filter when investigating the 'South Checkpoint 0' bug). Toggle
