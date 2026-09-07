@@ -298,7 +298,7 @@ async function main() {
     if (/South Checkpoint/.test(eastChips)) throw new Error('cp.east must not render a South chip: ' + eastChips);
     if (/West Checkpoint/.test(eastChips)) throw new Error('cp.east must not render a West chip: ' + eastChips);
     const adminChips = renderChipsFor(
-      { id: 1, username: 'admin', display_name: 'Officer A. Hassan', role: 'SystemAdmin', role_alias: 'system_admin', location_scope: null, modules: ['dashboard', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints', 'analytics', 'admin'] },
+      { id: 1, username: 'admin', display_name: 'Officer A. Hassan', role: 'SystemAdmin', role_alias: 'system_admin', location_scope: null, modules: ['dashboard', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints', 'analytics', 'admin', 'policesearch', 'stations', 'officers', 'cars'] },
       sampleEvents);
     if (!/All locations/.test(adminChips)) throw new Error('admin chip group missing the All locations chip: ' + adminChips);
     for (const loc of ['South', 'East', 'West']) {

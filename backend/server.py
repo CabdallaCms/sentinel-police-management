@@ -607,11 +607,19 @@ ROLE_LABELS = {
 # Map a role to the operational modules it is allowed to use. Admins get
 # everything; unit users get their single module; checkpoint users only get
 # the Checkpoint module and their own location scope.
+#
+# Regional registration modules (frontend-only registers for now):
+#   * 'policesearch' — Central Police Search (officers/stations/cars filter
+#     by Region → District → Village); granted to the same roles that can
+#     see the Central Person Search ('people').
+#   * 'stations' / 'officers' / 'cars' — Police Registrations & Management;
+#     administrative operations, granted to SystemAdmin only.
 ROLE_MODULES = {
-    ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints'},
-    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint'},
-    ROLE_AIRPORT: {'dashboard', 'people', 'airport'},
-    ROLE_CID: {'dashboard', 'people', 'cid'},
+    ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
+                 'policesearch', 'stations', 'officers', 'cars'},
+    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
+    ROLE_AIRPORT: {'dashboard', 'people', 'airport', 'policesearch'},
+    ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch'},
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},

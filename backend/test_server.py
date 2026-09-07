@@ -394,13 +394,14 @@ def main():
             expected_mods = {'dashboard'}
             if role == 'SystemAdmin':
                 expected_mods |= {'admin', 'analytics', 'airport', 'checkpoints',
-                                  'cid', 'fingerprint', 'people'}
+                                  'cid', 'fingerprint', 'people', 'policesearch',
+                                  'stations', 'officers', 'cars'}
             elif role == 'FingerprintUnit':
-                expected_mods |= {'fingerprint', 'people'}
+                expected_mods |= {'fingerprint', 'people', 'policesearch'}
             elif role == 'AirportControl':
-                expected_mods |= {'airport', 'people'}
+                expected_mods |= {'airport', 'people', 'policesearch'}
             elif role == 'CIDUnit':
-                expected_mods |= {'cid', 'people'}
+                expected_mods |= {'cid', 'people', 'policesearch'}
             elif role.startswith('Checkpoint'):
                 expected_mods |= {'checkpoints'}
             assert set(r['user']['modules']) == expected_mods, (u, r['user'])

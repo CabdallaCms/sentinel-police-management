@@ -11,6 +11,8 @@ A working browser-based prototype for a central police management platform. It i
 - Suspect list
 - South, West and East Checkpoints
 - Hargeisa Local Airport passenger register
+- Central Police Search (officers / stations / cars by Region → District → Village)
+- Police Stations / Officers / Cars registration (regional modules)
 - Dashboard and cross-unit activity feed
 
 ## Central-person linking model
@@ -90,6 +92,31 @@ The top bar shows the active officer and location, e.g. **Officer H. Xasan · So
 **Role normalization.** Every accepted Checkpoint-officer spelling (`CheckpointSouth` / `CheckpointEast` / `CheckpointWest`, `checkpoint_south`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, …) is normalized to the canonical role **`checkpoint_officer`** while the officer's `location_scope` (`South` / `East` / `West`) is preserved (and derived from the alias when not passed explicitly). `GET /api/dashboard` and `GET /api/checkpoint-events` return HTTP 200 for all of these roles — never 404/401 for a valid checkpoint officer — and the checkpoint query matches the location case-insensitively (`LOWER(location_code) = 'south' OR LOWER(checkpoint_location) LIKE '%south%'` and equivalent columns).
 
 **Checkpoint table freshness.** `submitCheckpoint()` prepends the new stop into `db.checkpoints` immediately so the table and the location badge update instantly (`South Checkpoint 0 → 1`), and `syncServer()` never overwrites `db.checkpoints` with `[]` from a transient/failed response — only a successful response with rows replaces the local cache.
+
+### Grouped sidebar navigation
+
+The flat module list is reorganised into three **collapsible sidebar groups** (open/closed state persists in `localStorage.sentinelNavGroups`; navigating into a group auto-expands it, and the narrow icon-only mobile rail always shows items flat):
+
+- **Central Search** — *Central Person Search* (the existing `people` registry) and *Central Police Search* (new `policesearch` page: one cascading Region → District → Village/Town filter across the police officers, stations and cars registers, plus a free-text search).
+- **CID — Criminal Investigation Directorate** — *Fingerprint Unit* (`fingerprint`), *Crime Department* (`cid`), *Checkpoint Unit* (`checkpoints`) and *Airport Unit* (`airport`). These are the existing routes, regrouped and re-labelling only — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Department entry.
+- **Police Registrations & Management** (System Admin only) — *Police Stations* (`stations`), *Police Officers* (`officers`) and *Police Cars* (`cars`).
+- **Administration** (System Admin only, as before) — *Analytics* and *User Management*.
+
+Visibility is still driven by the `modules` array from `GET /api/me`: a group hides entirely when every item inside it is hidden for the signed-in role.
+
+### Regional location schema (Sool · Sanaag · East Togdheer)
+
+Registration modules share one location hierarchy — **Region → District → Village/Town** — defined once in the `LOCATIONS` constant in `index.html`. It is the single source of truth for every location control, so extending the gazetteer there is all that is needed to make a new district selectable everywhere.
+
+The three levels are entered as **Dropdown (Region) → Dropdown (District) → Text Input (Village/Town)**:
+
+- **Region** — a dropdown restricted to exactly three options: **Sool**, **Sanaag**, **East Togdheer**.
+- **District** — a dropdown restricted to the official districts belonging to the selected Region (e.g. Sool → Laascaanood / Nugaal; East Togdheer → Gaalkacyo, Gargaar, Xarun Adan Yabaas, Qosley, Barkad, Ceel-cas, El-Ayo, Guban, Hobeeyo, Maroodi Jeex, Xagaa, Buuhoodle).
+- **Village/Town** — a **free-text input** (no fixed list). The registering officer types the exact settlement name at entry time, e.g. Region `East Togdheer` → District `Buuhoodle` → Village `Widh Widh`, or Region `Sool` → District `Laascaanood` → Village `Adhi Cadeeye`.
+
+- **Reusable component** — `locationDropdowns(prefix, opts)` renders and wires the control (`{prefix}-region` select, `{prefix}-district` select, `{prefix}-village` text input) into a `.loc-grid` container: choosing a Region populates its official Districts (and clears the typed Village/Town); choosing a District clears the typed Village/Town. `opts.withAll` adds "All …" placeholders (used by the Central Police Search filter) and `opts.disabled` renders the whole block locked (used for inherited locations). `readLocation(prefix)` / `setLocation(prefix, loc)` read and write the three levels; `requireLocation(prefix)` enforces all three (village must be non-empty text).
+- **Station anchor model** — Police **Station Registration** captures *Station Name, Code, Region, District, Village/Town* (`requireLocation()` enforces all three levels). **Police Officer** and **Police Car** registration link a record to an assigned station and **inherit** the station's Region/District/Village automatically — the location block is rendered read-only (`paintInheritedLocation`) and the tables derive their location columns from the station (`inheritedCells()`), so re-anchoring a station re-anchors every assigned officer and car. Central Police Search matches the manually typed Village/Town level case-insensitively.
+- **Storage** — these three registers currently live in the frontend local `db` (localStorage, seeded with sample stations across all three regions) until server endpoints are added; Central Police Search filters all three registers through the same cascading location filter. The `policesearch` / `stations` / `officers` / `cars` module keys are already part of `ROLE_MODULES` (policesearch granted to the roles that can see the person registry; the three registration modules admin-only), so `/api/me` drives both nav visibility and the `go()` RBAC redirect.
 
 ### Executive Analytics dashboard (admin only)
 

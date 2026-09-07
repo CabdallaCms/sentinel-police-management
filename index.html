@@ -197,9 +197,26 @@ body.modal-open{overflow:hidden}
 .um-table .status-on{color:var(--green);font-weight:700}
 .um-table .status-off{color:#8a93a6;font-weight:700}
 .um-empty{padding:30px;text-align:center;color:var(--muted)}
-/* Sidebar small label grouping (Operations / Administration) */
+/* Sidebar small label grouping (Administration) */
 .side .group-label{padding:14px 12px 6px;color:#7896c2;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.4px}
 .side .group-label.admin{color:#c7a04a}
+/* Collapsible sidebar groups (Central Search / CID / Registrations) */
+.nav-group{margin-top:4px}
+.nav-group-toggle{background:transparent;color:#9fb6d8;text-align:left;padding:9px 13px;border-radius:9px;font-weight:800;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;display:flex;gap:10px;align-items:center;width:100%}
+.nav-group-toggle:hover{background:#1c3055;color:#fff}
+.nav-group-toggle i{font-style:normal;width:20px;text-align:center;font-size:13px}
+.nav-chev{margin-left:auto;font-size:10px;color:#6d87b0;transition:transform .18s ease}
+.nav-group.open .nav-chev{transform:rotate(180deg)}
+.nav-group-body{display:none;gap:4px;margin:3px 0 4px 14px;border-left:1px solid #223c68;padding-left:9px}
+.nav-group.open .nav-group-body{display:grid}
+.nav-group-body button{padding:10px 12px;font-size:13px}
+@media(max-width:950px){
+  .nav-group-toggle{display:none}
+  .nav-group-body{display:grid;margin:0;border-left:0;padding-left:0}
+}
+/* Region → District → Village cascading dropdowns (shared component) */
+.loc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:1100px){.loc-grid{grid-template-columns:1fr}}
 /* Hide top-bar admin links when not admin */
 .top .admin-only{display:none}
 .top.is-admin .admin-only{display:inline-flex}
@@ -238,14 +255,36 @@ body.modal-open{overflow:hidden}
 </div>
 <div class="app">
 <aside class="side"><div class="brand"><div class="crest">S</div><span>Sentinel</span></div>
-<small class="group-label" data-group="operations">Operations</small>
 <nav class="nav" id="nav">
 <button class="active" data-page="dashboard" data-modules="dashboard"><i>▦</i><span>Dashboard</span></button>
-<button data-page="people" data-modules="people"><i>◉</i><span>Central Persons</span></button>
+
+<div class="nav-group open" data-group="search">
+<button type="button" class="nav-group-toggle" data-group-toggle="search"><i>⌕</i><span>Central Search</span><span class="nav-chev">▾</span></button>
+<div class="nav-group-body" data-group-body="search">
+<button data-page="people" data-modules="people"><i>◉</i><span>Central Person Search</span></button>
+<button data-page="policesearch" data-modules="policesearch"><i>⌕</i><span>Central Police Search</span></button>
+</div>
+</div>
+
+<div class="nav-group open" data-group="cid">
+<button type="button" class="nav-group-toggle" data-group-toggle="cid"><i>⌂</i><span>CID — Criminal Investigation Directorate</span><span class="nav-chev">▾</span></button>
+<div class="nav-group-body" data-group-body="cid">
 <button data-page="fingerprint" data-modules="fingerprint"><i>⌁</i><span>Fingerprint Unit</span></button>
-<button data-page="cid" data-modules="cid"><i>⌂</i><span>CID Criminal Unit</span></button>
-<button data-page="checkpoints" data-modules="checkpoints"><i>⊙</i><span>Checkpoints</span></button>
-<button data-page="airport" data-modules="airport"><i>✈</i><span>Airport</span></button>
+<button data-page="cid" data-modules="cid"><i>⚖</i><span>Crime Department</span></button>
+<button data-page="checkpoints" data-modules="checkpoints"><i>⊙</i><span>Checkpoint Unit</span></button>
+<button data-page="airport" data-modules="airport"><i>✈</i><span>Airport Unit</span></button>
+</div>
+</div>
+
+<div class="nav-group open" data-group="registrations">
+<button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i>▤</i><span>Police Registrations &amp; Management</span><span class="nav-chev">▾</span></button>
+<div class="nav-group-body" data-group-body="registrations">
+<button data-page="stations" data-modules="stations"><i>🏛</i><span>Police Stations</span></button>
+<button data-page="officers" data-modules="officers"><i>👤</i><span>Police Officers</span></button>
+<button data-page="cars" data-modules="cars"><i>🚓</i><span>Police Cars</span></button>
+</div>
+</div>
+
 <small class="group-label admin" data-group="admin" style="display:none">Administration</small>
 <button data-page="analytics" data-modules="analytics" style="display:none"><i>📈</i><span>Analytics</span></button>
 <button data-page="admin" data-modules="admin" style="display:none"><i>⚙</i><span>User Management</span></button>
@@ -476,6 +515,102 @@ body.modal-open{overflow:hidden}
 </div>
 </section>
 
+<!-- CENTRAL POLICE SEARCH (officers / stations / cars by Region → District → Village) -->
+<section id="policesearch" class="page">
+<div class="panel">
+<div class="panel-head"><div><h2>Central Police Search</h2><div class="sub">Filter police officers, stations and cars across Sool, Sanaag and East Togdheer</div></div><span class="badge gray" id="psCount" style="display:none">0</span></div>
+<div class="hint" style="margin-bottom:16px"><b>Location filter:</b> pick a Region, then a District, then type the Village/Town name — each level narrows the search. Leave a level blank to widen it.</div>
+<div class="form">
+<div id="ps-loc" class="loc-grid"></div>
+<div class="search"><span>⌕</span><input id="psSearch" placeholder="Search name, badge, plate, station name or code…" oninput="renderPoliceSearch()"></div>
+</div>
+<div class="tabs">
+<button class="tab active" data-psz="officers" onclick="psTab('officers')">Officers</button>
+<button class="tab" data-psz="stations" onclick="psTab('stations')">Stations</button>
+<button class="tab" data-psz="cars" onclick="psTab('cars')">Cars</button>
+</div>
+<div class="table-wrap"><table class="table"><thead id="psHead"></thead><tbody id="psTable"></tbody></table></div>
+</div>
+</section>
+
+<!-- POLICE STATIONS REGISTRATION -->
+<section id="stations" class="page">
+<div class="grid2">
+<div class="panel">
+<div class="panel-head"><div><h2>Register police station</h2><div class="sub">Station name, code and location</div></div></div>
+<div id="stNotice" class="notice"></div>
+<form class="form" id="stForm" onsubmit="saveStation(event)">
+<div class="grid2">
+<div class="field"><label>Station name *</label><input id="stName" placeholder="e.g. Burao Central Station"></div>
+<div class="field"><label>Station code *</label><input id="stCode" placeholder="e.g. SAN-C-02"></div>
+</div>
+<div class="section-label">Location — Sool · Sanaag · East Togdheer</div>
+<div id="st-loc" class="loc-grid"></div>
+<div class="field"><label>Notes</label><textarea id="stNotes" placeholder="Coverage area, shift details…"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" type="submit">Register station</button></div>
+</form>
+</div>
+<div class="panel">
+<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station anchors its officers and cars to a Region → District → Village</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
+</div>
+</div>
+</section>
+
+<!-- POLICE OFFICERS REGISTRATION -->
+<section id="officers" class="page">
+<div class="grid2">
+<div class="panel">
+<div class="panel-head"><div><h2>Register police officer</h2><div class="sub">Assign to a station — the location is inherited automatically</div></div></div>
+<div id="offNotice" class="notice"></div>
+<form class="form" id="offForm" onsubmit="saveOfficer(event)">
+<div class="grid2">
+<div class="field"><label>Full name *</label><input id="offName" placeholder="e.g. Maxamed Faarax Nuur"></div>
+<div class="field"><label>Badge number *</label><input id="offBadge" placeholder="e.g. PL-1005"></div>
+<div class="field"><label>Rank</label><select id="offRank"><option>Officer</option><option>Sergeant</option><option>Sergeant Major</option><option>Inspector</option><option>Station Commander</option><option>Commissioner</option></select></div>
+<div class="field"><label>Contact number</label><input id="offPhone" placeholder="+252 …"></div>
+</div>
+<div class="section-label">Assignment</div>
+<div class="field"><label>Assigned police station *</label><select id="offStation"></select></div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Inherited location:</b> the station's Region, District and Village/Town are carried onto the officer record automatically — these fields are read-only.</div>
+<div id="off-loc" class="loc-grid"></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetOfficerForm()">Clear</button><button class="btn" type="submit">Register officer</button></div>
+</form>
+</div>
+<div class="panel">
+<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Location shown is inherited from the assigned station</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Badge</th><th>Rank</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="officersTable"></tbody></table></div>
+</div>
+</div>
+</section>
+
+<!-- POLICE CARS REGISTRATION -->
+<section id="cars" class="page">
+<div class="grid2">
+<div class="panel">
+<div class="panel-head"><div><h2>Register police car</h2><div class="sub">Assign to a station — the location is inherited automatically</div></div></div>
+<div id="carNotice" class="notice"></div>
+<form class="form" id="carForm" onsubmit="saveCar(event)">
+<div class="grid2">
+<div class="field"><label>Plate number *</label><input id="carPlate" placeholder="e.g. PL-1010-26"></div>
+<div class="field"><label>Vehicle type</label><select id="carType"><option>Patrol</option><option>Motorcycle</option><option>Van</option><option>Truck</option><option>SWAT</option><option>Other</option></select></div>
+<div class="field"><label>Make</label><input id="carMake" placeholder="e.g. Toyota"></div>
+<div class="field"><label>Model / Year</label><input id="carModel" placeholder="e.g. Hilux · 2024"></div>
+</div>
+<div class="section-label">Assignment</div>
+<div class="field"><label>Assigned police station *</label><select id="carStation"></select></div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Inherited location:</b> the station's Region, District and Village/Town are carried onto the car record automatically — these fields are read-only.</div>
+<div id="car-loc" class="loc-grid"></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register car</button></div>
+</form>
+</div>
+<div class="panel">
+<div class="panel-head"><div><h2>Registered cars</h2><div class="sub">Location shown is inherited from the assigned station</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="carsTable"></tbody></table></div>
+</div>
+</div>
+</section>
+
 <!-- ANALYTICS (admin only) -->
 <section id="analytics" class="page">
 <div class="cards kpi-row" id="analyticsKpis">
@@ -559,8 +694,32 @@ fingerprint:[{id:'FP-2026-0042',person:'P-0003',purpose:'Education',status:'Pend
 cases:[{id:'CID-2026-008',category:'Property crime',location:'Hargeisa Central',status:'Under Investigation',summary:'Shop burglary overnight; cash and goods reported missing.',participants:[{person:'P-0002',role:'Suspect',note:''}],evidence:[]},
 {id:'CID-2026-009',category:'Fraud',location:'Jigjiga Yar',status:'Submitted for Prosecution',summary:'Advance-fee fraud reported by a local business owner.',participants:[],evidence:[]}],
 suspects:[{person:'P-0002',case:'CID-2026-008',role:'Suspect',alert:'Active alert',origin:'Case Link'}],
-checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted'}]};
+checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted'}],
+// Regional registration modules. Stations carry the explicit
+// Region → District → Village location; officers and cars only store
+// their station and inherit the location from it (see inheritedCells()).
+stations:[
+{id:'ST-001',name:'Hargeisa Central Station',code:'SAN-C-01',region:'Sanaag',district:'Cayn',village:'Hargeisa',notes:''},
+{id:'ST-002',name:'Burao Station',code:'SAN-C-02',region:'Sanaag',district:'Gacanlibo',village:'Burao',notes:''},
+{id:'ST-003',name:'Erigavo Station',code:'SAN-C-03',region:'Sanaag',district:'Harardhere',village:'Erigavo',notes:''},
+{id:'ST-004',name:'Las Anod Station',code:'SOO-C-01',region:'Sool',district:'Laascaanood',village:'Laascaanood',notes:''},
+{id:'ST-005',name:'Gaalkacyo Station',code:'TOG-C-01',region:'East Togdheer',district:'Gaalkacyo',village:'Gaalkacyo',notes:''},
+{id:'ST-006',name:'Buuhoodle Station',code:'ETG-C-02',region:'East Togdheer',district:'Buuhoodle',village:'Widh Widh',notes:''},
+{id:'ST-007',name:'Adhi Cadeeye Outpost',code:'SOO-C-02',region:'Sool',district:'Laascaanood',village:'Adhi Cadeeye',notes:''}],
+officers:[
+{id:'OF-0001',name:'Maxamed Faarax Nuur',badge:'PL-1001',rank:'Station Commander',phone:'+252 63 555 0101',station:'ST-001'},
+{id:'OF-0002',name:'Amina Suleymaan Cabdi',badge:'PL-1002',rank:'Sergeant',phone:'+252 63 555 0102',station:'ST-002'},
+{id:'OF-0003',name:'Hassan Cabdi Xirsi',badge:'PL-1003',rank:'Officer',phone:'+252 63 555 0103',station:'ST-004'},
+{id:'OF-0004',name:'Sahra Axmed Yuusuf',badge:'PL-1004',rank:'Officer',phone:'+252 63 555 0104',station:'ST-005'}],
+cars:[
+{id:'CR-0001',plate:'PL-1001-26',type:'Patrol',make:'Toyota',model:'Hilux · 2024',station:'ST-001'},
+{id:'CR-0002',plate:'PL-1002-25',type:'Patrol',make:'Nissan',model:'Pickup · 2023',station:'ST-002'},
+{id:'CR-0003',plate:'PL-1005-26',type:'Motorcycle',make:'Honda',model:'CRF · 2025',station:'ST-004'},
+{id:'CR-0004',plate:'PL-1008-24',type:'Van',make:'Mercedes',model:'Sprinter · 2022',station:'ST-005'}]};
 let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
+// Backfill the regional registration collections for databases persisted
+// before the stations / officers / cars modules existed.
+['stations','officers','cars'].forEach(k=>{if(!Array.isArray(db[k]))db[k]=seed[k].map(x=>({...x}))});
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
 // ---- session state --------------------------------------------------------
 // `apiToken` is the live Bearer token (a.k.a. authToken), `currentUser` is
@@ -663,7 +822,7 @@ function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fou
   mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
-const TITLES={dashboard:'Operations dashboard',people:'Central person registry',fingerprint:'Fingerprint Unit',airport:'Airport passenger register',cid:'CID Criminal Unit',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint operations',analytics:'Executive analytics',admin:'User management'};
+const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',analytics:'Executive analytics',admin:'User management'};
 // Current session ----------------------------------------------------
 let sessionUser=null;          // {id,username,display_name,role,role_label,branch,location,location_scope,modules,active}
 let sessionVisibility=null;    // /api/me visibility
@@ -677,11 +836,20 @@ function go(page){
   }
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById(page).classList.add('active');
-  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===page));
+  // The case workspace is a sub-page of the Crime Department — highlight
+  // its nav entry (and keep its CID group expanded) while inside a case.
+  const navPage = page==='caseworkspace' ? 'cid' : page;
+  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===navPage));
+  const g = PAGE_GROUP[navPage];
+  if(g) setNavGroupOpen(g, true);
   document.getElementById('pageTitle').textContent=TITLES[page]||'';
   if(page==='cid') renderCases();
   if(page==='analytics') renderAnalytics();
   if(page==='admin') renderUserTable();
+  if(page==='policesearch') renderPoliceSearch();
+  if(page==='stations') renderStationsTable();
+  if(page==='officers') renderOfficersTable();
+  if(page==='cars') renderCarsTable();
   if(page==='dashboard'){
     // Force a fresh /api/dashboard fetch on every navigation. This
     // guarantees the active user always sees their own role-scoped
@@ -704,7 +872,195 @@ function go(page){
   renderAll();
 }
 const ALLOWED_PAGES_WITHOUT_AUTH = new Set();
-document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>go(b.dataset.page));
+// Only buttons that navigate (data-page) get the go() handler — the
+// collapsible group toggles are wired separately below.
+document.querySelectorAll('#nav button[data-page]').forEach(b=>b.onclick=()=>go(b.dataset.page));
+
+// ---- collapsible sidebar groups ---------------------------------------------
+// The flat module list is organised into three collapsible groups:
+//   * search        — Central Search (person + police registers)
+//   * cid           — Criminal Investigation Directorate units
+//   * registrations — Police Registrations & Management
+// Open/closed state persists across reloads (sentinelNavGroups); opening a
+// page always expands the group that contains it (see go()).
+const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',cars:'registrations'};
+const NAV_GROUPS_KEY='sentinelNavGroups';
+function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
+function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
+function setNavGroupOpen(name,open){
+  const el=document.querySelector('.nav-group[data-group="'+name+'"]');
+  if(el) el.classList.toggle('open',!!open);
+}
+function toggleNavGroup(name){
+  const s=navGroupsState();
+  s[name]=(s[name]===undefined)?false:!s[name];
+  saveNavGroupsState(s);
+  setNavGroupOpen(name,s[name]);
+}
+(function initNavGroups(){
+  const s=navGroupsState();
+  document.querySelectorAll('.nav-group').forEach(g=>{
+    const name=g.dataset.group;
+    setNavGroupOpen(name, s[name]===undefined ? true : !!s[name]);
+    const t=g.querySelector('.nav-group-toggle');
+    if(t) t.onclick=()=>toggleNavGroup(name);
+  });
+})();
+
+// ============================ locations: Region → District → Village/Town ============================
+// Shared location schema for the registration modules (Police Stations /
+// Officers / Cars) and the Central Police Search.
+//
+//   Hierarchy:  Region (Sool / Sanaag / East Togdheer) → District → Village/Town
+//
+// Levels 1-2 (Region, District) are dropdowns driven by the gazetteer
+// below; level 3 (Village/Town) is FREE TEXT — the registering officer
+// types the exact settlement name at entry time, so there is deliberately
+// no fixed village list. The data below is seed content, kept in this ONE
+// place — every Region/District dropdown in the app is rendered from
+// LOCATIONS, so extending the gazetteer here is all that is needed to
+// make a new district selectable everywhere.
+const LOCATIONS=[
+  {region:'Sool',districts:['Laascaanood','Nugaal']},
+  {region:'Sanaag',districts:['Cayn','Gacanlibo','Harardhere','Ceelbuur','Calailooy','Dhahar','Buurhanbe']},
+  {region:'East Togdheer',districts:['Gaalkacyo','Gargaar','Xarun Adan Yabaas','Qosley','Barkad','Ceel-cas','El-Ayo','Guban','Hobeeyo','Maroodi Jeex','Xagaa','Buuhoodle']}
+];
+function locationRegions(){return LOCATIONS.map(r=>r.region)}
+function locationDistricts(region){
+  const r=LOCATIONS.find(x=>x.region===region);
+  return r?r.districts.slice():[];
+}
+// 'Sool → Laascaanood → Laascaanood' style label for tables / toasts.
+function locationLabel(loc){
+  return [loc&&loc.region,loc&&loc.district,loc&&loc.village].filter(Boolean).join(' → ');
+}
+
+// Reusable cascading Region → District → Village/Town location control.
+// Renders into the container whose id is `container` (default
+// `${prefix}-loc`):
+//   * a Region <select>  — exactly Sool / Sanaag / East Togdheer
+//   * a District <select> — only the official districts of the Region
+//   * a Village/Town <input type="text"> — FREE TEXT; the registering
+//     officer types the exact settlement name at entry time.
+// Element ids: `${prefix}-region`, `${prefix}-district`, `${prefix}-village`.
+// Cascade rules:
+//   * choosing a Region populates the official Districts (clears Village/Town);
+//   * choosing a District clears the typed Village/Town (a settlement typed
+//     under another district no longer applies);
+//   * the Village/Town box is plain text with no fixed list.
+// opts:
+//   withAll   — "All …" placeholders (filters, e.g. Central Police Search;
+//               blank = no filter on that level)
+//   disabled  — render all three levels locked (inherited location blocks)
+//   value     — {region,district,village} to preselect
+//   onchange  — callback({region,district,village}) after any level changes
+function locationDropdowns(prefix,opts={}){
+  const container=document.getElementById(opts.container||prefix+'-loc');
+  if(!container)return null;
+  const ph={
+    region:opts.withAll?'All regions':'— select region —',
+    district:opts.withAll?'All districts':'— select district —',
+    village:opts.withAll?'All / type a village or town':'e.g. Adhi Cadeeye',
+    villageLocked:'Inherited from station'
+  };
+  const locked=!!opts.disabled;
+  const optsHtml=(values,placeholder)=>
+    `<option value="">${esc(placeholder)}</option>`+
+    values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  container.innerHTML=[
+    {k:'region',label:'Region'},
+    {k:'district',label:'District'}
+  ].map(l=>
+    `<div class="field"><label>${l.label}${locked?'':' *'}</label>`+
+    `<select id="${prefix}-${l.k}"${locked?' disabled class="locked"':''}>`+
+    optsHtml(l.k==='region'?locationRegions():[],ph[l.k])+
+    `</select></div>`
+  ).join('')+
+  `<div class="field"><label>Village / Town${locked?'':' *'}</label>`+
+  `<input id="${prefix}-village" type="text" autocomplete="off"${locked?' disabled class="locked"':''} placeholder="${esc(locked?ph.villageLocked:ph.village)}"></div>`;
+  const sel=k=>document.getElementById(prefix+'-'+k);
+  const emit=()=>{if(opts.onchange)opts.onchange(readLocation(prefix))};
+  function refreshDistricts(){
+    const d=sel('district');if(!d)return;
+    d.innerHTML=optsHtml(locationDistricts(sel('region').value),ph.district);
+  }
+  function clearVillage(){
+    const v=sel('village');if(v)v.value='';
+  }
+  if(!locked){
+    sel('region').onchange=()=>{refreshDistricts();clearVillage();emit()};
+    sel('district').onchange=()=>{clearVillage();emit()};
+    sel('village').oninput=emit;   // live update (drives the search filter as typed)
+  }
+  window._locWires=window._locWires||{};
+  window._locWires[prefix]={refreshDistricts,clearVillage};
+  if(opts.value)setLocation(prefix,opts.value);
+  return{read:()=>readLocation(prefix),set:v=>setLocation(prefix,v)};
+}
+// Read the three levels back as {region,district,village} (village is free text).
+function readLocation(prefix){
+  const g=k=>{const el=document.getElementById(prefix+'-'+k);return el?el.value.trim():''};
+  return{region:g('region'),district:g('district'),village:g('village')};
+}
+// Set the three levels (populating the district options first so the
+// preselected district exists). Pass {} to reset everything.
+function setLocation(prefix,loc){
+  loc=loc||{};
+  const r=document.getElementById(prefix+'-region');
+  if(!r)return;
+  const wire=window._locWires&&window._locWires[prefix];
+  r.value=loc.region||'';
+  if(wire)wire.refreshDistricts();
+  const d=document.getElementById(prefix+'-district');
+  if(d)d.value=loc.district||'';
+  // Village/Town is free text — assign directly (works for editable and
+  // locked/inherited blocks alike).
+  const v=document.getElementById(prefix+'-village');
+  if(v)v.value=loc.village||'';
+}
+// Paint an inherited (read-only) location block from an assigned station's
+// explicit location.
+function paintInheritedLocation(prefix,loc){
+  setLocation(prefix,loc||{region:'',district:'',village:''});
+}
+// Validation shared by the registration forms.
+function requireLocation(prefix){
+  const l=readLocation(prefix);
+  if(!l.region)return{ok:false,msg:'Select a Region (Sool, Sanaag or East Togdheer)'};
+  if(!l.district)return{ok:false,msg:'Select a District in '+l.region};
+  if(!l.village)return{ok:false,msg:'Enter the Village/Town name'};
+  return{ok:true,loc:l};
+}
+
+// ---- station registry + location inheritance --------------------------------
+// Stations are the location anchor: officers and cars store only their
+// station id and inherit Region/District/Village from it, so a station move
+// re-anchors every assigned record automatically.
+function stationById(id){return (db.stations||[]).find(s=>s.id===id)||null}
+function stationOptions(selectedId){
+  const list=db.stations||[];
+  return '<option value="">— select station —</option>'+list.map(s=>
+    `<option value="${esc(s.id)}"${s.id===selectedId?' selected':''}>${esc(s.name)} (${esc(s.code)}) — ${esc(locationLabel(s))}</option>`
+  ).join('');
+}
+function refreshStationSelects(){
+  ['offStation','carStation'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.innerHTML=stationOptions(el.value);
+  });
+}
+// Wire a station <select> to an inherited-location dropdown block: picking a
+// station fills the (locked) Region/District/Village selects with its location.
+function wireStationInheritance(stationSelectId,prefix){
+  const sel=document.getElementById(stationSelectId);
+  if(!sel)return;
+  const refresh=()=>{
+    const st=stationById(sel.value);
+    paintInheritedLocation(prefix, st?{region:st.region,district:st.district,village:st.village}:{region:'',district:'',village:''});
+  };
+  sel.onchange=refresh;
+  refresh();
+}
 
 // ============================ identity: unified matching ============================
 function identityServer(d){return{full_name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),
@@ -1943,6 +2299,12 @@ function renderAll(){
   airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
   renderCases();
   suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No active alerts</td></tr>';
+  // Regional registration modules + Central Police Search keep their tables
+  // current on every full re-render (saves, syncs, logins).
+  renderStationsTable();
+  renderOfficersTable();
+  renderCarsTable();
+  renderPoliceSearch();
   // The checkpoint table is filtered by the active location chip.
   // When the Checkpoints page is active, render through the chip-aware
   // helper so the table is always scope-correct for the signed-in
@@ -2596,6 +2958,7 @@ function doLogout(reason){
   document.getElementById('topbar').classList.remove('is-admin');
   // Reset side nav: show the default modules again, hide admin ones.
   document.querySelectorAll('#nav button').forEach(b => b.style.display = '');
+  document.querySelectorAll('#nav .nav-group').forEach(g => g.style.display = '');
   document.querySelectorAll('.side .group-label').forEach(g => g.style.display = '');
   document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">not signed in</span>';
   if(reason==='expired') toast('Session expired','Please sign in again');
@@ -2667,15 +3030,22 @@ function applyNavForRole(){
   // Hide nav buttons for modules the current user can't access; show admin items for admins.
   const mods = sessionUser ? sessionUser.modules : ['dashboard'];
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
-  document.querySelectorAll('#nav button').forEach(b => {
+  document.querySelectorAll('#nav button[data-page]').forEach(b => {
     const m = b.dataset.modules;
-    b.style.display = mods.includes(m) ? '' : 'none';
-    if(m === 'analytics' || m === 'admin') b.style.display = isAdmin ? '' : 'none';
+    b.style.display = (m === 'analytics' || m === 'admin')
+      ? (isAdmin ? '' : 'none')
+      : (mods.includes(m) ? '' : 'none');
+  });
+  // A collapsible group disappears when every item inside it is hidden,
+  // e.g. the Registrations group never shows for non-admin roles.
+  document.querySelectorAll('#nav .nav-group').forEach(g => {
+    const items = g.querySelectorAll('button[data-page]');
+    let visible = 0;
+    items.forEach(b => { if (b.style.display !== 'none') visible++; });
+    g.style.display = visible ? '' : 'none';
   });
   const adminLabel = document.querySelector('.side .group-label.admin');
   if(adminLabel) adminLabel.style.display = isAdmin ? '' : 'none';
-  const opsLabel = document.querySelector('.side .group-label:not(.admin)');
-  if(opsLabel) opsLabel.style.display = '';
   const topbar = document.getElementById('topbar');
   if(topbar) topbar.classList.toggle('is-admin', isAdmin);
 }
@@ -3013,12 +3383,195 @@ async function submitEditUser(uid){
   }catch(e){ showFormError(e.message || 'Update failed'); }
 }
 
+// ============================ registration modules (stations / officers / cars) ============================
+// The three regional registration modules share the LOCATIONS schema and
+// the station anchor: a station stores an explicit Region → District →
+// Village/Town; officers and cars store only their station id and inherit
+// the location (inheritedCells()). Data lives in the local db (localStorage)
+// until server endpoints for these registers are added.
+function nextId(prefix,list){
+  const n=(list||[]).length+1;
+  return prefix+'-'+String(n).padStart(prefix==='ST'?3:4,'0');
+}
+// Region/District/Village columns inherited from the record's station.
+function inheritedCells(o){
+  const st=stationById(o.station);
+  if(!st)return '<td colspan="3" class="muted">— unassigned —</td>';
+  return `<td><span class="badge blue">${esc(st.region)}</span></td><td>${esc(st.district)}</td><td>${esc(st.village)}</td>`;
+}
+function renderStationsTable(){
+  const tb=document.getElementById('stationsTable');if(!tb)return;
+  const rows=(db.stations||[]).map(s=>`<tr>
+    <td><b>${esc(s.name)}</b>${s.notes?`<br><small class="muted">${esc(s.notes)}</small>`:''}</td>
+    <td>${esc(s.code)}</td>
+    <td><span class="badge blue">${esc(s.region)}</span></td>
+    <td>${esc(s.district)}</td><td>${esc(s.village)}</td></tr>`).join('');
+  tb.innerHTML=rows||'<tr><td colspan="5" class="empty">No stations registered yet</td></tr>';
+}
+function renderOfficersTable(){
+  const tb=document.getElementById('officersTable');if(!tb)return;
+  const rows=(db.officers||[]).map(o=>{const st=stationById(o.station);
+    return `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.phone||'')}</small></td>
+    <td>${esc(o.badge)}</td><td>${esc(o.rank)}</td>
+    <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':'<span class="muted">—</span>'}</td>
+    ${inheritedCells(o)}</tr>`}).join('');
+  tb.innerHTML=rows||'<tr><td colspan="7" class="empty">No officers registered yet</td></tr>';
+}
+function renderCarsTable(){
+  const tb=document.getElementById('carsTable');if(!tb)return;
+  const rows=(db.cars||[]).map(c=>{const st=stationById(c.station);
+    return `<tr><td><b>${esc(c.plate)}</b></td>
+    <td>${esc(c.type)}${c.make||c.model?`<br><small class="muted">${esc([c.make,c.model].filter(Boolean).join(' '))}</small>`:''}</td>
+    <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':'<span class="muted">—</span>'}</td>
+    ${inheritedCells(c)}</tr>`}).join('');
+  tb.innerHTML=rows||'<tr><td colspan="6" class="empty">No cars registered yet</td></tr>';
+}
+// ---- Central Police Search: one location filter across all three registers ----
+let psType='officers';
+function psTab(t){
+  psType=t;
+  document.querySelectorAll('#policesearch .tab').forEach(b=>b.classList.toggle('active',b.dataset.psz===t));
+  renderPoliceSearch();
+}
+// True when a record location {region,district,village} passes the active
+// filter — empty filter levels mean "all".
+function psLocMatch(loc,f){
+  if(!f)return true;
+  if(f.region&&loc.region!==f.region)return false;
+  if(f.district&&loc.district!==f.district)return false;
+  // Village/Town is free text — compare case-insensitively (trimmed) so
+  // manually typed names still match the filter level.
+  if(f.village&&normTxt(loc.village)!==normTxt(f.village))return false;
+  return true;
+}
+function renderPoliceSearch(){
+  const tb=document.getElementById('psTable'),head=document.getElementById('psHead');
+  if(!tb||!head)return;
+  const f=readLocation('ps');
+  const q=normTxt((document.getElementById('psSearch')||{}).value||'');
+  const textMatch=(...fields)=>!q||fields.some(v=>normTxt(v).includes(q));
+  const stationOf=o=>stationById(o.station);
+  let rows='',count=0;
+  if(psType==='officers'){
+    head.innerHTML='<tr><th>Officer</th><th>Badge</th><th>Rank</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr>';
+    const list=(db.officers||[]).filter(o=>{
+      const st=stationOf(o);
+      return psLocMatch(st?{region:st.region,district:st.district,village:st.village}:{},f)
+        && textMatch(o.name,o.badge,o.rank,o.phone,st&&st.name,st&&st.code);
+    });
+    count=list.length;
+    rows=list.map(o=>{const st=stationOf(o);
+      return `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.phone||'')}</small></td>
+      <td>${esc(o.badge)}</td><td>${esc(o.rank)}</td>
+      <td>${st?esc(st.name):'—'}</td>${inheritedCells(o)}</tr>`}).join('');
+  }else if(psType==='stations'){
+    head.innerHTML='<tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Officers</th><th>Cars</th></tr>';
+    const list=(db.stations||[]).filter(s=>psLocMatch(s,f)&&textMatch(s.name,s.code,s.notes));
+    count=list.length;
+    rows=list.map(s=>`<tr>
+      <td><b>${esc(s.name)}</b></td><td>${esc(s.code)}</td>
+      <td><span class="badge blue">${esc(s.region)}</span></td><td>${esc(s.district)}</td><td>${esc(s.village)}</td>
+      <td>${(db.officers||[]).filter(o=>o.station===s.id).length}</td>
+      <td>${(db.cars||[]).filter(c=>c.station===s.id).length}</td></tr>`).join('');
+  }else{
+    head.innerHTML='<tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr>';
+    const list=(db.cars||[]).filter(c=>{
+      const st=stationOf(c);
+      return psLocMatch(st?{region:st.region,district:st.district,village:st.village}:{},f)
+        && textMatch(c.plate,c.type,c.make,c.model,st&&st.name,st&&st.code);
+    });
+    count=list.length;
+    rows=list.map(c=>{const st=stationOf(c);
+      return `<tr><td><b>${esc(c.plate)}</b></td>
+      <td>${esc(c.type)}${c.make||c.model?` <small class="muted">${esc([c.make,c.model].filter(Boolean).join(' '))}</small>`:''}</td>
+      <td>${st?esc(st.name):'—'}</td>${inheritedCells(c)}</tr>`}).join('');
+  }
+  tb.innerHTML=rows||'<tr><td colspan="7" class="empty">No records match the current filter</td></tr>';
+  const cnt=document.getElementById('psCount');
+  if(cnt){cnt.textContent=count;cnt.style.display='';}
+}
+// ---- station registration -----------------------------------------------------
+function saveStation(e){
+  e.preventDefault();clearInvalid();
+  const name=stName.value.trim(),code=stCode.value.trim();
+  if(!name){showFormError('Station name is required.',{names:['stName'],notice:'stNotice'});return}
+  if(!code){showFormError('Station code is required.',{names:['stCode'],notice:'stNotice'});return}
+  const dup=(db.stations||[]).find(s=>normTxt(s.code)===normTxt(code));
+  if(dup){showFormError('A station with code '+dup.code+' already exists ('+dup.name+').',{names:['stCode'],notice:'stNotice'});return}
+  const rl=requireLocation('st');
+  if(!rl.ok){showFormError(rl.msg,{notice:'stNotice'});return}
+  db.stations=(db.stations||[]).concat({id:nextId('ST',db.stations),name,code,
+    region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,notes:stNotes.value.trim()});
+  persist();resetStationForm();refreshStationSelects();
+  renderStationsTable();renderPoliceSearch();
+  toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
+}
+function resetStationForm(){
+  stName.value='';stCode.value='';stNotes.value='';
+  setLocation('st',{region:'',district:'',village:''});
+  stNotice.className='notice';stNotice.style.display='none';
+}
+// ---- officer registration ------------------------------------------------------
+function saveOfficer(e){
+  e.preventDefault();clearInvalid();
+  const name=offName.value.trim(),badge=offBadge.value.trim(),stationId=offStation.value;
+  if(!name){showFormError('Officer full name is required.',{names:['offName'],notice:'offNotice'});return}
+  if(!badge){showFormError('Badge number is required.',{names:['offBadge'],notice:'offNotice'});return}
+  if(!stationId){showFormError('Assign the officer to a police station.',{names:['offStation'],notice:'offNotice'});return}
+  const dup=(db.officers||[]).find(o=>normTxt(o.badge)===normTxt(badge));
+  if(dup){showFormError('Badge '+badge+' is already assigned to '+dup.name+'.',{names:['offBadge'],notice:'offNotice'});return}
+  const st=stationById(stationId);
+  db.officers=(db.officers||[]).concat({id:nextId('OF',db.officers),name,badge,rank:offRank.value,
+    phone:offPhone.value.trim(),station:stationId});
+  persist();resetOfficerForm();
+  renderOfficersTable();renderPoliceSearch();
+  toast('Officer registered',name+' · '+badge+' — assigned to '+st.name+' ('+locationLabel(st)+')');
+}
+function resetOfficerForm(){
+  offName.value='';offBadge.value='';offRank.value='Officer';offPhone.value='';
+  offStation.value='';
+  paintInheritedLocation('off',{region:'',district:'',village:''});
+  offNotice.className='notice';offNotice.style.display='none';
+}
+// ---- car registration ----------------------------------------------------------
+function saveCar(e){
+  e.preventDefault();clearInvalid();
+  const plate=carPlate.value.trim(),stationId=carStation.value;
+  if(!plate){showFormError('Plate number is required.',{names:['carPlate'],notice:'carNotice'});return}
+  if(!stationId){showFormError('Assign the car to a police station.',{names:['carStation'],notice:'carNotice'});return}
+  const dup=(db.cars||[]).find(c=>normTxt(c.plate)===normTxt(plate));
+  if(dup){showFormError('Plate '+plate+' is already registered.',{names:['carPlate'],notice:'carNotice'});return}
+  const st=stationById(stationId);
+  db.cars=(db.cars||[]).concat({id:nextId('CR',db.cars),plate,type:carType.value,
+    make:carMake.value.trim(),model:carModel.value.trim(),station:stationId});
+  persist();resetCarForm();
+  renderCarsTable();renderPoliceSearch();
+  toast('Car registered',plate+' — assigned to '+st.name+' ('+locationLabel(st)+')');
+}
+function resetCarForm(){
+  carPlate.value='';carType.value='Patrol';carMake.value='';carModel.value='';
+  carStation.value='';
+  paintInheritedLocation('car',{region:'',district:'',village:''});
+  carNotice.className='notice';carNotice.style.display='none';
+}
+
 // ============================ init ============================
 buildFileSlots('appDocs','appDoc',4,['Document 1 (ID) *','Document 2 *','Document 3 (optional)','Document 4 (optional)']);
 buildFileSlots('guardDocs','guardDoc',3,['Document 1 (ID) *','Document 2 *','Document 3 (optional)']);
 document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:true});wireIdentity('fp');
 document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
 document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
+// Regional registration modules: build the shared Region → District →
+// Village dropdowns (stations form editable; officer / car forms show the
+// locked, station-inherited block; police search gets "All …" filter
+// levels) and wire the station pickers to their inheritance blocks.
+locationDropdowns('st');
+locationDropdowns('off',{disabled:true});
+locationDropdowns('car',{disabled:true});
+locationDropdowns('ps',{withAll:true,onchange:renderPoliceSearch});
+refreshStationSelects();
+wireStationInheritance('offStation','off');
+wireStationInheritance('carStation','car');
 applyNavForRole();   // hide admin pages until sign-in
 // Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
 // filter when investigating the 'South Checkpoint 0' bug). Toggle
