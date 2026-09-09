@@ -503,6 +503,14 @@ body.modal-open{overflow:hidden}
     <button class="cp-loc-chip" data-cp-loc="">All</button>
   </div>
 </div>
+<div class="panel" style="margin-bottom:14px">
+  <div class="panel-head"><div><h3 style="margin:0;font-size:14px">Vehicle plate lookup</h3><div class="sub">Check the central vehicle registry for stolen / wanted / impounded flags</div></div></div>
+  <div class="search" style="margin-bottom:10px"><span>⌕</span>
+    <input id="cpPlateQ" placeholder="Enter plate or VIN…" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupCheckpointPlate()}">
+    <button class="btn" type="button" onclick="lookupCheckpointPlate()" style="margin-left:8px">Check plate</button>
+  </div>
+  <div id="cpPlateResult"></div>
+</div>
 <div class="hint" style="margin-bottom:14px;background:#f4f8ff">
   <b>Auto-filter:</b> the table is automatically scoped to your assigned checkpoint
   location — a South Checkpoint officer always sees only <b>South Checkpoint</b> records,
@@ -2115,6 +2123,31 @@ function cpMatchesLocation(record, activeScope){
   return loc === scope || loc.includes(scope) || scope.includes(loc);
 }
 
+async function lookupCheckpointPlate(){
+  const box=document.getElementById('cpPlateResult');
+  const q=(document.getElementById('cpPlateQ').value||'').trim().toUpperCase();
+  if(!box) return;
+  if(!q){ box.innerHTML='<div class="hint">Enter a plate number or VIN.</div>'; return; }
+  let items=(db.cars||[]).filter(c=> (c.plate||'').toUpperCase().includes(q) || (c.vin||'').toUpperCase().includes(q));
+  if(serverOn){
+    try{
+      const r=await api('/api/vehicles?q='+encodeURIComponent(q));
+      items=(r.items||[]).map(mapVehicle);
+    }catch(e){ /* keep local cache */ }
+  }
+  if(!items.length){
+    box.innerHTML='<div class="hint">No vehicle matches <b>'+esc(q)+'</b>.</div>';
+    return;
+  }
+  box.innerHTML=items.map(c=>{
+    const hot=c.security_alert && c.security_alert!=='Clean / Normal';
+    return `<div class="hint" style="background:${hot?'#fdecea':'#f4f8ff'};margin-bottom:8px">
+      <b>${esc(c.plate)}</b> · ${esc(c.make||'')} ${vehicleAlertBadge(c.security_alert)}
+      ${c.alert_reason?`<div class="sub">${esc(c.alert_reason)}</div>`:''}
+      <div class="sub">${esc(c.category||'')} ${c.vin?' · VIN '+esc(c.vin):''}</div>
+    </div>`;
+  }).join('');
+}
 function renderCheckpointTable(){
   const tbody = document.getElementById('cpTable');
   if(!tbody) return;
@@ -2392,19 +2425,7 @@ async function checkBackendBuild(){
   return backendBuildOk();
 }
 function renderStaleBackendBanner(){
-  if(!document || !document.body) return;    // not mounted yet (or a JS sandbox)
-  let el=document.getElementById('staleBackendBanner');
-  if(backendBuildOk()){ if(el) el.remove(); return; }
-  if(!el){
-    el=document.createElement('div');
-    el.id='staleBackendBanner';
-    el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;'
-      +'background:#b91c1c;color:#fff;padding:10px 16px;font:600 13px/1.45 system-ui;'
-      +'box-shadow:0 2px 10px rgba(0,0,0,.35);text-align:center';
-    document.body.appendChild(el);
-  }
-  const seen=backendBuild&&backendBuild.build?String(backendBuild.build):'(no /api/health response)';
-  el.innerHTML='STALE BACKEND — the server on this port is not the review-lock build, '
+  if(!document || !document.body) return;    // not m server on this port is not the review-lock build, '
     +'so approvals are NOT gated. Expected build <code>'+REQUIRED_BUILD_TAG+'</code>, got '
     +'<code>'+seen.replace(/</g,'&lt;')+'</code>. '
     +'Stop every python process on this port and start backend/server.py again. '
@@ -3724,19 +3745,17 @@ function renderPoliceSearch(){
       <td>${(db.officers||[]).filter(o=>(o.station_id||o.station)===s.id).length}</td>
       <td>${(db.cars||[]).filter(c=>c.station===s.id).length}</td></tr>`).join('');
   }else{
-    head.innerHTML='<tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr>';
+    head.innerHTML='<tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th><th>Alert</th></tr>';
     const list=(db.cars||[]).filter(c=>{
       const st=stationOf(c);
-      // Filter on the car record's own stored location (recordLocation
-      // falls back to the station only for legacy rows without one).
       return psLocMatch(recordLocation(c),f)
-        && textMatch(c.plate,c.type,c.make,c.model,st&&st.name,st&&st.code);
+        && textMatch(c.plate,c.type,c.make,c.model,c.vin,st&&st.name,st&&st.code,c.security_alert);
     });
     count=list.length;
     rows=list.map(c=>{const st=stationOf(c);
       return `<tr><td><b>${esc(c.plate)}</b></td>
-      <td>${esc(c.type)}${c.make||c.model?` <small class="muted">${esc([c.make,c.model].filter(Boolean).join(' '))}</small>`:''}</td>
-      <td>${st?esc(st.name):'—'}</td>${locationCells(c)}</tr>`}).join('');
+      <td>${esc(c.make||c.type||'')}${c.model?` <small class="muted">${esc(c.model)}</small>`:''}</td>
+      <td>${st?esc(st.name):'—'}</td>${locationCells(c)}<td>${vehicleAlertBadge(c.security_alert)}</td></tr>`}).join('');
   }
   tb.innerHTML=rows||'<tr><td colspan="7" class="empty">No records match the current filter</td></tr>';
   const cnt=document.getElementById('psCount');
@@ -3975,31 +3994,83 @@ function resetOfficerForm(){
   offNotice.className='notice';offNotice.style.display='none';
 }
 // ---- car registration ----------------------------------------------------------
-function saveCar(e){
+function toggleCarCategory(){
+  const el=document.getElementById('carCategory');
+  if(!el) return;
+  const fleet=el.value==='Police Fleet';
+  const f=document.getElementById('carFleetFields');
+  const c=document.getElementById('carCivFields');
+  if(f) f.style.display=fleet?'':'none';
+  if(c) c.style.display=fleet?'none':'';
+}
+function toggleCarAlert(){
+  const el=document.getElementById('carAlert');
+  if(!el) return;
+  const wrap=document.getElementById('carAlertReasonWrap');
+  if(wrap) wrap.style.display=el.value==='Clean / Normal'?'none':'';
+}
+async function saveCar(e){
   e.preventDefault();clearInvalid();
-  const plate=carPlate.value.trim(),stationId=carStation.value;
+  const category=document.getElementById('carCategory').value;
+  const plate=carPlate.value.trim().toUpperCase();
+  const vin=(document.getElementById('carVin').value||'').trim().toUpperCase();
+  const engine=(document.getElementById('carEngine').value||'').trim();
+  const make=(document.getElementById('carMake').value||'').trim();
   if(!plate){showFormError('Plate number is required.',{names:['carPlate'],notice:'carNotice'});return}
-  if(!stationId){showFormError('Assign the car to a police station.',{names:['carStation'],notice:'carNotice'});return}
-  const dup=(db.cars||[]).find(c=>normTxt(c.plate)===normTxt(plate));
-  if(dup){showFormError('Plate '+plate+' is already registered.',{names:['carPlate'],notice:'carNotice'});return}
-  const rl=requireLocation('car');
-  if(!rl.ok){showFormError(rl.msg,{prefix:'car',names:['region','district','village'],notice:'carNotice'});return}
-  const st=stationById(stationId);
-  // The car's location is stored EXPLICITLY on the record — the values
-  // actually entered in the form (pre-filled from the station, possibly
-  // overridden). The tables and Central Police Search display these
-  // stored values, not the station's live location.
-  db.cars=(db.cars||[]).concat({id:nextId('CR',db.cars),plate,type:carType.value,
-    make:carMake.value.trim(),model:carModel.value.trim(),station:stationId,
-    region:rl.loc.region,district:rl.loc.district,village:rl.loc.village});
-  persist();resetCarForm();
-  renderCarsTable();renderPoliceSearch();
-  toast('Car registered',plate+' — assigned to '+st.name+' ('+locationLabel(rl.loc)+')');
+  if(!vin){showFormError('VIN is required.',{names:['carVin'],notice:'carNotice'});return}
+  if(!engine){showFormError('Engine number is required.',{names:['carEngine'],notice:'carNotice'});return}
+  if(!make){showFormError('Make & model is required.',{names:['carMake'],notice:'carNotice'});return}
+  const alertSt=document.getElementById('carAlert').value;
+  const reason=(document.getElementById('carAlertReason').value||'').trim();
+  if(alertSt!=='Clean / Normal' && !reason){showFormError('Alert reason is required.',{names:['carAlertReason'],notice:'carNotice'});return}
+  if(category==='Police Fleet' && !carStation.value){
+    showFormError('Assigned station is required for fleet vehicles.',{names:['carStation'],notice:'carNotice'});return}
+  if(category!=='Police Fleet'){
+    if(!document.getElementById('carOwnerName').value.trim()){showFormError('Owner name is required.',{notice:'carNotice'});return}
+    if(!document.getElementById('carOwnerPhone').value.trim()){showFormError('Owner phone is required.',{notice:'carNotice'});return}
+    if(!document.getElementById('carOwnerNid').value.trim()){showFormError('Owner ID is required.',{notice:'carNotice'});return}
+  }
+  try{
+    if(serverOn){
+      const fd=new FormData();
+      fd.append('category',category);
+      fd.append('plate_number',plate);
+      fd.append('vin',vin);
+      fd.append('engine_number',engine);
+      fd.append('make_model',make);
+      fd.append('year_of_manufacture',document.getElementById('carYear').value.trim());
+      fd.append('body_type',document.getElementById('carType').value);
+      fd.append('primary_color',document.getElementById('carColor').value.trim());
+      fd.append('security_alert',alertSt);
+      fd.append('alert_reason',reason);
+      fd.append('registration_expiry',document.getElementById('carExpiry').value);
+      if(category==='Police Fleet'){
+        fd.append('station_id',carStation.value);
+        fd.append('officer_id',document.getElementById('carOfficer').value);
+        fd.append('operational_status',document.getElementById('carOpStatus').value);
+      }else{
+        fd.append('owner_full_name',document.getElementById('carOwnerName').value.trim());
+        fd.append('owner_phone',document.getElementById('carOwnerPhone').value.trim());
+        fd.append('owner_national_id',document.getElementById('carOwnerNid').value.trim());
+        fd.append('owner_address',document.getElementById('carOwnerAddr').value.trim());
+      }
+      const photo=document.getElementById('carPhoto').files[0];
+      if(photo) fd.append('photo',photo);
+      const r=await api('/api/vehicles',{method:'POST',body:fd});
+      db.cars=(db.cars||[]).concat(mapVehicle(r.vehicle));
+    }else{
+      db.cars=(db.cars||[]).concat({id:'local',plate,type:document.getElementById('carType').value,make,station:carStation.value,category,security_alert:alertSt,vin});
+    }
+    persist();resetCarForm();renderCarsTable();renderPoliceSearch();
+    toast('Vehicle registered',plate);
+  }catch(err){
+    showFormError(err.message||String(err),{notice:'carNotice'});
+  }
 }
 function resetCarForm(){
-  carPlate.value='';carType.value='Patrol';carMake.value='';carModel.value='';
-  carStation.value='';
-  paintLocationDefaults('car',{region:'',district:'',village:''});
+  const form=document.getElementById('carForm');
+  if(form) form.reset();
+  toggleCarCategory();toggleCarAlert();
   carNotice.className='notice';carNotice.style.display='none';
 }
 
@@ -4034,36 +4105,7 @@ if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded
 else{ initApp(); }
 </script>
 </body></html>
-plate);
-  }catch(err){
-    showFormError(err.message||String(err),{notice:'carNotice'});
-  }
-}
-function resetCarForm(){
-  document.getElementById('carForm').reset();
-  toggleCarCategory();toggleCarAlert();
-  carNotice.className='notice';carNotice.style.display='none';
-}
-
-// ============================ init ============================
-buildFileSlots('appDocs','appDoc',4,['Document 1 (ID) *','Document 2 *','Document 3 (optional)','Document 4 (optional)']);
-buildFileSlots('guardDocs','guardDoc',3,['Document 1 (ID) *','Document 2 *','Document 3 (optional)']);
-document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:true});wireIdentity('fp');
-document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
-document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
-// Regional registration modules: build the shared Region → District →
-// Village dropdowns (station + car forms editable; police search gets
-// "All …" filter levels). The officer form uses its own origin gazetteer
-// (ORIGIN_REGIONS) via initOriginDropdowns(); picking a car's station
-// pre-fills the car's location as editable defaults.
-locationDropdowns('st');
-locationDropdowns('car');
-locationDropdowns('ps',{withAll:true,onchange:renderPoliceSearch});
-refreshStationSelects();
-wireStationLocationDefaults('carStation','car');
-initOriginDropdowns();
-offStep(1);
-applyNavForRole();   // hide admin pages until sign-in
+l sign-in
 // Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
 // filter when investigating the 'South Checkpoint 0' bug). Toggle
 // from the browser console with: window.__cpDebug = true | false.
