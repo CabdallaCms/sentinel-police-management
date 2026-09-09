@@ -4105,16 +4105,3 @@ if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded
 else{ initApp(); }
 </script>
 </body></html>
-l sign-in
-// Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
-// filter when investigating the 'South Checkpoint 0' bug). Toggle
-// from the browser console with: window.__cpDebug = true | false.
-window.__cpDebug = window.localStorage && localStorage.getItem('sentinelCpDebug') === '1';
-// Page-load bootstrap: re-hydrate the stored session (sentinel_token +
-// sentinel_user) BEFORE the initial API sync so a refresh never signs the
-// officer out. Runs on DOMContentLoaded (the script sits at the end of the
-// body, so the DOM is normally ready already).
-if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initApp); }
-else{ initApp(); }
-</script>
-</body></html>
