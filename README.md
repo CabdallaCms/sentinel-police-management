@@ -138,6 +138,22 @@ The **Analytics** page (admin only) renders lightweight canvas charts backed by 
 - **Checkpoint volume & demographics** — total screening events per checkpoint (South vs. East vs. West) split by traveler age brackets (`<18`, `18-30`, `31-50`, `50+`).
 - **Operational summary** — KPI tiles for total central persons, active suspect alerts, airport movements and fingerprint records, plus a full summary card (cases total / open, checkpoint events / flagged).
 
+### Executive Command Dashboard & Regional Crime Analytics
+
+The **Dashboard** tab carries a command-facing analytics block (rendered for System Administrators and the roles operating the registration/CID registers — Regional Commanders and Station Chiefs) covering the **Sool, Sanaag and East Togdheer** regions. It is backed by a single aggregation endpoint:
+
+```
+GET /api/dashboard/stats?region=&start_date=&end_date=&station_id=
+```
+
+- **Filters** (all optional, validated → HTTP 400 on bad input): `region` (Sool / Sanaag / East Togdheer, case-insensitive), `station_id` (station code like `ST-001` or numeric PK; must sit inside the chosen region), and an inclusive `start_date`/`end_date` YYYY-MM-DD window. The date window applies **only** to crime-incident metrics (matched on the incident date, `created_at` fallback); force strength, station coverage and fleet status are point-in-time state and are never shrunk by the timeframe.
+- **Section 1 — KPI cards**: active police force (`officers.duty_status='Active'`) with per-region sub-counts; operational station coverage broken down by tier (Regional HQ / District HQ / Outposts / Checkpoints / Border Post); crime incidents summary (open/under-investigation vs. closed/referred-to-court); security & fleet alerts (Stolen/Wanted vehicles + High/Critical severity crimes).
+- **Section 2 — analytics**: incident distribution by region, crime category breakdown, case resolution rate (`('Referred to Court' + 'Closed') / total`), and severity distribution (Low/Medium/High/Critical) — all produced by live `COUNT` / `GROUP BY` / `CASE WHEN` queries over `crime_incidents ⋈ police_stations`.
+- **Section 3 — readiness**: police-fleet availability (In Service vs. Maintenance / Out of Service / Decommissioned, with a readiness rate) and a station personnel deployment table (active officer counts per station plus period incidents).
+- **Section 4 — interactive filters**: the page rebuilds the query string and repaints every chart/KPI whenever the **Region**, **Timeframe** (Today / Last 7 Days / Last 30 Days / Year to Date / All Time) or **Station** selector changes; the station dropdown is re-filtered by the chosen region from the `filters.stations` directory returned by the endpoint itself.
+
+Like `/api/dashboard`, the endpoint answers any authenticated role (the payload contains aggregate counts only — no PII) and is zero-safe on an empty database. Regression coverage lives in `backend/test_server.py` (exact mathematical aggregates, region/date/station filtering strategies, validation errors, RBAC, and a pristine-database zero-state run).
+
 ### Admin User Management (admin only)
 
 The **User Management** page (admin only) lets a System Admin create, edit, activate and deactivate officers and assign their role and location scope. The backend supports `GET /api/admin/users`, `POST /api/admin/users`, `PATCH /api/admin/users/{id}` and `GET /api/admin/users/{id}` for headless provisioning.

@@ -178,6 +178,33 @@ body.modal-open{overflow:hidden}
 .chart-card{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);padding:22px;margin-top:20px}
 .chart-card h2{font-size:17px;margin:0 0 4px}
 .chart-card .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+/* ==== Executive Command Dashboard & Regional Crime Analytics ==== */
+.exec-panel{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);padding:22px;margin-top:20px}
+.exec-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;align-items:end;padding:14px;background:#f7f9ff;border:1px solid var(--line);border-radius:12px;margin-bottom:18px}
+.exec-filters .field{gap:4px}
+.exec-filters .field label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}
+.exec-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media(max-width:1200px){.exec-kpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){.exec-kpis{grid-template-columns:1fr}}
+.exec-kpi{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);padding:18px}
+.exec-kpi .ek-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.exec-kpi .ek-label{color:var(--muted);font-size:12px;font-weight:600}
+.exec-kpi .ek-ico{font-size:20px;background:#f0f4ff;border-radius:10px;padding:6px 9px;flex:none}
+.exec-kpi .ek-num{font-size:29px;font-weight:800;margin-top:8px}
+.exec-kpi .ek-sub{margin-top:10px;border-top:1px solid #eef1f6;padding-top:9px;display:grid;gap:5px}
+.exec-kpi .ek-row{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
+.exec-kpi .ek-row b{color:var(--ink);font-weight:700}
+.exec-donut-wrap{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.exec-donut{width:180px;height:180px;flex:none}
+.exec-legend{display:grid;gap:8px;flex:1;min-width:150px}
+.exec-legend .lg-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.exec-legend .lg-key{display:flex;align-items:center;gap:8px}
+.exec-dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+.exec-legend .lg-row b{color:var(--ink)}
+.exec-fleet-track{display:flex;height:26px;border-radius:8px;overflow:hidden;background:#eef1f6;margin:12px 0 4px}
+.exec-fleet-seg{height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:800;min-width:0;white-space:nowrap;transition:width .25s ease}
+.exec-deploy-wrap{max-height:320px;box-shadow:none}
+.exec-empty{color:var(--muted);text-align:center;padding:26px 10px;font-size:13px}
 .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
 @media(max-width:950px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
 .kpi-row .kpi-cell{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
@@ -336,6 +363,108 @@ body.modal-open{overflow:hidden}
   <div class="grid2" id="quickActions"><button class="btn" disabled>+ Loading…</button></div>
   <div class="hint" id="quickHint" style="margin-top:16px"><b>Identity linking:</b> search a name or ID — the global person registry auto-completes and reuses the existing profile, appending new details instead of creating duplicates.</div>
 </div>
+</div>
+
+<!-- EXECUTIVE COMMAND DASHBOARD & REGIONAL CRIME ANALYTICS -->
+<!-- Command-facing analytics block (Regional Commanders, Station Chiefs and
+     System Administrators). Data: GET /api/dashboard/stats — every metric is
+     a live SQL aggregate over officers / police_stations / crime_incidents /
+     vehicles, recomputed whenever a filter changes. -->
+<div class="exec-panel" id="execDash" style="display:none">
+  <div class="panel-head" style="margin-bottom:14px">
+    <div>
+      <h2>Executive Command Dashboard</h2>
+      <div class="sub">Regional crime analytics · Sool, Sanaag &amp; East Togdheer</div>
+    </div>
+    <div>
+      <span class="badge gray" id="execUpdated" style="display:none;margin-right:8px">—</span>
+      <button class="btn ghost small" onclick="refreshExecDashboard()">↻ Refresh</button>
+    </div>
+  </div>
+  <div class="exec-filters" id="execFilters">
+    <div class="field">
+      <label for="execRegion">Region</label>
+      <select id="execRegion" onchange="onExecRegionChange()">
+        <option value="">All Regions</option>
+        <option>Sool</option>
+        <option>Sanaag</option>
+        <option>East Togdheer</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="execTimeframe">Timeframe</label>
+      <select id="execTimeframe" onchange="onExecFilterChange()">
+        <option value="all" selected>All Time</option>
+        <option value="today">Today</option>
+        <option value="7d">Last 7 Days</option>
+        <option value="30d">Last 30 Days</option>
+        <option value="ytd">Year to Date</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="execStation">Station</label>
+      <select id="execStation" onchange="onExecFilterChange()">
+        <option value="">All Stations</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <span class="badge blue" id="execScope">All Regions · All Time</span>
+    </div>
+  </div>
+
+  <!-- Section 1 — Executive KPI summary cards -->
+  <div class="exec-kpis" id="execKpis">
+    <div class="exec-kpi" style="grid-column:1/-1"><div class="exec-empty">Loading executive analytics…</div></div>
+  </div>
+
+  <!-- Section 2 — Regional crime & incident analytics -->
+  <div class="chart-row" style="margin-top:4px">
+    <div class="chart-card">
+      <h2>Regional incident distribution</h2>
+      <div class="sub">Total reported crime incidents per region</div>
+      <div class="chart-wrap"><canvas id="chartExecRegion"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h2>Crime category breakdown</h2>
+      <div class="sub">Incidents grouped by category</div>
+      <div class="chart-wrap" style="height:290px"><canvas id="chartExecCategory"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-row" style="margin-top:4px">
+    <div class="chart-card">
+      <h2>Case resolution rate</h2>
+      <div class="sub">Share of logged cases referred to court or closed</div>
+      <div class="exec-donut-wrap">
+        <div class="exec-donut"><canvas id="chartExecResolution" style="width:100%;height:100%"></canvas></div>
+        <div class="exec-legend" id="execResLegend"></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h2>Severity distribution</h2>
+      <div class="sub">Incidents grouped by Low / Medium / High / Critical</div>
+      <div class="chart-wrap"><canvas id="chartExecSeverity"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Section 3 — Fleet & force readiness -->
+  <div class="chart-row" style="margin-top:4px">
+    <div class="chart-card">
+      <h2>Vehicle fleet status</h2>
+      <div class="sub">Police fleet vehicles in service vs. maintenance / out of service</div>
+      <div id="execFleet"><div class="exec-empty">Loading fleet status…</div></div>
+    </div>
+    <div class="chart-card">
+      <h2>Station personnel deployment</h2>
+      <div class="sub">Active officers deployed across stations</div>
+      <div class="table-wrap exec-deploy-wrap">
+        <table class="table">
+          <thead><tr><th>Station</th><th>Region</th><th>Tier</th><th style="text-align:right">Active officers</th><th style="text-align:right">Incidents</th></tr></thead>
+          <tbody id="execDeployBody"><tr><td colspan="5" class="empty">Loading deployment…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 </section>
 
@@ -1035,8 +1164,12 @@ function go(page){
     if(serverOn){
       paintDashboardSkeleton('Loading '+ (sessionUser ? (sessionUser.display_name + ' · ' + (sessionUser.role_label||sessionUser.role)) : 'dashboard') +'…');
       fetchDashboard();
+      // Executive Command Dashboard block — re-aggregated live on every
+      // navigation; hides itself for non-command roles / offline mode.
+      loadExecStats();
     } else {
       renderDashboard();
+      loadExecStats();
     }
   }
   if(page==='checkpoints'){
@@ -1825,6 +1958,7 @@ function fetchDashboard(){
 function refreshDashboard(){
   if(serverOn){
     fetchDashboard();
+    loadExecStats();
   } else {
     renderDashboardLocal();
   }
@@ -3364,8 +3498,11 @@ function drawBarChart(canvasId, labels, data, color, opts={}){
     const h = (v/maxV) * innerH;
     const x = padL + i*(bw+gap);
     const y = padT + innerH - h;
+    // opts.colors[i] overrides the single-series colour per bar (used by the
+    // executive dashboard severity chart). Gradients keep working either way.
+    const barColor = (opts.colors && opts.colors[i]) || color;
     const grad = ctx.createLinearGradient(0, y, 0, y+h);
-    grad.addColorStop(0, color); grad.addColorStop(1, color+'80');
+    grad.addColorStop(0, barColor); grad.addColorStop(1, barColor+'80');
     ctx.fillStyle = grad;
     ctx.fillRect(x, y, bw, h);
     ctx.fillStyle = '#1b2740'; ctx.font='600 11px Inter, sans-serif'; ctx.textAlign='center';
@@ -3430,6 +3567,234 @@ function drawGroupedBarChart(canvasId, groups, series, colors){
     lx += 14 + ctx.measureText(s.label).width + 14;
   });
   return c;
+}
+
+function drawDonutChart(canvasId, segments, centerTop, centerBottom){
+  // Lightweight canvas donut (same no-library approach as drawBarChart).
+  // segments: [{value, color}] — painted clockwise from 12 o'clock.
+  const c = document.getElementById(canvasId);
+  if(!c) return null;
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.getBoundingClientRect();
+  if(!rect.width || !rect.height) return null;
+  c.width = rect.width * dpr; c.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0,0,W,H);
+  const total = segments.reduce((a,s)=>a+(s.value||0),0);
+  const cx=W/2, cy=H/2, R=Math.min(W,H)/2-4, r=R*0.64;
+  if(total<=0){
+    // Empty ring — graceful zero-data state.
+    ctx.beginPath(); ctx.arc(cx,cy,(R+r)/2,0,Math.PI*2);
+    ctx.strokeStyle='#e9eef6'; ctx.lineWidth=R-r; ctx.stroke();
+  } else {
+    let a=-Math.PI/2;
+    segments.forEach(s=>{
+      const frac=(s.value||0)/total;
+      if(frac<=0) return;
+      const gap = frac>0.999 ? 0 : Math.min(0.02, frac*Math.PI);
+      ctx.beginPath();
+      ctx.arc(cx,cy,R,a+gap,a+frac*Math.PI*2-gap,false);
+      ctx.arc(cx,cy,r,a+frac*Math.PI*2-gap,a+gap,true);
+      ctx.closePath();
+      ctx.fillStyle=s.color;
+      ctx.fill();
+      a+=frac*Math.PI*2;
+    });
+  }
+  ctx.fillStyle='#1b2740'; ctx.font='800 24px Inter, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(String(centerTop), cx, cy-8);
+  ctx.fillStyle='#68758a'; ctx.font='600 11px Inter, sans-serif';
+  ctx.fillText(String(centerBottom), cx, cy+14);
+  return c;
+}
+
+// ============== Executive Command Dashboard & Regional Crime Analytics ==============
+// Renders Sections 1–4 of the executive analytics module from
+// GET /api/dashboard/stats. All metrics are live SQL aggregates computed
+// server-side; the frontend only re-fetches and repaints when a filter
+// changes (region / timeframe / station), so the DOM always reflects the
+// central registers (officers, police_stations, crime_incidents, vehicles).
+//
+// Visibility: the panel is a command-facing surface (Regional Commanders,
+// Station Chiefs, System Administrators, plus the registration/CID roles
+// that operate those registers). Pure unit officers (fingerprint / airport /
+// checkpoint) keep their role-scoped dashboard without the analytics block;
+// the API itself stays open to every authenticated role because it carries
+// aggregate counts only — no PII.
+const EXEC_MODULES = ['admin','analytics','stations','officers','cars','crimes','cid'];
+const execDash = {stations:[], last:null};
+let _execSeq = 0;
+
+function execVisible(){
+  const m = (sessionUser && sessionUser.modules) || [];
+  return m.some(x => EXEC_MODULES.includes(x));
+}
+function execTimeRange(){
+  // Timeframe presets (Section 4.2) resolved client-side into the
+  // start_date / end_date query parameters the API accepts.
+  const t = (document.getElementById('execTimeframe')||{}).value || 'all';
+  const iso = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const today = new Date();
+  if(t==='today') return {start_date: iso(today), end_date: iso(today)};
+  if(t==='ytd')   return {start_date: today.getFullYear()+'-01-01', end_date: iso(today)};
+  if(t==='7d' || t==='30d'){
+    const start = new Date(today);
+    start.setDate(start.getDate() - (t==='7d' ? 6 : 29));
+    return {start_date: iso(start), end_date: iso(today)};
+  }
+  return {};  // 'all' — All Time, no date window
+}
+function execQuery(){
+  const p = new URLSearchParams();
+  const region = document.getElementById('execRegion').value;
+  const station = document.getElementById('execStation').value;
+  if(region) p.set('region', region);
+  if(station) p.set('station_id', station);
+  const range = execTimeRange();
+  if(range.start_date) p.set('start_date', range.start_date);
+  if(range.end_date) p.set('end_date', range.end_date);
+  const q = p.toString();
+  return q ? '?'+q : '';
+}
+function fillExecStations(resetSelection){
+  // Section 4.3: the station dropdown is re-filtered by the chosen region.
+  // The station directory comes from /api/dashboard/stats itself, so this
+  // works for command roles that lack the stations module.
+  const sel = document.getElementById('execStation');
+  if(!sel) return;
+  const region = document.getElementById('execRegion').value;
+  const keep = resetSelection ? '' : sel.value;
+  const rows = (execDash.stations||[]).filter(s => !region || s.region===region);
+  sel.innerHTML = '<option value="">All Stations</option>' +
+    rows.map(s=>`<option value="${esc(s.station_id)}">${esc(s.name)}</option>`).join('');
+  if(keep && rows.some(s => s.station_id===keep)) sel.value = keep;
+}
+function onExecRegionChange(){ fillExecStations(true); loadExecStats(); }
+function onExecFilterChange(){ loadExecStats(); }
+function refreshExecDashboard(){ loadExecStats(); }
+
+async function loadExecStats(){
+  const panel = document.getElementById('execDash');
+  if(!panel) return;
+  if(!serverOn || !execVisible()){ panel.style.display='none'; return; }
+  panel.style.display='';
+  // Sequence guard: rapid filter changes fire overlapping fetches — only the
+  // newest response is allowed to repaint, so the panel can never show a mix
+  // of two different filter scopes.
+  const seq = ++_execSeq;
+  try{
+    const d = await api('/api/dashboard/stats'+execQuery());
+    if(seq !== _execSeq) return;
+    execDash.last = d;
+    execDash.stations = (d.filters && d.filters.stations) || [];
+    fillExecStations(false);
+    paintExecStats(d);
+  }catch(e){
+    if(seq !== _execSeq) return;
+    const el = document.getElementById('execKpis');
+    if(el) el.innerHTML = '<div class="exec-kpi" style="grid-column:1/-1"><div class="exec-empty">Executive analytics unavailable: '+esc(e.message||'request failed')+'</div></div>';
+  }
+}
+function paintExecStats(d){
+  if(!d || !d.kpis) return;
+  const k = d.kpis, an = d.analytics || {}, rd = d.readiness || {};
+  const f = d.filters || {};
+
+  // Updated stamp + applied-scope pill (mirrors the resolved API filters).
+  const upd = document.getElementById('execUpdated');
+  if(upd){ upd.style.display=''; upd.textContent = 'Updated '+String(d.generated_at||'').replace('T',' ').slice(0,16)+' UTC'; }
+  const scope = document.getElementById('execScope');
+  if(scope){
+    let t = 'All Time';
+    if(f.start_date && f.end_date) t = (f.start_date===f.end_date) ? f.start_date : f.start_date+' → '+f.end_date;
+    else if(f.start_date) t = 'from '+f.start_date;
+    else if(f.end_date) t = 'until '+f.end_date;
+    scope.textContent = [f.region || 'All Regions', f.station_name, t].filter(Boolean).join(' · ');
+  }
+
+  // ---- Section 1: Executive KPI summary cards ------------------------------
+  const kpiCards = [
+    {label:'Active Police Force', icon:'👮', num:k.active_force.total,
+     rows:k.active_force.by_region.map(x=>[x.label, x.count])},
+    {label:'Station Coverage', icon:'🏛', num:k.station_coverage.total,
+     rows:k.station_coverage.by_tier.map(x=>[x.label, x.count])},
+    {label:'Crime Incidents', icon:'⚖', num:k.crime_incidents.total,
+     rows:[['Open / Under Investigation', k.crime_incidents.open],
+           ['Closed / Referred to Court', k.crime_incidents.resolved]]
+          .concat(k.crime_incidents.unresolved ? [['Unresolved', k.crime_incidents.unresolved]] : [])},
+    {label:'Security & Fleet Alerts', icon:'🚨', num:k.security_alerts.total, alert:k.security_alerts.total>0,
+     rows:[['Stolen / wanted vehicles', k.security_alerts.stolen_wanted_vehicles],
+           ['High / critical crimes', k.security_alerts.severe_crimes]]},
+  ];
+  document.getElementById('execKpis').innerHTML = kpiCards.map(card =>
+    `<div class="exec-kpi">
+       <div class="ek-top"><span class="ek-label">${esc(card.label)}</span><span class="ek-ico">${card.icon}</span></div>
+       <div class="ek-num" ${card.alert?'style="color:var(--red)"':''}>${card.num}</div>
+       <div class="ek-sub">${card.rows.map(r=>`<div class="ek-row"><span>${esc(r[0])}</span><b>${r[1]}</b></div>`).join('')}</div>
+     </div>`).join('');
+
+  // ---- Section 2: Regional crime & incident analytics ----------------------
+  _chartRefs.execRegion = drawBarChart('chartExecRegion',
+    (an.incidents_by_region||[]).map(x=>x.label),
+    (an.incidents_by_region||[]).map(x=>x.count), '#246bfe');
+  _chartRefs.execCategory = drawBarChart('chartExecCategory',
+    (an.incidents_by_category||[]).map(x=>x.label),
+    (an.incidents_by_category||[]).map(x=>x.count), '#6c3fd4', {dense:true});
+  _chartRefs.execSeverity = drawBarChart('chartExecSeverity',
+    (an.incidents_by_severity||[]).map(x=>x.label),
+    (an.incidents_by_severity||[]).map(x=>x.count), '#d84f5a',
+    {colors:['#16856b','#c98512','#d84f5a','#7a1622']});
+
+  const res = an.resolution_rate || {resolved:0,total:0,rate:0};
+  _chartRefs.execResolution = drawDonutChart('chartExecResolution',
+    [{value:res.resolved, color:'#16856b'},
+     {value:Math.max(0, res.total-res.resolved), color:'#e3e9f2'}],
+    res.rate+'%', 'resolved');
+  document.getElementById('execResLegend').innerHTML = [
+    ['Resolved — referred to court / closed', k.crime_incidents.resolved, '#16856b'],
+    ['Open / under investigation', k.crime_incidents.open, '#c98512'],
+    ['Unresolved', k.crime_incidents.unresolved, '#8c99ad'],
+    ['Total incidents', res.total, null],
+  ].map(r=>`<div class="lg-row"><span class="lg-key">${r[2]?`<span class="exec-dot" style="background:${r[2]}"></span>`:'<span class="exec-dot" style="background:transparent"></span>'}${esc(r[0])}</span><b>${r[1]}</b></div>`).join('');
+
+  // ---- Section 3: Fleet & force readiness ----------------------------------
+  const fl = rd.fleet || {total:0,in_service:0,maintenance:0,out_of_service:0,decommissioned:0,readiness_rate:0};
+  const fleetEl = document.getElementById('execFleet');
+  const segs = [
+    {label:'In Service', value:fl.in_service, color:'#16856b'},
+    {label:'Maintenance', value:fl.maintenance, color:'#c98512'},
+    {label:'Out of Service', value:fl.out_of_service, color:'#d84f5a'},
+    {label:'Decommissioned', value:fl.decommissioned, color:'#8c99ad'},
+  ];
+  if(!fl.total){
+    fleetEl.innerHTML = '<div class="exec-empty">No police fleet vehicles registered for this scope.</div>';
+  } else {
+    fleetEl.innerHTML =
+      `<div style="margin-top:4px"><span style="font-size:26px;font-weight:800">${fl.readiness_rate}%</span> <span class="muted" style="font-size:12px;font-weight:600">of fleet in service</span></div>` +
+      '<div class="exec-fleet-track">' +
+        segs.filter(s=>s.value>0).map(s=>`<div class="exec-fleet-seg" style="width:${Math.max(3, 100*s.value/fl.total)}%;background:${s.color}" title="${esc(s.label)}: ${s.value}">${s.value}</div>`).join('') +
+      '</div>' +
+      '<div class="exec-legend" style="margin-top:12px">' +
+        segs.map(s=>`<div class="lg-row"><span class="lg-key"><span class="exec-dot" style="background:${s.color}"></span>${esc(s.label)}</span><b>${s.value}</b></div>`).join('') +
+        `<div class="lg-row" style="border-top:1px solid #eef1f6;padding-top:7px"><span class="lg-key">Total police fleet</span><b>${fl.total}</b></div>` +
+      '</div>';
+  }
+
+  const rows = rd.station_deployment || [];
+  const body = document.getElementById('execDeployBody');
+  if(!rows.length){
+    body.innerHTML = '<tr><td colspan="5" class="empty">No stations match the selected filters.</td></tr>';
+  } else {
+    body.innerHTML = rows.map(s=>`<tr>
+      <td><b>${esc(s.name)}</b><br><small class="muted">${esc(s.station_id)} · ${esc(s.district||'')}</small></td>
+      <td>${esc(s.region)}</td>
+      <td>${s.tier?`<span class="badge gray">${esc(s.tier)}</span>`:'<small class="muted">—</small>'}</td>
+      <td style="text-align:right"><b>${s.active_officers}</b>${s.total_officers!==s.active_officers?` <small class="muted">/ ${s.total_officers} total</small>`:''}</td>
+      <td style="text-align:right">${s.incidents}</td>
+    </tr>`).join('');
+  }
 }
 
 async function renderAnalytics(){

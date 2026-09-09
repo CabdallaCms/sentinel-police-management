@@ -2166,6 +2166,271 @@ def build_dashboard(c, user):
     }
 
 
+# ---------------------------------------------------------------------------
+# Executive Command Dashboard & Regional Crime Analytics
+# ---------------------------------------------------------------------------
+# Live, read-only SQL aggregation over the operational registers:
+#   officers, police_stations, crime_incidents and vehicles.
+#
+# Served at GET /api/dashboard/stats. Every authenticated role may call it
+# (same policy as /api/dashboard): the payload contains aggregate counts
+# only — no officer, victim or suspect PII. The primary audience is the
+# command layer (System Administrators, Regional Commanders and Station
+# Chiefs) and the frontend only renders the panel for command-facing
+# modules.
+#
+# Statutory buckets shared by the KPI + analytics queries:
+#   * resolved / closed cases — 'Referred to Court' or 'Closed'
+#   * open workload           — 'Reported / Open' or 'Under Investigation'
+#   * severe incidents        — severity 'High' or 'Critical'
+#   * vehicle security alerts — 'Stolen' or 'Wanted in Crime'
+RESOLVED_CASE_STATUSES = ('Referred to Court', 'Closed')
+OPEN_CASE_STATUSES = ('Reported / Open', 'Under Investigation')
+SEVERE_CRIME_SEVERITIES = ('High', 'Critical')
+VEHICLE_SECURITY_ALERTS = ('Stolen', 'Wanted in Crime')
+
+
+def _stats_date_param(params, key):
+    """Validate one YYYY-MM-DD query parameter; None when omitted."""
+    raw = (params.get(key, ['']) or [''])[0].strip()
+    if not raw:
+        return None
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', raw):
+        raise ValueError(f'{key} must be YYYY-MM-DD')
+    try:
+        datetime.date.fromisoformat(raw)
+    except ValueError:
+        raise ValueError(f'{key} must be a valid calendar date (YYYY-MM-DD)')
+    return raw
+
+
+def build_dashboard_stats(c, user, params):
+    """Executive Command Dashboard & Regional Crime Analytics payload.
+
+    GET /api/dashboard/stats?region=&start_date=&end_date=&station_id=
+
+    Filters (all optional, mirrored back under `filters`):
+      * region     — Sool / Sanaag / East Togdheer (case-insensitive).
+      * station_id — station code ('ST-001') or numeric PK. Must sit inside
+                     the chosen region when both filters are given.
+      * start_date / end_date — YYYY-MM-DD inclusive window applied to
+                     crime-incident aggregations via the incident date
+                     (created_at is the fallback when incident_at is blank).
+
+    The timeframe window intentionally applies ONLY to crime-incident
+    metrics: force strength, station coverage and fleet/vehicle status are
+    point-in-time state without an operational time axis, so a timeframe
+    must never shrink them (region/station filters do).
+    Raises ValueError on invalid filters — the route maps that to HTTP 400.
+    """
+    # ---- resolve & validate filters (Section 4) ---------------------------
+    region_raw = (params.get('region', ['']) or [''])[0].strip()
+    region = normalise_choice(region_raw, STATION_REGIONS) if region_raw else None
+    if region_raw and not region:
+        raise ValueError('region must be one of: ' + ', '.join(STATION_REGIONS))
+    start_date = _stats_date_param(params, 'start_date')
+    end_date = _stats_date_param(params, 'end_date')
+    if start_date and end_date and start_date > end_date:
+        raise ValueError('start_date must not be after end_date')
+    station_raw = (params.get('station_id', ['']) or [''])[0].strip()
+    station = None
+    if station_raw:
+        if station_raw.isdigit():
+            station = c.execute('SELECT * FROM police_stations WHERE id=?', (int(station_raw),)).fetchone()
+        else:
+            station = c.execute('SELECT * FROM police_stations WHERE station_id=?', (station_raw,)).fetchone()
+        if not station:
+            raise ValueError(f'Station "{station_raw}" does not exist')
+        if region and station['region'] != region:
+            raise ValueError(f'Station "{station_raw}" is not in region "{region}"')
+
+    # Shared geographic clause; `s` is always the police_stations alias.
+    geo_sql, geo_args = '', []
+    if region:
+        geo_sql += ' AND s.region=?'; geo_args.append(region)
+    if station:
+        geo_sql += ' AND s.id=?'; geo_args.append(station['id'])
+
+    # Crime-only timeframe clause (incident date, created_at fallback).
+    day = "substr(COALESCE(NULLIF(ci.incident_at,''), ci.created_at), 1, 10)"
+    crime_sql, crime_args = '', []
+    if start_date:
+        crime_sql += f' AND {day} >= ?'; crime_args.append(start_date)
+    if end_date:
+        crime_sql += f' AND {day} <= ?'; crime_args.append(end_date)
+
+    # ---- Section 1.1: Active Police Force (per-region sub-counts) ---------
+    force = c.execute(f'''
+        SELECT COUNT(*) AS total,
+          COALESCE(SUM(CASE WHEN s.region='Sool' THEN 1 ELSE 0 END), 0) AS sool,
+          COALESCE(SUM(CASE WHEN s.region='Sanaag' THEN 1 ELSE 0 END), 0) AS sanaag,
+          COALESCE(SUM(CASE WHEN s.region='East Togdheer' THEN 1 ELSE 0 END), 0) AS east_togdheer
+        FROM officers o JOIN police_stations s ON s.id = o.station_id
+        WHERE o.duty_status='Active' {geo_sql}''', geo_args).fetchone()
+    force_by_region = {'Sool': force['sool'], 'Sanaag': force['sanaag'],
+                       'East Togdheer': force['east_togdheer']}
+
+    # ---- Section 1.2: Station Coverage (operational, per-tier) ------------
+    coverage = c.execute(f'''
+        SELECT COUNT(*) AS total,
+          COALESCE(SUM(CASE WHEN station_tier='Regional HQ' THEN 1 ELSE 0 END), 0) AS regional_hq,
+          COALESCE(SUM(CASE WHEN station_tier='District HQ' THEN 1 ELSE 0 END), 0) AS district_hq,
+          COALESCE(SUM(CASE WHEN station_tier='Outpost' THEN 1 ELSE 0 END), 0) AS outposts,
+          COALESCE(SUM(CASE WHEN station_tier='Checkpoint' THEN 1 ELSE 0 END), 0) AS checkpoints,
+          COALESCE(SUM(CASE WHEN station_tier='Border Post' THEN 1 ELSE 0 END), 0) AS border_posts
+        FROM police_stations s
+        WHERE COALESCE(s.operational_status,'Active')='Active' {geo_sql}''', geo_args).fetchone()
+    coverage_by_tier = {'Regional HQ': coverage['regional_hq'],
+                        'District HQ': coverage['district_hq'],
+                        'Outpost': coverage['outposts'],
+                        'Checkpoint': coverage['checkpoints'],
+                        'Border Post': coverage['border_posts']}
+
+    # ---- Sections 1.3 + 2.3: Crime Incidents summary & resolution ---------
+    crimes = c.execute(f'''
+        SELECT COUNT(*) AS total,
+          COALESCE(SUM(CASE WHEN ci.case_status IN ({','.join('?'*len(OPEN_CASE_STATUSES))})
+                     THEN 1 ELSE 0 END), 0) AS open_cases,
+          COALESCE(SUM(CASE WHEN ci.case_status IN ({','.join('?'*len(RESOLVED_CASE_STATUSES))})
+                     THEN 1 ELSE 0 END), 0) AS resolved_cases,
+          COALESCE(SUM(CASE WHEN ci.severity IN ({','.join('?'*len(SEVERE_CRIME_SEVERITIES))})
+                     THEN 1 ELSE 0 END), 0) AS severe_cases
+        FROM crime_incidents ci JOIN police_stations s ON s.id = ci.station_id
+        WHERE 1=1 {geo_sql} {crime_sql}''',
+        tuple(OPEN_CASE_STATUSES) + tuple(RESOLVED_CASE_STATUSES) + tuple(SEVERE_CRIME_SEVERITIES)
+        + tuple(geo_args) + tuple(crime_args)).fetchone()
+
+    # ---- Section 1.4: Security & Fleet Alerts ------------------------------
+    vehicle_alerts = c.execute(f'''
+        SELECT COUNT(*) FROM vehicles v
+        LEFT JOIN police_stations s ON s.id = v.station_id
+        WHERE v.security_alert IN ({','.join('?'*len(VEHICLE_SECURITY_ALERTS))}) {geo_sql}''',
+        tuple(VEHICLE_SECURITY_ALERTS) + tuple(geo_args)).fetchone()[0]
+
+    # ---- Section 2.1: Regional Incident Distribution ----------------------
+    region_counts = {}
+    for r in c.execute(f'''
+        SELECT s.region AS region, COUNT(*) AS n
+        FROM crime_incidents ci JOIN police_stations s ON s.id = ci.station_id
+        WHERE 1=1 {geo_sql} {crime_sql} GROUP BY s.region''',
+        tuple(geo_args) + tuple(crime_args)):
+        region_counts[r['region']] = r['n']
+    region_order = list(STATION_REGIONS) + sorted(k for k in region_counts if k not in STATION_REGIONS)
+
+    # ---- Section 2.2: Crime Category Breakdown -----------------------------
+    cat_counts = {}
+    for r in c.execute(f'''
+        SELECT ci.category AS category, COUNT(*) AS n
+        FROM crime_incidents ci JOIN police_stations s ON s.id = ci.station_id
+        WHERE 1=1 {geo_sql} {crime_sql} GROUP BY ci.category''',
+        tuple(geo_args) + tuple(crime_args)):
+        cat_counts[r['category']] = r['n']
+    cat_order = list(CRIME_CATEGORIES) + sorted(k for k in cat_counts if k not in CRIME_CATEGORIES)
+
+    # ---- Section 2.4: Severity Distribution --------------------------------
+    sev_counts = {}
+    for r in c.execute(f'''
+        SELECT ci.severity AS severity, COUNT(*) AS n
+        FROM crime_incidents ci JOIN police_stations s ON s.id = ci.station_id
+        WHERE 1=1 AND ci.severity IS NOT NULL {geo_sql} {crime_sql} GROUP BY ci.severity''',
+        tuple(geo_args) + tuple(crime_args)):
+        sev_counts[r['severity']] = r['n']
+    sev_order = list(CRIME_SEVERITIES) + sorted(k for k in sev_counts if k not in CRIME_SEVERITIES)
+
+    # ---- Section 3.1: Vehicle Fleet Status (Police Fleet readiness) --------
+    fleet = c.execute(f'''
+        SELECT COUNT(*) AS total,
+          COALESCE(SUM(CASE WHEN v.operational_status='In Service' THEN 1 ELSE 0 END), 0) AS in_service,
+          COALESCE(SUM(CASE WHEN v.operational_status='Maintenance' THEN 1 ELSE 0 END), 0) AS maintenance,
+          COALESCE(SUM(CASE WHEN v.operational_status='Out of Service' THEN 1 ELSE 0 END), 0) AS out_of_service,
+          COALESCE(SUM(CASE WHEN v.operational_status='Decommissioned' THEN 1 ELSE 0 END), 0) AS decommissioned
+        FROM vehicles v LEFT JOIN police_stations s ON s.id = v.station_id
+        WHERE v.category='Police Fleet' {geo_sql}''', geo_args).fetchone()
+
+    # ---- Section 3.2: Station Personnel Deployment -------------------------
+    incidents_per_station = {}
+    for r in c.execute(f'''
+        SELECT ci.station_id AS sid, COUNT(*) AS n
+        FROM crime_incidents ci JOIN police_stations s ON s.id = ci.station_id
+        WHERE 1=1 {geo_sql} {crime_sql} GROUP BY ci.station_id''',
+        tuple(geo_args) + tuple(crime_args)):
+        incidents_per_station[r['sid']] = r['n']
+    deployment = []
+    for r in c.execute(f'''
+        SELECT s.id, s.station_id, s.name, s.code, s.region, s.district, s.station_tier,
+          COALESCE(s.operational_status,'Active') AS operational_status,
+          COUNT(o.id) AS total_officers,
+          COALESCE(SUM(CASE WHEN o.duty_status='Active' THEN 1 ELSE 0 END), 0) AS active_officers
+        FROM police_stations s LEFT JOIN officers o ON o.station_id = s.id
+        WHERE 1=1 {geo_sql}
+        GROUP BY s.id ORDER BY s.region, s.name''', geo_args):
+        deployment.append({
+            'station_id': r['station_id'], 'name': r['name'], 'code': r['code'],
+            'region': r['region'], 'district': r['district'],
+            'tier': r['station_tier'], 'operational_status': r['operational_status'],
+            'active_officers': r['active_officers'], 'total_officers': r['total_officers'],
+            'incidents': incidents_per_station.get(r['id'], 0),
+        })
+
+    # ---- filter metadata: the station dropdown is driven by the API --------
+    stations_meta = [{'station_id': r['station_id'], 'name': r['name'], 'region': r['region']}
+                     for r in c.execute(
+                         'SELECT station_id, name, region FROM police_stations ORDER BY name')]
+
+    total_crimes = crimes['total']
+    resolved = crimes['resolved_cases']
+    return {
+        'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'filters': {
+            'region': region, 'station_id': station['station_id'] if station else None,
+            'station_name': station['name'] if station else None,
+            'start_date': start_date, 'end_date': end_date,
+            'regions': list(STATION_REGIONS),
+            'stations': stations_meta,
+        },
+        'kpis': {
+            'active_force': {
+                'total': force['total'],
+                'by_region': [{'label': k, 'count': v} for k, v in force_by_region.items()],
+            },
+            'station_coverage': {
+                'total': coverage['total'],
+                'by_tier': [{'label': k, 'count': v} for k, v in coverage_by_tier.items()],
+            },
+            'crime_incidents': {
+                'total': total_crimes,
+                'open': crimes['open_cases'],
+                'resolved': resolved,
+                'unresolved': total_crimes - crimes['open_cases'] - resolved,
+            },
+            'security_alerts': {
+                'total': vehicle_alerts + crimes['severe_cases'],
+                'stolen_wanted_vehicles': vehicle_alerts,
+                'severe_crimes': crimes['severe_cases'],
+            },
+        },
+        'analytics': {
+            'incidents_by_region': [{'label': k, 'count': region_counts.get(k, 0)} for k in region_order],
+            'incidents_by_category': [{'label': k, 'count': cat_counts.get(k, 0)} for k in cat_order],
+            'resolution_rate': {
+                'resolved': resolved, 'total': total_crimes,
+                'rate': round(100.0 * resolved / total_crimes, 1) if total_crimes else 0.0,
+            },
+            'incidents_by_severity': [{'label': k, 'count': sev_counts.get(k, 0)} for k in sev_order],
+        },
+        'readiness': {
+            'fleet': {
+                'total': fleet['total'], 'in_service': fleet['in_service'],
+                'maintenance': fleet['maintenance'], 'out_of_service': fleet['out_of_service'],
+                'decommissioned': fleet['decommissioned'],
+                'readiness_rate': (round(100.0 * fleet['in_service'] / fleet['total'], 1)
+                                   if fleet['total'] else 0.0),
+            },
+            'station_deployment': deployment,
+        },
+    }
+
+
 def _admin_dashboard_cards(c):
     return [
         {'id':'central_persons','label':'Central persons','icon':'◉',
@@ -2673,6 +2938,13 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/admin/analytics':
                 # Aggregate analytics — admin only (module gate above).
                 result = build_analytics(c, user)
+            elif p.path == '/api/dashboard/stats':
+                # Executive Command Dashboard & Regional Crime Analytics.
+                # Prefix-collision note: this exact-path branch MUST stay
+                # above the broad '/api/dashboard/' prefix route below —
+                # the prefix route would otherwise swallow /stats calls and
+                # answer them with the role-scoped operations payload.
+                result = build_dashboard_stats(c, user, parse_qs(p.query))
             elif p.path == '/api/dashboard' or p.path.startswith('/api/dashboard/'):
                 # Role- and location-scoped operations dashboard. Every
                 # authenticated user can call this; the response is filtered
@@ -2793,6 +3065,11 @@ class API(BaseHTTPRequestHandler):
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
+        except ValueError as e:
+            # Bad client input on GET routes (e.g. malformed /api/dashboard/stats
+            # filters) is a 400, not a server fault.
+            if c: c.close()
+            self.send_json(400,{'error':str(e)})
         except Exception as e:
             if c: c.close()
             self.send_json(500,{'error':str(e)})

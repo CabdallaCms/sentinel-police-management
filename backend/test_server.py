@@ -1605,6 +1605,246 @@ def main():
         assert s == 200 and any(x['plate_number'] == 'SL-AA-1001' for x in r['items']), (s, r)
         print('ok: vehicle registry (VIN uniqueness, fleet/civilian conditionals, alerts)')
 
+        # ---- Executive Command Dashboard & Regional Crime Analytics ---------
+        # /api/dashboard/stats — live SQL aggregation across officers,
+        # police_stations, crime_incidents and vehicles.
+        #
+        # Deterministic fixture (added to the shared test database):
+        #   stations : + ST-010 'Regional Command' (Sanaag, Regional HQ)
+        #   officers : + POL-2026-0003 Active @ ST-004 (Sool),
+        #              + POL-2026-0004 Suspended @ ST-005 (East Togdheer)
+        #   crimes   : + Assault(High, Under Investigation) @ ST-004 2026-09-05
+        #              + Homicide(Critical, Referred to Court) @ ST-004 2026-08-15
+        #              + Robbery(Medium, Closed) @ ST-005 2026-07-01
+        #              + Fraud(Low, Unresolved) @ ST-009 2026-09-08
+        #   vehicles : + SL-AA-2001 fleet In Service @ ST-004 (clean)
+        #              + SL-AA-2002 fleet Maintenance @ ST-005 (clean)
+        # (already present: officers POL-2026-0001/0002 Active @ ST-001; 1 Theft
+        # incident @ ST-001 2026-09-01 (Open, no severity); fleet SL-AA-1001 In
+        # Service 'Wanted in Crime' @ ST-001; civilian SL-BB-9 'Stolen').
+        s, r = request(base, 'POST', '/api/stations', tokens['admin'],
+                       {'name': 'Regional Command', 'station_tier': 'Regional HQ',
+                        'region': 'Sanaag', 'district': 'Ceerigaabo',
+                        'contact_phone': '+252 63 555 2100'})
+        assert s == 201 and r['station']['station_id'] == 'ST-010', (s, r)
+        s, r = new_officer(fields={'station_id': 'ST-004'})
+        assert s == 201 and r['service_id'] == 'POL-2026-0003', (s, r)
+        s, r = new_officer(fields={'station_id': 'ST-005', 'duty_status': 'Suspended'})
+        assert s == 201 and r['service_id'] == 'POL-2026-0004', (s, r)
+        for crime in (
+                {'station_id': 'ST-004', 'officer_id': 'POL-2026-0003', 'category': 'Assault',
+                 'incident_at': '2026-09-05T09:30', 'location': 'Laascaanood stadium',
+                 'description': 'Assault reported', 'severity': 'High',
+                 'case_status': 'Under Investigation'},
+                {'station_id': 'ST-004', 'officer_id': 'POL-2026-0003', 'category': 'Homicide',
+                 'incident_at': '2026-08-15T12:00', 'location': 'Caynabo road',
+                 'description': 'Homicide reported', 'severity': 'Critical',
+                 'case_status': 'Referred to Court'},
+                {'station_id': 'ST-005', 'officer_id': 'POL-2026-0003', 'category': 'Robbery',
+                 'incident_at': '2026-07-01T08:00', 'location': 'Burao market',
+                 'description': 'Robbery reported', 'severity': 'Medium',
+                 'case_status': 'Closed'},
+                {'station_id': 'ST-009', 'officer_id': 'POL-2026-0003', 'category': 'Fraud',
+                 'incident_at': '2026-09-08T14:00', 'location': 'Xudun',
+                 'description': 'Fraud reported', 'severity': 'Low',
+                 'case_status': 'Unresolved'}):
+            s, r = request(base, 'POST', '/api/crimes', tokens['admin'], crime)
+            assert s == 201, (s, r, crime)
+        for veh in (
+                {'category': 'Police Fleet', 'plate_number': 'SL-AA-2001',
+                 'vin': '1HGCM82633A004354', 'engine_number': 'ENG-201', 'make_model': 'Toyota Hilux',
+                 'station_id': 'ST-004', 'operational_status': 'In Service'},
+                {'category': 'Police Fleet', 'plate_number': 'SL-AA-2002',
+                 'vin': '1HGCM82633A004355', 'engine_number': 'ENG-202', 'make_model': 'Land Cruiser',
+                 'station_id': 'ST-005', 'operational_status': 'Maintenance'}):
+            s, r = request(base, 'POST', '/api/vehicles', tokens['admin'], veh)
+            assert s == 201, (s, r, veh)
+
+        def stats(qs='', token=None):
+            return request(base, 'GET', '/api/dashboard/stats' + qs,
+                           token if token is not None else tokens['admin'])
+
+        def by_label(items):
+            return {x['label']: x['count'] for x in items}
+
+        # --- Section 1 KPIs + Sections 2/3 — exact mathematical aggregates ---
+        s, st = stats()
+        assert s == 200 and st['generated_at'], (s, st)
+        assert st['filters']['regions'] == ['Sool', 'Sanaag', 'East Togdheer'], st['filters']
+        assert any(x['station_id'] == 'ST-004' for x in st['filters']['stations']), st['filters']
+        assert st['kpis']['active_force']['total'] == 3, st['kpis']
+        assert by_label(st['kpis']['active_force']['by_region']) == \
+            {'Sool': 1, 'Sanaag': 2, 'East Togdheer': 0}, st['kpis']['active_force']
+        assert st['kpis']['station_coverage']['total'] == 10, st['kpis']
+        assert by_label(st['kpis']['station_coverage']['by_tier']) == \
+            {'Regional HQ': 1, 'District HQ': 0, 'Outpost': 1,
+             'Checkpoint': 0, 'Border Post': 0}, st['kpis']['station_coverage']
+        ci = st['kpis']['crime_incidents']
+        assert (ci['total'], ci['open'], ci['resolved'], ci['unresolved']) == (5, 2, 2, 1), ci
+        assert st['kpis']['security_alerts'] == \
+            {'total': 4, 'stolen_wanted_vehicles': 2, 'severe_crimes': 2}, st['kpis']
+        assert by_label(st['analytics']['incidents_by_region']) == \
+            {'Sool': 3, 'Sanaag': 1, 'East Togdheer': 1}, st['analytics']
+        assert by_label(st['analytics']['incidents_by_category']) == {
+            'Theft/Burglary': 1, 'Assault': 1, 'Robbery': 1, 'Traffic Accident': 0,
+            'Homicide': 1, 'Fraud': 1, 'Domestic Incident': 0, 'Public Order': 0,
+            'Cybercrime': 0, 'Other': 0}, st['analytics']
+        assert st['analytics']['resolution_rate'] == \
+            {'resolved': 2, 'total': 5, 'rate': 40.0}, st['analytics']
+        assert by_label(st['analytics']['incidents_by_severity']) == \
+            {'Low': 1, 'Medium': 1, 'High': 1, 'Critical': 1}, st['analytics']
+        fl = st['readiness']['fleet']
+        assert (fl['total'], fl['in_service'], fl['maintenance'],
+                fl['out_of_service'], fl['decommissioned'], fl['readiness_rate']) == \
+               (3, 2, 1, 0, 0, 66.7), fl
+        deploy = {x['station_id']: x for x in st['readiness']['station_deployment']}
+        assert len(deploy) == 10, deploy
+        assert (deploy['ST-001']['active_officers'], deploy['ST-001']['incidents']) == (2, 1), deploy['ST-001']
+        assert (deploy['ST-004']['active_officers'], deploy['ST-004']['incidents']) == (1, 2), deploy['ST-004']
+        # A suspended officer counts toward deployed strength but not ACTIVE strength.
+        assert (deploy['ST-005']['active_officers'], deploy['ST-005']['total_officers']) == (0, 1), deploy['ST-005']
+        assert (deploy['ST-009']['active_officers'], deploy['ST-009']['incidents']) == (0, 1), deploy['ST-009']
+        assert deploy['ST-010']['active_officers'] == 0 and deploy['ST-010']['tier'] == 'Regional HQ', deploy['ST-010']
+
+        # --- Section 4 filters: region / timeframe / station ------------------
+        s, st = stats('?region=Sool')
+        assert s == 200, (s, st)
+        assert st['filters']['region'] == 'Sool'
+        assert st['kpis']['active_force']['total'] == 1, st['kpis']
+        assert by_label(st['kpis']['active_force']['by_region']) == \
+            {'Sool': 1, 'Sanaag': 0, 'East Togdheer': 0}, st['kpis']['active_force']
+        ci = st['kpis']['crime_incidents']
+        assert (ci['total'], ci['open'], ci['resolved'], ci['unresolved']) == (3, 1, 1, 1), ci
+        assert st['analytics']['resolution_rate']['rate'] == 33.3, st['analytics']
+        assert by_label(st['analytics']['incidents_by_region']) == \
+            {'Sool': 3, 'Sanaag': 0, 'East Togdheer': 0}, st['analytics']
+        # Severe crimes are region-scoped; the stolen/wanted vehicles sit in
+        # Sanaag / unassigned, so they drop out of the region view.
+        assert st['kpis']['security_alerts'] == \
+            {'total': 2, 'stolen_wanted_vehicles': 0, 'severe_crimes': 2}, st['kpis']
+        assert st['kpis']['station_coverage']['total'] == 4, st['kpis']
+        assert len(st['readiness']['station_deployment']) == 4, st['readiness']
+        assert st['readiness']['fleet']['total'] == 1, st['readiness']
+
+        s, st = stats('?region=East%20Togdheer')
+        assert s == 200 and st['filters']['region'] == 'East Togdheer', (s, st)
+        assert st['kpis']['crime_incidents']['total'] == 1, st['kpis']
+        assert st['analytics']['resolution_rate'] == {'resolved': 1, 'total': 1, 'rate': 100.0}, st['analytics']
+
+        # Timeframe only shapes crime-incident metrics — force strength,
+        # station coverage and fleet status are point-in-time state.
+        s, st = stats('?start_date=2026-08-01&end_date=2026-08-31')
+        assert s == 200, (s, st)
+        ci = st['kpis']['crime_incidents']
+        assert (ci['total'], ci['open'], ci['resolved']) == (1, 0, 1), ci
+        assert st['analytics']['resolution_rate']['rate'] == 100.0, st['analytics']
+        assert st['kpis']['active_force']['total'] == 3, st['kpis']
+        assert st['kpis']['station_coverage']['total'] == 10, st['kpis']
+        assert st['readiness']['fleet']['total'] == 3, st['readiness']
+        assert by_label(st['analytics']['incidents_by_severity']) == \
+            {'Low': 0, 'Medium': 0, 'High': 0, 'Critical': 1}, st['analytics']
+
+        s, st = stats('?station_id=ST-004')
+        assert s == 200, (s, st)
+        assert st['filters']['station_name'] == 'Las Anod Station', st['filters']
+        assert st['kpis']['active_force']['total'] == 1, st['kpis']
+        assert st['kpis']['crime_incidents']['total'] == 2, st['kpis']
+        assert st['analytics']['resolution_rate'] == {'resolved': 1, 'total': 2, 'rate': 50.0}, st['analytics']
+        assert st['kpis']['station_coverage']['total'] == 1, st['kpis']
+        assert st['readiness']['fleet']['total'] == 1, st['readiness']
+        assert len(st['readiness']['station_deployment']) == 1, st['readiness']
+
+        # Region + station composed (station inside the region is honoured).
+        s, st = stats('?region=Sool&station_id=ST-004&start_date=2026-09-01&end_date=2026-09-30')
+        assert s == 200, (s, st)
+        assert st['kpis']['crime_incidents']['total'] == 1 and st['kpis']['crime_incidents']['open'] == 1, st['kpis']
+
+        # Empty scopes: zero rows must still produce a well-formed payload
+        # (graceful empty state — no errors, rates are 0.0 not errors).
+        s, st = stats('?station_id=ST-006')
+        assert s == 200, (s, st)
+        assert st['kpis']['crime_incidents']['total'] == 0, st['kpis']
+        assert st['analytics']['resolution_rate'] == {'resolved': 0, 'total': 0, 'rate': 0.0}, st['analytics']
+        assert all(x['count'] == 0 for x in st['analytics']['incidents_by_category']), st['analytics']
+        assert st['readiness']['fleet']['total'] == 0 and st['readiness']['fleet']['readiness_rate'] == 0.0, st['readiness']
+
+        # --- RBAC & input validation -----------------------------------------
+        # Unauthenticated callers are rejected; any authenticated role may
+        # read the aggregates (they carry counts only, no PII).
+        s, r = stats(token='')
+        assert s == 401, (s, r)
+        s, st = stats(token=tokens['cid.officer'])
+        assert s == 200, (s, st)
+        s, st = stats(token=tokens['cp.south'])
+        assert s == 200, (s, st)
+        # Region matching is case-insensitive but must be a known region.
+        s, st = stats('?region=sool')
+        assert s == 200 and st['filters']['region'] == 'Sool', (s, st)
+        for bad_qs, needle in (
+                ('?region=Atlantis', 'region'),
+                ('?start_date=not-a-date', 'start_date'),
+                ('?start_date=2026-13-01', 'start_date'),
+                ('?end_date=2026-02-30', 'end_date'),
+                ('?start_date=2026-09-10&end_date=2026-09-01', 'start_date'),
+                ('?station_id=ST-999', 'does not exist'),
+                ('?region=Sanaag&station_id=ST-004', 'not in region')):
+            s, r = stats(bad_qs)
+            assert s == 400 and needle in r['error'], (bad_qs, s, r)
+        print('ok: executive dashboard stats (KPIs, analytics, readiness, filters, RBAC)')
+
+        # ---- /api/dashboard/stats on a pristine (empty) database ------------
+        # A freshly initialised deployment has seeded stations & users but no
+        # officers / crimes / vehicles: every aggregate must be zero-safe.
+        port2 = free_port()
+        tmp2 = tempfile.mkdtemp(prefix='sentinel-test-empty-')
+        env2 = dict(os.environ, SENTINEL_DB=os.path.join(tmp2, 'empty.db'),
+                    PORT=str(port2), SENTINEL_UPLOADS=os.path.join(tmp2, 'uploads'))
+        proc2 = subprocess.Popen([sys.executable, SERVER], env=env2,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        base2 = f'http://127.0.0.1:{port2}'
+        try:
+            for _ in range(50):
+                try:
+                    status, _ = request(base2, 'GET', '/api/health')
+                    if status == 200:
+                        break
+                except Exception:
+                    time.sleep(0.2)
+            else:
+                raise RuntimeError('empty-state server did not start')
+            s, login2 = request(base2, 'POST', '/api/login',
+                                body={'username': 'admin', 'password': 'ChangeMe123!'})
+            assert s == 200 and login2.get('token'), login2
+            s, st = request(base2, 'GET', '/api/dashboard/stats', login2['token'])
+            assert s == 200, (s, st)
+            assert st['kpis']['active_force']['total'] == 0, st['kpis']
+            assert by_label(st['kpis']['active_force']['by_region']) == \
+                {'Sool': 0, 'Sanaag': 0, 'East Togdheer': 0}, st['kpis']
+            # The 8 seeded stations are 'Active' but carry no tier yet.
+            assert st['kpis']['station_coverage']['total'] == 8, st['kpis']
+            assert all(x['count'] == 0 for x in st['kpis']['station_coverage']['by_tier']), st['kpis']
+            assert st['kpis']['crime_incidents'] == \
+                {'total': 0, 'open': 0, 'resolved': 0, 'unresolved': 0}, st['kpis']
+            assert st['kpis']['security_alerts'] == \
+                {'total': 0, 'stolen_wanted_vehicles': 0, 'severe_crimes': 0}, st['kpis']
+            assert st['analytics']['resolution_rate'] == {'resolved': 0, 'total': 0, 'rate': 0.0}, st['analytics']
+            assert all(x['count'] == 0 for x in st['analytics']['incidents_by_region']), st['analytics']
+            assert all(x['count'] == 0 for x in st['analytics']['incidents_by_category']), st['analytics']
+            assert len(st['analytics']['incidents_by_category']) == 10, st['analytics']
+            assert all(x['count'] == 0 for x in st['analytics']['incidents_by_severity']), st['analytics']
+            assert len(st['analytics']['incidents_by_severity']) == 4, st['analytics']
+            assert st['readiness']['fleet'] == {'total': 0, 'in_service': 0, 'maintenance': 0,
+                                                'out_of_service': 0, 'decommissioned': 0,
+                                                'readiness_rate': 0.0}, st['readiness']
+            dep = st['readiness']['station_deployment']
+            assert len(dep) == 8 and all(
+                x['active_officers'] == 0 and x['total_officers'] == 0 and x['incidents'] == 0
+                for x in dep), dep
+            print('ok: empty database stats are zero-safe (no errors, rates 0.0)')
+        finally:
+            proc2.terminate()
+            proc2.wait(timeout=10)
+
         # ---- audit tool -----------------------------------------------------
         # A server started before the lock existed approved instantly. The
         # audit must find those rows and be able to undo them.
