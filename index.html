@@ -561,25 +561,89 @@ body.modal-open{overflow:hidden}
 <section id="officers" class="page">
 <div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Register police officer</h2><div class="sub">Assign to a station — its location pre-fills the fields, which you may override</div></div></div>
+<div class="panel-head"><div><h2>Register police officer</h2><div class="sub">Five-part record — identifiers, personal details, origin, guarantor and supporting documents</div></div></div>
 <div id="offNotice" class="notice"></div>
 <form class="form" id="offForm" onsubmit="saveOfficer(event)">
-<div class="grid2">
-<div class="field"><label>Full name *</label><input id="offName" placeholder="e.g. Maxamed Faarax Nuur"></div>
-<div class="field"><label>Badge number *</label><input id="offBadge" placeholder="e.g. PL-1005"></div>
-<div class="field"><label>Rank</label><select id="offRank"><option>Officer</option><option>Sergeant</option><option>Sergeant Major</option><option>Inspector</option><option>Station Commander</option><option>Commissioner</option></select></div>
-<div class="field"><label>Contact number</label><input id="offPhone" placeholder="+252 …"></div>
+<div class="tabs" id="offStepTabs">
+<button type="button" class="tab active" data-step="1" onclick="offStep(1)">1 · Official &amp; System</button>
+<button type="button" class="tab" data-step="2" onclick="offStep(2)">2 · Personal ID</button>
+<button type="button" class="tab" data-step="3" onclick="offStep(3)">3 · Regional &amp; Origin</button>
+<button type="button" class="tab" data-step="4" onclick="offStep(4)">4 · Guarantor</button>
+<button type="button" class="tab" data-step="5" onclick="offStep(5)">5 · Documents</button>
 </div>
-<div class="section-label">Assignment</div>
-<div class="field"><label>Assigned police station *</label><select id="offStation"></select></div>
-<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Location:</b> picking a station pre-fills its Region, District and Village/Town as defaults — you can change or override any of the three. The values you save are stored on the officer record.</div>
-<div id="off-loc" class="loc-grid"></div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetOfficerForm()">Clear</button><button class="btn" type="submit">Register officer</button></div>
+
+<div class="tabpane active" id="off-step-1">
+<div class="section-label">Official &amp; System Identifiers</div>
+<div class="grid2">
+<div class="field"><label>Service ID (auto-generated)</label><input id="offServiceId" readonly placeholder="POL-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
+<div class="field"><label>Rank *</label><select id="offRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
+<div class="field"><label>Unit / Division *</label><select id="offUnit"><option value="">— select unit —</option><option>General Patrol</option><option>CID / Criminal Investigation</option><option>Traffic Control</option><option>Rapid Response Unit</option><option>Special Protection Unit</option><option>Logistics</option></select></div>
+<div class="field"><label>Assigned Station *</label><select id="offStation"></select></div>
+<div class="field"><label>Date of Enlistment *</label><input id="offEnlist" type="date"></div>
+<div class="field"><label>Duty Status</label><select id="offDuty"><option>Active</option><option>Suspended</option><option>Leave</option><option>Terminated</option><option>Retired</option></select></div>
+</div>
+</div>
+
+<div class="tabpane" id="off-step-2">
+<div class="section-label">Personal Identification</div>
+<div class="grid2">
+<div class="field"><label>Full Name *</label><input id="offName" placeholder="e.g. Maxamed Faarax Nuur"></div>
+<div class="field"><label>Mother's Name *</label><input id="offMother" placeholder="e.g. Khadra Faarax"></div>
+<div class="field"><label>Date of Birth (DOB) *</label><input id="offDob" type="date"></div>
+<div class="field"><label>Place of Birth (POB) *</label><input id="offPob" placeholder="e.g. Ceerigaabo"></div>
+<div class="field"><label>Contact Number *</label><input id="offPhone" type="tel" placeholder="+252 …"></div>
+<div class="field"><label>Blood Group</label><select id="offBlood"><option value="">— select —</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div>
+<div class="field"><label>Height (cm)</label><input id="offHeight" type="number" min="0" step="0.1" placeholder="e.g. 178"></div>
+<div class="field"><label>Weight (kg)</label><input id="offWeight" type="number" min="0" step="0.1" placeholder="e.g. 82"></div>
+</div>
+<div class="field"><label>Officer Picture * <small class="muted">(JPEG/PNG, max 5MB)</small></label><input id="offPhoto" type="file" accept="image/jpeg,image/png"></div>
+</div>
+
+<div class="tabpane" id="off-step-3">
+<div class="section-label">Regional &amp; Origin Data</div>
+<div class="grid2">
+<div class="field"><label>State / Region of Origin</label><select id="offOriginRegion"></select></div>
+<div class="field"><label>District of Origin</label><select id="offOriginDistrict"></select></div>
+<div class="field"><label>Town / Village</label><input id="offTown" type="text" placeholder="e.g. Adhi Cadeeye"></div>
+</div>
+</div>
+
+<div class="tabpane" id="off-step-4">
+<div class="section-label">Guarantor / Emergency Contact</div>
+<div class="grid2">
+<div class="field"><label>Guarantor Name *</label><input id="offGuarName" placeholder="e.g. Faarax Nuur"></div>
+<div class="field"><label>Guarantor Contact *</label><input id="offGuarPhone" type="tel" placeholder="+252 …"></div>
+<div class="field"><label>Occupation</label><input id="offGuarOcc" placeholder="e.g. Merchant"></div>
+<div class="field"><label>Relationship with Officer</label><select id="offGuarRel"><option value="">— select —</option><option>Parent</option><option>Spouse</option><option>Relative</option><option>Community Leader</option><option>Other</option></select></div>
+</div>
+<div class="field"><label>Guarantor Permanent Address *</label><textarea id="offGuarAddr" placeholder="e.g. Ceerigaabo, Shaabada Dhexe"></textarea></div>
+<div class="field"><label>Guarantor Picture <small class="muted">(JPEG/PNG, optional)</small></label><input id="offGuarPhoto" type="file" accept="image/jpeg,image/png"></div>
+</div>
+
+<div class="tabpane" id="off-step-5">
+<div class="section-label">Document Slot 1 <span style="color:var(--red)">(Mandatory)</span></div>
+<div class="grid2">
+<div class="field"><label>Document Type *</label><select id="offDoc1Type"><option value="">— select type —</option><option>National ID</option><option>Passport</option><option>Birth Certificate</option><option>Letter of Guarantee</option></select></div>
+<div class="field"><label>File Upload * <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc1File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
+</div>
+<div class="section-label">Document Slot 2 <span class="muted">(Optional)</span></div>
+<div class="grid2">
+<div class="field"><label>Document Type</label><select id="offDoc2Type"><option value="">— none —</option><option>Background Check</option><option>Reference Letter</option><option>Military Discharge</option><option>Other</option></select></div>
+<div class="field"><label>File Upload <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc2File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
+</div>
+</div>
+
+<div class="form-actions">
+<button class="btn ghost" type="button" onclick="resetOfficerForm()">Clear</button>
+<button class="btn ghost" type="button" id="offBack" onclick="offStep(offCur-1)" style="display:none">← Back</button>
+<button class="btn secondary" type="button" id="offNext" onclick="offStep(offCur+1)">Next →</button>
+<button class="btn" type="submit" id="offSubmit">Register officer</button>
+</div>
 </form>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Region/District/Village as stored on each record (pre-filled from the station, editable at entry)</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Badge</th><th>Rank</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="officersTable"></tbody></table></div>
+<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
 </div>
 </section>
@@ -710,10 +774,10 @@ stations:[
 {id:'ST-007',name:'Buuhoodle Station',code:'ETG-C-03',region:'East Togdheer',district:'Buuhoodle',village:'Widh Widh',notes:''},
 {id:'ST-008',name:'Adhi Cadeeye Outpost',code:'SOO-C-02',region:'Sool',district:'Laascaanood',village:'Adhi Cadeeye',notes:''}],
 officers:[
-{id:'OF-0001',name:'Maxamed Faarax Nuur',badge:'PL-1001',rank:'Station Commander',phone:'+252 63 555 0101',station:'ST-001',region:'Sanaag',district:'Ceerigaabo',village:'Ceerigaabo'},
-{id:'OF-0002',name:'Amina Suleymaan Cabdi',badge:'PL-1002',rank:'Sergeant',phone:'+252 63 555 0102',station:'ST-002',region:'Sanaag',district:'Badhan',village:'Badhan'},
-{id:'OF-0003',name:'Hassan Cabdi Xirsi',badge:'PL-1003',rank:'Officer',phone:'+252 63 555 0103',station:'ST-004',region:'Sool',district:'Laascaanood',village:'Laascaanood'},
-{id:'OF-0004',name:'Sahra Axmed Yuusuf',badge:'PL-1004',rank:'Officer',phone:'+252 63 555 0104',station:'ST-005',region:'East Togdheer',district:'Burao',village:'Burao'}],
+{id:'POL-2026-0001',service_id:'POL-2026-0001',rank:'Commander',unit:'General Patrol',station_id:'ST-001',station_name:'Ceerigaabo Central Station',date_of_enlistment:'2012-03-15',duty_status:'Active',full_name:'Maxamed Faarax Nuur',mother_name:'Khadra Faarax',date_of_birth:'1985-06-12',place_of_birth:'Ceerigaabo',contact_number:'+252 63 555 0101',height_cm:'176',weight_kg:'82',blood_group:'O+',photo_path:null,region_of_origin:'Sanaag',district_of_origin:'Ceerigaabo',town_village:'Ceerigaabo',guarantor_name:'Faarax Nuur',guarantor_address:'Ceerigaabo, Shaabada Dhexe',guarantor_occupation:'Merchant',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0201',guarantor_photo:null,doc1_type:'National ID',doc1_path:null,doc2_type:null,doc2_path:null},
+{id:'POL-2026-0002',service_id:'POL-2026-0002',rank:'Sergeant',unit:'Traffic Control',station_id:'ST-002',station_name:'Badhan Station',date_of_enlistment:'2016-09-01',duty_status:'Active',full_name:'Amina Suleymaan Cabdi',mother_name:'Maryan Cabdi',date_of_birth:'1990-01-20',place_of_birth:'Badhan',contact_number:'+252 63 555 0102',height_cm:'168',weight_kg:'64',blood_group:'A+',photo_path:null,region_of_origin:'Sanaag',district_of_origin:'Badhan',town_village:'Badhan',guarantor_name:'Suleymaan Cabdi',guarantor_address:'Badhan, Xaafadda Cali',guarantor_occupation:'Teacher',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0202',guarantor_photo:null,doc1_type:'Birth Certificate',doc1_path:null,doc2_type:null,doc2_path:null},
+{id:'POL-2026-0003',service_id:'POL-2026-0003',rank:'Constable',unit:'General Patrol',station_id:'ST-004',station_name:'Las Anod Station',date_of_enlistment:'2019-02-11',duty_status:'Active',full_name:'Hassan Cabdi Xirsi',mother_name:'Sahra Xirsi',date_of_birth:'1994-08-03',place_of_birth:'Laascaanood',contact_number:'+252 63 555 0103',height_cm:'181',weight_kg:'88',blood_group:'B+',photo_path:null,region_of_origin:'Sool',district_of_origin:'Laascaanood',town_village:'Laascaanood',guarantor_name:'Cabdi Xirsi',guarantor_address:'Laascaanood, Xaafadda Goljano',guarantor_occupation:'Herder',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0203',guarantor_photo:null,doc1_type:'Passport',doc1_path:null,doc2_type:null,doc2_path:null},
+{id:'POL-2026-0004',service_id:'POL-2026-0004',rank:'Corporal',unit:'CID / Criminal Investigation',station_id:'ST-005',station_name:'Burao Station',date_of_enlistment:'2017-11-23',duty_status:'Active',full_name:'Sahra Axmed Yuusuf',mother_name:'Aamina Yuusuf',date_of_birth:'1992-04-30',place_of_birth:'Burao',contact_number:'+252 63 555 0104',height_cm:'170',weight_kg:'66',blood_group:'AB+',photo_path:null,region_of_origin:'East Togdheer',district_of_origin:'Burao',town_village:'Burao',guarantor_name:'Axmed Yuusuf',guarantor_address:'Burao, Xaafadda Shacabka',guarantor_occupation:'Accountant',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0204',guarantor_photo:null,doc1_type:'National ID',doc1_path:null,doc2_type:null,doc2_path:null}],
 cars:[
 {id:'CR-0001',plate:'PL-1001-26',type:'Patrol',make:'Toyota',model:'Hilux · 2024',station:'ST-001',region:'Sanaag',district:'Ceerigaabo',village:'Ceerigaabo'},
 {id:'CR-0002',plate:'PL-1002-25',type:'Patrol',make:'Nissan',model:'Pickup · 2023',station:'ST-002',region:'Sanaag',district:'Badhan',village:'Badhan'},
@@ -932,6 +996,32 @@ const LOCATIONS=[
   {region:'Sool',districts:['Laascaanood','Caynabo','Xudun','Taleex']},
   {region:'Sanaag',districts:['Ceerigaabo','Ceel Afweyn','Garadag','Badhan','Dhahar']},
   {region:'East Togdheer',districts:['Burao','Oodweyne','Buuhoodle']}
+];
+
+// State / Region of Origin gazetteer for the officer register. Preloaded with
+// the three covered regions (Sool, Sanaag, East Togdheer) plus the other
+// Somali federal-member states / regions. The District of Origin dropdown
+// cascades from the selected region; Town / Village is free text.
+const ORIGIN_REGIONS=[
+  {region:'Sool',districts:['Laascaanood','Caynabo','Xudun','Taleex']},
+  {region:'Sanaag',districts:['Ceerigaabo','Ceel Afweyn','Garadag','Badhan','Dhahar']},
+  {region:'East Togdheer',districts:['Burao','Oodweyne','Buuhoodle']},
+  {region:'Togdheer',districts:['Burao','Oodweyne','Buuhoodle']},
+  {region:'Awdal',districts:['Borama','Baki','Lughaya','Zeila']},
+  {region:'Woqooyi Galbeed',districts:['Hargeisa','Berbera','Gabiley']},
+  {region:'Bari',districts:['Bosaso','Qardho','Iskushuban','Caluula']},
+  {region:'Nugaal',districts:['Garowe','Eyl','Burtinle']},
+  {region:'Mudug',districts:['Gaalkacyo','Jariiban','Hobyo']},
+  {region:'Galguduud',districts:['Dhuusamarreeb','Ceel Buur','Cabudwaaq']},
+  {region:'Hiiraan',districts:['Beledweyne','Bulo Burto','Jalalaqsi']},
+  {region:'Middle Shabelle',districts:['Jowhar','Balcad','Adale']},
+  {region:'Lower Shabelle',districts:['Merca','Afgooye','Baraawe']},
+  {region:'Banaadir',districts:['Mogadishu']},
+  {region:'Bay',districts:['Baidoa','Burhakaba','Diinsoor']},
+  {region:'Bakool',districts:['Xudur','Ceel Barde','Tayeeglow']},
+  {region:'Gedo',districts:['Garbahaarreey','Luuq','Bardheere']},
+  {region:'Lower Juba',districts:['Kismaayo','Afmadow','Jamaame']},
+  {region:'Middle Juba',districts:["Bu'aale",'Saakow','Jilib']}
 ];
 function locationRegions(){return LOCATIONS.map(r=>r.region)}
 function locationDistricts(region){
@@ -2317,6 +2407,7 @@ function renderAll(){
   renderStationsTable();
   renderOfficersTable();
   renderCarsTable();
+  refreshStationSelects();
   renderPoliceSearch();
   // The checkpoint table is filtered by the active location chip.
   // When the Checkpoints page is active, render through the chip-aware
@@ -2752,6 +2843,8 @@ async function syncServer(){
       sessionUser.modules.includes('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('cid')        ? safeItems('/api/suspect-alerts')           : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('stations')   ? safeItems('/api/stations')                : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('officers')   ? safeItems('/api/officers')                : Promise.resolve({ok:false,items:[]}),
       api('/api/dashboard').catch(()=>null),
     ];
     const results = await Promise.all(fetches);
@@ -2761,6 +2854,8 @@ async function syncServer(){
     const ccs = results.shift();
     const sas = results.shift();
     const cps = results.shift();
+    const sts = results.shift();
+    const offs = results.shift();
     const dash = results.shift();
     if(dash) db.dashboard = dash;
     if(ps.ok) db.people=ps.items.map(mapPerson);
@@ -2802,6 +2897,11 @@ async function syncServer(){
     if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at}));
     if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,participants:[],evidence:[]}));
     if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
+    // Police Registrations: stations + officers now sync from the central DB.
+    // A failed fetch keeps the previous local arrays (never clobbered by a
+    // transient error). Officer payloads already match the register's shape.
+    if(sts.ok && sts.items.length) db.stations=sts.items.map(s=>({id:s.station_id,name:s.name,code:s.code,region:s.region,district:s.district,village:s.village,notes:s.notes||''}));
+    if(offs.ok) db.officers=offs.items.map(o=>({...o}));
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
     const newCheckpoints = cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
       location:x.location,location_code:x.location_code,checkpoint_location:x.checkpoint_location,
@@ -3407,8 +3507,9 @@ function nextId(prefix,list){
   const n=(list||[]).length+1;
   return prefix+'-'+String(n).padStart(prefix==='ST'?3:4,'0');
 }
-// The location stored on an officer/car record. Legacy rows saved before
+// The location stored on a car record. Legacy rows saved before
 // locations were stored per record fall back to their station's location.
+// (Officers store their own origin via officerLocation() instead.)
 function recordLocation(o){
   if(o.region||o.district||o.village)return{region:o.region||'',district:o.district||'',village:o.village||''};
   const st=stationById(o.station);
@@ -3429,14 +3530,20 @@ function renderStationsTable(){
     <td>${esc(s.district)}</td><td>${esc(s.village)}</td></tr>`).join('');
   tb.innerHTML=rows||'<tr><td colspan="5" class="empty">No stations registered yet</td></tr>';
 }
+function dutyBadge(s){
+  const v=s||'Active';
+  const cls=v==='Active'?'green':(v==='Leave'||v==='Suspended')?'amber':(v==='Terminated'||v==='Retired')?'gray':'blue';
+  return `<span class="badge ${cls}">${esc(v)}</span>`;
+}
+function officerLocation(o){return {region:o.region_of_origin||'',district:o.district_of_origin||'',village:o.town_village||''}}
 function renderOfficersTable(){
   const tb=document.getElementById('officersTable');if(!tb)return;
-  const rows=(db.officers||[]).map(o=>{const st=stationById(o.station);
-    return `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.phone||'')}</small></td>
-    <td>${esc(o.badge)}</td><td>${esc(o.rank)}</td>
-    <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':'<span class="muted">—</span>'}</td>
-    ${locationCells(o)}</tr>`}).join('');
-  tb.innerHTML=rows||'<tr><td colspan="7" class="empty">No officers registered yet</td></tr>';
+  const rows=(db.officers||[]).map(o=>{const st=stationById(o.station_id);
+    return `<tr><td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
+    <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
+    <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':esc(o.station_name||o.station_id||'—')}</td>
+    <td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
+  tb.innerHTML=rows||'<tr><td colspan="6" class="empty">No officers registered yet</td></tr>';
 }
 function renderCarsTable(){
   const tb=document.getElementById('carsTable');if(!tb)return;
@@ -3471,22 +3578,21 @@ function renderPoliceSearch(){
   const f=readLocation('ps');
   const q=normTxt((document.getElementById('psSearch')||{}).value||'');
   const textMatch=(...fields)=>!q||fields.some(v=>normTxt(v).includes(q));
-  const stationOf=o=>stationById(o.station);
+  const stationOf=o=>stationById(o.station_id||o.station);
   let rows='',count=0;
   if(psType==='officers'){
-    head.innerHTML='<tr><th>Officer</th><th>Badge</th><th>Rank</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr>';
+    head.innerHTML='<tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr>';
     const list=(db.officers||[]).filter(o=>{
       const st=stationOf(o);
-      // Filter on the officer record's own stored location (recordLocation
-      // falls back to the station only for legacy rows without one).
-      return psLocMatch(recordLocation(o),f)
-        && textMatch(o.name,o.badge,o.rank,o.phone,st&&st.name,st&&st.code);
+      // Filter on the officer's own stored origin (Region → District → Town).
+      return psLocMatch(officerLocation(o),f)
+        && textMatch(o.full_name,o.service_id,o.rank,o.unit,o.contact_number,st&&st.name,st&&st.code);
     });
     count=list.length;
     rows=list.map(o=>{const st=stationOf(o);
-      return `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.phone||'')}</small></td>
-      <td>${esc(o.badge)}</td><td>${esc(o.rank)}</td>
-      <td>${st?esc(st.name):'—'}</td>${locationCells(o)}</tr>`}).join('');
+      return `<tr><td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
+      <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
+      <td>${st?esc(st.name):esc(o.station_name||'—')}</td><td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
   }else if(psType==='stations'){
     head.innerHTML='<tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Officers</th><th>Cars</th></tr>';
     const list=(db.stations||[]).filter(s=>psLocMatch(s,f)&&textMatch(s.name,s.code,s.notes));
@@ -3494,7 +3600,7 @@ function renderPoliceSearch(){
     rows=list.map(s=>`<tr>
       <td><b>${esc(s.name)}</b></td><td>${esc(s.code)}</td>
       <td><span class="badge blue">${esc(s.region)}</span></td><td>${esc(s.district)}</td><td>${esc(s.village)}</td>
-      <td>${(db.officers||[]).filter(o=>o.station===s.id).length}</td>
+      <td>${(db.officers||[]).filter(o=>(o.station_id||o.station)===s.id).length}</td>
       <td>${(db.cars||[]).filter(c=>c.station===s.id).length}</td></tr>`).join('');
   }else{
     head.innerHTML='<tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr>';
@@ -3516,7 +3622,7 @@ function renderPoliceSearch(){
   if(cnt){cnt.textContent=count;cnt.style.display='';}
 }
 // ---- station registration -----------------------------------------------------
-function saveStation(e){
+async function saveStation(e){
   e.preventDefault();clearInvalid();
   const name=stName.value.trim(),code=stCode.value.trim();
   if(!name){showFormError('Station name is required.',{names:['stName'],notice:'stNotice'});return}
@@ -3525,11 +3631,24 @@ function saveStation(e){
   if(dup){showFormError('A station with code '+dup.code+' already exists ('+dup.name+').',{names:['stCode'],notice:'stNotice'});return}
   const rl=requireLocation('st');
   if(!rl.ok){showFormError(rl.msg,{notice:'stNotice'});return}
-  db.stations=(db.stations||[]).concat({id:nextId('ST',db.stations),name,code,
-    region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,notes:stNotes.value.trim()});
-  persist();resetStationForm();refreshStationSelects();
-  renderStationsTable();renderPoliceSearch();
-  toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
+  try{
+    if(serverOn){
+      const r=await api('/api/stations',{method:'POST',body:JSON.stringify({
+        name,code,region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,notes:stNotes.value.trim()})});
+      db.stations=(db.stations||[]).concat({id:r.station.station_id,name:r.station.name,code:r.station.code,
+        region:r.station.region,district:r.station.district,village:r.station.village,notes:r.station.notes||''});
+      stNotice.className='notice';stNotice.style.display='block';
+      stNotice.textContent='Station '+r.station.station_id+' registered — '+name+'.';
+    }else{
+      db.stations=(db.stations||[]).concat({id:nextId('ST',db.stations),name,code,
+        region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,notes:stNotes.value.trim()});
+      stNotice.className='notice';stNotice.style.display='block';
+      stNotice.textContent='Station registered (local demo).';
+    }
+    persist();resetStationForm();refreshStationSelects();
+    renderStationsTable();renderPoliceSearch();
+    toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
+  }catch(err){showFormError(err.message||'The station could not be registered.',{notice:'stNotice',title:'Unable to Save'})}
 }
 function resetStationForm(){
   stName.value='';stCode.value='';stNotes.value='';
@@ -3537,32 +3656,144 @@ function resetStationForm(){
   stNotice.className='notice';stNotice.style.display='none';
 }
 // ---- officer registration ------------------------------------------------------
-function saveOfficer(e){
+let offCur=1;
+function offStep(n){
+  n=Math.max(1,Math.min(5,n));
+  offCur=n;
+  document.querySelectorAll('#offStepTabs .tab').forEach(b=>b.classList.toggle('active',Number(b.dataset.step)===n));
+  for(let i=1;i<=5;i++){const p=document.getElementById('off-step-'+i);if(p)p.classList.toggle('active',i===n)}
+  const back=document.getElementById('offBack'),next=document.getElementById('offNext'),sub=document.getElementById('offSubmit');
+  if(back)back.style.display=n===1?'none':'';
+  if(next)next.style.display=n===5?'none':'';
+  if(sub)sub.style.display=n===5?'':'none';
+}
+// Build the cascading Region → District origin dropdowns (town/village is free text).
+function initOriginDropdowns(){
+  const reg=document.getElementById('offOriginRegion'),dis=document.getElementById('offOriginDistrict');
+  if(!reg||!dis)return;
+  reg.innerHTML='<option value="">— select region —</option>'+ORIGIN_REGIONS.map(r=>`<option value="${esc(r.region)}">${esc(r.region)}</option>`).join('');
+  function refreshDistricts(){
+    const r=ORIGIN_REGIONS.find(x=>x.region===reg.value);
+    dis.innerHTML='<option value="">— select district —</option>'+(r?r.districts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join(''):'');
+    dis.disabled=!reg.value;
+  }
+  reg.onchange=()=>{refreshDistricts();const t=document.getElementById('offTown');if(t)t.value='';};
+  dis.onchange=()=>{const t=document.getElementById('offTown');if(t)t.value='';};
+  refreshDistricts();
+}
+function localServiceId(){
+  const y=new Date().getFullYear(),pre='POL-'+y+'-';
+  const nums=(db.officers||[]).map(o=>{const m=String(o.service_id||'').match(new RegExp('^'+pre+'(\\d{4})$'));return m?Number(m[1]):0});
+  return pre+String(Math.max(0,...nums)+1).padStart(4,'0');
+}
+function readOfficerForm(){
+  return {
+    rank:offRank.value,unit:offUnit.value,station_id:offStation.value,
+    date_of_enlistment:offEnlist.value,duty_status:offDuty.value,
+    full_name:offName.value.trim(),mother_name:offMother.value.trim(),
+    date_of_birth:offDob.value,place_of_birth:offPob.value.trim(),
+    contact_number:offPhone.value.trim(),height_cm:offHeight.value,weight_kg:offWeight.value,
+    blood_group:offBlood.value,
+    region_of_origin:offOriginRegion.value,district_of_origin:offOriginDistrict.value,
+    town_village:offTown.value.trim(),
+    guarantor_name:offGuarName.value.trim(),guarantor_address:offGuarAddr.value.trim(),
+    guarantor_occupation:offGuarOcc.value.trim(),guarantor_relationship:offGuarRel.value,
+    guarantor_contact:offGuarPhone.value.trim(),
+    doc1_type:offDoc1Type.value,doc2_type:offDoc2Type.value
+  };
+}
+function validateOfficerForm(d){
+  const err=(msg,names,step)=>{showFormError(msg,{names,notice:'offNotice'});offStep(step);return null};
+  // Step 1 — Official & System identifiers
+  if(!d.rank)return err('Select the officer rank.',['offRank'],1);
+  if(!d.unit)return err('Select the unit / division.',['offUnit'],1);
+  if(!d.station_id)return err('Assign the officer to a police station.',['offStation'],1);
+  if(!d.date_of_enlistment)return err('Date of enlistment is required.',['offEnlist'],1);
+  // Step 2 — Personal identification
+  if(!d.full_name)return err('Officer full name is required.',['offName'],2);
+  if(!d.mother_name)return err("Mother's name is required.",['offMother'],2);
+  if(!d.date_of_birth)return err('Date of birth is required.',['offDob'],2);
+  if(!d.place_of_birth)return err('Place of birth is required.',['offPob'],2);
+  if(!d.contact_number)return err('Contact number is required.',['offPhone'],2);
+  if(!document.getElementById('offPhoto').files[0])return err('Officer picture is required (JPEG/PNG, max 5MB).',['offPhoto'],2);
+  const photo=document.getElementById('offPhoto').files[0];
+  if(!/\.(jpe?g|png)$/i.test(photo.name))return err('Officer picture must be JPEG or PNG.',['offPhoto'],2);
+  if(photo.size>5*1024*1024)return err('Officer picture exceeds the 5MB limit.',['offPhoto'],2);
+  // Step 3 — Regional & origin data (optional, but cascading must be coherent)
+  if(d.district_of_origin&&!d.region_of_origin)return err('Select the Region of origin before the District of origin.',['offOriginRegion','offOriginDistrict'],3);
+  if(d.town_village&&!d.district_of_origin)return err('Select the District of origin before entering the Town / Village.',['offOriginDistrict','offTown'],3);
+  // Step 4 — Guarantor / emergency contact
+  if(!d.guarantor_name)return err('Guarantor name is required.',['offGuarName'],4);
+  if(!d.guarantor_address)return err('Guarantor permanent address is required.',['offGuarAddr'],4);
+  if(!d.guarantor_contact)return err('Guarantor contact is required.',['offGuarPhone'],4);
+  const gph=document.getElementById('offGuarPhoto').files[0];
+  if(gph&&!/\.(jpe?g|png)$/i.test(gph.name))return err('Guarantor picture must be JPEG or PNG.',['offGuarPhoto'],4);
+  if(gph&&gph.size>5*1024*1024)return err('Guarantor picture exceeds the 5MB limit.',['offGuarPhoto'],4);
+  // Step 5 — Verification & supporting documents
+  if(!d.doc1_type)return err('Document Slot 1 type is required.',['offDoc1Type'],5);
+  const d1=document.getElementById('offDoc1File').files[0];
+  if(!d1)return err('Document Slot 1 file is required (PDF/JPG/PNG).',['offDoc1File'],5);
+  if(!/\.(pdf|jpe?g|png)$/i.test(d1.name))return err('Document Slot 1 must be PDF, JPG or PNG.',['offDoc1File'],5);
+  const d2=document.getElementById('offDoc2File').files[0];
+  if(d2&&!d.doc2_type)return err('Document Slot 2 type is required when a file is attached.',['offDoc2Type'],5);
+  if(d.doc2_type&&!d2)return err('Document Slot 2 file is required when a type is selected.',['offDoc2File'],5);
+  if(d2&&!/\.(pdf|jpe?g|png)$/i.test(d2.name))return err('Document Slot 2 must be PDF, JPG or PNG.',['offDoc2File'],5);
+  return d;
+}
+async function saveOfficer(e){
   e.preventDefault();clearInvalid();
-  const name=offName.value.trim(),badge=offBadge.value.trim(),stationId=offStation.value;
-  if(!name){showFormError('Officer full name is required.',{names:['offName'],notice:'offNotice'});return}
-  if(!badge){showFormError('Badge number is required.',{names:['offBadge'],notice:'offNotice'});return}
-  if(!stationId){showFormError('Assign the officer to a police station.',{names:['offStation'],notice:'offNotice'});return}
-  const dup=(db.officers||[]).find(o=>normTxt(o.badge)===normTxt(badge));
-  if(dup){showFormError('Badge '+badge+' is already assigned to '+dup.name+'.',{names:['offBadge'],notice:'offNotice'});return}
-  const rl=requireLocation('off');
-  if(!rl.ok){showFormError(rl.msg,{prefix:'off',names:['region','district','village'],notice:'offNotice'});return}
-  const st=stationById(stationId);
-  // The officer's location is stored EXPLICITLY on the record — the
-  // values actually entered in the form (pre-filled from the station,
-  // possibly overridden). The tables and Central Police Search display
-  // these stored values, not the station's live location.
-  db.officers=(db.officers||[]).concat({id:nextId('OF',db.officers),name,badge,rank:offRank.value,
-    phone:offPhone.value.trim(),station:stationId,
-    region:rl.loc.region,district:rl.loc.district,village:rl.loc.village});
-  persist();resetOfficerForm();
-  renderOfficersTable();renderPoliceSearch();
-  toast('Officer registered',name+' · '+badge+' — assigned to '+st.name+' ('+locationLabel(rl.loc)+')');
+  const d=validateOfficerForm(readOfficerForm());
+  if(!d)return;
+  const photo=document.getElementById('offPhoto').files[0];
+  const gph=document.getElementById('offGuarPhoto').files[0];
+  const d1=document.getElementById('offDoc1File').files[0];
+  const d2=document.getElementById('offDoc2File').files[0];
+  const st=stationById(d.station_id);
+  try{
+    if(serverOn){
+      const fd=new FormData();
+      Object.entries(d).forEach(([k,v])=>{if(v!==''&&v!==null&&v!==undefined)fd.append(k,v)});
+      fd.append('photo',photo);
+      if(gph)fd.append('guarantor_photo',gph);
+      fd.append('doc1_file',d1);
+      if(d2)fd.append('doc2_file',d2);
+      const r=await api('/api/officers',{method:'POST',body:fd});
+      // Optimistically add the server-confirmed record so the table updates
+      // immediately (the next syncServer() will reconcile it anyway).
+      db.officers=(db.officers||[]).concat(r.officer);
+      offNotice.className='notice';offNotice.style.display='block';
+      offNotice.textContent='Officer '+r.service_id+' registered — '+d.full_name+' assigned to '+(r.officer.station_name||d.station_id)+'.';
+    }else{
+      const sid=localServiceId();
+      db.officers=(db.officers||[]).concat({id:sid,service_id:sid,
+        rank:d.rank,unit:d.unit,station_id:d.station_id,station_name:st?st.name:'',
+        date_of_enlistment:d.date_of_enlistment,duty_status:d.duty_status,
+        full_name:d.full_name,mother_name:d.mother_name,date_of_birth:d.date_of_birth,
+        place_of_birth:d.place_of_birth,contact_number:d.contact_number,
+        height_cm:d.height_cm,weight_kg:d.weight_kg,blood_group:d.blood_group,
+        photo_path:photo?photo.name:null,
+        region_of_origin:d.region_of_origin,district_of_origin:d.district_of_origin,
+        town_village:d.town_village,
+        guarantor_name:d.guarantor_name,guarantor_address:d.guarantor_address,
+        guarantor_occupation:d.guarantor_occupation,guarantor_relationship:d.guarantor_relationship,
+        guarantor_contact:d.guarantor_contact,guarantor_photo:gph?gph.name:null,
+        doc1_type:d.doc1_type,doc1_path:d1?d1.name:null,
+        doc2_type:d.doc2_type||null,doc2_path:d2?d2.name:null});
+      offNotice.className='notice';offNotice.style.display='block';
+      offNotice.textContent='Officer '+sid+' saved (local demo).';
+    }
+    persist();resetOfficerForm();refreshStationSelects();
+    renderOfficersTable();renderPoliceSearch();
+    toast('Officer registered',d.full_name+' · '+d.rank+' — assigned to '+(st?st.name:d.station_id));
+  }catch(err){showFormError(err.message||'The officer could not be registered.',{notice:'offNotice',title:'Unable to Save'})}
 }
 function resetOfficerForm(){
-  offName.value='';offBadge.value='';offRank.value='Officer';offPhone.value='';
+  if(offForm&&offForm.reset)offForm.reset();
+  offDuty.value='Active';
+  offServiceId.value='';
   offStation.value='';
-  paintLocationDefaults('off',{region:'',district:'',village:''});
+  initOriginDropdowns();
+  offStep(1);
   offNotice.className='notice';offNotice.style.display='none';
 }
 // ---- car registration ----------------------------------------------------------
@@ -3601,16 +3832,17 @@ document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:tru
 document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
 document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
 // Regional registration modules: build the shared Region → District →
-// Village dropdowns (station / officer / car forms all editable; police
-// search gets "All …" filter levels) and wire each station picker so
-// picking a station pre-fills its location as editable defaults.
+// Village dropdowns (station + car forms editable; police search gets
+// "All …" filter levels). The officer form uses its own origin gazetteer
+// (ORIGIN_REGIONS) via initOriginDropdowns(); picking a car's station
+// pre-fills the car's location as editable defaults.
 locationDropdowns('st');
-locationDropdowns('off');
 locationDropdowns('car');
 locationDropdowns('ps',{withAll:true,onchange:renderPoliceSearch});
 refreshStationSelects();
-wireStationLocationDefaults('offStation','off');
 wireStationLocationDefaults('carStation','car');
+initOriginDropdowns();
+offStep(1);
 applyNavForRole();   // hide admin pages until sign-in
 // Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
 // filter when investigating the 'South Checkpoint 0' bug). Toggle

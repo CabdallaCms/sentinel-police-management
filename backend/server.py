@@ -111,6 +111,38 @@ CREATE TABLE IF NOT EXISTS checkpoint_events(
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS police_stations(
+  id INTEGER PRIMARY KEY, station_id TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL, code TEXT UNIQUE NOT NULL,
+  region TEXT NOT NULL, district TEXT NOT NULL, village TEXT,
+  notes TEXT, created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS officers(
+  id INTEGER PRIMARY KEY, service_id TEXT UNIQUE NOT NULL,
+  -- Section 1: Official & System identifiers
+  rank TEXT NOT NULL, unit TEXT NOT NULL,
+  station_id INTEGER NOT NULL REFERENCES police_stations(id),
+  date_of_enlistment TEXT NOT NULL,
+  duty_status TEXT NOT NULL DEFAULT 'Active',
+  -- Section 2: Personal identification
+  full_name TEXT NOT NULL, mother_name TEXT NOT NULL,
+  date_of_birth TEXT NOT NULL, place_of_birth TEXT NOT NULL,
+  contact_number TEXT NOT NULL,
+  height_cm TEXT, weight_kg TEXT, blood_group TEXT,
+  photo_path TEXT,
+  -- Section 3: Regional & origin data
+  region_of_origin TEXT, district_of_origin TEXT, town_village TEXT,
+  -- Section 4: Guarantor / emergency contact
+  guarantor_name TEXT NOT NULL, guarantor_address TEXT NOT NULL,
+  guarantor_occupation TEXT, guarantor_relationship TEXT,
+  guarantor_contact TEXT NOT NULL, guarantor_photo TEXT,
+  -- Section 5: Verification & supporting documents
+  doc1_type TEXT NOT NULL, doc1_path TEXT NOT NULL,
+  doc2_type TEXT, doc2_path TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -594,6 +626,43 @@ UNIT_ROLE_ALIASES = {
 # 'East', 'West') so the scoping stays in sync with existing seed data.
 CHECKPOINT_LOCATIONS = ('South', 'East', 'West')
 
+# ---------------------------------------------------------------------------
+# Officer Registration domain (Police Registrations & Management module).
+# ---------------------------------------------------------------------------
+# Fixed option lists for the officer register. The API validates every
+# dropdown value against exactly these lists (case-insensitive), and the
+# frontend renders the same lists so client- and server-side rules match.
+OFFICER_RANKS = ('Constable', 'Corporal', 'Sergeant', 'Inspector',
+                 'Chief Inspector', 'Superintendent', 'Commander', 'General')
+
+OFFICER_UNITS = ('General Patrol', 'CID / Criminal Investigation',
+                 'Traffic Control', 'Rapid Response Unit',
+                 'Special Protection Unit', 'Logistics')
+
+OFFICER_DUTY_STATUSES = ('Active', 'Suspended', 'Leave', 'Terminated', 'Retired')
+
+OFFICER_BLOOD_GROUPS = ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')
+
+GUARANTOR_RELATIONSHIPS = ('Parent', 'Spouse', 'Relative', 'Community Leader', 'Other')
+
+# Document slot 1 (mandatory) and slot 2 (optional) type lists.
+OFFICER_DOC_TYPES_PRIMARY = ('National ID', 'Passport', 'Birth Certificate',
+                             'Letter of Guarantee')
+OFFICER_DOC_TYPES_SECONDARY = ('Background Check', 'Reference Letter',
+                               'Military Discharge', 'Other')
+
+# State / Region of origin — preloaded with the three covered regions plus the
+# other Somali federal-member states / regions.
+OFFICER_ORIGIN_REGIONS = ('Sool', 'Sanaag', 'East Togdheer', 'Togdheer', 'Awdal',
+                          'Woqooyi Galbeed', 'Bari', 'Nugaal', 'Mudug', 'Galguduud',
+                          'Hiiraan', 'Middle Shabelle', 'Lower Shabelle', 'Banaadir',
+                          'Bay', 'Bakool', 'Gedo', 'Lower Juba', 'Middle Juba')
+
+# Upload policy for the officer register.
+OFFICER_IMAGE_EXTS = {'.jpg', '.jpeg', '.png'}
+OFFICER_DOC_EXTS = {'.pdf', '.jpg', '.jpeg', '.png'}
+OFFICER_MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+
 ROLE_LABELS = {
     ROLE_ADMIN: 'System Administrator',
     ROLE_FINGERPRINT: 'Fingerprint Unit Officer',
@@ -964,6 +1033,21 @@ def init_db():
                              ('West', 'West Checkpoint')):
             c.execute('INSERT INTO locations(code,label,kind) VALUES(?,?,?)',
                       (code, label, 'Checkpoint'))
+    # Seed the Station Registration table so the officer form's "Assigned
+    # Station" dropdown is populated on first run. Mirrors the frontend seed
+    # gazetteer (Sool / Sanaag / East Togdheer).
+    if c.execute('SELECT COUNT(*) FROM police_stations').fetchone()[0] == 0:
+        for sid, name, code, region, district, village in (
+                ('ST-001', 'Ceerigaabo Central Station', 'SAN-C-01', 'Sanaag', 'Ceerigaabo', 'Ceerigaabo'),
+                ('ST-002', 'Badhan Station',           'SAN-C-02', 'Sanaag', 'Badhan',     'Badhan'),
+                ('ST-003', 'Caynabo Station',          'SOO-C-03', 'Sool',   'Caynabo',    'Caynabo'),
+                ('ST-004', 'Las Anod Station',         'SOO-C-01', 'Sool',   'Laascaanood','Laascaanood'),
+                ('ST-005', 'Burao Station',            'TOG-C-01', 'East Togdheer', 'Burao', 'Burao'),
+                ('ST-006', 'Oodweyne Station',         'TOG-C-02', 'East Togdheer', 'Oodweyne', 'Oodweyne'),
+                ('ST-007', 'Buuhoodle Station',        'ETG-C-03', 'East Togdheer', 'Buuhoodle', 'Widh Widh'),
+                ('ST-008', 'Adhi Cadeeye Outpost',     'SOO-C-02', 'Sool',   'Laascaanood','Adhi Cadeeye')):
+            c.execute('INSERT INTO police_stations(station_id,name,code,region,district,village) '
+                      'VALUES(?,?,?,?,?,?)', (sid, name, code, region, district, village))
     # Normalise the legacy admin account + seed a representative user per role
     # so the RBAC flow is exercised by default. The existing admin keeps its
     # password (idempotent — we only re-tag it on first run).
@@ -1145,6 +1229,266 @@ def new_person_id(c):
         pid = 'P-' + str(int(time.time()*1000))[-8:]
         if not c.execute('SELECT 1 FROM persons WHERE person_id=?',(pid,)).fetchone():
             return pid
+
+# ---- officer registration helpers -------------------------------------------
+
+def normalise_choice(value, options):
+    """Case-insensitive match against a fixed option list; returns the
+    canonical option spelling or None. Empty input returns None."""
+    v = str(value or '').strip()
+    if not v:
+        return None
+    for o in options:
+        if v.lower() == o.lower():
+            return o
+    return None
+
+
+def new_station_id(c):
+    """Auto-generated station identifier (ST-001, ST-002, …)."""
+    row = c.execute('SELECT station_id FROM police_stations ORDER BY id DESC LIMIT 1').fetchone()
+    n = 1
+    if row:
+        try:
+            n = int(str(row['station_id']).rsplit('-', 1)[1]) + 1
+        except (ValueError, IndexError):
+            n = c.execute('SELECT COUNT(*) FROM police_stations').fetchone()[0] + 1
+    return 'ST-' + str(n).zfill(3)
+
+
+def new_service_id(c):
+    """Auto-generated officer Service ID in the POL-YYYY-XXXX format."""
+    year = datetime.date.today().year
+    prefix = f'POL-{year}-'
+    row = c.execute('SELECT service_id FROM officers WHERE service_id LIKE ? '
+                    'ORDER BY service_id DESC LIMIT 1', (prefix + '%',)).fetchone()
+    n = 1
+    if row:
+        try:
+            n = int(str(row['service_id']).rsplit('-', 1)[1]) + 1
+        except (ValueError, IndexError):
+            n = 1
+    return f'{prefix}{n:04d}'
+
+
+def file_ext(name):
+    return os.path.splitext(str(name or ''))[1].lower()
+
+
+def save_upload_validated(f, allowed_exts, label, required=False):
+    """Validate and persist an uploaded file.
+
+    Enforces the allowed extensions and the 5 MB size cap before writing the
+    file to disk (returning the same {path, name} dict as save_upload).
+    `required` makes a missing file a hard validation error (e.g. the
+    mandatory officer photo and Document Slot 1)."""
+    if not f:
+        if required:
+            raise ValueError(f'{label} is required')
+        return None
+    ext = file_ext(f['filename'])
+    if allowed_exts and ext not in allowed_exts:
+        raise ValueError(f'{label} must be one of {", ".join(sorted(allowed_exts))} '
+                         f'(got {ext or "no extension"})')
+    if len(f['content']) > OFFICER_MAX_UPLOAD_BYTES:
+        raise ValueError(f'{label} exceeds the '
+                         f'{OFFICER_MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit')
+    return save_upload(f)
+
+
+def station_view(row):
+    """Public station payload (the frontend resolves stations by station_id)."""
+    return {
+        'id': row['station_id'],
+        'station_id': row['station_id'],
+        'name': row['name'],
+        'code': row['code'],
+        'region': row['region'],
+        'district': row['district'],
+        'village': row['village'],
+        'notes': row['notes'],
+        'created_at': row['created_at'],
+    }
+
+
+def officer_rows(c):
+    """Officers joined with their assigned station (code + name)."""
+    return c.execute('''SELECT o.*, s.station_id AS station_code, s.name AS station_name
+                        FROM officers o
+                        LEFT JOIN police_stations s ON s.id = o.station_id
+                        ORDER BY o.id DESC''').fetchall()
+
+
+def officer_view(r):
+    """Public officer payload. `station_id` is the human-readable station code."""
+    return {
+        'id': r['service_id'],
+        'service_id': r['service_id'],
+        'rank': r['rank'],
+        'unit': r['unit'],
+        'station_id': r['station_code'],
+        'station_name': r['station_name'],
+        'date_of_enlistment': r['date_of_enlistment'],
+        'duty_status': r['duty_status'],
+        'full_name': r['full_name'],
+        'mother_name': r['mother_name'],
+        'date_of_birth': r['date_of_birth'],
+        'place_of_birth': r['place_of_birth'],
+        'contact_number': r['contact_number'],
+        'height_cm': r['height_cm'],
+        'weight_kg': r['weight_kg'],
+        'blood_group': r['blood_group'],
+        'photo_path': r['photo_path'],
+        'region_of_origin': r['region_of_origin'],
+        'district_of_origin': r['district_of_origin'],
+        'town_village': r['town_village'],
+        'guarantor_name': r['guarantor_name'],
+        'guarantor_address': r['guarantor_address'],
+        'guarantor_occupation': r['guarantor_occupation'],
+        'guarantor_relationship': r['guarantor_relationship'],
+        'guarantor_contact': r['guarantor_contact'],
+        'guarantor_photo': r['guarantor_photo'],
+        'doc1_type': r['doc1_type'],
+        'doc1_path': r['doc1_path'],
+        'doc2_type': r['doc2_type'],
+        'doc2_path': r['doc2_path'],
+        'created_at': r['created_at'],
+    }
+
+
+def register_officer(c, user, fields, files):
+    """Validate and persist an officer registration (multipart or JSON).
+
+    Raises ValueError with a human-readable message on the first failing rule.
+    Returns the created officer view (the caller commits the transaction)."""
+    def req(key, label):
+        v = str(fields.get(key) or '').strip()
+        if not v:
+            raise ValueError(f'{label} is required')
+        return v
+
+    # ---- Section 1: Official & System identifiers -------------------------
+    rank = normalise_choice(fields.get('rank'), OFFICER_RANKS)
+    if not rank:
+        raise ValueError('Rank is required and must be one of: ' + ', '.join(OFFICER_RANKS))
+    unit = normalise_choice(fields.get('unit'), OFFICER_UNITS)
+    if not unit:
+        raise ValueError('Unit / Division is required and must be one of: '
+                         + ', '.join(OFFICER_UNITS))
+    station_code = req('station_id', 'Assigned station')
+    station = c.execute('SELECT * FROM police_stations WHERE station_id=?',
+                        (station_code,)).fetchone()
+    if not station:
+        raise ValueError(f'Assigned station "{station_code}" does not exist')
+    date_of_enlistment = req('date_of_enlistment', 'Date of enlistment')
+    duty_status = normalise_choice(fields.get('duty_status'), OFFICER_DUTY_STATUSES) or 'Active'
+
+    # ---- Section 2: Personal identification --------------------------------
+    full_name = req('full_name', 'Full name')
+    mother_name = req('mother_name', "Mother's name")
+    date_of_birth = req('date_of_birth', 'Date of birth')
+    place_of_birth = req('place_of_birth', 'Place of birth')
+    contact_number = req('contact_number', 'Contact number')
+    height_cm = str(fields.get('height_cm') or '').strip()
+    weight_kg = str(fields.get('weight_kg') or '').strip()
+    blood_group = normalise_choice(fields.get('blood_group'), OFFICER_BLOOD_GROUPS)
+    if (fields.get('blood_group') or '').strip() and not blood_group:
+        raise ValueError('Blood group must be one of: ' + ', '.join(OFFICER_BLOOD_GROUPS))
+    photo = save_upload_validated(files.get('photo'), OFFICER_IMAGE_EXTS,
+                                  'Officer picture', required=True)
+
+    # ---- Section 3: Regional & origin data ---------------------------------
+    region_of_origin = normalise_choice(fields.get('region_of_origin'), OFFICER_ORIGIN_REGIONS)
+    if (fields.get('region_of_origin') or '').strip() and not region_of_origin:
+        raise ValueError('Region of origin must be one of: ' + ', '.join(OFFICER_ORIGIN_REGIONS))
+    district_of_origin = str(fields.get('district_of_origin') or '').strip()
+    town_village = str(fields.get('town_village') or '').strip()
+    if district_of_origin and not region_of_origin:
+        raise ValueError('Select the Region of origin before the District of origin')
+    if town_village and not district_of_origin:
+        raise ValueError('Select the District of origin before entering the Town / Village')
+
+    # ---- Section 4: Guarantor / emergency contact --------------------------
+    guarantor_name = req('guarantor_name', 'Guarantor name')
+    guarantor_address = req('guarantor_address', 'Guarantor permanent address')
+    guarantor_occupation = str(fields.get('guarantor_occupation') or '').strip()
+    guarantor_relationship = normalise_choice(fields.get('guarantor_relationship'),
+                                              GUARANTOR_RELATIONSHIPS)
+    if (fields.get('guarantor_relationship') or '').strip() and not guarantor_relationship:
+        raise ValueError('Guarantor relationship must be one of: '
+                         + ', '.join(GUARANTOR_RELATIONSHIPS))
+    guarantor_contact = req('guarantor_contact', 'Guarantor contact')
+    guarantor_photo = save_upload_validated(files.get('guarantor_photo'),
+                                            OFFICER_IMAGE_EXTS, 'Guarantor picture')
+
+    # ---- Section 5: Verification & supporting documents --------------------
+    doc1_type = normalise_choice(fields.get('doc1_type'), OFFICER_DOC_TYPES_PRIMARY)
+    if not doc1_type:
+        raise ValueError('Document Slot 1 type is required and must be one of: '
+                         + ', '.join(OFFICER_DOC_TYPES_PRIMARY))
+    doc1_path = save_upload_validated(files.get('doc1_file'), OFFICER_DOC_EXTS,
+                                      'Document Slot 1 file', required=True)
+    doc2_type = normalise_choice(fields.get('doc2_type'), OFFICER_DOC_TYPES_SECONDARY)
+    if (fields.get('doc2_type') or '').strip() and not doc2_type:
+        raise ValueError('Document Slot 2 type must be one of: '
+                         + ', '.join(OFFICER_DOC_TYPES_SECONDARY))
+    doc2_file = files.get('doc2_file')
+    if doc2_file and not doc2_type:
+        raise ValueError('Document Slot 2 type is required when a Slot 2 file is attached')
+    if doc2_type and not doc2_file:
+        raise ValueError('Document Slot 2 file is required when a Slot 2 type is selected')
+    doc2_path = save_upload_validated(doc2_file, OFFICER_DOC_EXTS, 'Document Slot 2 file')
+
+    service_id = new_service_id(c)
+    c.execute('''INSERT INTO officers(service_id,rank,unit,station_id,date_of_enlistment,duty_status,
+        full_name,mother_name,date_of_birth,place_of_birth,contact_number,
+        height_cm,weight_kg,blood_group,photo_path,
+        region_of_origin,district_of_origin,town_village,
+        guarantor_name,guarantor_address,guarantor_occupation,guarantor_relationship,
+        guarantor_contact,guarantor_photo,
+        doc1_type,doc1_path,doc2_type,doc2_path,created_by,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (service_id, rank, unit, station['id'], date_of_enlistment, duty_status,
+         full_name, mother_name, date_of_birth, place_of_birth, contact_number,
+         height_cm or None, weight_kg or None, blood_group,
+         photo['path'] if photo else None,
+         region_of_origin, district_of_origin or None, town_village or None,
+         guarantor_name, guarantor_address, guarantor_occupation or None,
+         guarantor_relationship, guarantor_contact,
+         guarantor_photo['path'] if guarantor_photo else None,
+         doc1_type, doc1_path['path'], doc2_type, doc2_path['path'] if doc2_path else None,
+         user['id'], utc_now_stamp()))
+    row = c.execute('SELECT o.*, s.station_id AS station_code, s.name AS station_name '
+                    'FROM officers o LEFT JOIN police_stations s ON s.id = o.station_id '
+                    'WHERE o.service_id=?', (service_id,)).fetchone()
+    return officer_view(row)
+
+
+def register_station(c, user, data):
+    """Validate and persist a police station. Returns the station view."""
+    name = str(data.get('name') or '').strip()
+    code = str(data.get('code') or '').strip()
+    region = str(data.get('region') or '').strip()
+    district = str(data.get('district') or '').strip()
+    village = str(data.get('village') or '').strip()
+    if not name:
+        raise ValueError('Station name is required')
+    if not code:
+        raise ValueError('Station code is required')
+    if not region:
+        raise ValueError('Station region is required')
+    if not district:
+        raise ValueError('Station district is required')
+    if c.execute('SELECT 1 FROM police_stations WHERE code=?', (code,)).fetchone():
+        raise ValueError(f'A station with code {code} already exists')
+    station_id = new_station_id(c)
+    c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,notes,created_by)
+        VALUES(?,?,?,?,?,?,?,?)''',
+        (station_id, name, code, region, district, village or None,
+         str(data.get('notes') or '').strip() or None, user['id']))
+    row = c.execute('SELECT * FROM police_stations WHERE station_id=?',
+                    (station_id,)).fetchone()
+    return station_view(row)
 
 # ---- identity resolution (universal matching engine) ------------------------
 TIER_LABELS = {
@@ -2011,7 +2355,10 @@ class API(BaseHTTPRequestHandler):
                                             'fingerprint_review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
                                             'pid':os.getpid(),
                                             'started_at':SERVER_STARTED_AT,
-                                            'clearance_reasons':list(CLEARANCE_REASONS)})
+                                            'clearance_reasons':list(CLEARANCE_REASONS),
+                                            'officer_ranks':list(OFFICER_RANKS),
+                                            'officer_units':list(OFFICER_UNITS),
+                                            'officer_duty_statuses':list(OFFICER_DUTY_STATUSES)})
             user = require_auth(self); c = db()
             # RBAC module-gating. Every authenticated user can see /api/me and
             # the central /api/persons registry, but each unit endpoint is
@@ -2025,6 +2372,8 @@ class API(BaseHTTPRequestHandler):
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
                 '/api/admin/analytics': 'analytics',
+                '/api/stations': 'stations',
+                '/api/officers': 'officers',
             }
             base = '/' + p.path.split('/')[1] + '/' + (p.path.split('/')[2] if len(p.path.split('/')) > 2 else '')
             for prefix, mod in module_for_path.items():
@@ -2223,6 +2572,11 @@ class API(BaseHTTPRequestHandler):
                 result = {'items': items,
                           'scope': scope,
                           'visible_locations': [scope] if scope else list(CHECKPOINT_LOCATIONS)}
+            elif p.path == '/api/stations':
+                rows = c.execute('SELECT * FROM police_stations ORDER BY id ASC').fetchall()
+                result = {'items': [station_view(r) for r in rows]}
+            elif p.path == '/api/officers':
+                result = {'items': [officer_view(r) for r in officer_rows(c)]}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
@@ -2273,6 +2627,8 @@ class API(BaseHTTPRequestHandler):
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
+                '/api/stations': 'stations',
+                '/api/officers': 'officers',
             }
             for prefix, mod in post_module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):
@@ -2648,6 +3004,23 @@ class API(BaseHTTPRequestHandler):
                           'guardian_person_id':guardian_person['person_id'] if guardian_person else None,
                           'traveler_docs':len(tr_docs),'guardian_docs':len(gd_docs),
                           'identity':identity_result(c,data,person)}
+            elif p.path == '/api/stations':
+                data = body_json(self)
+                station = register_station(c, user, data)
+                audit(c, user, 'CREATE', 'police_station', station['station_id'], station['code'])
+                c.commit()
+                result = {'station': station}
+            elif p.path == '/api/officers':
+                ctype = self.headers.get('Content-Type', '')
+                if ctype.startswith('multipart/form-data'):
+                    fields, files = parse_multipart(self)
+                else:
+                    fields, files = body_json(self), {}
+                officer = register_officer(c, user, fields, files)
+                audit(c, user, 'CREATE', 'officer', officer['service_id'],
+                      f"{officer['full_name']} @ {officer['station_id']}")
+                c.commit()
+                result = {'service_id': officer['service_id'], 'officer': officer}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)

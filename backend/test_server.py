@@ -1437,6 +1437,95 @@ def main():
         assert detail.get('sex') == 'Male' and detail.get('email') == 'applicant@example.com', detail
         assert detail.get('created_at'), detail
 
+        # ---- Officer Registration module -----------------------------------
+        # Stations are seeded on first run; the officer form's "Assigned
+        # Station" dropdown is driven by GET /api/stations.
+        s, stations = request(base, 'GET', '/api/stations', tokens['admin'])
+        assert s == 200 and len(stations['items']) >= 8, (s, stations)
+        assert stations['items'][0]['station_id'] == 'ST-001', stations['items'][0]
+        assert stations['items'][0]['region'] in ('Sool', 'Sanaag', 'East Togdheer'), stations['items'][0]
+
+        s, officers = request(base, 'GET', '/api/officers', tokens['admin'])
+        assert s == 200 and officers['items'] == [], (s, officers)
+
+        # The officer register is admin-only: a Fingerprint officer is denied.
+        s, r = request(base, 'GET', '/api/officers', tokens['fp.officer'])
+        assert s == 401, (s, r)
+
+        def new_officer(fields=None, files=None, token=tokens['admin']):
+            fields = {**{
+                'rank': 'Sergeant', 'unit': 'General Patrol', 'station_id': 'ST-001',
+                'date_of_enlistment': '2020-05-01', 'duty_status': 'Active',
+                'full_name': 'Cabdi Xasan Cali', 'mother_name': 'Faadumo',
+                'date_of_birth': '1990-01-01', 'place_of_birth': 'Laascaanood',
+                'contact_number': '+252 63 555 0123', 'height_cm': '178',
+                'weight_kg': '80', 'blood_group': 'O+',
+                'region_of_origin': 'Sool', 'district_of_origin': 'Laascaanood',
+                'town_village': 'Laascaanood', 'guarantor_name': 'Xasan Cali',
+                'guarantor_address': 'Las Anod Main St', 'guarantor_occupation': 'Trader',
+                'guarantor_relationship': 'Parent', 'guarantor_contact': '+252 63 555 0999',
+                'doc1_type': 'National ID'}, **(fields or {})}
+            files = {**{'photo': ('p.jpg', b'\xff\xd8\xff\xe0x'), 'doc1_file': ('id.pdf', b'%PDF x')},
+                     **(files or {})}
+            files = {k: v for k, v in files.items() if v is not None}
+            return multipart_request(base, '/api/officers', token, fields, files)
+
+        s, r = new_officer()
+        assert s == 201 and r['service_id'] == 'POL-2026-0001', (s, r)
+        assert r['officer']['rank'] == 'Sergeant', r
+        assert r['officer']['duty_status'] == 'Active', r           # default applied
+        assert r['officer']['station_name'] == 'Ceerigaabo Central Station', r
+        assert r['officer']['photo_path'] and r['officer']['doc1_path'], r
+
+        # Service ID increments across years/records (POL-YYYY-XXXX).
+        s, r2 = new_officer(files={'photo': ('p.png', b'\x89PNG x'), 'doc1_file': ('id2.png', b'\x89PNG x')},
+                            fields={'blood_group': 'A-', 'rank': 'Constable'})
+        assert s == 201 and r2['service_id'] == 'POL-2026-0002', (s, r2)
+
+        s, officers = request(base, 'GET', '/api/officers', tokens['admin'])
+        assert s == 200 and len(officers['items']) == 2, (s, officers)
+        assert {o['service_id'] for o in officers['items']} == {'POL-2026-0001', 'POL-2026-0002'}, officers
+
+        # Mandatory validation: officer picture and Document Slot 1.
+        s, r = new_officer(files={'photo': None})
+        assert s == 400 and r['error'] == 'Officer picture is required', (s, r)
+        s, r = new_officer(files={'doc1_file': None})
+        assert s == 400 and 'Document Slot 1' in r['error'], (s, r)
+        s, r = new_officer(fields={'doc1_type': ''})
+        assert s == 400 and 'Document Slot 1 type' in r['error'], (s, r)
+
+        # Dropdown values are validated against the fixed option lists.
+        s, r = new_officer(fields={'rank': 'Captain'})
+        assert s == 400 and 'Rank' in r['error'], (s, r)
+        s, r = new_officer(fields={'blood_group': 'Z-'})
+        assert s == 400 and 'Blood group' in r['error'], (s, r)
+
+        # Foreign-key relation: station must exist.
+        s, r = new_officer(fields={'station_id': 'ST-999'})
+        assert s == 400 and 'does not exist' in r['error'], (s, r)
+
+        # Upload policy: extension + size caps.
+        s, r = new_officer(files={'photo': ('p.gif', b'GIF89a')})
+        assert s == 400 and '.jpg' in r['error'], (s, r)
+        s, r = new_officer(files={'photo': ('p.jpg', b'x' * (5 * 1024 * 1024 + 1))})
+        assert s == 400 and '5MB' in r['error'], (s, r)
+
+        # Optional Document Slot 2 must be type+file coherent.
+        s, r = new_officer(files={'doc2_file': ('ref.pdf', b'%PDF')})
+        assert s == 400 and 'Slot 2 type' in r['error'], (s, r)
+        s, r = new_officer(fields={'doc2_type': 'Reference Letter'})
+        assert s == 400 and 'Slot 2 file' in r['error'], (s, r)
+
+        # Station creation (JSON) validates and links into the register.
+        s, r = request(base, 'POST', '/api/stations', tokens['admin'],
+                       {'name': 'Test Station', 'code': 'SOO-C-99',
+                        'region': 'Sool', 'district': 'Xudun', 'village': 'Xudun'})
+        assert s == 201 and r['station']['station_id'] == 'ST-009', (s, r)
+        s, r = request(base, 'POST', '/api/stations', tokens['admin'],
+                       {'name': 'Dup', 'code': 'SOO-C-99', 'region': 'Sool', 'district': 'Xudun'})
+        assert s == 400 and 'already exists' in r['error'], (s, r)
+        print('ok: officer registration (schema, validation, FK, uploads, service ID)')
+
         # ---- audit tool -----------------------------------------------------
         # A server started before the lock existed approved instantly. The
         # audit must find those rows and be able to undo them.
