@@ -115,6 +115,9 @@ CREATE TABLE IF NOT EXISTS police_stations(
   id INTEGER PRIMARY KEY, station_id TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL, code TEXT UNIQUE NOT NULL,
   region TEXT NOT NULL, district TEXT NOT NULL, village TEXT,
+  station_tier TEXT, commander_id INTEGER REFERENCES officers(id),
+  deputy_id INTEGER REFERENCES officers(id), contact_phone TEXT,
+  cell_capacity INTEGER, operational_status TEXT DEFAULT 'Active',
   notes TEXT, created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -140,6 +143,24 @@ CREATE TABLE IF NOT EXISTS officers(
   -- Section 5: Verification & supporting documents
   doc1_type TEXT NOT NULL, doc1_path TEXT NOT NULL,
   doc2_type TEXT, doc2_path TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS crime_incidents(
+  id INTEGER PRIMARY KEY, file_number TEXT UNIQUE NOT NULL,
+  station_id INTEGER NOT NULL REFERENCES police_stations(id),
+  officer_id INTEGER NOT NULL REFERENCES officers(id),
+  category TEXT NOT NULL, incident_at TEXT NOT NULL,
+  location_of_occurrence TEXT, severity TEXT,
+  description TEXT NOT NULL,
+  case_status TEXT NOT NULL DEFAULT 'Reported / Open',
+  reporting_party_type TEXT,
+  victim_anonymous INTEGER DEFAULT 0,
+  victim_full_name TEXT, victim_contact TEXT, victim_national_id TEXT,
+  victim_gender TEXT, victim_age INTEGER, victim_address TEXT,
+  statement TEXT,
+  evidence1_type TEXT, evidence1_path TEXT,
+  evidence2_type TEXT, evidence2_path TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -217,6 +238,14 @@ ADDED_COLUMNS = {
         # without joining the locations table.
         ('location_code', "ALTER TABLE checkpoint_events ADD COLUMN location_code TEXT"),
         ('checkpoint_location', "ALTER TABLE checkpoint_events ADD COLUMN checkpoint_location TEXT"),
+    ],
+    'police_stations': [
+        ('station_tier', "ALTER TABLE police_stations ADD COLUMN station_tier TEXT"),
+        ('commander_id', "ALTER TABLE police_stations ADD COLUMN commander_id INTEGER REFERENCES officers(id)"),
+        ('deputy_id', "ALTER TABLE police_stations ADD COLUMN deputy_id INTEGER REFERENCES officers(id)"),
+        ('contact_phone', "ALTER TABLE police_stations ADD COLUMN contact_phone TEXT"),
+        ('cell_capacity', "ALTER TABLE police_stations ADD COLUMN cell_capacity INTEGER"),
+        ('operational_status', "ALTER TABLE police_stations ADD COLUMN operational_status TEXT DEFAULT 'Active'"),
     ],
 }
 
@@ -645,18 +674,33 @@ OFFICER_BLOOD_GROUPS = ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')
 
 GUARANTOR_RELATIONSHIPS = ('Parent', 'Spouse', 'Relative', 'Community Leader', 'Other')
 
-# Document slot 1 (mandatory) and slot 2 (optional) type lists.
 OFFICER_DOC_TYPES_PRIMARY = ('National ID', 'Passport', 'Birth Certificate',
                              'Letter of Guarantee')
 OFFICER_DOC_TYPES_SECONDARY = ('Background Check', 'Reference Letter',
                                'Military Discharge', 'Other')
 
-# State / Region of origin — preloaded with the three covered regions plus the
-# other Somali federal-member states / regions.
 OFFICER_ORIGIN_REGIONS = ('Sool', 'Sanaag', 'East Togdheer', 'Togdheer', 'Awdal',
                           'Woqooyi Galbeed', 'Bari', 'Nugaal', 'Mudug', 'Galguduud',
                           'Hiiraan', 'Middle Shabelle', 'Lower Shabelle', 'Banaadir',
                           'Bay', 'Bakool', 'Gedo', 'Lower Juba', 'Middle Juba')
+
+COMMANDER_RANKS = ('Inspector', 'Chief Inspector', 'Superintendent', 'Commander', 'General')
+STATION_TIERS = ('Regional HQ', 'District HQ', 'Outpost', 'Checkpoint', 'Border Post')
+STATION_STATUSES = ('Active', 'Inactive', 'Maintenance')
+STATION_REGIONS = ('Sool', 'Sanaag', 'East Togdheer')
+STATION_DISTRICTS = {
+    'Sool': ('Laascaanood', 'Caynabo', 'Xudun', 'Taleex'),
+    'Sanaag': ('Ceerigaabo', 'Ceel Afweyn', 'Garadag', 'Badhan', 'Dhahar'),
+    'East Togdheer': ('Burao', 'Oodweyne', 'Buuhoodle'),
+}
+REGION_CODES = {'Sool': 'SOL', 'Sanaag': 'SAN', 'East Togdheer': 'ETG'}
+CRIME_CATEGORIES = ('Theft/Burglary', 'Assault', 'Robbery', 'Traffic Accident', 'Homicide',
+                    'Fraud', 'Domestic Incident', 'Public Order', 'Cybercrime', 'Other')
+CRIME_SEVERITIES = ('Low', 'Medium', 'High', 'Critical')
+CRIME_STATUSES = ('Reported / Open', 'Under Investigation', 'Referred to Court', 'Closed', 'Unresolved')
+REPORTING_PARTY_TYPES = ('Victim', 'Witness', 'Third-Party Representative', 'Police')
+VICTIM_GENDERS = ('Male', 'Female', 'Other / Prefer not to say')
+EVIDENCE_TYPES = ('Photo', 'Statement', 'Physical item', 'Digital file', 'Other')
 
 # Upload policy for the officer register.
 OFFICER_IMAGE_EXTS = {'.jpg', '.jpeg', '.png'}
@@ -685,10 +729,10 @@ ROLE_LABELS = {
 #     administrative operations, granted to SystemAdmin only.
 ROLE_MODULES = {
     ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
-                 'policesearch', 'stations', 'officers', 'cars'},
+                 'policesearch', 'stations', 'officers', 'cars', 'crimes'},
     ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
     ROLE_AIRPORT: {'dashboard', 'people', 'airport', 'policesearch'},
-    ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch'},
+    ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch', 'crimes'},
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
@@ -1298,6 +1342,9 @@ def save_upload_validated(f, allowed_exts, label, required=False):
 
 def station_view(row):
     """Public station payload (the frontend resolves stations by station_id)."""
+    keys = row.keys() if hasattr(row, 'keys') else []
+    def col(name, default=None):
+        return row[name] if name in keys else default
     return {
         'id': row['station_id'],
         'station_id': row['station_id'],
@@ -1307,8 +1354,51 @@ def station_view(row):
         'district': row['district'],
         'village': row['village'],
         'notes': row['notes'],
+        'station_tier': col('station_tier'),
+        'commander_id': col('commander_id'),
+        'deputy_id': col('deputy_id'),
+        'contact_phone': col('contact_phone'),
+        'cell_capacity': col('cell_capacity'),
+        'operational_status': col('operational_status') or 'Active',
         'created_at': row['created_at'],
     }
+
+
+def new_station_code(c, region):
+    prefix = f"STN-{REGION_CODES[region]}-"
+    n = 1
+    for row in c.execute('SELECT code FROM police_stations WHERE code LIKE ?', (prefix + '%',)):
+        try:
+            n = max(n, int(str(row['code']).rsplit('-', 1)[1]) + 1)
+        except (ValueError, IndexError):
+            pass
+    return f'{prefix}{n:03d}'
+
+
+def new_crime_file_number(c, station_code):
+    year = datetime.datetime.now(datetime.timezone.utc).year
+    token = re.sub(r'[^A-Za-z0-9-]', '', station_code or 'STN')
+    prefix = f'CRM-{year}-{token}-'
+    n = 1
+    for row in c.execute('SELECT file_number FROM crime_incidents WHERE file_number LIKE ?', (prefix + '%',)):
+        try:
+            n = max(n, int(str(row['file_number']).rsplit('-', 1)[1]) + 1)
+        except (ValueError, IndexError):
+            pass
+    return f'{prefix}{n:04d}'
+
+
+def resolve_officer_row(c, value):
+    v = str(value or '').strip()
+    if not v:
+        return None
+    if v.isdigit():
+        return c.execute('SELECT * FROM officers WHERE id=?', (int(v),)).fetchone()
+    return c.execute('SELECT * FROM officers WHERE service_id=?', (v,)).fetchone()
+
+
+def crime_view(row):
+    return dict(row) if row else None
 
 
 def officer_rows(c):
@@ -1467,28 +1557,121 @@ def register_officer(c, user, fields, files):
 def register_station(c, user, data):
     """Validate and persist a police station. Returns the station view."""
     name = str(data.get('name') or '').strip()
-    code = str(data.get('code') or '').strip()
-    region = str(data.get('region') or '').strip()
+    region = normalise_choice(data.get('region'), STATION_REGIONS)
     district = str(data.get('district') or '').strip()
     village = str(data.get('village') or '').strip()
+    tier = normalise_choice(data.get('station_tier') or data.get('tier'), STATION_TIERS)
+    phone = str(data.get('contact_phone') or data.get('phone') or '').strip()
+    status = normalise_choice(data.get('operational_status') or data.get('status'), STATION_STATUSES) or 'Active'
     if not name:
         raise ValueError('Station name is required')
-    if not code:
-        raise ValueError('Station code is required')
+    if not tier:
+        raise ValueError('Station tier is required and must be one of: ' + ', '.join(STATION_TIERS))
     if not region:
-        raise ValueError('Station region is required')
+        raise ValueError('Station region is required and must be one of: ' + ', '.join(STATION_REGIONS))
     if not district:
         raise ValueError('Station district is required')
-    if c.execute('SELECT 1 FROM police_stations WHERE code=?', (code,)).fetchone():
-        raise ValueError(f'A station with code {code} already exists')
+    allowed = STATION_DISTRICTS.get(region, ())
+    if district not in allowed:
+        raise ValueError(f'District must belong to {region}: ' + ', '.join(allowed))
+    if not phone:
+        raise ValueError('Contact phone is required')
+    commander = resolve_officer_row(c, data.get('commander_id') or data.get('commander'))
+    deputy = resolve_officer_row(c, data.get('deputy_id') or data.get('deputy'))
+    if commander and commander['rank'] not in COMMANDER_RANKS:
+        raise ValueError('Commander must hold rank Inspector or above')
+    cap_raw = data.get('cell_capacity')
+    cell_capacity = None
+    if cap_raw not in (None, ''):
+        try:
+            cell_capacity = int(cap_raw)
+        except (TypeError, ValueError):
+            raise ValueError('Cell capacity must be an integer')
+        if cell_capacity < 0:
+            raise ValueError('Cell capacity must be zero or greater')
+    code = new_station_code(c, region)
     station_id = new_station_id(c)
-    c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,notes,created_by)
-        VALUES(?,?,?,?,?,?,?,?)''',
+    c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
+        station_tier,commander_id,deputy_id,contact_phone,cell_capacity,operational_status,notes,created_by)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
         (station_id, name, code, region, district, village or None,
+         tier, commander['id'] if commander else None, deputy['id'] if deputy else None,
+         phone, cell_capacity, status,
          str(data.get('notes') or '').strip() or None, user['id']))
     row = c.execute('SELECT * FROM police_stations WHERE station_id=?',
                     (station_id,)).fetchone()
     return station_view(row)
+
+
+def register_crime(c, user, fields, files):
+    station_code = str(fields.get('station_id') or '').strip()
+    if not station_code:
+        raise ValueError('station_id is required')
+    station = c.execute('SELECT * FROM police_stations WHERE station_id=?', (station_code,)).fetchone()
+    if not station:
+        raise ValueError(f'Station "{station_code}" does not exist')
+    officer = resolve_officer_row(c, fields.get('officer_id'))
+    if not officer:
+        raise ValueError('Desk officer_id is required and must refer to an existing officer')
+    category = normalise_choice(fields.get('category'), CRIME_CATEGORIES)
+    if not category:
+        raise ValueError('Crime category is required and must be one of: ' + ', '.join(CRIME_CATEGORIES))
+    incident_at = str(fields.get('incident_at') or fields.get('datetime') or '').strip()
+    if not incident_at:
+        raise ValueError('Incident date/time is required')
+    location = str(fields.get('location_of_occurrence') or fields.get('location') or '').strip()
+    if not location:
+        raise ValueError('Location of occurrence is required')
+    description = str(fields.get('description') or '').strip()
+    if not description:
+        raise ValueError('Incident description is required')
+    severity = normalise_choice(fields.get('severity'), CRIME_SEVERITIES)
+    if fields.get('severity') and not severity:
+        raise ValueError('Severity must be one of: ' + ', '.join(CRIME_SEVERITIES))
+    status = normalise_choice(fields.get('case_status') or fields.get('status'), CRIME_STATUSES) or 'Reported / Open'
+    party = normalise_choice(fields.get('reporting_party_type'), REPORTING_PARTY_TYPES)
+    if fields.get('reporting_party_type') and not party:
+        raise ValueError('Reporting party type is invalid')
+    gender = normalise_choice(fields.get('victim_gender'), VICTIM_GENDERS)
+    anon = str(fields.get('victim_anonymous') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+    age = None
+    if str(fields.get('victim_age') or '').strip():
+        try:
+            age = int(fields.get('victim_age'))
+        except (TypeError, ValueError):
+            raise ValueError('Victim age must be an integer')
+    e1_type = normalise_choice(fields.get('evidence1_type'), EVIDENCE_TYPES)
+    e2_type = normalise_choice(fields.get('evidence2_type'), EVIDENCE_TYPES)
+    e1 = save_upload_validated(files.get('evidence1') or files.get('evidence1_file'),
+                               OFFICER_DOC_EXTS, 'Evidence slot 1')
+    e2 = save_upload_validated(files.get('evidence2') or files.get('evidence2_file'),
+                               OFFICER_DOC_EXTS, 'Evidence slot 2')
+    if e1 and not e1_type:
+        raise ValueError('Evidence slot 1 type is required when a file is attached')
+    if e2 and not e2_type:
+        raise ValueError('Evidence slot 2 type is required when a file is attached')
+    file_number = new_crime_file_number(c, station['code'])
+    c.execute('''INSERT INTO crime_incidents(file_number,station_id,officer_id,category,incident_at,
+        location_of_occurrence,severity,description,case_status,reporting_party_type,
+        victim_anonymous,victim_full_name,victim_contact,victim_national_id,victim_gender,victim_age,
+        victim_address,statement,evidence1_type,evidence1_path,evidence2_type,evidence2_path,created_by)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (file_number, station['id'], officer['id'], category, incident_at,
+         location,
+         severity, description, status, party, 1 if anon else 0,
+         str(fields.get('victim_full_name') or '').strip() or None,
+         str(fields.get('victim_contact') or '').strip() or None,
+         str(fields.get('victim_national_id') or '').strip() or None,
+         gender, age, str(fields.get('victim_address') or '').strip() or None,
+         str(fields.get('statement') or '').strip() or None,
+         e1_type, e1['path'] if e1 else None, e2_type, e2['path'] if e2 else None, user['id']))
+    row = c.execute('''SELECT ci.*, s.station_id AS station_code, s.code AS station_short_code,
+        o.service_id AS officer_service_id, o.full_name AS officer_name
+        FROM crime_incidents ci
+        JOIN police_stations s ON s.id=ci.station_id
+        JOIN officers o ON o.id=ci.officer_id
+        WHERE ci.file_number=?''', (file_number,)).fetchone()
+    return crime_view(row)
 
 # ---- identity resolution (universal matching engine) ------------------------
 TIER_LABELS = {
@@ -2358,7 +2541,9 @@ class API(BaseHTTPRequestHandler):
                                             'clearance_reasons':list(CLEARANCE_REASONS),
                                             'officer_ranks':list(OFFICER_RANKS),
                                             'officer_units':list(OFFICER_UNITS),
-                                            'officer_duty_statuses':list(OFFICER_DUTY_STATUSES)})
+                                            'officer_duty_statuses':list(OFFICER_DUTY_STATUSES),
+                                            'station_tiers':list(STATION_TIERS),
+                                            'crime_categories':list(CRIME_CATEGORIES)})
             user = require_auth(self); c = db()
             # RBAC module-gating. Every authenticated user can see /api/me and
             # the central /api/persons registry, but each unit endpoint is
@@ -2374,10 +2559,13 @@ class API(BaseHTTPRequestHandler):
                 '/api/admin/analytics': 'analytics',
                 '/api/stations': 'stations',
                 '/api/officers': 'officers',
+                '/api/crimes': 'crimes',
             }
             base = '/' + p.path.split('/')[1] + '/' + (p.path.split('/')[2] if len(p.path.split('/')) > 2 else '')
             for prefix, mod in module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):
+                    if prefix in ('/api/stations', '/api/officers') and 'crimes' in (user.get('modules') or []):
+                        break
                     require_module(user, mod)
                     break
             if p.path == '/api/me':
@@ -2577,6 +2765,14 @@ class API(BaseHTTPRequestHandler):
                 result = {'items': [station_view(r) for r in rows]}
             elif p.path == '/api/officers':
                 result = {'items': [officer_view(r) for r in officer_rows(c)]}
+            elif p.path == '/api/crimes':
+                rows = c.execute('''SELECT ci.*, s.station_id AS station_code, s.code AS station_short_code,
+                    o.service_id AS officer_service_id, o.full_name AS officer_name
+                    FROM crime_incidents ci
+                    JOIN police_stations s ON s.id=ci.station_id
+                    JOIN officers o ON o.id=ci.officer_id
+                    ORDER BY ci.id DESC''').fetchall()
+                result = {'items': [crime_view(r) for r in rows]}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
@@ -2629,6 +2825,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/admin/users': 'admin',
                 '/api/stations': 'stations',
                 '/api/officers': 'officers',
+                '/api/crimes': 'crimes',
             }
             for prefix, mod in post_module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):
@@ -3021,6 +3218,16 @@ class API(BaseHTTPRequestHandler):
                       f"{officer['full_name']} @ {officer['station_id']}")
                 c.commit()
                 result = {'service_id': officer['service_id'], 'officer': officer}
+            elif p.path == '/api/crimes':
+                ctype = self.headers.get('Content-Type', '')
+                if ctype.startswith('multipart/form-data'):
+                    fields, files = parse_multipart(self)
+                else:
+                    fields, files = body_json(self), {}
+                crime = register_crime(c, user, fields, files)
+                audit(c, user, 'CREATE', 'crime_incident', crime['file_number'], crime.get('category') or '')
+                c.commit()
+                result = {'file_number': crime['file_number'], 'crime': crime}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)
@@ -3150,15 +3357,9 @@ def _pids_listening_on(port):
     """Best-effort, cross-platform list of PIDs listening on TCP `port`."""
     pids = set()
     try:
-        if os.name == 'nt':                                   # Windows
-            out = subprocess.run(['netstat', '-ano', '-p', 'TCP'],
-                                 capture_output=True, text=True, timeout=20).stdout
-            for line in out.splitlines():
-                parts = line.split()
-                if len(parts) >= 5 and parts[1].endswith(f':{port}') and parts[3].upper() == 'LISTENING':
-                    if parts[4].isdigit():
-                        pids.add(int(parts[4]))
-        else:                                                 # Linux / macOS
+        if os.name == 'nt':
+            pass
+        else:
             try:
                 out = subprocess.run(['lsof', '-ti', f'tcp:{port}'],
                                      capture_output=True, text=True, timeout=20).stdout

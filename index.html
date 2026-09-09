@@ -282,6 +282,7 @@ body.modal-open{overflow:hidden}
 <button data-page="stations" data-modules="stations"><i>🏛</i><span>Police Stations</span></button>
 <button data-page="officers" data-modules="officers"><i>👤</i><span>Police Officers</span></button>
 <button data-page="cars" data-modules="cars"><i>🚓</i><span>Police Cars</span></button>
+<button data-page="crimes" data-modules="crimes"><i>⚖</i><span>Register Crime</span></button>
 </div>
 </div>
 
@@ -542,7 +543,13 @@ body.modal-open{overflow:hidden}
 <form class="form" id="stForm" onsubmit="saveStation(event)">
 <div class="grid2">
 <div class="field"><label>Station name *</label><input id="stName" placeholder="e.g. Burao Central Station"></div>
-<div class="field"><label>Station code *</label><input id="stCode" placeholder="e.g. SAN-C-02"></div>
+<div class="field"><label>Station code (auto)</label><input id="stCode" readonly placeholder="STN-REG-XXX" style="background:#f3f6fb;color:#526075"></div>
+<div class="field"><label>Station tier *</label><select id="stTier"><option value="">— select —</option><option>Regional HQ</option><option>District HQ</option><option>Outpost</option><option>Checkpoint</option><option>Border Post</option></select></div>
+<div class="field"><label>Contact phone *</label><input id="stPhone" placeholder="+252 …"></div>
+<div class="field"><label>Operational status</label><select id="stStatus"><option>Active</option><option>Inactive</option><option>Maintenance</option></select></div>
+<div class="field"><label>Cell capacity</label><input id="stCells" type="number" min="0" placeholder="optional"></div>
+<div class="field"><label>Commander (Inspector+)</label><select id="stCommander"><option value="">— optional —</option></select></div>
+<div class="field"><label>Deputy commander</label><select id="stDeputy"><option value="">— optional —</option></select></div>
 </div>
 <div class="section-label">Location — Sool · Sanaag · East Togdheer</div>
 <div id="st-loc" class="loc-grid"></div>
@@ -644,6 +651,56 @@ body.modal-open{overflow:hidden}
 <div class="panel">
 <div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
+</div>
+</div>
+</section>
+
+<!-- CRIME / VICTIM INTAKE -->
+<section id="crimes" class="page">
+<div class="grid2">
+<div class="panel">
+<div class="panel-head"><div><h2>Register crime / victim intake</h2><div class="sub">File number is issued automatically · CRM-YYYY-STN-XXXX</div></div></div>
+<div id="crmNotice" class="notice"></div>
+<form class="form" id="crmForm" onsubmit="saveCrime(event)">
+<div class="section-label">1 · Station &amp; desk officer</div>
+<div class="grid2">
+<div class="field"><label>Police station *</label><select id="crmStation"></select></div>
+<div class="field"><label>Desk officer *</label><select id="crmOfficer"></select></div>
+</div>
+<div class="section-label">2 · Incident</div>
+<div class="grid2">
+<div class="field"><label>Category *</label><select id="crmCat"><option value="">— select —</option><option>Theft/Burglary</option><option>Assault</option><option>Robbery</option><option>Traffic Accident</option><option>Homicide</option><option>Fraud</option><option>Domestic Incident</option><option>Public Order</option><option>Cybercrime</option><option>Other</option></select></div>
+<div class="field"><label>Date / time *</label><input id="crmWhen" type="datetime-local"></div>
+<div class="field"><label>Severity</label><select id="crmSev"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
+<div class="field"><label>Status</label><select id="crmStatus"><option>Reported / Open</option><option>Under Investigation</option><option>Referred to Court</option><option>Closed</option><option>Unresolved</option></select></div>
+</div>
+<div class="field"><label>Location of occurrence *</label><input id="crmLoc" placeholder="Street, village, landmark"></div>
+<div class="field"><label>Description *</label><textarea id="crmDesc" required></textarea></div>
+<div class="section-label">3 · Victim / reporting party</div>
+<div class="grid2">
+<div class="field"><label>Reporting party</label><select id="crmParty"><option value="">—</option><option>Victim</option><option>Witness</option><option>Third-Party Representative</option><option>Police</option></select></div>
+<div class="field"><label>Anonymous victim</label><select id="crmAnon"><option value="">No</option><option value="1">Yes</option></select></div>
+<div class="field"><label>Victim full name</label><input id="crmVName"></div>
+<div class="field"><label>Contact</label><input id="crmVPhone"></div>
+<div class="field"><label>National ID</label><input id="crmVNid"></div>
+<div class="field"><label>Gender</label><select id="crmVGender"><option value="">—</option><option>Male</option><option>Female</option><option>Other / Prefer not to say</option></select></div>
+<div class="field"><label>Age</label><input id="crmVAge" type="number" min="0"></div>
+<div class="field"><label>Address</label><input id="crmVAddr"></div>
+</div>
+<div class="field"><label>Statement</label><textarea id="crmStmt"></textarea></div>
+<div class="section-label">4 · Evidence (optional, PDF/JPG/PNG ≤5MB)</div>
+<div class="grid2">
+<div class="field"><label>Evidence 1 type</label><select id="crmE1Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
+<div class="field"><label>Evidence 1 file</label><input id="crmE1" type="file" accept=".pdf,image/jpeg,image/png"></div>
+<div class="field"><label>Evidence 2 type</label><select id="crmE2Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
+<div class="field"><label>Evidence 2 file</label><input id="crmE2" type="file" accept=".pdf,image/jpeg,image/png"></div>
+</div>
+<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">File incident</button></div>
+</form>
+</div>
+<div class="panel">
+<div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Category</th><th>Station</th><th>Officer</th><th>Status</th></tr></thead><tbody id="crimesTable"></tbody></table></div>
 </div>
 </div>
 </section>
@@ -889,7 +946,7 @@ function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fou
   mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
-const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',analytics:'Executive analytics',admin:'User management'};
+const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',crimes:'Crime / victim intake',analytics:'Executive analytics',admin:'User management'};
 // Current session ----------------------------------------------------
 let sessionUser=null;          // {id,username,display_name,role,role_label,branch,location,location_scope,modules,active}
 let sessionVisibility=null;    // /api/me visibility
@@ -917,6 +974,7 @@ function go(page){
   if(page==='stations') renderStationsTable();
   if(page==='officers') renderOfficersTable();
   if(page==='cars') renderCarsTable();
+  if(page==='crimes'){ fillCrimeSelects(); renderCrimesTable(); }
   if(page==='dashboard'){
     // Force a fresh /api/dashboard fetch on every navigation. This
     // guarantees the active user always sees their own role-scoped
@@ -950,7 +1008,7 @@ document.querySelectorAll('#nav button[data-page]').forEach(b=>b.onclick=()=>go(
 //   * registrations — Police Registrations & Management
 // Open/closed state persists across reloads (sentinelNavGroups); opening a
 // page always expands the group that contains it (see go()).
-const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',cars:'registrations'};
+const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',cars:'registrations',crimes:'registrations'};
 const NAV_GROUPS_KEY='sentinelNavGroups';
 function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
 function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
@@ -2843,8 +2901,9 @@ async function syncServer(){
       sessionUser.modules.includes('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('cid')        ? safeItems('/api/suspect-alerts')           : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('stations')   ? safeItems('/api/stations')                : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('officers')   ? safeItems('/api/officers')                : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('stations') || sessionUser.modules.includes('crimes') ? safeItems('/api/stations') : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('officers') || sessionUser.modules.includes('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('crimes')     ? safeItems('/api/crimes')                  : Promise.resolve({ok:false,items:[]}),
       api('/api/dashboard').catch(()=>null),
     ];
     const results = await Promise.all(fetches);
@@ -2856,6 +2915,64 @@ async function syncServer(){
     const cps = results.shift();
     const sts = results.shift();
     const offs = results.shift();
+    const crm = results.shift();
+    const dash = results.shift();
+    if(dash) db.dashboard = dash;
+    if(ps.ok) db.people=ps.items.map(mapPerson);
+    // Rebuild the per-person unit pills only from collections that actually
+    // answered (ok=true). A failed fetch keeps the previous local array and
+    // can never zero a register.
+    (ps.ok?db.people:[]).forEach(p=>{
+      p.units=[];p.units_explicit=[];
+      // Generic unit pills (kept for back-compat with the rest of the UI
+      // such as the Central Persons table).
+      if(ars.ok&&ars.items.some(x=>x.person_id===p.id)){p.units.push('Airport');p.units_explicit.push('Airport');}
+      if(fps.ok&&fps.items.some(x=>x.person_id===p.id)){p.units.push('Fingerprint');p.units_explicit.push('Fingerprint');}
+      if(sas.ok&&sas.items.some(x=>x.person_id===p.id)){p.units.push('CID');p.units_explicit.push('CID');}
+      // Checkpoint pills are now explicit per-encounter location labels
+      // (e.g. 'Checkpoint (South)') so the identity profile shows the
+      // exact originating checkpoint rather than a generic 'Checkpoint'
+      // string. We dedupe by locatint)
+  // keep the officer signed in and retry in the background.
+  let me;
+  try{
+    me = await api('/api/me');
+  }catch(e){
+    if(e && e.status===401){ doLogout('expired'); return; }
+    console.warn('syncServer: auth check unavailable, session kept —', e.message);
+    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">server unreachable — retrying</span>';
+    scheduleRetrySync();
+    return;
+  }
+  serverOn = true;
+  sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me; currentUser = me;
+  try{
+    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#7fe3cf">central database</span>';
+    // Each collection is fetched through safeItems()/fetchCheckpoints():
+    // a failed fetch reports ok=false and the corresponding local array is
+    // left untouched (never clobbered with [] by a transient error).
+    const fetches = [
+      safeItems('/api/persons'),
+      sessionUser.modules.includes('airport')    ? safeItems('/api/airport-records')          : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('fingerprint')? safeItems('/api/clearance-applications')   : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('cid')        ? safeItems('/api/suspect-alerts')           : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('stations')   ? safeItems('/api/stations')                : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('officers') || sessionUser.modules.includes('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('crimes') ? safeItems('/api/crimes') : Promise.resolve({ok:false,items:[]}),
+      api('/api/dashboard').catch(()=>null),
+    ];
+    const results = await Promise.all(fetches);
+    const ps = results.shift();
+    const ars = results.shift();
+    const fps = results.shift();
+    const ccs = results.shift();
+    const sas = results.shift();
+    const cps = results.shift();
+    const sts = results.shift();
+    const offs = results.shift();
+    const crm = results.shift();
     const dash = results.shift();
     if(dash) db.dashboard = dash;
     if(ps.ok) db.people=ps.items.map(mapPerson);
@@ -2902,6 +3019,7 @@ async function syncServer(){
     // transient error). Officer payloads already match the register's shape.
     if(sts.ok && sts.items.length) db.stations=sts.items.map(s=>({id:s.station_id,name:s.name,code:s.code,region:s.region,district:s.district,village:s.village,notes:s.notes||''}));
     if(offs.ok) db.officers=offs.items.map(o=>({...o}));
+    if(typeof crm!=='undefined' && crm.ok) db.crimes=crm.items;
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
     const newCheckpoints = cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
       location:x.location,location_code:x.location_code,checkpoint_location:x.checkpoint_location,
@@ -3624,17 +3742,22 @@ function renderPoliceSearch(){
 // ---- station registration -----------------------------------------------------
 async function saveStation(e){
   e.preventDefault();clearInvalid();
-  const name=stName.value.trim(),code=stCode.value.trim();
+  const name=stName.value.trim();
+  const tier=(document.getElementById('stTier')||{}).value||'';
+  const phone=(document.getElementById('stPhone')||{}).value||'';
   if(!name){showFormError('Station name is required.',{names:['stName'],notice:'stNotice'});return}
-  if(!code){showFormError('Station code is required.',{names:['stCode'],notice:'stNotice'});return}
-  const dup=(db.stations||[]).find(s=>normTxt(s.code)===normTxt(code));
-  if(dup){showFormError('A station with code '+dup.code+' already exists ('+dup.name+').',{names:['stCode'],notice:'stNotice'});return}
+  if(!tier){showFormError('Station tier is required.',{names:['stTier'],notice:'stNotice'});return}
+  if(!phone.trim()){showFormError('Contact phone is required.',{names:['stPhone'],notice:'stNotice'});return}
   const rl=requireLocation('st');
   if(!rl.ok){showFormError(rl.msg,{notice:'stNotice'});return}
   try{
     if(serverOn){
       const r=await api('/api/stations',{method:'POST',body:JSON.stringify({
-        name,code,region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,notes:stNotes.value.trim()})});
+        name,station_tier:tier,contact_phone:phone.trim(),operational_status:(document.getElementById('stStatus')||{}).value||'Active',
+        cell_capacity:(document.getElementById('stCells')||{}).value||'',
+        commander_id:(document.getElementById('stCommander')||{}).value||'',
+        deputy_id:(document.getElementById('stDeputy')||{}).value||'',
+        region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,notes:stNotes.value.trim()})});
       db.stations=(db.stations||[]).concat({id:r.station.station_id,name:r.station.name,code:r.station.code,
         region:r.station.region,district:r.station.district,village:r.station.village,notes:r.station.notes||''});
       stNotice.className='notice';stNotice.style.display='block';
@@ -3650,6 +3773,58 @@ async function saveStation(e){
     toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
   }catch(err){showFormError(err.message||'The station could not be registered.',{notice:'stNotice',title:'Unable to Save'})}
 }
+
+function officerSelectOptions(selected){
+  const ranks=['Inspector','Chief Inspector','Superintendent','Commander','General'];
+  const list=db.officers||[];
+  return '<option value="">— optional —</option>'+list.map(o=>
+    `<option value="${esc(o.service_id)}" ${o.service_id===selected?'selected':''}>${esc(o.full_name)} · ${esc(o.rank)} (${esc(o.service_id)})</option>`).join('');
+}
+function fillCrimeSelects(){
+  const st=document.getElementById('crmStation'); const of=document.getElementById('crmOfficer');
+  if(st) st.innerHTML=stationOptions(st.value);
+  if(of) of.innerHTML='<option value="">— select officer —</option>'+(db.officers||[]).map(o=>
+    `<option value="${esc(o.service_id)}">${esc(o.full_name)} · ${esc(o.rank)}</option>`).join('');
+  const c=document.getElementById('stCommander'), d=document.getElementById('stDeputy');
+  if(c) c.innerHTML=officerSelectOptions(c.value);
+  if(d) d.innerHTML=officerSelectOptions(d.value);
+}
+function renderCrimesTable(){
+  const tb=document.getElementById('crimesTable'); if(!tb) return;
+  const rows=(db.crimes||[]).map(x=>`<tr><td><b>${esc(x.file_number)}</b></td><td>${esc(x.category)}</td>
+    <td>${esc(x.station_code||'')}</td><td>${esc(x.officer_name||x.officer_service_id||'')}</td>
+    <td>${esc(x.case_status||'')}</td></tr>`).join('');
+  tb.innerHTML=rows||'<tr><td colspan="5" class="empty">No crime files yet</td></tr>';
+}
+async function saveCrime(e){
+  e.preventDefault(); clearInvalid();
+  const station=crmStation.value, officer=crmOfficer.value, cat=crmCat.value, when=crmWhen.value, loc=crmLoc.value.trim(), desc=crmDesc.value.trim();
+  if(!station){showFormError('Select a station.',{names:['crmStation'],notice:'crmNotice'});return}
+  if(!officer){showFormError('Select the desk officer.',{names:['crmOfficer'],notice:'crmNotice'});return}
+  if(!cat){showFormError('Category is required.',{names:['crmCat'],notice:'crmNotice'});return}
+  if(!when){showFormError('Incident date/time is required.',{names:['crmWhen'],notice:'crmNotice'});return}
+  if(!loc){showFormError('Location of occurrence is required.',{names:['crmLoc'],notice:'crmNotice'});return}
+  if(!desc){showFormError('Description is required.',{names:['crmDesc'],notice:'crmNotice'});return}
+  try{
+    const fd=new FormData();
+    fd.append('station_id',station); fd.append('officer_id',officer); fd.append('category',cat);
+    fd.append('incident_at',when); fd.append('location',loc); fd.append('description',desc);
+    fd.append('severity',crmSev.value); fd.append('case_status',crmStatus.value);
+    fd.append('reporting_party_type',crmParty.value); fd.append('victim_anonymous',crmAnon.value);
+    fd.append('victim_full_name',crmVName.value); fd.append('victim_contact',crmVPhone.value);
+    fd.append('victim_national_id',crmVNid.value); fd.append('victim_gender',crmVGender.value);
+    fd.append('victim_age',crmVAge.value); fd.append('victim_address',crmVAddr.value);
+    fd.append('statement',crmStmt.value); fd.append('evidence1_type',crmE1Type.value); fd.append('evidence2_type',crmE2Type.value);
+    if(crmE1.files[0]) fd.append('evidence1', crmE1.files[0]);
+    if(crmE2.files[0]) fd.append('evidence2', crmE2.files[0]);
+    const r=await api('/api/crimes',{method:'POST',body:fd});
+    db.crimes=(db.crimes||[]).concat(r.crime);
+    crmNotice.className='notice'; crmNotice.style.display='block';
+    crmNotice.textContent='Filed '+r.file_number+'.';
+    renderCrimesTable(); toast('Crime file created', r.file_number);
+  }catch(err){showFormError(err.message||'Could not file the incident.',{notice:'crmNotice',title:'Unable to Save'})}
+}
+
 function resetStationForm(){
   stName.value='';stCode.value='';stNotes.value='';
   setLocation('st',{region:'',district:'',village:''});

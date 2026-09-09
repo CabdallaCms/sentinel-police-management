@@ -395,13 +395,13 @@ def main():
             if role == 'SystemAdmin':
                 expected_mods |= {'admin', 'analytics', 'airport', 'checkpoints',
                                   'cid', 'fingerprint', 'people', 'policesearch',
-                                  'stations', 'officers', 'cars'}
+                                  'stations', 'officers', 'cars', 'crimes'}
             elif role == 'FingerprintUnit':
                 expected_mods |= {'fingerprint', 'people', 'policesearch'}
             elif role == 'AirportControl':
                 expected_mods |= {'airport', 'people', 'policesearch'}
             elif role == 'CIDUnit':
-                expected_mods |= {'cid', 'people', 'policesearch'}
+                expected_mods |= {'cid', 'people', 'policesearch', 'crimes'}
             elif role.startswith('Checkpoint'):
                 expected_mods |= {'checkpoints'}
             assert set(r['user']['modules']) == expected_mods, (u, r['user'])
@@ -1518,13 +1518,50 @@ def main():
 
         # Station creation (JSON) validates and links into the register.
         s, r = request(base, 'POST', '/api/stations', tokens['admin'],
-                       {'name': 'Test Station', 'code': 'SOO-C-99',
-                        'region': 'Sool', 'district': 'Xudun', 'village': 'Xudun'})
+                       {'name': 'Test Station', 'station_tier': 'Outpost',
+                        'region': 'Sool', 'district': 'Xudun', 'village': 'Xudun',
+                        'contact_phone': '+252 63 555 1111'})
         assert s == 201 and r['station']['station_id'] == 'ST-009', (s, r)
+        assert r['station']['code'] == 'STN-SOL-001', (s, r)
+        assert r['station']['operational_status'] == 'Active', r
         s, r = request(base, 'POST', '/api/stations', tokens['admin'],
-                       {'name': 'Dup', 'code': 'SOO-C-99', 'region': 'Sool', 'district': 'Xudun'})
-        assert s == 400 and 'already exists' in r['error'], (s, r)
+                       {'name': 'No phone', 'station_tier': 'Outpost',
+                        'region': 'Sool', 'district': 'Xudun'})
+        assert s == 400 and 'phone' in r['error'].lower(), (s, r)
+        s, r = request(base, 'POST', '/api/stations', tokens['admin'],
+                       {'name': 'Wrong district', 'station_tier': 'District HQ',
+                        'region': 'Sool', 'district': 'Burao', 'contact_phone': '+252 1'})
+        assert s == 400 and 'district' in r['error'].lower(), (s, r)
+        s, r = request(base, 'POST', '/api/stations', tokens['admin'],
+                       {'name': 'HQ', 'station_tier': 'Regional HQ', 'region': 'Sanaag',
+                        'district': 'Ceerigaabo', 'contact_phone': '+252 2',
+                        'commander_id': 'POL-2026-0002'})
+        assert s == 400 and 'inspector' in r['error'].lower(), (s, r)
+        s, r = request(base, 'POST', '/api/crimes', tokens['admin'],
+                       {'station_id': 'ST-001', 'officer_id': 'POL-2026-0001',
+                        'category': 'Theft/Burglary', 'incident_at': '2026-09-01T10:00',
+                        'location': 'Laascaanood market', 'description': 'Shop broken into'})
+        assert s == 201, (s, r)
+        assert r['file_number'].startswith('CRM-') and '-SAN-C-01-' in r['file_number'], r
+        assert r['crime']['station_code'] == 'ST-001', r
+        assert r['crime']['officer_service_id'] == 'POL-2026-0001', r
+        s, r = request(base, 'POST', '/api/crimes', tokens['admin'],
+                       {'officer_id': 'POL-2026-0001', 'category': 'Assault',
+                        'incident_at': '2026-09-01T11:00', 'location': 'X', 'description': 'Y'})
+        assert s == 400 and 'station' in r['error'].lower(), (s, r)
+        s, r = request(base, 'POST', '/api/crimes', tokens['admin'],
+                       {'station_id': 'ST-001', 'category': 'Assault',
+                        'incident_at': '2026-09-01T11:00', 'location': 'X', 'description': 'Y'})
+        assert s == 400 and 'officer' in r['error'].lower(), (s, r)
+        s, r = request(base, 'POST', '/api/crimes', tokens['admin'],
+                       {'station_id': 'ST-999', 'officer_id': 'POL-2026-0001',
+                        'category': 'Assault', 'incident_at': '2026-09-01T11:00',
+                        'location': 'X', 'description': 'Y'})
+        assert s == 400 and 'does not exist' in r['error'], (s, r)
+        s, r = request(base, 'GET', '/api/crimes', tokens['cid.officer'])
+        assert s == 200 and len(r['items']) >= 1, (s, r)
         print('ok: officer registration (schema, validation, FK, uploads, service ID)')
+        print('ok: station codes STN-REG-XXX and crime file CRM-YYYY-STN-XXXX')
 
         # ---- audit tool -----------------------------------------------------
         # A server started before the lock existed approved instantly. The
