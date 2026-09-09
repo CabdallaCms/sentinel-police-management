@@ -16,6 +16,9 @@ Replace SQLite and demo authentication before any operational deployment.
 import datetime, hashlib, json, os, re, secrets, signal, socket, sqlite3, subprocess, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+from vehicles import (
+    VEHICLES_SCHEMA, register_vehicle, update_vehicle_alert, list_vehicles,
+)
 
 # When this process started — surfaced by /api/health so an operator can tell
 # a freshly started server from one that has been serving for hours.
@@ -1069,6 +1072,7 @@ def migrate(c):
 def init_db():
     c = db()
     c.executescript(SCHEMA)
+    c.executescript(VEHICLES_SCHEMA)
     migrate(c)
     # Canonical checkpoint locations — referenced by both the data and the RBAC layer.
     if c.execute('SELECT COUNT(*) FROM locations').fetchone()[0] == 0:
@@ -2560,11 +2564,18 @@ class API(BaseHTTPRequestHandler):
                 '/api/stations': 'stations',
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
+                '/api/vehicles': 'cars',
             }
             base = '/' + p.path.split('/')[1] + '/' + (p.path.split('/')[2] if len(p.path.split('/')) > 2 else '')
             for prefix, mod in module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):
                     if prefix in ('/api/stations', '/api/officers') and 'crimes' in (user.get('modules') or []):
+                        break
+                    if prefix == '/api/vehicles' and (
+                            'cars' in (user.get('modules') or [])
+                            or 'policesearch' in (user.get('modules') or [])
+                            or 'checkpoints' in (user.get('modules') or [])
+                            or 'crimes' in (user.get('modules') or [])):
                         break
                     require_module(user, mod)
                     break
@@ -2773,6 +2784,9 @@ class API(BaseHTTPRequestHandler):
                     JOIN officers o ON o.id=ci.officer_id
                     ORDER BY ci.id DESC''').fetchall()
                 result = {'items': [crime_view(r) for r in rows]}
+            elif p.path == '/api/vehicles':
+                q = parse_qs(p.query).get('q', [''])[0]
+                result = {'items': list_vehicles(c, q)}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
@@ -2826,6 +2840,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/stations': 'stations',
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
+                '/api/vehicles': 'cars',
             }
             for prefix, mod in post_module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):
@@ -3228,12 +3243,39 @@ class API(BaseHTTPRequestHandler):
                 audit(c, user, 'CREATE', 'crime_incident', crime['file_number'], crime.get('category') or '')
                 c.commit()
                 result = {'file_number': crime['file_number'], 'crime': crime}
+            elif p.path == '/api/vehicles':
+                ctype = self.headers.get('Content-Type', '')
+                if ctype.startswith('multipart/form-data'):
+                    fields, files = parse_multipart(self)
+                else:
+                    fields, files = body_json(self), {}
+                helpers = {
+                    'normalise_choice': normalise_choice,
+                    'resolve_officer_row': resolve_officer_row,
+                    'save_upload_validated': save_upload_validated,
+                    'OFFICER_IMAGE_EXTS': OFFICER_IMAGE_EXTS,
+                }
+                vehicle = register_vehicle(c, user, fields, files, helpers)
+                audit(c, user, 'CREATE', 'vehicle', vehicle['vehicle_id'], vehicle.get('plate_number') or '')
+                c.commit()
+                result = {'vehicle_id': vehicle['vehicle_id'], 'vehicle': vehicle}
+            elif p.path.startswith('/api/vehicles/') and p.path.endswith('/status'):
+                vid = p.path.split('/')[3]
+                data = body_json(self)
+                helpers = {'normalise_choice': normalise_choice}
+                vehicle = update_vehicle_alert(c, user, vid, data, helpers)
+                audit(c, user, 'UPDATE', 'vehicle', vid, vehicle.get('security_alert') or '')
+                c.commit()
+                result = {'vehicle': vehicle}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
+        except LookupError as e:
+            if c: c.close()
+            self.send_json(404,{'error':str(e)})
         except ValueError as e:
             if c: c.close()
             self.send_json(400,{'error':str(e)})

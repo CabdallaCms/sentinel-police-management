@@ -1563,6 +1563,48 @@ def main():
         print('ok: officer registration (schema, validation, FK, uploads, service ID)')
         print('ok: station codes STN-REG-XXX and crime file CRM-YYYY-STN-XXXX')
 
+        vin_ok = '1HGCM82633A004352'
+        fleet = {
+            'category': 'Police Fleet',
+            'plate_number': 'sl-aa-1001',
+            'vin': vin_ok,
+            'engine_number': 'ENG-991',
+            'make_model': 'Toyota Hilux',
+            'year': '2022',
+            'body_type': 'Pickup 4x4',
+            'station_id': 'ST-001',
+            'operational_status': 'In Service',
+        }
+        s, r = request(base, 'POST', '/api/vehicles', tokens['admin'], fleet)
+        assert s == 201 and r['vehicle']['vehicle_id'].startswith('VEH-'), (s, r)
+        assert r['vehicle']['plate_number'] == 'SL-AA-1001', r
+        assert r['vehicle']['security_alert'] == 'Clean / Normal', r
+        vid = r['vehicle_id']
+        s, r = request(base, 'POST', '/api/vehicles', tokens['admin'], {**fleet, 'plate_number': 'SL-AA-1002'})
+        assert s == 400 and 'VIN' in r['error'], (s, r)
+        s, r = request(base, 'POST', '/api/vehicles', tokens['admin'], {
+            'category': 'Civilian / Commercial', 'plate_number': 'SL-BB-9',
+            'vin': '1HGCM82633A004353', 'engine_number': 'E2', 'make_model': 'Nissan Sunny'})
+        assert s == 400 and 'Owner' in r['error'], (s, r)
+        s, r = request(base, 'POST', '/api/vehicles', tokens['admin'], {
+            'category': 'Civilian / Commercial', 'plate_number': 'SL-BB-9',
+            'vin': '1HGCM82633A004353', 'engine_number': 'E2', 'make_model': 'Nissan Sunny',
+            'owner_full_name': 'Ayaan Cali', 'owner_phone': '+25263', 'owner_national_id': 'NID1',
+            'security_alert': 'Stolen'})
+        assert s == 400 and 'reason' in r['error'].lower(), (s, r)
+        s, r = request(base, 'POST', '/api/vehicles', tokens['admin'], {
+            'category': 'Civilian / Commercial', 'plate_number': 'SL-BB-9',
+            'vin': '1HGCM82633A004353', 'engine_number': 'E2', 'make_model': 'Nissan Sunny',
+            'owner_full_name': 'Ayaan Cali', 'owner_phone': '+25263', 'owner_national_id': 'NID1',
+            'security_alert': 'Stolen', 'alert_reason': 'Reported at checkpoint'})
+        assert s == 201, (s, r)
+        s, r = request(base, 'POST', f'/api/vehicles/{vid}/status', tokens['admin'],
+                       {'security_alert': 'Wanted in Crime', 'alert_reason': 'Linked to CRM file'})
+        assert s == 201 and r['vehicle']['security_alert'] == 'Wanted in Crime', (s, r)
+        s, r = request(base, 'GET', '/api/vehicles?q=SL-AA-1001', tokens['admin'])
+        assert s == 200 and any(x['plate_number'] == 'SL-AA-1001' for x in r['items']), (s, r)
+        print('ok: vehicle registry (VIN uniqueness, fleet/civilian conditionals, alerts)')
+
         # ---- audit tool -----------------------------------------------------
         # A server started before the lock existed approved instantly. The
         # audit must find those rows and be able to undo them.

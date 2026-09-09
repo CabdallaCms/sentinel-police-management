@@ -709,25 +709,48 @@ body.modal-open{overflow:hidden}
 <section id="cars" class="page">
 <div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Register police car</h2><div class="sub">Assign to a station — its location pre-fills the fields, which you may override</div></div></div>
+<div class="panel-head"><div><h2>Vehicle registry</h2><div class="sub">Police fleet and civilian / commercial vehicles — Sool, Sanaag, East Togdheer</div></div></div>
 <div id="carNotice" class="notice"></div>
 <form class="form" id="carForm" onsubmit="saveCar(event)">
 <div class="grid2">
-<div class="field"><label>Plate number *</label><input id="carPlate" placeholder="e.g. PL-1010-26"></div>
-<div class="field"><label>Vehicle type</label><select id="carType"><option>Patrol</option><option>Motorcycle</option><option>Van</option><option>Truck</option><option>SWAT</option><option>Other</option></select></div>
-<div class="field"><label>Make</label><input id="carMake" placeholder="e.g. Toyota"></div>
-<div class="field"><label>Model / Year</label><input id="carModel" placeholder="e.g. Hilux · 2024"></div>
+<div class="field"><label>Category *</label><select id="carCategory" onchange="toggleCarCategory()"><option value="Police Fleet">Police Fleet</option><option value="Civilian / Commercial">Civilian / Commercial</option></select></div>
+<div class="field"><label>Plate number *</label><input id="carPlate" placeholder="e.g. SL-1010-26" style="text-transform:uppercase"></div>
+<div class="field"><label>VIN / chassis (17) *</label><input id="carVin" maxlength="17" placeholder="17 characters, no I/O/Q"></div>
+<div class="field"><label>Engine number *</label><input id="carEngine"></div>
+<div class="field"><label>Make &amp; model *</label><input id="carMake" placeholder="e.g. Toyota Hilux"></div>
+<div class="field"><label>Year (YYYY)</label><input id="carYear" maxlength="4" placeholder="2024"></div>
+<div class="field"><label>Body type</label><select id="carType"><option value="">—</option><option>Pickup 4x4</option><option>SUV</option><option>Sedan</option><option>Armored Patrol</option><option>Truck</option><option>Patrol Motorcycle</option></select></div>
+<div class="field"><label>Primary colour</label><input id="carColor"></div>
 </div>
-<div class="section-label">Assignment</div>
-<div class="field"><label>Assigned police station *</label><select id="carStation"></select></div>
-<div class="hint" style="margin-bottom:6px;background:#f4f8ff"><b>Location:</b> picking a station pre-fills its Region, District and Village/Town as defaults — you can change or override any of the three. The values you save are stored on the car record.</div>
+<div id="carFleetFields">
+<div class="section-label">Police fleet assignment</div>
+<div class="field"><label>Assigned station *</label><select id="carStation"></select></div>
+<div class="field"><label>Assigned officer</label><select id="carOfficer"><option value="">— optional —</option></select></div>
+<div class="field"><label>Operational status</label><select id="carOpStatus"><option>In Service</option><option>Maintenance</option><option>Out of Service</option><option>Decommissioned</option></select></div>
 <div id="car-loc" class="loc-grid"></div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register car</button></div>
+</div>
+<div id="carCivFields" style="display:none">
+<div class="section-label">Civilian owner</div>
+<div class="grid2">
+<div class="field"><label>Owner full name *</label><input id="carOwnerName"></div>
+<div class="field"><label>Owner phone *</label><input id="carOwnerPhone"></div>
+<div class="field"><label>National ID / passport *</label><input id="carOwnerNid"></div>
+<div class="field"><label>Address</label><input id="carOwnerAddr"></div>
+</div>
+</div>
+<div class="section-label">Security alert</div>
+<div class="grid2">
+<div class="field"><label>Status</label><select id="carAlert" onchange="toggleCarAlert()"><option>Clean / Normal</option><option>Stolen</option><option>Wanted in Crime</option><option>Impounded</option><option>Unregistered / Suspicious</option></select></div>
+<div class="field" id="carAlertReasonWrap" style="display:none"><label>Alert reason *</label><input id="carAlertReason"></div>
+<div class="field"><label>Registration expiry</label><input id="carExpiry" type="date"></div>
+<div class="field"><label>Photo (JPEG/PNG ≤5MB)</label><input id="carPhoto" type="file" accept=".jpg,.jpeg,.png"></div>
+</div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register vehicle</button></div>
 </form>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered cars</h2><div class="sub">Region/District/Village as stored on each record (pre-filled from the station, editable at entry)</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="carsTable"></tbody></table></div>
+<div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Security badge shown on every record</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>ID / Plate</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Alert</th></tr></thead><tbody id="carsTable"></tbody></table></div>
 </div>
 </div>
 </section>
@@ -940,6 +963,27 @@ function mapPerson(p){
     pob:(p.place_of_birth??p.pob)||'',motherName:(p.mother_name??p.motherName)||'',residence:(p.residence??p.residence)||'',
     occupation:(p.occupation??p.occupation)||'',phone:(p.phone??p.phone)||'',
     photoPath:(p.photo_path??p.photoPath)||'',updated:(p.updated_at||'').slice(0,10)}}
+function mapVehicle(v){
+  return {
+    id: v.vehicle_id || v.id,
+    plate: v.plate_number || v.plate || '',
+    type: v.body_type || v.type || '',
+    make: v.make_model || v.make || '',
+    model: v.year_of_manufacture || v.model || '',
+    station: v.station_code || v.station_id || v.station || '',
+    region: v.station_region || v.region || '',
+    district: v.station_district || v.district || '',
+    village: v.station_village || v.village || '',
+    category: v.category || '',
+    security_alert: v.security_alert || 'Clean / Normal',
+    alert_reason: v.alert_reason || '',
+    operational_status: v.operational_status || '',
+    owner_full_name: v.owner_full_name || '',
+    vin: v.vin || '',
+    engine_number: v.engine_number || '',
+    photo_path: v.photo_path || '',
+  };
+}
 function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),
   first_name:d.first||'',second_name:d.second||'',third_name:d.third||'',fourth_name:d.fourth||'',
   national_id:d.nationalId||'',passport_id:d.passportId||'',date_of_birth:d.dob||'',phone:d.phone||'',
@@ -1207,6 +1251,12 @@ function refreshStationSelects(){
     const el=document.getElementById(id);
     if(el)el.innerHTML=stationOptions(el.value);
   });
+  const off=document.getElementById('carOfficer');
+  if(off){
+    const cur=off.value;
+    off.innerHTML='<option value="">— optional —</option>'+(db.officers||[]).map(o=>
+      `<option value="${esc(o.service_id)}" ${o.service_id===cur?'selected':''}>${esc(o.full_name)} (${esc(o.service_id)})</option>`).join('');
+  }
 }
 // Wire a station <select> to an editable location block: picking a station
 // pre-fills the Region/District/Village fields with the station's location
@@ -2904,6 +2954,7 @@ async function syncServer(){
       sessionUser.modules.includes('stations') || sessionUser.modules.includes('crimes') ? safeItems('/api/stations') : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('officers') || sessionUser.modules.includes('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('crimes')     ? safeItems('/api/crimes')                  : Promise.resolve({ok:false,items:[]}),
+      (sessionUser.modules.includes('cars') || sessionUser.modules.includes('policesearch') || sessionUser.modules.includes('checkpoints') || sessionUser.modules.includes('crimes')) ? safeItems('/api/vehicles') : Promise.resolve({ok:false,items:[]}),
       api('/api/dashboard').catch(()=>null),
     ];
     const results = await Promise.all(fetches);
@@ -2916,63 +2967,7 @@ async function syncServer(){
     const sts = results.shift();
     const offs = results.shift();
     const crm = results.shift();
-    const dash = results.shift();
-    if(dash) db.dashboard = dash;
-    if(ps.ok) db.people=ps.items.map(mapPerson);
-    // Rebuild the per-person unit pills only from collections that actually
-    // answered (ok=true). A failed fetch keeps the previous local array and
-    // can never zero a register.
-    (ps.ok?db.people:[]).forEach(p=>{
-      p.units=[];p.units_explicit=[];
-      // Generic unit pills (kept for back-compat with the rest of the UI
-      // such as the Central Persons table).
-      if(ars.ok&&ars.items.some(x=>x.person_id===p.id)){p.units.push('Airport');p.units_explicit.push('Airport');}
-      if(fps.ok&&fps.items.some(x=>x.person_id===p.id)){p.units.push('Fingerprint');p.units_explicit.push('Fingerprint');}
-      if(sas.ok&&sas.items.some(x=>x.person_id===p.id)){p.units.push('CID');p.units_explicit.push('CID');}
-      // Checkpoint pills are now explicit per-encounter location labels
-      // (e.g. 'Checkpoint (South)') so the identity profile shows the
-      // exact originating checkpoint rather than a generic 'Checkpoint'
-      // string. We dedupe by locatint)
-  // keep the officer signed in and retry in the background.
-  let me;
-  try{
-    me = await api('/api/me');
-  }catch(e){
-    if(e && e.status===401){ doLogout('expired'); return; }
-    console.warn('syncServer: auth check unavailable, session kept —', e.message);
-    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">server unreachable — retrying</span>';
-    scheduleRetrySync();
-    return;
-  }
-  serverOn = true;
-  sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me; currentUser = me;
-  try{
-    document.getElementById('envBadge').innerHTML='Environment: <span style="color:#7fe3cf">central database</span>';
-    // Each collection is fetched through safeItems()/fetchCheckpoints():
-    // a failed fetch reports ok=false and the corresponding local array is
-    // left untouched (never clobbered with [] by a transient error).
-    const fetches = [
-      safeItems('/api/persons'),
-      sessionUser.modules.includes('airport')    ? safeItems('/api/airport-records')          : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('fingerprint')? safeItems('/api/clearance-applications')   : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('cid')        ? safeItems('/api/suspect-alerts')           : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('stations')   ? safeItems('/api/stations')                : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('officers') || sessionUser.modules.includes('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('crimes') ? safeItems('/api/crimes') : Promise.resolve({ok:false,items:[]}),
-      api('/api/dashboard').catch(()=>null),
-    ];
-    const results = await Promise.all(fetches);
-    const ps = results.shift();
-    const ars = results.shift();
-    const fps = results.shift();
-    const ccs = results.shift();
-    const sas = results.shift();
-    const cps = results.shift();
-    const sts = results.shift();
-    const offs = results.shift();
-    const crm = results.shift();
+    const veh = results.shift();
     const dash = results.shift();
     if(dash) db.dashboard = dash;
     if(ps.ok) db.people=ps.items.map(mapPerson);
@@ -3020,6 +3015,7 @@ async function syncServer(){
     if(sts.ok && sts.items.length) db.stations=sts.items.map(s=>({id:s.station_id,name:s.name,code:s.code,region:s.region,district:s.district,village:s.village,notes:s.notes||''}));
     if(offs.ok) db.officers=offs.items.map(o=>({...o}));
     if(typeof crm!=='undefined' && crm.ok) db.crimes=crm.items;
+    if(typeof veh!=='undefined' && veh.ok) db.cars=veh.items.map(mapVehicle);
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
     const newCheckpoints = cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
       location:x.location,location_code:x.location_code,checkpoint_location:x.checkpoint_location,
@@ -3663,14 +3659,21 @@ function renderOfficersTable(){
     <td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
   tb.innerHTML=rows||'<tr><td colspan="6" class="empty">No officers registered yet</td></tr>';
 }
+function vehicleAlertBadge(alert){
+  const a=alert||'Clean / Normal';
+  const kind=a==='Clean / Normal'?'green':(a==='Stolen'||a==='Wanted in Crime'?'red':'amber');
+  return `<span class="badge ${kind}">${esc(a)}</span>`;
+}
 function renderCarsTable(){
   const tb=document.getElementById('carsTable');if(!tb)return;
   const rows=(db.cars||[]).map(c=>{const st=stationById(c.station);
-    return `<tr><td><b>${esc(c.plate)}</b></td>
-    <td>${esc(c.type)}${c.make||c.model?`<br><small class="muted">${esc([c.make,c.model].filter(Boolean).join(' '))}</small>`:''}</td>
-    <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':'<span class="muted">—</span>'}</td>
-    ${locationCells(c)}</tr>`}).join('');
-  tb.innerHTML=rows||'<tr><td colspan="6" class="empty">No cars registered yet</td></tr>';
+    const who=c.category==='Civilian / Commercial'?esc(c.owner_full_name||'Civilian'):(st?esc(st.name):esc(c.station||'—'));
+    return `<tr><td><b>${esc(c.plate)}</b><br><small class="muted">${esc(c.id||'')}</small></td>
+    <td>${esc(c.make||c.type||'')}${c.model?`<br><small class="muted">${esc(c.model)}</small>`:''}</td>
+    <td>${esc(c.category||'Police Fleet')}</td>
+    <td>${who}</td>
+    <td>${vehicleAlertBadge(c.security_alert)}</td></tr>`}).join('');
+  tb.innerHTML=rows||'<tr><td colspan="5" class="empty">No vehicles registered yet</td></tr>';
 }
 // ---- Central Police Search: one location filter across all three registers ----
 let psType='officers';
@@ -3997,6 +4000,48 @@ function resetCarForm(){
   carPlate.value='';carType.value='Patrol';carMake.value='';carModel.value='';
   carStation.value='';
   paintLocationDefaults('car',{region:'',district:'',village:''});
+  carNotice.className='notice';carNotice.style.display='none';
+}
+
+// ============================ init ============================
+buildFileSlots('appDocs','appDoc',4,['Document 1 (ID) *','Document 2 *','Document 3 (optional)','Document 4 (optional)']);
+buildFileSlots('guardDocs','guardDoc',3,['Document 1 (ID) *','Document 2 *','Document 3 (optional)']);
+document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:true});wireIdentity('fp');
+document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');
+document.getElementById('cwIdentity').innerHTML=identityFormHTML('cw');wireIdentity('cw');
+// Regional registration modules: build the shared Region → District →
+// Village dropdowns (station + car forms editable; police search gets
+// "All …" filter levels). The officer form uses its own origin gazetteer
+// (ORIGIN_REGIONS) via initOriginDropdowns(); picking a car's station
+// pre-fills the car's location as editable defaults.
+locationDropdowns('st');
+locationDropdowns('car');
+locationDropdowns('ps',{withAll:true,onchange:renderPoliceSearch});
+refreshStationSelects();
+wireStationLocationDefaults('carStation','car');
+initOriginDropdowns();
+offStep(1);
+applyNavForRole();   // hide admin pages until sign-in
+// Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
+// filter when investigating the 'South Checkpoint 0' bug). Toggle
+// from the browser console with: window.__cpDebug = true | false.
+window.__cpDebug = window.localStorage && localStorage.getItem('sentinelCpDebug') === '1';
+// Page-load bootstrap: re-hydrate the stored session (sentinel_token +
+// sentinel_user) BEFORE the initial API sync so a refresh never signs the
+// officer out. Runs on DOMContentLoaded (the script sits at the end of the
+// body, so the DOM is normally ready already).
+if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', initApp); }
+else{ initApp(); }
+</script>
+</body></html>
+plate);
+  }catch(err){
+    showFormError(err.message||String(err),{notice:'carNotice'});
+  }
+}
+function resetCarForm(){
+  document.getElementById('carForm').reset();
+  toggleCarCategory();toggleCarAlert();
   carNotice.className='notice';carNotice.style.display='none';
 }
 
