@@ -13,6 +13,7 @@ A working browser-based prototype for a central police management platform. It i
 - Hargeisa Local Airport passenger register
 - Central Police Search (officers / stations / cars by Region → District → Village)
 - Police Stations / Officers / Cars registration (regional modules)
+- Officer Conduct, Promotions & Disciplinary Management (Police Officer Registration Office / HR Directorate)
 - Dashboard and cross-unit activity feed
 
 ## Central-person linking model
@@ -99,7 +100,7 @@ The flat module list is reorganised into three **collapsible sidebar groups** (o
 
 - **Central Search** — *Central Person Search* (the existing `people` registry) and *Central Police Search* (new `policesearch` page: one cascading Region → District → Village/Town filter across the police officers, stations and cars registers, plus a free-text search).
 - **CID — Criminal Investigation Directorate** — *Fingerprint Unit* (`fingerprint`), *Crime Department* (`cid`), *Checkpoint Unit* (`checkpoints`) and *Airport Unit* (`airport`). These are the existing routes, regrouped and re-labelling only — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Department entry.
-- **Police Registrations & Management** (System Admin only) — *Police Stations* (`stations`), *Police Officers* (`officers`) and *Police Cars* (`cars`).
+- **Police Registrations & Management** (System Admin + Officer Registration Office) — *Police Stations* (`stations`), *Police Officers* (`officers`), *Conduct & Discipline* (`conduct`), *Police Cars* (`cars`) and *Register Crime* (`crimes`). The Officer Registration Office (HR Directorate) sees stations, officers and the conduct module; cars and crime intake remain admin/CID.
 - **Administration** (System Admin only, as before) — *Analytics* and *User Management*.
 
 Visibility is still driven by the `modules` array from `GET /api/me`: a group hides entirely when every item inside it is hidden for the signed-in role.
@@ -129,6 +130,16 @@ The **Police Officers** register is a five-step wizard (multi-tab `offStep(n)` f
 5. **Verification & supporting documents** — **Document Slot 1** (mandatory: type from `OFFICER_DOC_TYPES_PRIMARY` + PDF/JPG/PNG file) and **Document Slot 2** (optional: type from `OFFICER_DOC_TYPES_SECONDARY` + file; type and file must be provided together).
 
 Server-side validation (`register_officer()`) enforces every mandatory field, the fixed dropdown option lists, the station foreign key, the upload extension/size policy (5 MB), and the coherent Slot 2 pairing — identical rules to the client, so a request that passes the form cannot be rejected by the API (and vice-versa). Uploads are persisted under `backend/uploads/` via `save_upload_validated()`.
+
+### Officer Conduct, Promotions & Disciplinary Management (HR Directorate)
+
+The **Conduct & Discipline** module (`conduct`) is controlled by the **Police Officer Registration Office (HR Directorate)** and covers **Sool, Sanaag and East Togdheer**. It manages promotions, awards, demotions and disciplinary penalties against the `officers` register:
+
+- **`officer_conduct_actions` table** — every nomination, award or penalty is an action file with an auto-generated **`ACT-YYYY-XXXX`** id, a mandatory target officer (FK `officers.id`), an action type (`Promotion / Commendation` · green `#2e7d32`, or `Disciplinary / Penalty` · red `#c62828`), a specific classification (*Rank Advancement, Official Commendation, Medal of Bravery, Merit Award* / *Rank Demotion, Official Reprimand, Temporary Suspension, Formal Dismissal*), an optional-but-rule-checked **proposed rank** (mandatory and directional for rank actions), a **mandatory detailed narrative** (station report numbers / case references, ≥ 20 characters), the **submitting station / commander** (FK `police_stations.id` or `officers.id` — at least one required), a submission datetime, supporting **PDF/JPG documents ≤ 5 MB**, the verification & approval status (`Submitted to HR` → `Under HR Review` → `Verified & Approved` / `Rejected`, default **Submitted to HR**) and the **reviewing HR officer** (FK `officers.id`).
+- **Submission** — `POST /api/conduct/submit` is the intake endpoint used by station commanders (any authenticated officer may file a recommendation or misconduct report; the HR Action Modal in the UI uses the same route). Files always enter the queue as *Submitted to HR*.
+- **HR review** — `POST /api/conduct/{id}/review` is **restricted to the Officer Registration Office / HR staff** (the `conduct` module) and supports `approve`, `reject` and `review` decisions plus reviewer notes and the reviewing HR officer. Approving a **Rank Advancement / Rank Demotion** automatically updates `officers.rank` (the transition is re-validated against the officer's *current* rank at approval time — a stale file is rejected), approving a **Formal Dismissal / Temporary Suspension** sets the duty status to *Terminated / Suspended*, and every approval writes an **immutable `officer_service_history` record** for the officer. Closed files cannot be reviewed again.
+- **Register & filters** — `GET /api/conduct` (HR only) returns the joined register (officer, station, commander, reviewer, rank-applied flag) plus a status/category summary, and filters by `status`, `category` (promotion vs disciplinary), `region`, `station` and `officer`. `GET /api/conduct/{id}` adds the officer's full service history.
+- **Split-view dashboard** (Officers Registration Office view) — a green **Promotions & Commendations** tab, a red **Disciplinary & Misconduct** tab, and the **HR Approval Desk** where pending submissions are verified and rank changes executed with **one click**. The **HR Action Modal** searches the target officer by Service ID (`POL-YYYY-XXXX`) or name with live suggestions, cascades the classification dropdown from the action type, restricts the rank dropdown to valid transitions (only higher ranks for an advancement, only lower for a demotion), enforces the mandatory narrative and validates the PDF/JPG ≤ 5 MB document slots client-side before submission.
 
 ### Executive Analytics dashboard (admin only)
 
@@ -177,7 +188,7 @@ Then open `http://localhost:8001` (the backend serves the UI and the API togethe
 
 ### Demo accounts (development only)
 
-Seven demo users are seeded automatically on first run — one per role — all with
+Eight demo users are seeded automatically on first run — one per role — all with
 password `ChangeMe123!`. This makes it easy to exercise the role-based access
 control and location-isolated checkpoints:
 
@@ -187,6 +198,7 @@ control and location-isolated checkpoints:
 | `fp.officer` | Fingerprint Unit    | Fingerprint only           |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
+| `hr.officer` | Officer Registration Office (HR) | Officers, stations, conduct |
 | `cp.south`   | Checkpoint South    | Checkpoint · South only    |
 | `cp.east`    | Checkpoint East     | Checkpoint · East only     |
 | `cp.west`    | Checkpoint West     | Checkpoint · West only     |
@@ -226,6 +238,14 @@ node backend/test_frontend_session.mjs
 
 Verifies the checkpoint-officer refresh journey: sign in as `cp.south`, token/user persisted to `sentinel_token` / `sentinel_user`, page refresh re-hydrates the session before the API sync (no auto-signout, no 401/404), the checkpoint count survives the refresh, an empty server sync never wipes local rows, a bogus token signs out only via an explicit `/api/me` 401, and a server-down load keeps the officer signed in.
 
+Conduct & disciplinary UI journey test (Node ≥ 18):
+
+```bash
+node backend/test_conduct_frontend.mjs
+```
+
+Drives the Officers Registration Office flow through the real inline script: sign in as `hr.officer`, open the HR Action Modal, search the target officer by Service ID (`POL-YYYY-XXXX`), file a Rank Advancement with the mandatory narrative, watch the green/red split-view badges update, execute the rank change from the HR Approval Desk with one click (the officers register refreshes to the new rank), reject a Rank Demotion without touching the rank, view the immutable service history, and confirm `/api/conduct` stays denied to non-HR roles.
+
 Print-template contract tests (standard library only):
 
 ```bash
@@ -244,6 +264,7 @@ Pins the official-template rules for `application.html` / `certificate.html`: th
 6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. The **Suspect reason / alert details** field is **mandatory when no Crime Case is linked**; when a case IS linked it can be left empty and automatically defaults to `Linked to CID case {code} — {category}`. Submitting with an exact match reuses the existing central record.
 7. Open a case workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert; the case is optional, and a participant note is required when no case is linked), and upload evidence (tab 3).
 8. Open **Checkpoints → Record stop** for a listed suspect and see the automatic "Flagged match" screening. The stop is saved to the central database and the screening result is computed server-side against active suspect alerts. The checkpoint modal is a **full traveler + guardian screening layout**: traveler (4-part name, DOB, place of birth, current/permanent address, purpose of visit, real-time photo, optional National ID/Passport, **≥1 of 2 document slots**), guardian (name, relationship, contact, permanent address, occupation, optional IDs, **≥1 of 2 document slots**). Smart identity resolution auto-fills **both** traveler and guardian, and all uploaded files are stored in `backend/uploads/` and referenced from the stored event.
+9. Sign in as `hr.officer` (Officer Registration Office) and open **Police Registrations & Management → Conduct & Discipline**. Click **＋ New conduct action**, search an officer by Service ID, pick the green *Promotion / Commendation* type with *Rank Advancement*, choose a higher rank, write the detailed justification (station report number / case reference) and submit — the file enters the queue as `ACT-YYYY-XXXX · Submitted to HR` in the **Promotions & Commendations** tab. Switch to the **HR Approval Desk**, pick the reviewing HR officer and click **✓ Approve** — the officer's rank in the register updates automatically and the immutable service-history entry appears in the file view. File a red *Disciplinary / Penalty* action (e.g. *Rank Demotion*) to see the **Disciplinary & Misconduct** tab, and reject it to leave the rank untouched.
 
 Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/uploads/`.
 

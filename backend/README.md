@@ -20,7 +20,7 @@ The API runs on `http://localhost:8001`.
 
 ## Demo accounts
 
-Seven demo users are seeded automatically on first run — one per role — all with
+Eight demo users are seeded automatically on first run — one per role — all with
 password `ChangeMe123!`:
 
 | Username     | Role                | Scope / Module             |
@@ -29,6 +29,7 @@ password `ChangeMe123!`:
 | `fp.officer` | Fingerprint Unit    | Fingerprint only           |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
+| `hr.officer` | Officer Registration Office (HR) | Officers, stations, conduct |
 | `cp.south`   | Checkpoint South    | Checkpoint · South only    |
 | `cp.east`    | Checkpoint East     | Checkpoint · East only     |
 | `cp.west`    | Checkpoint West     | Checkpoint · West only     |
@@ -50,6 +51,11 @@ Every authenticated request is scoped to the user's role. The full role set is:
 - `FingerprintUnit` — only `/api/clearance-applications*`.
 - `AirportControl` — only `/api/airport-records*`.
 - `CIDUnit` — only `/api/crime-cases*` and `/api/suspect-alerts*`.
+- `OfficerRegistration` — the Police Officer Registration Office (HR
+  Directorate): `/api/stations*`, `/api/officers*` and the conduct, promotions
+  & disciplinary management module (`/api/conduct*` except the open
+  `/api/conduct/submit` intake, which any authenticated officer may call to
+  file a station recommendation or misconduct report).
 - `CheckpointSouth` / `CheckpointEast` / `CheckpointWest` — only
   `/api/checkpoint-events*`, **scoped to their assigned location**; a South
   officer cannot see, create, or amend any event at the East or West
@@ -166,6 +172,7 @@ identically:
 | `FingerprintUnit` | `fingerprint_officer`, `fingerprint_unit`, `fp_officer` |
 | `AirportControl` | `airport_officer`, `airport_control`, `ap_officer` |
 | `CIDUnit` | `cid_officer`, `criminal_investigation` |
+| `OfficerRegistration` | `hr_officer`, `officer_registration`, `registration_officer`, `police_registration`, `hr` |
 | `checkpoint_officer` | `CheckpointSouth/East/West`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, … |
 
   A row stored as `fingerprint_officer` therefore keeps its modules, RBAC
@@ -186,6 +193,10 @@ identically:
 - `GET /api/crimes` / `POST /api/crimes` (CID + SystemAdmin — crime/victim intake. File numbers are `CRM-YYYY-{station-code}-XXXX`. Requires station, desk officer, category, incident datetime, location of occurrence and description. Optional victim block, reporting party, severity, two evidence slots.)
 - `GET /api/vehicles` / `POST /api/vehicles` (SystemAdmin write; Checkpoint, CID and Central Police Search may `GET`. Helpers live in `backend/vehicles.py`. IDs are `VEH-YYYY-XXXX`. Plate is unique uppercase; VIN is 17 characters without I/O/Q and unique. Police Fleet requires `station_id` (optional `officer_id` + operational status). Civilian / Commercial requires owner name, phone and national ID/passport. Security alert defaults to `Clean / Normal`; Stolen / Wanted in Crime / Impounded / Unregistered / Suspicious require `alert_reason`. Optional JPEG/PNG ≤ 5 MB photo.)
 - `POST /api/vehicles/{vehicle_id}/status` (SystemAdmin — update `security_alert` + reason. Checkpoint plate lookup uses `GET /api/vehicles?q=`.)
+- `GET /api/conduct` (OfficerRegistration / SystemAdmin — the conduct, promotions & disciplinary register, joined with the target officer, submitting station/commander and reviewing HR officer. Supports `status`, `category` (`promotion` / `disciplinary` or the full action-type names), `region`, `station`, `officer` filters; returns a `summary` of counts plus the fixed option lists.)
+- `GET /api/conduct/{action_id}` (OfficerRegistration / SystemAdmin — full action file detail including the officer's immutable `officer_service_history`.)
+- `POST /api/conduct/submit` (any authenticated officer — station commanders file promotion recommendations / misconduct reports on behalf of their station. Auto-generates the `ACT-YYYY-XXXX` action file id, defaults the status to `Submitted to HR`, and validates: mandatory target officer, action type from `Promotion / Commendation` / `Disciplinary / Penalty`, a classification belonging to that type, a mandatory detailed narrative (≥ 20 chars), a proposed rank that is a **valid transition** for `Rank Advancement` (strictly higher) / `Rank Demotion` (strictly lower), at least one of submitting station / reporting commander, and PDF/JPG supporting documents ≤ 5 MB.)
+- `POST /api/conduct/{action_id}/review` (OfficerRegistration / SystemAdmin — the HR approval desk. `decision` is `approve` / `reject` / `review` (or the equivalent status names), with optional `reviewer_officer_id` and `reviewer_notes`. Approving a `Rank Advancement` / `Rank Demotion` **automatically updates `officers.rank`** (re-validated against the officer's current rank — a stale file is rejected with 400), approving a `Formal Dismissal` / `Temporary Suspension` sets the duty status to `Terminated` / `Suspended`, and every approval writes an immutable `officer_service_history` record. Closed files cannot be reviewed again.)
 
 Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval). Both printable pages load the police emblem from `images/police_logo.png` (served at `/images/...` and `/static/images/...`) and render it twice — as the letterhead logo and as a low-opacity (0.08–0.09) centred watermark behind the document content.
 
@@ -196,6 +207,7 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 ```bash
 python3 backend/test_server.py        # API suite (Python stdlib only)
 node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18)
+node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node >= 18)
 ```
 
 The backend suite starts the server against a temporary database and
@@ -216,13 +228,35 @@ all stored and served as the canonical `checkpoint_officer` with the
 (`/api/me` + `/api/dashboard` + `/api/checkpoint-events` stay HTTP 200
 across repeated requests with one bearer token) and the **Executive
 Analytics** aggregation (summary, crime distribution by location +
-time-of-day, checkpoint volume + traveler demographics).
+time-of-day, checkpoint volume + traveler demographics). It also covers
+the **conduct module** end-to-end: `ACT-YYYY-XXXX` file creation with
+the `Submitted to HR` default, every server validation rule (mandatory
+narrative, classification matching the action type, directional rank
+transitions, station/commander origin, PDF/JPG ≤ 5 MB documents), the
+HR-only review gate (401 for unit / checkpoint roles on both the
+register and the review desk), the `Under HR Review` → `Verified &
+Approved` pipeline with the **automatic `officers.rank` update**, the
+immutable `officer_service_history` log (including re-validation of a
+stale advancement against the officer's current rank), rejection
+handling (rank untouched), duty-status effects for Formal Dismissal /
+Temporary Suspension, closed-file immutability, and the status /
+category / region / station / officer filters.
 
 The frontend smoke test executes the real inline script from
 `index.html` in a Node VM against the live backend and verifies that a
 page refresh re-hydrates `sentinel_token` / `sentinel_user` before the
 API sync, never signs the officer out on non-fatal errors, and never
 wipes `db.checkpoints` with an empty sync.
+
+The conduct frontend test drives the Officers Registration Office
+journey through the real `index.html` script: sign in as `hr.officer`,
+open the HR Action Modal, search the target officer by Service ID,
+file a green Rank Advancement with the mandatory narrative, see the
+split-view tab badges update, execute the rank change from the HR
+Approval Desk with one click (the officers register refreshes to the
+new rank), reject a red Rank Demotion without touching the rank, view
+the immutable service history, and confirm `/api/conduct` is denied to
+non-HR roles.
 
 This is a development foundation, not an operational police deployment.
 Authentication, database, encryption, roles, file-upload validation and

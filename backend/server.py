@@ -167,6 +167,46 @@ CREATE TABLE IF NOT EXISTS crime_incidents(
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS officer_conduct_actions(
+  id INTEGER PRIMARY KEY, action_id TEXT UNIQUE NOT NULL,
+  -- Target officer (mandatory) — the subject of the promotion / penalty.
+  officer_id INTEGER NOT NULL REFERENCES officers(id),
+  -- 'Promotion / Commendation' or 'Disciplinary / Penalty'.
+  action_type TEXT NOT NULL,
+  -- Specific conduct classification within the action type.
+  classification TEXT NOT NULL,
+  -- Proposed rank (OFFICER_RANKS) — mandatory for Rank Advancement / Rank Demotion.
+  proposed_rank TEXT,
+  -- Mandatory detailed justification, station report numbers or case references.
+  narrative TEXT NOT NULL,
+  -- Originating station / commander reporting the event.
+  station_id INTEGER REFERENCES police_stations(id),
+  reporting_officer_id INTEGER REFERENCES officers(id),
+  submitted_at TEXT,
+  -- Verification & approval pipeline.
+  status TEXT NOT NULL DEFAULT 'Submitted to HR',
+  -- The Officer Registration Office staff processing the file.
+  reviewer_officer_id INTEGER REFERENCES officers(id),
+  reviewer_notes TEXT,
+  -- JSON list of supporting report documents [{path, name}].
+  documents TEXT,
+  -- 1 once the approved rank change has been applied to officers.rank.
+  rank_applied INTEGER DEFAULT 0,
+  reviewed_at TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS officer_service_history(
+  id INTEGER PRIMARY KEY,
+  officer_id INTEGER NOT NULL REFERENCES officers(id),
+  action_id TEXT REFERENCES officer_conduct_actions(action_id),
+  entry_type TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  from_rank TEXT, to_rank TEXT,
+  duty_status TEXT,
+  recorded_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -498,6 +538,7 @@ ROLE_ADMIN = 'SystemAdmin'
 ROLE_FINGERPRINT = 'FingerprintUnit'
 ROLE_AIRPORT = 'AirportControl'
 ROLE_CID = 'CIDUnit'
+ROLE_REGISTRATION = 'OfficerRegistration'
 ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
 ROLE_CHECKPOINT_EAST = 'CheckpointEast'
 ROLE_CHECKPOINT_WEST = 'CheckpointWest'
@@ -603,7 +644,7 @@ def normalize_role(role):
         return ROLE_CHECKPOINT_OFFICER
     return r
 
-ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID,
+ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID, ROLE_REGISTRATION,
              ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
 
 # Spec-facing snake_case name for every canonical role. Surfaced by
@@ -615,6 +656,7 @@ SPEC_ROLE_ALIASES = {
     ROLE_FINGERPRINT: 'fingerprint_officer',
     ROLE_AIRPORT: 'airport_officer',
     ROLE_CID: 'cid_officer',
+    ROLE_REGISTRATION: 'hr_officer',
 }
 SPEC_ROLE_DEFAULT = 'fingerprint_officer'
 
@@ -652,6 +694,12 @@ UNIT_ROLE_ALIASES = {
     'cid_officer': ROLE_CID,
     'cidunit': ROLE_CID,
     'criminal_investigation': ROLE_CID,
+    ROLE_REGISTRATION: ROLE_REGISTRATION,
+    'hr_officer': ROLE_REGISTRATION,
+    'officer_registration': ROLE_REGISTRATION,
+    'registration_officer': ROLE_REGISTRATION,
+    'police_registration': ROLE_REGISTRATION,
+    'hr': ROLE_REGISTRATION,
 }
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
@@ -710,11 +758,75 @@ OFFICER_IMAGE_EXTS = {'.jpg', '.jpeg', '.png'}
 OFFICER_DOC_EXTS = {'.pdf', '.jpg', '.jpeg', '.png'}
 OFFICER_MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
 
+# ---------------------------------------------------------------------------
+# Officer Conduct, Promotions & Disciplinary Management domain
+# (Police Officer Registration Office — HR Directorate).
+# ---------------------------------------------------------------------------
+# The two top-level action types. Promotions/commendations render green
+# (#2e7d32) in the UI, disciplinary actions render red (#c62828).
+CONDUCT_ACTION_TYPES = ('Promotion / Commendation', 'Disciplinary / Penalty')
+
+# Colour key for the split-view dashboard (surfaced to the frontend).
+CONDUCT_TYPE_COLOURS = {'Promotion / Commendation': '#2e7d32',
+                        'Disciplinary / Penalty': '#c62828'}
+
+# The specific conduct classification within each action type. A
+# submission's classification MUST belong to its action type — the pair
+# is validated server-side on both submit and review.
+CONDUCT_PROMOTION_CLASSES = ('Rank Advancement', 'Official Commendation',
+                             'Medal of Bravery', 'Merit Award')
+CONDUCT_DISCIPLINARY_CLASSES = ('Rank Demotion', 'Official Reprimand',
+                                'Temporary Suspension', 'Formal Dismissal')
+CONDUCT_CLASSIFICATIONS = {
+    'Promotion / Commendation': CONDUCT_PROMOTION_CLASSES,
+    'Disciplinary / Penalty': CONDUCT_DISCIPLINARY_CLASSES,
+}
+
+# Classifications that carry a rank change and therefore REQUIRE a
+# proposed_rank that is a valid transition from the officer's current rank
+# (strictly HIGHER for Rank Advancement, strictly LOWER for Rank Demotion).
+CONDUCT_RANK_CLASSIFICATIONS = ('Rank Advancement', 'Rank Demotion')
+
+# Disciplinary classifications that also adjust the officer's duty status
+# once HR verifies & approves the file.
+CONDUCT_DUTY_EFFECTS = {'Formal Dismissal': 'Terminated',
+                        'Temporary Suspension': 'Suspended'}
+
+# Verification & approval pipeline. Every submission defaults to
+# 'Submitted to HR'; only Officer Registration Office / HR staff may move
+# a file along the pipeline (Under HR Review -> Verified & Approved /
+# Rejected) via POST /api/conduct/<id>/review.
+CONDUCT_STATUSES = ('Submitted to HR', 'Under HR Review',
+                    'Verified & Approved', 'Rejected')
+CONDUCT_STATUS_DEFAULT = 'Submitted to HR'
+CONDUCT_STATUS_APPROVED = 'Verified & Approved'
+CONDUCT_STATUS_REJECTED = 'Rejected'
+CONDUCT_STATUS_REVIEWING = 'Under HR Review'
+CONDUCT_PENDING_STATUSES = (CONDUCT_STATUS_DEFAULT, CONDUCT_STATUS_REVIEWING)
+
+# Short aliases accepted for the category query parameter / action type.
+CONDUCT_CATEGORY_ALIASES = {
+    'promotion': 'Promotion / Commendation',
+    'commendation': 'Promotion / Commendation',
+    'disciplinary': 'Disciplinary / Penalty',
+    'penalty': 'Disciplinary / Penalty',
+    'discipline': 'Disciplinary / Penalty',
+}
+
+# Supporting report documents: PDF/JPG only, max 5 MB (spec).
+CONDUCT_DOC_EXTS = {'.pdf', '.jpg', '.jpeg'}
+CONDUCT_MAX_UPLOAD_BYTES = OFFICER_MAX_UPLOAD_BYTES  # 5 MB
+
+# A conduct narrative is a mandatory detailed justification — a few words
+# is not an acceptable record for a personnel file.
+CONDUCT_MIN_NARRATIVE_CHARS = 20
+
 ROLE_LABELS = {
     ROLE_ADMIN: 'System Administrator',
     ROLE_FINGERPRINT: 'Fingerprint Unit Officer',
     ROLE_AIRPORT: 'Airport Control Officer',
     ROLE_CID: 'CID Criminal Unit Officer',
+    ROLE_REGISTRATION: 'Officer Registration Office (HR)',
     ROLE_CHECKPOINT_SOUTH: 'Checkpoint Officer (South)',
     ROLE_CHECKPOINT_EAST: 'Checkpoint Officer (East)',
     ROLE_CHECKPOINT_WEST: 'Checkpoint Officer (West)',
@@ -732,10 +844,15 @@ ROLE_LABELS = {
 #     administrative operations, granted to SystemAdmin only.
 ROLE_MODULES = {
     ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
-                 'policesearch', 'stations', 'officers', 'cars', 'crimes'},
+                 'policesearch', 'stations', 'officers', 'cars', 'crimes', 'conduct'},
     ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
     ROLE_AIRPORT: {'dashboard', 'people', 'airport', 'policesearch'},
     ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch', 'crimes'},
+    # The Police Officer Registration Office (HR Directorate) owns the
+    # officers/stations registers and the conduct, promotions & disciplinary
+    # management module ('conduct'). Car/vehicle registration and the crime
+    # intake stay with the admin / CID roles.
+    ROLE_REGISTRATION: {'dashboard', 'people', 'policesearch', 'stations', 'officers', 'conduct'},
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
@@ -752,6 +869,7 @@ ROLE_LOCATION_SCOPE = {
     ROLE_FINGERPRINT: None,
     ROLE_AIRPORT: None,
     ROLE_CID: None,
+    ROLE_REGISTRATION: None,
     ROLE_CHECKPOINT_SOUTH: 'South',
     ROLE_CHECKPOINT_EAST: 'East',
     ROLE_CHECKPOINT_WEST: 'West',
@@ -1105,6 +1223,7 @@ def init_db():
             ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,                'ChangeMe123!'),
             ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!'),
             ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!'),
+            ('hr.officer',  'Officer R. Jaamac',     ROLE_REGISTRATION,    'Officer Registration Office', None,      'ChangeMe123!'),
             ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_SOUTH,'Checkpoint South', 'South',             'ChangeMe123!'),
             ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_EAST, 'Checkpoint East',  'East',              'ChangeMe123!'),
             ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_WEST, 'Checkpoint West',  'West',              'ChangeMe123!'),
@@ -1677,6 +1796,301 @@ def register_crime(c, user, fields, files):
         WHERE ci.file_number=?''', (file_number,)).fetchone()
     return crime_view(row)
 
+# ---- officer conduct, promotions & disciplinary management ------------------
+# Police Officer Registration Office (HR Directorate) module. Station
+# commanders submit promotion recommendations / misconduct reports
+# (POST /api/conduct/submit, default status 'Submitted to HR'); HR staff
+# review, verify and approve or reject them (POST /api/conduct/<id>/review).
+# Approving a Rank Advancement / Rank Demotion automatically updates
+# officers.rank and writes an immutable officer_service_history row.
+
+def new_conduct_action_id(c):
+    """Auto-generated conduct action file identifier (ACT-YYYY-XXXX)."""
+    year = datetime.datetime.now(datetime.timezone.utc).year
+    prefix = f'ACT-{year}-'
+    row = c.execute('SELECT action_id FROM officer_conduct_actions WHERE action_id LIKE ? '
+                    'ORDER BY action_id DESC LIMIT 1', (prefix + '%',)).fetchone()
+    n = 1
+    if row:
+        try:
+            n = int(str(row['action_id']).rsplit('-', 1)[1]) + 1
+        except (ValueError, IndexError):
+            n = 1
+    return f'{prefix}{n:04d}'
+
+
+def normalise_conduct_type(value):
+    """Resolve an action type / category to its canonical option.
+
+    Accepts the two exact dropdown values (case-insensitive) plus the short
+    aliases 'promotion' / 'disciplinary' (used by the category filter).
+    Returns None when nothing matches."""
+    v = str(value or '').strip()
+    if not v:
+        return None
+    for o in CONDUCT_ACTION_TYPES:
+        if v.lower() == o.lower():
+            return o
+    return CONDUCT_CATEGORY_ALIASES.get(v.lower())
+
+
+def resolve_station_row(c, value):
+    """Resolve a police station by numeric id, station code (ST-001) or name."""
+    v = str(value or '').strip()
+    if not v:
+        return None
+    if v.isdigit():
+        return c.execute('SELECT * FROM police_stations WHERE id=?', (int(v),)).fetchone()
+    row = c.execute('SELECT * FROM police_stations WHERE station_id=?', (v,)).fetchone()
+    if not row:
+        row = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(?)', (v,)).fetchone()
+    return row
+
+
+def rank_index(rank):
+    """Position of a rank in the standard officer rank ladder (0 = lowest)."""
+    try:
+        return OFFICER_RANKS.index(rank)
+    except ValueError:
+        raise ValueError(f'Unknown rank "{rank}" — must be one of: ' + ', '.join(OFFICER_RANKS))
+
+
+def validate_rank_transition(current_rank, proposed_rank, classification):
+    """Enforce a valid rank transition for a rank-changing conduct action.
+
+    Rank Advancement must propose a rank STRICTLY HIGHER than the officer
+    currently holds; Rank Demotion must propose a rank STRICTLY LOWER.
+    Raises ValueError with a human-readable message otherwise."""
+    if classification not in CONDUCT_RANK_CLASSIFICATIONS:
+        return
+    if not proposed_rank:
+        raise ValueError(f'{classification} requires a proposed rank '
+                         '(select from the standard officer ranks)')
+    cur, new = rank_index(current_rank), rank_index(proposed_rank)
+    if classification == 'Rank Advancement' and new <= cur:
+        raise ValueError(f'Rank Advancement must propose a HIGHER rank — '
+                         f'the officer currently holds {current_rank}')
+    if classification == 'Rank Demotion' and new >= cur:
+        raise ValueError(f'Rank Demotion must propose a LOWER rank — '
+                         f'the officer currently holds {current_rank}')
+
+
+CONDUCT_SELECT = '''SELECT a.*, o.service_id AS officer_service_id, o.full_name AS officer_name,
+       o.rank AS officer_rank, o.duty_status AS officer_duty_status,
+       s.station_id AS station_code, s.name AS station_name, s.region AS station_region,
+       s.district AS station_district,
+       os.station_id AS officer_station_code, os.name AS officer_station_name,
+       os.region AS officer_station_region,
+       ro.service_id AS reporting_service_id, ro.full_name AS reporting_name,
+       rv.service_id AS reviewer_service_id, rv.full_name AS reviewer_name
+       FROM officer_conduct_actions a
+       JOIN officers o ON o.id = a.officer_id
+       LEFT JOIN police_stations s ON s.id = a.station_id
+       LEFT JOIN police_stations os ON os.id = o.station_id
+       LEFT JOIN officers ro ON ro.id = a.reporting_officer_id
+       LEFT JOIN officers rv ON rv.id = a.reviewer_officer_id'''
+
+
+def conduct_view(row):
+    """Public payload for one conduct action file (joins resolved)."""
+    item = dict(row)
+    try:
+        item['documents'] = json.loads(item.get('documents') or '[]')
+    except (TypeError, ValueError):
+        item['documents'] = []
+    item['rank_applied'] = bool(item.get('rank_applied'))
+    item['is_rank_action'] = item.get('classification') in CONDUCT_RANK_CLASSIFICATIONS
+    return item
+
+
+def conduct_summary(c):
+    """Status/category counts over the whole conduct register (for badges)."""
+    def count(sql, args=()):
+        return c.execute(sql, args).fetchone()[0]
+    return {
+        'total': count('SELECT COUNT(*) FROM officer_conduct_actions'),
+        'promotion': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?", ('Promotion / Commendation',)),
+        'disciplinary': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?", ('Disciplinary / Penalty',)),
+        'pending': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (?, ?)", CONDUCT_PENDING_STATUSES),
+        'approved': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status=?", (CONDUCT_STATUS_APPROVED,)),
+        'rejected': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status=?", (CONDUCT_STATUS_REJECTED,)),
+    }
+
+
+def submit_conduct_action(c, user, fields, files):
+    """Validate and persist a conduct nomination / misconduct report.
+
+    Called by POST /api/conduct/submit — the intake endpoint used by
+    station commanders (and Registration Office staff entering a file on
+    their behalf). Every file defaults to status 'Submitted to HR'.
+    Raises ValueError on the first failing rule; the caller commits."""
+    # ---- target officer (mandatory) ---------------------------------------
+    officer = resolve_officer_row(c, fields.get('officer_id'))
+    if not officer:
+        raise ValueError('Target officer is required and must refer to an '
+                         'existing officer (service ID or numeric id)')
+
+    # ---- action type / category (mandatory) -------------------------------
+    action_type = normalise_conduct_type(fields.get('action_type') or fields.get('category'))
+    if not action_type:
+        raise ValueError('Action category is required and must be one of: '
+                         + ', '.join(CONDUCT_ACTION_TYPES))
+
+    # ---- specific conduct classification (mandatory, must match type) -----
+    classification = normalise_choice(fields.get('classification'),
+                                      CONDUCT_CLASSIFICATIONS[action_type])
+    if not classification:
+        raise ValueError(f'Conduct classification is required and must be one of: '
+                         + ', '.join(CONDUCT_CLASSIFICATIONS[action_type]))
+
+    # ---- proposed rank adjustment -----------------------------------------
+    proposed_rank = normalise_choice(fields.get('proposed_rank'), OFFICER_RANKS)
+    if (fields.get('proposed_rank') or '').strip() and not proposed_rank:
+        raise ValueError('Proposed rank must be one of: ' + ', '.join(OFFICER_RANKS))
+    validate_rank_transition(officer['rank'], proposed_rank, classification)
+
+    # ---- incident / case narrative (mandatory, detailed) ------------------
+    narrative = re.sub(r'\s+', ' ', str(fields.get('narrative') or '')).strip()
+    if not narrative:
+        raise ValueError('Incident / case narrative is required — provide the '
+                         'detailed justification, station report numbers or case references')
+    if len(narrative) < CONDUCT_MIN_NARRATIVE_CHARS:
+        raise ValueError(f'The incident / case narrative must be a detailed '
+                         f'justification (at least {CONDUCT_MIN_NARRATIVE_CHARS} characters)')
+
+    # ---- submitting station / commander (at least one required) -----------
+    station = resolve_station_row(c, fields.get('station_id'))
+    if (fields.get('station_id') or '').strip() and not station:
+        raise ValueError(f'Submitting station "{fields.get("station_id")}" does not exist')
+    reporting_officer = resolve_officer_row(c, fields.get('reporting_officer_id'))
+    if (fields.get('reporting_officer_id') or '').strip() and not reporting_officer:
+        raise ValueError('Submitting commander must refer to an existing officer '
+                         '(service ID or numeric id)')
+    if not station and not reporting_officer:
+        raise ValueError('Submitting station or reporting commander is required — '
+                         'the file must record its originating station or officer')
+
+    # ---- submission date ---------------------------------------------------
+    submitted_at = re.sub(r'\s+', ' ', str(fields.get('submitted_at') or '')).strip() \
+        or utc_now_stamp()
+
+    # ---- supporting report documents (PDF/JPG <= 5MB) ----------------------
+    documents = []
+    for key in sorted(files):
+        if not key.startswith('document'):
+            continue
+        f = files[key]
+        ext = file_ext(f['filename'])
+        if ext not in CONDUCT_DOC_EXTS:
+            raise ValueError(f'Supporting document must be a PDF or JPG '
+                             f'(got {ext or "no extension"})')
+        if len(f['content']) > CONDUCT_MAX_UPLOAD_BYTES:
+            raise ValueError(f'Supporting document exceeds the '
+                             f'{CONDUCT_MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit')
+        documents.append(save_upload(f))
+
+    action_id = new_conduct_action_id(c)
+    c.execute('''INSERT INTO officer_conduct_actions(action_id,officer_id,action_type,
+        classification,proposed_rank,narrative,station_id,reporting_officer_id,
+        submitted_at,status,documents,created_by,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        (action_id, officer['id'], action_type, classification, proposed_rank,
+         narrative, station['id'] if station else None,
+         reporting_officer['id'] if reporting_officer else None,
+         submitted_at, CONDUCT_STATUS_DEFAULT,
+         json.dumps(documents) if documents else None,
+         user['id'], utc_now_stamp()))
+    row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=?', (action_id,)).fetchone()
+    return conduct_view(row)
+
+
+def review_conduct_action(c, user, action_row, data):
+    """HR review step: move a conduct file through the approval pipeline.
+
+    Restricted to Officer Registration Office / HR staff by the route
+    handler. `data` carries:
+      decision      — 'review' (-> Under HR Review), 'approve'
+                      (-> Verified & Approved) or 'reject' (-> Rejected);
+                      a full status name is also accepted.
+      reviewer_officer_id — Registration Office staff processing the file
+                            (officers(id) FK, validated when supplied)
+      reviewer_notes     — free-text verification notes
+    Returns the updated conduct view plus the rank-update outcome."""
+    decision = str(data.get('decision') or data.get('status') or '').strip().lower()
+    decision_map = {
+        'review': CONDUCT_STATUS_REVIEWING,
+        'under review': CONDUCT_STATUS_REVIEWING,
+        'under hr review': CONDUCT_STATUS_REVIEWING,
+        'approve': CONDUCT_STATUS_APPROVED,
+        'approved': CONDUCT_STATUS_APPROVED,
+        'verified': CONDUCT_STATUS_APPROVED,
+        'verified & approved': CONDUCT_STATUS_APPROVED,
+        'reject': CONDUCT_STATUS_REJECTED,
+        'rejected': CONDUCT_STATUS_REJECTED,
+    }
+    new_status = decision_map.get(decision)
+    if not new_status:
+        raise ValueError("decision must be one of: approve, reject, review")
+    if action_row['status'] in (CONDUCT_STATUS_APPROVED, CONDUCT_STATUS_REJECTED):
+        raise ValueError(f'Action file {action_row["action_id"]} is already closed '
+                         f'(status: {action_row["status"]}) — no further review is possible')
+
+    reviewer = None
+    if (data.get('reviewer_officer_id') or '').strip():
+        reviewer = resolve_officer_row(c, data.get('reviewer_officer_id'))
+        if not reviewer:
+            raise ValueError('Reviewing HR officer must refer to an existing officer '
+                             '(service ID or numeric id)')
+    reviewer_notes = re.sub(r'\s+', ' ', str(data.get('reviewer_notes') or '')).strip() or None
+
+    rank_update = None
+    duty_update = None
+    officer = c.execute('SELECT * FROM officers WHERE id=?', (action_row['officer_id'],)).fetchone()
+
+    if new_status == CONDUCT_STATUS_APPROVED:
+        classification = action_row['classification']
+        # Re-validate the rank transition against the officer's CURRENT rank —
+        # it may have changed since the file was submitted. Rank changes are
+        # only ever applied through an approved HR action.
+        if classification in CONDUCT_RANK_CLASSIFICATIONS:
+            proposed = action_row['proposed_rank']
+            validate_rank_transition(officer['rank'], proposed, classification)
+            c.execute('UPDATE officers SET rank=? WHERE id=?', (proposed, officer['id']))
+            c.execute('UPDATE officer_conduct_actions SET rank_applied=1 WHERE id=?',
+                      (action_row['id'],))
+            rank_update = {'from': officer['rank'], 'to': proposed}
+        # Disciplinary penalties that adjust the duty status.
+        duty_target = CONDUCT_DUTY_EFFECTS.get(classification)
+        if duty_target and officer['duty_status'] != duty_target:
+            c.execute('UPDATE officers SET duty_status=? WHERE id=?',
+                      (duty_target, officer['id']))
+            duty_update = {'from': officer['duty_status'], 'to': duty_target}
+        # Immutable personnel record in the officer's service history.
+        summary = f'{action_row["action_type"]} — {classification} verified & approved by HR'
+        if rank_update:
+            summary += f' · rank {rank_update["from"]} → {rank_update["to"]}'
+        if duty_update:
+            summary += f' · duty status {duty_update["from"]} → {duty_update["to"]}'
+        c.execute('''INSERT INTO officer_service_history(officer_id,action_id,entry_type,
+            summary,from_rank,to_rank,duty_status,recorded_by,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)''',
+            (officer['id'], action_row['action_id'], classification, summary,
+             rank_update['from'] if rank_update else None,
+             rank_update['to'] if rank_update else None,
+             duty_update['to'] if duty_update else officer['duty_status'],
+             user['id'], utc_now_stamp()))
+
+    c.execute('''UPDATE officer_conduct_actions SET status=?, reviewer_officer_id=?,
+        reviewer_notes=?, reviewed_at=? WHERE id=?''',
+        (new_status, reviewer['id'] if reviewer else action_row['reviewer_officer_id'],
+         reviewer_notes or action_row['reviewer_notes'], utc_now_stamp(), action_row['id']))
+    row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=?', (action_row['action_id'],)).fetchone()
+    result = conduct_view(row)
+    result['rank_update'] = rank_update
+    result['duty_update'] = duty_update
+    return result
+
+
 # ---- identity resolution (universal matching engine) ------------------------
 TIER_LABELS = {
     1: 'Tier 1 · Exact National ID / Passport match (auto merge / link)',
@@ -2092,6 +2506,8 @@ def build_dashboard(c, user):
         cards.extend(_airport_dashboard_cards(c, today))
     elif role == ROLE_CID or role_alias == ROLE_CID:
         cards.extend(_cid_dashboard_cards(c, today))
+    elif role == ROLE_REGISTRATION or role_alias == ROLE_REGISTRATION:
+        cards.extend(_registration_dashboard_cards(c, today))
     else:
         # Spec step 2: a token whose role is not one of the canonical
         # units still gets an empty-but-valid dashboard so the
@@ -2109,6 +2525,8 @@ def build_dashboard(c, user):
         quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
     if is_admin or is_checkpoint:
         quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
+    if is_admin or role == ROLE_REGISTRATION or role_alias == ROLE_REGISTRATION:
+        quick.append({'id':'add_conduct','label':'+ New conduct action','kind':'primary','page':'conduct','module':'conduct'})
 
     # ---- Real-time activity stream (filtered to the user's scope) ---------
     events = _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_scope_sql)
@@ -2180,6 +2598,38 @@ def _admin_dashboard_cards(c):
         {'id':'active_alerts','label':'Active suspect alerts','icon':'!',
          'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
          'trend':'Restricted operational data','trend_kind':'alert','module':'cid'},
+        {'id':'conduct_pending','label':'Conduct files pending HR review','icon':'🎖',
+         'value':c.execute("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (?, ?)",
+                           CONDUCT_PENDING_STATUSES).fetchone()[0],
+         'trend':'Promotions & disciplinary actions','module':'conduct'},
+    ]
+
+
+def _registration_dashboard_cards(c, today):
+    """Tailored mini-analytics for the Police Officer Registration Office
+    (HR Directorate): conduct files pending review, promotion vs
+    disciplinary counts, approved rank changes and the officer register."""
+    def count(sql, args=()):
+        return c.execute(sql, args).fetchone()[0]
+    return [
+        {'id':'reg_conduct_pending','label':'Conduct files pending review','icon':'🎖',
+         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (?, ?)",
+                       CONDUCT_PENDING_STATUSES),
+         'trend':'Awaiting HR verification','module':'conduct'},
+        {'id':'reg_conduct_promotions','label':'Promotion / commendation files','icon':'↑',
+         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?",
+                       ('Promotion / Commendation',)),
+         'trend':'Nominations for exemplary service','module':'conduct'},
+        {'id':'reg_conduct_disciplinary','label':'Disciplinary / misconduct files','icon':'!',
+         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?",
+                       ('Disciplinary / Penalty',)),
+         'trend':'Violations & penalties','trend_kind':'alert','module':'conduct'},
+        {'id':'reg_rank_changes','label':'Approved rank changes','icon':'≡',
+         'value':count('SELECT COUNT(*) FROM officer_conduct_actions WHERE rank_applied=1'),
+         'trend':'Applied to the officer register','module':'conduct'},
+        {'id':'reg_officers','label':'Officers on the register','icon':'👤',
+         'value':count("SELECT COUNT(*) FROM officers WHERE duty_status='Active'"),
+         'trend':'Active across Sool · Sanaag · East Togdheer','module':'officers'},
     ]
 
 
@@ -2449,6 +2899,24 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
                 'location_code': r['location_code'],
             })
 
+    if is_admin or role == ROLE_REGISTRATION:
+        for r in c.execute('''SELECT a.action_id AS id, a.action_type AS action_type,
+            a.classification AS subtitle, a.status AS status, a.created_at AS at,
+            o.full_name AS officer_name, o.service_id AS officer_code
+            FROM officer_conduct_actions a JOIN officers o ON o.id=a.officer_id
+            ORDER BY a.id DESC LIMIT 8''').fetchall():
+            name = r['officer_name'] or r['officer_code'] or 'officer'
+            events.append({
+                'module': 'conduct',
+                'kind': 'conduct',
+                'id': r['id'],
+                'title': f'Conduct · {name}',
+                'subtitle': f'{r["subtitle"]} · {r["status"]}',
+                'at': r['at'],
+                'time_ago': _time_ago(r['at'], now_ts),
+                'dot_color': 'red' if r['action_type'] == 'Disciplinary / Penalty' else 'green',
+            })
+
     events.sort(key=lambda e: e.get('at') or '', reverse=True)
     return events[:16]
 
@@ -2547,7 +3015,10 @@ class API(BaseHTTPRequestHandler):
                                             'officer_units':list(OFFICER_UNITS),
                                             'officer_duty_statuses':list(OFFICER_DUTY_STATUSES),
                                             'station_tiers':list(STATION_TIERS),
-                                            'crime_categories':list(CRIME_CATEGORIES)})
+                                            'crime_categories':list(CRIME_CATEGORIES),
+                                            'conduct_action_types':list(CONDUCT_ACTION_TYPES),
+                                            'conduct_classifications':{k: list(v) for k, v in CONDUCT_CLASSIFICATIONS.items()},
+                                            'conduct_statuses':list(CONDUCT_STATUSES)})
             user = require_auth(self); c = db()
             # RBAC module-gating. Every authenticated user can see /api/me and
             # the central /api/persons registry, but each unit endpoint is
@@ -2565,6 +3036,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
                 '/api/vehicles': 'cars',
+                '/api/conduct': 'conduct',
             }
             base = '/' + p.path.split('/')[1] + '/' + (p.path.split('/')[2] if len(p.path.split('/')) > 2 else '')
             for prefix, mod in module_for_path.items():
@@ -2787,12 +3259,80 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/vehicles':
                 q = parse_qs(p.query).get('q', [''])[0]
                 result = {'items': list_vehicles(c, q)}
+            elif p.path == '/api/conduct':
+                # Conduct, promotions & disciplinary register — filtered by
+                # status, category (Promotion vs Disciplinary), region or
+                # station. Restricted to the Officer Registration Office /
+                # HR staff (module gate above).
+                q = parse_qs(p.query)
+                where, args = [], []
+                status = normalise_choice(q.get('status', [''])[0], CONDUCT_STATUSES)
+                if (q.get('status', [''])[0] or '').strip() and not status:
+                    raise ValueError('status must be one of: ' + ', '.join(CONDUCT_STATUSES))
+                if status:
+                    where.append('a.status=?'); args.append(status)
+                category = normalise_conduct_type(q.get('category', [''])[0]
+                                                  or q.get('action_type', [''])[0])
+                if (q.get('category', [''])[0] or q.get('action_type', [''])[0] or '').strip() \
+                        and not category:
+                    raise ValueError('category must be one of: '
+                                     + ', '.join(CONDUCT_ACTION_TYPES))
+                if category:
+                    where.append('a.action_type=?'); args.append(category)
+                region = str(q.get('region', [''])[0] or '').strip()
+                if region:
+                    # Region of the submitting station OR of the target
+                    # officer's assigned station — either anchors the file.
+                    where.append('(s.region=? OR os.region=?)')
+                    args.extend([region, region])
+                station = str(q.get('station', [''])[0]
+                              or q.get('station_id', [''])[0] or '').strip()
+                if station:
+                    where.append('(s.station_id=? OR CAST(s.id AS TEXT)=? '
+                                 'OR os.station_id=? OR CAST(os.id AS TEXT)=?)')
+                    args.extend([station, station, station, station])
+                officer = str(q.get('officer', [''])[0]
+                              or q.get('officer_id', [''])[0] or '').strip()
+                if officer:
+                    where.append('(o.service_id=? OR CAST(o.id AS TEXT)=?)')
+                    args.extend([officer, officer])
+                sql = CONDUCT_SELECT
+                if where:
+                    sql += ' WHERE ' + ' AND '.join(where)
+                sql += ' ORDER BY a.id DESC'
+                rows = c.execute(sql, args).fetchall()
+                result = {'items': [conduct_view(r) for r in rows],
+                          'summary': conduct_summary(c),
+                          'statuses': list(CONDUCT_STATUSES),
+                          'action_types': list(CONDUCT_ACTION_TYPES),
+                          'classifications': {k: list(v) for k, v in CONDUCT_CLASSIFICATIONS.items()},
+                          'ranks': list(OFFICER_RANKS)}
+            elif p.path.startswith('/api/conduct/'):
+                aid = p.path.split('/')[3]
+                row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=?', (aid,)).fetchone()
+                if not row:
+                    self.send_json(404, {'error': 'Conduct action file not found'}); c.close(); return
+                detail = conduct_view(row)
+                # The officer's immutable service history (rank changes,
+                # awards and penalties recorded by approved conduct files).
+                detail['officer_service_history'] = [dict(r) for r in c.execute('''
+                    SELECT h.action_id, h.entry_type, h.summary, h.from_rank, h.to_rank,
+                           h.duty_status, h.created_at
+                    FROM officer_service_history h WHERE h.officer_id=?
+                    ORDER BY h.id DESC''', (row['officer_id'],)).fetchall()]
+                result = detail
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
+        except ValueError as e:
+            # A GET route that validates its inputs (e.g. the conduct
+            # register's status/category filters) rejects bad values
+            # with 400 instead of an opaque 500.
+            if c: c.close()
+            self.send_json(400,{'error':str(e)})
         except Exception as e:
             if c: c.close()
             self.send_json(500,{'error':str(e)})
@@ -2841,9 +3381,17 @@ class API(BaseHTTPRequestHandler):
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
                 '/api/vehicles': 'cars',
+                '/api/conduct': 'conduct',
             }
             for prefix, mod in post_module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):
+                    # Intake endpoint: station commanders (any authenticated
+                    # officer, whatever their unit role) submit promotion
+                    # recommendations and misconduct reports. Only the HR
+                    # review / listing endpoints are restricted to the
+                    # conduct module.
+                    if p.path == '/api/conduct/submit':
+                        break
                     require_module(user, mod)
                     break
             if p.path == '/api/persons':
@@ -3267,6 +3815,40 @@ class API(BaseHTTPRequestHandler):
                 audit(c, user, 'UPDATE', 'vehicle', vid, vehicle.get('security_alert') or '')
                 c.commit()
                 result = {'vehicle': vehicle}
+            elif p.path == '/api/conduct/submit':
+                # Station commanders submit promotion recommendations or
+                # misconduct reports. The status always defaults to
+                # 'Submitted to HR' — the file enters the HR queue.
+                ctype = self.headers.get('Content-Type', '')
+                if ctype.startswith('multipart/form-data'):
+                    fields, files = parse_multipart(self)
+                else:
+                    fields, files = body_json(self), {}
+                action = submit_conduct_action(c, user, fields, files)
+                audit(c, user, 'CREATE', 'conduct_action', action['action_id'],
+                      f"{action['action_type']} / {action['classification']} "
+                      f"for {action['officer_service_id']}")
+                c.commit()
+                result = {'action_id': action['action_id'], 'action': action,
+                          'status': action['status']}
+            elif p.path.startswith('/api/conduct/') and p.path.endswith('/review'):
+                # HR review desk — restricted to Officer Registration Office
+                # / HR staff by the module gate above. Approving a Rank
+                # Advancement / Rank Demotion automatically updates
+                # officers.rank and writes an immutable service history row.
+                aid = p.path.split('/')[3]
+                row = c.execute('SELECT * FROM officer_conduct_actions WHERE action_id=?',
+                                (aid,)).fetchone()
+                if not row:
+                    self.send_json(404, {'error': 'Conduct action file not found'}); c.close(); return
+                data = body_json(self)
+                action = review_conduct_action(c, user, row, data)
+                audit(c, user, 'REVIEW', 'conduct_action', aid,
+                      f"status -> {action['status']}"
+                      + (f" · rank {action['rank_update']['from']} -> {action['rank_update']['to']}"
+                         if action.get('rank_update') else ''))
+                c.commit()
+                result = {'action_id': aid, 'action': action, 'status': action['status']}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)

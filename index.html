@@ -149,6 +149,30 @@ body.modal-open{overflow:hidden}
 .tab{background:none;padding:12px 16px;font-weight:700;font-size:13px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px}
 .tab.active{color:var(--blue);border-bottom-color:var(--blue)}
 .tabpane{display:none}.tabpane.active{display:block}
+/* ==== Officer Conduct, Promotions & Disciplinary Management (HR) ==== */
+/* Split-view tabs: Promotions & Commendations (green #2e7d32) vs
+   Disciplinary & Misconduct (red #c62828) — per the Registration Office spec. */
+.cd-count{display:inline-flex;align-items:center;justify-content:center;min-width:24px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:800;color:#fff;margin-left:8px;vertical-align:middle}
+.cd-count.green{background:#2e7d32}.cd-count.red{background:#c62828}.cd-count.amber{background:#b26a00}.cd-count.gray{background:#5b6779}
+.tab.cd-tab-promo.active{color:#2e7d32;border-bottom-color:#2e7d32}
+.tab.cd-tab-disc.active{color:#c62828;border-bottom-color:#c62828}
+.tab.cd-tab-desk.active{color:#b26a00;border-bottom-color:#b26a00}
+.cd-type{font-weight:800;font-size:11px;letter-spacing:.4px;text-transform:uppercase;display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px}
+.cd-type.promotion{background:#e6f4e7;color:#2e7d32}
+.cd-type.disciplinary{background:#fdeaea;color:#c62828}
+.cd-rank-arrow{font-weight:800}
+.cd-rank-arrow.up{color:#2e7d32}.cd-rank-arrow.down{color:#c62828}
+.cd-filter-bar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+.cd-filter-bar .field{margin:0;min-width:160px;flex:1}
+.cd-narrative{max-width:420px;white-space:normal;font-size:12px;color:var(--muted)}
+.cd-officer-search{position:relative}
+.cd-suggest{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #dce4ef;border-radius:10px;box-shadow:0 14px 30px #0e1a3322;z-index:40;max-height:230px;overflow-y:auto;margin-top:4px}
+.cd-suggest button{display:flex;flex-direction:column;align-items:flex-start;width:100%;background:none;border:0;border-bottom:1px solid #eef1f6;padding:9px 12px;text-align:left;cursor:pointer;font:inherit}
+.cd-suggest button:hover{background:#f3f7ff}
+.cd-suggest .sid{font-size:11px;color:var(--muted);font-weight:700}
+.cd-docs{margin:4px 0}
+.cd-summary-strip{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.cd-summary-strip .card{cursor:default}
 .backbtn{background:#eef1f6;color:#33415c;border-radius:8px;padding:9px 13px;font-weight:700;font-size:13px}
 .evid-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
 .evid-card{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
@@ -281,6 +305,7 @@ body.modal-open{overflow:hidden}
 <div class="nav-group-body" data-group-body="registrations">
 <button data-page="stations" data-modules="stations"><i>🏛</i><span>Police Stations</span></button>
 <button data-page="officers" data-modules="officers"><i>👤</i><span>Police Officers</span></button>
+<button data-page="conduct" data-modules="conduct"><i>🎖</i><span>Conduct &amp; Discipline</span></button>
 <button data-page="cars" data-modules="cars"><i>🚓</i><span>Police Cars</span></button>
 <button data-page="crimes" data-modules="crimes"><i>⚖</i><span>Register Crime</span></button>
 </div>
@@ -663,6 +688,73 @@ body.modal-open{overflow:hidden}
 </div>
 </section>
 
+<!-- OFFICER CONDUCT, PROMOTIONS & DISCIPLINARY MANAGEMENT (HR DIRECTORATE) -->
+<section id="conduct" class="page">
+<div class="panel-head" style="margin-bottom:14px">
+  <div>
+    <h2 style="font-size:18px">Conduct, Promotions &amp; Disciplinary Management</h2>
+    <div class="sub">Police Officer Registration Office · HR Directorate · Sool, Sanaag &amp; East Togdheer · Action files <b>ACT-YYYY-XXXX</b></div>
+  </div>
+  <div>
+    <span class="badge gray" id="cdCount" style="margin-right:8px">0 files</span>
+    <button class="btn ghost small" onclick="refreshConduct()">↻ Refresh</button>
+    <button class="btn small" onclick="openConductModal()">＋ New conduct action</button>
+  </div>
+</div>
+
+<div class="cards" id="cdSummaryStrip">
+  <div class="empty" style="grid-column:1/-1">Loading conduct register…</div>
+</div>
+
+<div class="cd-filter-bar">
+  <div class="field"><label>Status</label>
+    <select id="cdFilterStatus" onchange="renderConduct()">
+      <option value="">All statuses</option>
+      <option>Submitted to HR</option><option>Under HR Review</option>
+      <option>Verified &amp; Approved</option><option>Rejected</option>
+    </select></div>
+  <div class="field"><label>Region</label>
+    <select id="cdFilterRegion" onchange="cdSyncStations();renderConduct()">
+      <option value="">All regions</option><option>Sool</option><option>Sanaag</option><option>East Togdheer</option>
+    </select></div>
+  <div class="field"><label>Station</label>
+    <select id="cdFilterStation" onchange="renderConduct()"><option value="">All stations</option></select></div>
+  <div class="field" style="flex:2"><label>Search officer / action file</label>
+    <input id="cdFilterSearch" placeholder="Service ID (POL-YYYY-XXXX), officer name or ACT file…" oninput="renderConduct()"></div>
+</div>
+
+<div class="tabs" id="cdTabs">
+  <button type="button" class="tab active cd-tab-promo" data-ctab="promotion" onclick="cdTab('promotion')">Promotions &amp; Commendations <span class="cd-count green" id="cdPromoCount">0</span></button>
+  <button type="button" class="tab cd-tab-disc" data-ctab="disciplinary" onclick="cdTab('disciplinary')">Disciplinary &amp; Misconduct <span class="cd-count red" id="cdDiscCount">0</span></button>
+  <button type="button" class="tab cd-tab-desk" data-ctab="desk" onclick="cdTab('desk')">HR Approval Desk <span class="cd-count amber" id="cdDeskCount">0</span></button>
+</div>
+
+<div class="tabpane active" id="cdtab-promotion">
+<div class="panel">
+<div class="panel-head"><div><h2>Officers nominated for exemplary service</h2><div class="sub">Promotion recommendations, proposed higher ranks and supporting HR review status</div></div><span class="cd-type promotion">★ Promotion / Commendation</span></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Action file</th><th>Officer</th><th>Classification</th><th>Rank</th><th>Submitted by</th><th>HR status</th><th></th></tr></thead><tbody id="cdPromoTable"></tbody></table></div>
+</div>
+</div>
+
+<div class="tabpane" id="cdtab-disciplinary">
+<div class="panel">
+<div class="panel-head"><div><h2>Officers flagged for violations</h2><div class="sub">Misconduct reports, proposed penalties / demotions and HR investigation status</div></div><span class="cd-type disciplinary">⚠ Disciplinary / Penalty</span></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Action file</th><th>Officer</th><th>Classification</th><th>Rank</th><th>Submitted by</th><th>HR status</th><th></th></tr></thead><tbody id="cdDiscTable"></tbody></table></div>
+</div>
+</div>
+
+<div class="tabpane" id="cdtab-desk">
+<div class="panel">
+<div class="panel-head"><div><h2>HR approval desk</h2><div class="sub">Review pending submissions, verify station commander claims and execute rank changes with one click</div></div>
+<div style="display:flex;gap:8px;align-items:center">
+  <label style="font-size:12px;font-weight:700;color:var(--muted)">Reviewing HR officer</label>
+  <select id="cdReviewerSelect" style="padding:8px;border-radius:8px;border:1px solid #dce4ef"><option value="">— select —</option></select>
+</div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Action file</th><th>Officer</th><th>Category</th><th>Proposed change</th><th>Station / commander claim</th><th>Actions</th></tr></thead><tbody id="cdDeskTable"></tbody></table></div>
+</div>
+</div>
+</section>
+
 <!-- CRIME / VICTIM INTAKE -->
 <section id="crimes" class="page">
 <div class="grid2">
@@ -875,6 +967,10 @@ let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 // Backfill the regional registration collections for databases persisted
 // before the stations / officers / cars modules existed.
 ['stations','officers','cars'].forEach(k=>{if(!Array.isArray(db[k]))db[k]=seed[k].map(x=>({...x}))});
+// The conduct register (HR Directorate) is server-backed — officers are
+// linked by service ID, so there is no offline seed; start with an empty
+// collection until /api/conduct answers.
+if(!Array.isArray(db.conduct)) db.conduct=[];
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
 // ---- session state --------------------------------------------------------
 // `apiToken` is the live Bearer token (a.k.a. authToken), `currentUser` is
@@ -998,7 +1094,7 @@ function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fou
   mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
-const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',crimes:'Crime / victim intake',analytics:'Executive analytics',admin:'User management'};
+const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',conduct:'Conduct & discipline — Registration Office',cars:'Police cars registration',crimes:'Crime / victim intake',analytics:'Executive analytics',admin:'User management'};
 // Current session ----------------------------------------------------
 let sessionUser=null;          // {id,username,display_name,role,role_label,branch,location,location_scope,modules,active}
 let sessionVisibility=null;    // /api/me visibility
@@ -1025,6 +1121,7 @@ function go(page){
   if(page==='policesearch') renderPoliceSearch();
   if(page==='stations') renderStationsTable();
   if(page==='officers') renderOfficersTable();
+  if(page==='conduct'){ fillConductSelects(); renderConduct(); }
   if(page==='cars') renderCarsTable();
   if(page==='crimes'){ fillCrimeSelects(); renderCrimesTable(); }
   if(page==='dashboard'){
@@ -1060,7 +1157,7 @@ document.querySelectorAll('#nav button[data-page]').forEach(b=>b.onclick=()=>go(
 //   * registrations — Police Registrations & Management
 // Open/closed state persists across reloads (sentinelNavGroups); opening a
 // page always expands the group that contains it (see go()).
-const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',cars:'registrations',crimes:'registrations'};
+const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',conduct:'registrations',cars:'registrations',crimes:'registrations'};
 const NAV_GROUPS_KEY='sentinelNavGroups';
 function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
 function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
@@ -2538,6 +2635,10 @@ function renderAll(){
   renderCarsTable();
   refreshStationSelects();
   renderPoliceSearch();
+  // Conduct & discipline (HR Directorate): refresh the split-view tables,
+  // the summary strip and the approval-desk queue.
+  fillConductSelects();
+  renderConduct();
   // The checkpoint table is filtered by the active location chip.
   // When the Checkpoints page is active, render through the chip-aware
   // helper so the table is always scope-correct for the signed-in
@@ -2974,6 +3075,7 @@ async function syncServer(){
       sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('stations') || sessionUser.modules.includes('crimes') ? safeItems('/api/stations') : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('officers') || sessionUser.modules.includes('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('conduct')   ? safeItems('/api/conduct')               : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('crimes')     ? safeItems('/api/crimes')                  : Promise.resolve({ok:false,items:[]}),
       (sessionUser.modules.includes('cars') || sessionUser.modules.includes('policesearch') || sessionUser.modules.includes('checkpoints') || sessionUser.modules.includes('crimes')) ? safeItems('/api/vehicles') : Promise.resolve({ok:false,items:[]}),
       api('/api/dashboard').catch(()=>null),
@@ -2987,9 +3089,11 @@ async function syncServer(){
     const cps = results.shift();
     const sts = results.shift();
     const offs = results.shift();
+    const cd = results.shift();
     const crm = results.shift();
     const veh = results.shift();
     const dash = results.shift();
+    if(cd && cd.ok) db.conduct = cd.items;
     if(dash) db.dashboard = dash;
     if(ps.ok) db.people=ps.items.map(mapPerson);
     // Rebuild the per-person unit pills only from collections that actually
@@ -3084,6 +3188,7 @@ async function syncServer(){
 // ============================ sign-in / sign-out ===========================
 const DEMO_ACCOUNTS = [
   {username:'admin',       label:'System Administrator',   role:'SystemAdmin',      detail:'Full access'},
+  {username:'hr.officer',  label:'Officer Registration',   role:'OfficerRegistration', detail:'HR · conduct'},
   {username:'fp.officer',  label:'Fingerprint Unit',       role:'FingerprintUnit',  detail:'Module only'},
   {username:'ap.officer',  label:'Airport Control',        role:'AirportControl',   detail:'Module only'},
   {username:'cid.officer', label:'CID Criminal Unit',      role:'CIDUnit',          detail:'Module only'},
@@ -3992,6 +4097,470 @@ function resetOfficerForm(){
   initOriginDropdowns();
   offStep(1);
   offNotice.className='notice';offNotice.style.display='none';
+}
+
+// ============================ conduct, promotions & disciplinary (HR) ============================
+// Police Officer Registration Office (HR Directorate) module.
+//
+//   * Split-view dashboard: Promotions & Commendations (green #2e7d32) vs
+//     Disciplinary & Misconduct (red #c62828).
+//   * HR Action Modal: search the officer by Service ID (POL-YYYY-XXXX) or
+//     name, pick the category, write the mandatory narrative and attach
+//     supporting report documents (PDF/JPG <= 5MB).
+//   * HR Approval Desk: review pending submissions, verify the station
+//     commander's claims and execute rank changes with one click.
+//
+// Endpoints: GET /api/conduct (list + filters), POST /api/conduct/submit
+// (intake — also used by station commanders), POST /api/conduct/<id>/review
+// (HR only, enforced server-side). Approving a Rank Advancement / Rank
+// Demotion automatically updates officers.rank and writes an immutable
+// service-history entry.
+const CD_TYPES={
+  'Promotion / Commendation':['Rank Advancement','Official Commendation','Medal of Bravery','Merit Award'],
+  'Disciplinary / Penalty':['Rank Demotion','Official Reprimand','Temporary Suspension','Formal Dismissal']
+};
+const CD_RANKS=['Constable','Corporal','Sergeant','Inspector','Chief Inspector','Superintendent','Commander','General'];
+const CD_RANK_CLASSES=['Rank Advancement','Rank Demotion'];
+const CD_DUTY_EFFECTS={'Formal Dismissal':'Terminated','Temporary Suspension':'Suspended'};
+const CD_PENDING=['Submitted to HR','Under HR Review'];
+let cdCur='promotion';
+let cdSelectedOfficer=null;      // service ID chosen in the HR action modal
+
+function cdTab(t){
+  cdCur=t;
+  document.querySelectorAll('#cdTabs .tab').forEach(b=>b.classList.toggle('active',b.dataset.ctab===t));
+  document.querySelectorAll('#conduct > .tabpane').forEach(p=>p.classList.remove('active'));
+  const pane=document.getElementById('cdtab-'+t);
+  if(pane)pane.classList.add('active');
+  renderConduct();
+}
+function cdStatusBadge(s){
+  const cls={'Submitted to HR':'blue','Under HR Review':'amber','Verified & Approved':'green','Rejected':'red'}[s]||'gray';
+  return `<span class="badge ${cls}">${esc(s||'—')}</span>`;
+}
+function cdTypeChip(t){
+  const promo=t==='Promotion / Commendation';
+  return `<span class="cd-type ${promo?'promotion':'disciplinary'}">${promo?'★':'⚠'} ${esc(t)}</span>`;
+}
+function cdRankCell(a){
+  const cur=a.officer_rank||'—';
+  if(a.is_rank_action && a.proposed_rank){
+    const up=CD_RANKS.indexOf(a.proposed_rank)>CD_RANKS.indexOf(cur);
+    return `${esc(cur)} <span class="cd-rank-arrow ${up?'up':'down'}">${up?'▲':'▼'}</span> <b>${esc(a.proposed_rank)}</b>${a.rank_applied?' <span class="badge green">applied</span>':''}`;
+  }
+  const duty=CD_DUTY_EFFECTS[a.classification];
+  if(duty) return `${esc(cur)}<br><small class="muted">duty → ${esc(duty)}</small>`;
+  return esc(cur);
+}
+function cdSubmittedBy(a){
+  const st=a.station_name?`${esc(a.station_name)} <small class="muted">(${esc(a.station_code)})</small>`:'';
+  const cmd=a.reporting_name?`${esc(a.reporting_name)}${a.reporting_service_id?` <small class="muted">(${esc(a.reporting_service_id)})</small>`:''}`:'';
+  if(st&&cmd) return `${st}<br><small class="muted">via ${cmd}</small>`;
+  return st||cmd||'<span class="muted">—</span>';
+}
+function cdFiltered(){
+  const el=id=>document.getElementById(id);
+  const status=el('cdFilterStatus')?el('cdFilterStatus').value:'';
+  const region=el('cdFilterRegion')?el('cdFilterRegion').value:'';
+  const station=el('cdFilterStation')?el('cdFilterStation').value:'';
+  const q=el('cdFilterSearch')?normTxt(el('cdFilterSearch').value):'';
+  return (db.conduct||[]).filter(a=>{
+    if(status&&a.status!==status)return false;
+    if(region&&a.station_region!==region&&a.officer_station_region!==region)return false;
+    if(station&&a.station_code!==station&&a.officer_station_code!==station)return false;
+    if(q){
+      const hay=normTxt([a.action_id,a.officer_service_id,a.officer_name,a.classification,a.reporting_name].join(' '));
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+}
+function renderConduct(){
+  const all=db.conduct||[];
+  const items=cdFiltered();
+  // Tab badges + file count (always over the full register).
+  const promo=all.filter(a=>a.action_type==='Promotion / Commendation');
+  const disc=all.filter(a=>a.action_type==='Disciplinary / Penalty');
+  const pending=all.filter(a=>CD_PENDING.includes(a.status));
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v};
+  set('cdPromoCount',promo.length);
+  set('cdDiscCount',disc.length);
+  set('cdDeskCount',pending.length);
+  set('cdCount',all.length+' file'+(all.length===1?'':'s'));
+  // Summary strip.
+  const strip=document.getElementById('cdSummaryStrip');
+  if(strip){
+    const approved=all.filter(a=>a.status==='Verified & Approved').length;
+    const rejected=all.filter(a=>a.status==='Rejected').length;
+    const rankChanges=all.filter(a=>a.rank_applied).length;
+    const cards=[
+      ['Pending HR review',pending.length,'#b26a00','Submitted to HR / Under HR Review'],
+      ['Promotion & commendation files',promo.length,'#2e7d32','Nominations for exemplary service'],
+      ['Disciplinary & misconduct files',disc.length,'#c62828','Violations and penalties'],
+      ['Verified & approved',approved,'#2e7d32','Rank changes executed: '+rankChanges],
+      ['Rejected',rejected,'#c62828','Returned to the submitting station'],
+    ];
+    strip.innerHTML=cards.map(([label,val,col,trend])=>
+      `<div class="card"><div class="kpi"><span class="label">${esc(label)}</span></div>
+       <div class="metric" style="color:${col}">${esc(val)}</div>
+       <div class="trend" style="color:var(--muted)">${esc(trend)}</div></div>`).join('');
+  }
+  // Split-view tables.
+  const rowFor=a=>`<tr>
+    <td><b>${esc(a.action_id)}</b><br><small class="muted">${esc((a.submitted_at||a.created_at||'').replace('T',' ').slice(0,16))}</small></td>
+    <td><b>${esc(a.officer_name||'Unknown')}</b><br><small class="muted">${esc(a.officer_service_id||'')}</small></td>
+    <td>${esc(a.classification)}</td>
+    <td>${cdRankCell(a)}</td>
+    <td>${cdSubmittedBy(a)}</td>
+    <td>${cdStatusBadge(a.status)}${a.reviewer_name?`<br><small class="muted">by ${esc(a.reviewer_name)}</small>`:''}</td>
+    <td class="actions"><button class="btn secondary small" onclick="openConductView('${esc(a.action_id)}')">View</button></td>
+  </tr>`;
+  const promoTb=document.getElementById('cdPromoTable');
+  if(promoTb){
+    const rows=items.filter(a=>a.action_type==='Promotion / Commendation');
+    promoTb.innerHTML=rows.map(rowFor).join('')||'<tr><td colspan="7" class="empty">No promotion or commendation files match the current filters</td></tr>';
+  }
+  const discTb=document.getElementById('cdDiscTable');
+  if(discTb){
+    const rows=items.filter(a=>a.action_type==='Disciplinary / Penalty');
+    discTb.innerHTML=rows.map(rowFor).join('')||'<tr><td colspan="7" class="empty">No disciplinary or misconduct files match the current filters</td></tr>';
+  }
+  // HR approval desk — pending submissions only.
+  const deskTb=document.getElementById('cdDeskTable');
+  if(deskTb){
+    const rows=items.filter(a=>CD_PENDING.includes(a.status));
+    deskTb.innerHTML=rows.map(a=>{
+      const change=a.is_rank_action
+        ? `${esc(a.officer_rank||'—')} <span class="cd-rank-arrow ${CD_RANKS.indexOf(a.proposed_rank)>CD_RANKS.indexOf(a.officer_rank)?'up':'down'}">${CD_RANKS.indexOf(a.proposed_rank)>CD_RANKS.indexOf(a.officer_rank)?'▲':'▼'}</span> <b>${esc(a.proposed_rank)}</b>`
+        : (CD_DUTY_EFFECTS[a.classification]?'duty → <b>'+esc(CD_DUTY_EFFECTS[a.classification])+'</b>':'<span class="muted">no rank change</span>');
+      const claim=a.narrative?`<span class="cd-narrative">${esc(a.narrative.length>140?a.narrative.slice(0,140)+'…':a.narrative)}</span>`:'';
+      return `<tr>
+        <td><b>${esc(a.action_id)}</b><br>${cdTypeChip(a.action_type)}<br><small class="muted">${esc(a.classification)}</small></td>
+        <td><b>${esc(a.officer_name||'Unknown')}</b><br><small class="muted">${esc(a.officer_service_id||'')} · ${esc(a.officer_rank||'')}</small></td>
+        <td>${change}</td>
+        <td>${cdSubmittedBy(a)}<br>${claim}</td>
+        <td>${cdStatusBadge(a.status)}</td>
+        <td class="actions">
+          <button class="btn secondary small" onclick="openConductReview('${esc(a.action_id)}')">Review file</button>
+          <button class="btn small" style="background:#2e7d32" title="Verify &amp; approve — executes the rank change" onclick="conductReviewDecision('${esc(a.action_id)}','approve')">✓ Approve</button>
+          <button class="btn small" style="background:#c62828" onclick="conductReviewDecision('${esc(a.action_id)}','reject')">✕ Reject</button>
+        </td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="6" class="empty">No pending submissions — the HR queue is clear</td></tr>';
+  }
+}
+function cdSyncStations(){
+  // Station filter follows the selected region.
+  const regionEl=document.getElementById('cdFilterRegion');
+  const stEl=document.getElementById('cdFilterStation');
+  if(!stEl)return;
+  const region=regionEl?regionEl.value:'';
+  const cur=stEl.value;
+  const stations=(db.stations||[]).filter(s=>!region||s.region===region);
+  stEl.innerHTML='<option value="">All stations</option>'+stations.map(s=>
+    `<option value="${esc(s.id)}"${s.id===cur?' selected':''}>${esc(s.name)} (${esc(s.code)})</option>`).join('');
+}
+function fillConductSelects(){
+  cdSyncStations();
+  const rev=document.getElementById('cdReviewerSelect');
+  if(rev){
+    const cur=rev.value;
+    rev.innerHTML='<option value="">— select —</option>'+(db.officers||[]).map(o=>
+      `<option value="${esc(o.service_id)}"${o.service_id===cur?' selected':''}>${esc(o.full_name)} (${esc(o.service_id)}) · ${esc(o.rank)}</option>`).join('');
+  }
+}
+async function refreshConduct(){
+  // Re-fetch the conduct register (and the officers register — an approval
+  // may have changed a rank) then repaint.
+  try{
+    const r=await api('/api/conduct');
+    if(Array.isArray(r.items)) db.conduct=r.items;
+  }catch(e){ /* keep the local cache on a transient error */ }
+  try{
+    if(sessionUser&&(sessionUser.modules||[]).includes('officers')){
+      const r=await api('/api/officers');
+      if(Array.isArray(r.items)){ db.officers=r.items; renderOfficersTable(); renderPoliceSearch(); }
+    }
+  }catch(e){ /* keep the local cache */ }
+  persist();
+  fillConductSelects();
+  renderConduct();
+}
+
+// ---- HR action modal (new conduct file) --------------------------------------
+function openConductModal(){
+  cdSelectedOfficer=null;
+  const now=new Date();
+  const p=n=>String(n).padStart(2,'0');
+  const nowLocal=now.getFullYear()+'-'+p(now.getMonth()+1)+'-'+p(now.getDate())+'T'+p(now.getHours())+':'+p(now.getMinutes());
+  const body=`
+  <form id="cdForm" class="form" onsubmit="return submitConductAction(event)">
+    <div class="section-label">1 · Target officer <span style="color:var(--red)">(mandatory)</span></div>
+    <div class="cd-officer-search">
+      <div class="field"><label>Search by Service ID (POL-YYYY-XXXX) or name *</label>
+        <input id="cdOfficerSearch" placeholder="e.g. POL-2026-0003 or Maxamed Faarax" autocomplete="off" oninput="cdOfficerInput(this.value)" onfocus="cdOfficerInput(this.value)">
+      </div>
+      <div id="cdOfficerSuggest"></div>
+      <div id="cdOfficerPicked"></div>
+    </div>
+
+    <div class="section-label">2 · Action category &amp; classification</div>
+    <div class="grid2">
+      <div class="field"><label>Action type *</label>
+        <select id="cdType" onchange="cdTypeChanged()">
+          <option value="">— select category —</option>
+          <option value="Promotion / Commendation" style="color:#2e7d32;font-weight:700">★ Promotion / Commendation</option>
+          <option value="Disciplinary / Penalty" style="color:#c62828;font-weight:700">⚠ Disciplinary / Penalty</option>
+        </select>
+      </div>
+      <div class="field"><label>Conduct classification *</label>
+        <select id="cdClassification" onchange="cdClassificationChanged()"><option value="">— select type first —</option></select>
+      </div>
+    </div>
+    <div class="grid2" id="cdRankRow" style="display:none">
+      <div class="field"><label>Proposed rank * <small class="muted">(standard officer ranks)</small></label>
+        <select id="cdRank"><option value="">— select rank —</option></select>
+      </div>
+      <div class="field"><label>Rank transition</label>
+        <input id="cdRankHint" readonly placeholder="current rank → proposed" style="background:#f3f6fb;color:#526075">
+      </div>
+    </div>
+
+    <div class="section-label">3 · Incident / case narrative <span style="color:var(--red)">(mandatory, detailed)</span></div>
+    <div class="field"><label>Detailed justification, station report numbers or case references *</label>
+      <textarea id="cdNarrative" rows="4" placeholder="e.g. Station report SR-2026-114: on 2026-09-02 the officer led the Caynabo recovery operation, recovering stolen property with no casualties…"></textarea>
+    </div>
+
+    <div class="section-label">4 · Submitting station / commander <span class="muted">(at least one required)</span></div>
+    <div class="grid2">
+      <div class="field"><label>Submitting station</label><select id="cdStation"></select></div>
+      <div class="field"><label>Reporting commander</label><select id="cdCommander"><option value="">— optional —</option></select></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Submission date / time *</label><input id="cdSubmittedAt" type="datetime-local" value="${nowLocal}"></div>
+    </div>
+
+    <div class="section-label">5 · Supporting report documents <span class="muted">(PDF/JPG, max 5MB each, optional)</span></div>
+    <div class="grid2">
+      <div class="field"><label>Document 1</label><input id="cdDoc1" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg"></div>
+      <div class="field"><label>Document 2</label><input id="cdDoc2" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg"></div>
+    </div>
+  </form>`;
+  const foot=`<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
+    <button class="btn" onclick="document.getElementById('cdForm').requestSubmit()">Submit to HR</button>`;
+  openDrawer('New conduct action · Officer Registration Office', body, foot);
+  // Station + commander dropdowns.
+  const st=document.getElementById('cdStation');
+  if(st) st.innerHTML='<option value="">— optional —</option>'+(db.stations||[]).map(s=>
+    `<option value="${esc(s.id)}">${esc(s.name)} (${esc(s.code)}) — ${esc(s.region)}</option>`).join('');
+  const cmd=document.getElementById('cdCommander');
+  if(cmd) cmd.innerHTML='<option value="">— optional —</option>'+(db.officers||[]).map(o=>
+    `<option value="${esc(o.service_id)}">${esc(o.full_name)} (${esc(o.service_id)}) · ${esc(o.rank)}</option>`).join('');
+  cdTypeChanged();
+}
+function cdOfficerInput(q){
+  q=(q||'').trim();
+  const box=document.getElementById('cdOfficerSuggest');
+  cdSelectedOfficer=null;
+  cdPaintPickedOfficer();
+  if(!q||!box){if(box)box.innerHTML='';return}
+  const nq=normTxt(q);
+  const hits=(db.officers||[]).filter(o=>
+    normTxt(o.service_id).includes(nq)||normTxt(o.full_name).includes(nq)).slice(0,8);
+  box.innerHTML=hits.length?('<div class="cd-suggest">'+hits.map(o=>
+    `<button type="button" onclick="cdSelectOfficer('${esc(o.service_id)}')">
+       <b>${esc(o.full_name)}</b><span class="sid">${esc(o.service_id)} · ${esc(o.rank)} · ${esc(o.station_name||o.station_id||'')}</span>
+     </button>`).join('')+'</div>'):'<div class="muted" style="padding:6px 2px;font-size:12px">No officer matches — check the Service ID or name.</div>';
+}
+function cdSelectOfficer(serviceId){
+  const o=(db.officers||[]).find(x=>x.service_id===serviceId);
+  if(!o)return;
+  cdSelectedOfficer=o.service_id;
+  const inp=document.getElementById('cdOfficerSearch');
+  if(inp)inp.value=o.full_name+' ('+o.service_id+')';
+  const box=document.getElementById('cdOfficerSuggest');
+  if(box)box.innerHTML='';
+  cdPaintPickedOfficer();
+  cdClassificationChanged();
+}
+function cdPaintPickedOfficer(){
+  const el=document.getElementById('cdOfficerPicked');
+  if(!el)return;
+  if(!cdSelectedOfficer){el.innerHTML='';return}
+  const o=(db.officers||[]).find(x=>x.service_id===cdSelectedOfficer);
+  if(!o){el.innerHTML='';return}
+  el.innerHTML=`<div class="alert success show" style="margin-top:8px"><span class="a-ico">✓</span>
+    <div class="a-body"><b>Target officer: ${esc(o.full_name)}</b>
+    <span>${esc(o.service_id)} · current rank <b>${esc(o.rank)}</b> · ${esc(o.station_name||o.station_id||'')} · ${esc(o.unit||'')}</span></div></div>`;
+}
+function cdTypeChanged(){
+  const t=document.getElementById('cdType');
+  const cls=document.getElementById('cdClassification');
+  if(!t||!cls)return;
+  cls.innerHTML='<option value="">— select classification —</option>'+
+    (CD_TYPES[t.value]||[]).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  cdClassificationChanged();
+}
+function cdClassificationChanged(){
+  const clsEl=document.getElementById('cdClassification');
+  const rankRow=document.getElementById('cdRankRow');
+  if(!clsEl||!rankRow)return;
+  const cls=clsEl.value;
+  const isRank=CD_RANK_CLASSES.includes(cls);
+  rankRow.style.display=isRank?'':'none';
+  if(!isRank)return;
+  const o=(db.officers||[]).find(x=>x.service_id===cdSelectedOfficer);
+  const cur=o?o.rank:null;
+  const rankEl=document.getElementById('cdRank');
+  if(!rankEl)return;
+  const allowed=CD_RANKS.filter(r=>!cur||(cls==='Rank Advancement'?CD_RANKS.indexOf(r)>CD_RANKS.indexOf(cur):CD_RANKS.indexOf(r)<CD_RANKS.indexOf(cur)));
+  rankEl.innerHTML='<option value="">— select rank —</option>'+allowed.map(r=>
+    `<option value="${esc(r)}"${r===clsEl.dataset.prevRank?' selected':''}>${esc(r)}</option>`).join('');
+  rankEl.onchange=cdRankHint;
+  cdRankHint();
+}
+function cdRankHint(){
+  const rankEl=document.getElementById('cdRank');
+  const hint=document.getElementById('cdRankHint');
+  if(!rankEl||!hint)return;
+  hint.value=rankEl.value?`${(db.officers||[]).find(x=>x.service_id===cdSelectedOfficer)?.rank||'—'} → ${rankEl.value}`:'';
+}
+function cdValidateDoc(input,label){
+  if(!input||!input.files||!input.files.length)return null;
+  const f=input.files[0];
+  const okExt=['.pdf','.jpg','.jpeg'].some(e=>f.name.toLowerCase().endsWith(e));
+  if(!okExt)return label+' must be a PDF or JPG file';
+  if(f.size>5*1024*1024)return label+' exceeds the 5MB limit';
+  return null;
+}
+function submitConductAction(ev){
+  ev.preventDefault();clearInvalid();
+  const val=id=>(document.getElementById(id)||{}).value||'';
+  const bad=[];
+  if(!cdSelectedOfficer)bad.push('cdOfficerSearch');
+  const type=val('cdType'), cls=val('cdClassification'), narrative=val('cdNarrative').trim();
+  if(!type)bad.push('cdType');
+  if(!cls)bad.push('cdClassification');
+  const isRank=CD_RANK_CLASSES.includes(cls);
+  const rank=val('cdRank');
+  if(isRank&&!rank)bad.push('cdRank');
+  if(narrative.length<20)bad.push('cdNarrative');
+  const station=val('cdStation'), commander=val('cdCommander');
+  if(!station&&!commander){bad.push('cdStation');bad.push('cdCommander')}
+  if(!val('cdSubmittedAt'))bad.push('cdSubmittedAt');
+  const d1err=cdValidateDoc(document.getElementById('cdDoc1'),'Document 1');
+  const d2err=cdValidateDoc(document.getElementById('cdDoc2'),'Document 2');
+  if(bad.length){showFormError('Complete the required fields: target officer, category, classification'+(isRank?', proposed rank':'')+', a detailed narrative (min 20 characters) and the submitting station or commander.',{names:bad});return}
+  if(d1err||d2err){showFormError(d1err||d2err);return}
+  const fd=new FormData();
+  fd.append('officer_id',cdSelectedOfficer);
+  fd.append('action_type',type);
+  fd.append('classification',cls);
+  if(rank)fd.append('proposed_rank',rank);
+  fd.append('narrative',narrative);
+  if(station)fd.append('station_id',station);
+  if(commander)fd.append('reporting_officer_id',commander);
+  fd.append('submitted_at',val('cdSubmittedAt'));
+  const d1=document.getElementById('cdDoc1'), d2=document.getElementById('cdDoc2');
+  if(d1&&d1.files&&d1.files.length)fd.append('document_1',d1.files[0]);
+  if(d2&&d2.files&&d2.files.length)fd.append('document_2',d2.files[0]);
+  api('/api/conduct/submit',{method:'POST',body:fd}).then(r=>{
+    closeDrawer();
+    toast('Conduct action filed',r.action_id+' · '+r.status+' — '+type);
+    refreshConduct();
+  }).catch(e=>{showFormError(e.message||'The conduct action could not be submitted.')});
+  return false;
+}
+
+// ---- conduct file view / review ----------------------------------------------
+function cdFind(aid){return (db.conduct||[]).find(a=>a.action_id===aid)}
+async function openConductView(aid){
+  const local=cdFind(aid);
+  let a=local;
+  try{ const d=await api('/api/conduct/'+encodeURIComponent(aid)); if(d&&d.action_id)a=d; }catch(e){ if(!a){showFormError('Conduct file not found');return} }
+  const docs=(a.documents||[]).map(d=>
+    `<a class="chipfile" target="_blank" href="${esc(d.path)}">📎 ${esc(d.name||'document')}</a>`).join('')||'<span class="muted">none</span>';
+  const history=(a.officer_service_history||[]).map(h=>
+    `<tr><td><b>${esc(h.entry_type)}</b>${h.action_id?`<br><small class="muted">${esc(h.action_id)}</small>`:''}</td>
+     <td>${h.from_rank&&h.to_rank?esc(h.from_rank)+' → <b>'+esc(h.to_rank)+'</b>':'—'}</td>
+     <td><small>${esc(h.summary)}</small></td><td><small class="muted">${esc((h.created_at||'').slice(0,16))}</small></td></tr>`).join('')
+    ||'<tr><td colspan="4" class="empty">No service history entries yet</td></tr>';
+  const body=`
+  <div class="grid2">
+    <div class="field"><label>Action file</label><b>${esc(a.action_id)}</b> ${cdTypeChip(a.action_type)}</div>
+    <div class="field"><label>Status</label>${cdStatusBadge(a.status)}</div>
+    <div class="field"><label>Target officer</label><b>${esc(a.officer_name)}</b><br><small class="muted">${esc(a.officer_service_id)} · ${esc(a.officer_rank||'')} · ${esc(a.officer_duty_status||'')}</small></div>
+    <div class="field"><label>Classification</label>${esc(a.classification)}${a.proposed_rank?` → <b>${esc(a.proposed_rank)}</b>${a.rank_applied?' <span class="badge green">applied</span>':''}`:''}</div>
+    <div class="field"><label>Submitted by</label>${cdSubmittedBy(a)}</div>
+    <div class="field"><label>Submitted at</label>${esc((a.submitted_at||'').replace('T',' ').slice(0,16))}</div>
+    <div class="field"><label>Reviewed by</label>${a.reviewer_name?esc(a.reviewer_name)+(a.reviewer_service_id?` <small class="muted">(${esc(a.reviewer_service_id)})</small>`:''):'<span class="muted">—</span>'}</div>
+    <div class="field"><label>Reviewed at</label>${a.reviewed_at?esc(String(a.reviewed_at).slice(0,16)):'<span class="muted">—</span>'}</div>
+  </div>
+  <div class="field"><label>Incident / case narrative</label><div style="background:#f7f9ff;border:1px solid #e3e9f2;border-radius:10px;padding:12px 14px;font-size:13px">${esc(a.narrative||'')}</div></div>
+  ${a.reviewer_notes?`<div class="field"><label>HR review notes</label><div style="background:#fff8ec;border:1px solid #f0e2c0;border-radius:10px;padding:12px 14px;font-size:13px">${esc(a.reviewer_notes)}</div></div>`:''}
+  <div class="field cd-docs"><label>Supporting documents</label>${docs}</div>
+  <div class="section-label">Officer service history (immutable)</div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Entry</th><th>Rank</th><th>Summary</th><th>Recorded</th></tr></thead><tbody>${history}</tbody></table></div>`;
+  const foot=CD_PENDING.includes(a.status)
+    ?`<button class="btn ghost" onclick="closeDrawer()">Close</button>
+      <button class="btn secondary" onclick="closeDrawer();openConductReview('${esc(a.action_id)}')">Review file</button>`
+    :`<button class="btn ghost" onclick="closeDrawer()">Close</button>`;
+  openDrawer('Conduct file · '+a.action_id, body, foot);
+}
+function openConductReview(aid){
+  const a=cdFind(aid);
+  if(!a){showFormError('Conduct file not found');return}
+  const deskReviewer=document.getElementById('cdReviewerSelect')?document.getElementById('cdReviewerSelect').value:'';
+  const change=a.is_rank_action
+    ?`${esc(a.officer_rank||'—')} → <b>${esc(a.proposed_rank)}</b> <small class="muted">(executed on approval)</small>`
+    :(CD_DUTY_EFFECTS[a.classification]?`duty status → <b>${esc(CD_DUTY_EFFECTS[a.classification])}</b>`:'<span class="muted">no rank change</span>');
+  const body=`
+  <div class="grid2">
+    <div class="field"><label>Action file</label><b>${esc(a.action_id)}</b> ${cdTypeChip(a.action_type)}</div>
+    <div class="field"><label>Classification</label>${esc(a.classification)}</div>
+    <div class="field"><label>Target officer</label><b>${esc(a.officer_name)}</b><br><small class="muted">${esc(a.officer_service_id)} · ${esc(a.officer_rank||'')}</small></div>
+    <div class="field"><label>Proposed change</label>${change}</div>
+    <div class="field"><label>Submitted by</label>${cdSubmittedBy(a)}</div>
+    <div class="field"><label>Current status</label>${cdStatusBadge(a.status)}</div>
+  </div>
+  <div class="field"><label>Incident / case narrative (station commander's claim)</label>
+    <div style="background:#f7f9ff;border:1px solid #e3e9f2;border-radius:10px;padding:12px 14px;font-size:13px;max-height:160px;overflow-y:auto">${esc(a.narrative||'')}</div></div>
+  <div class="field cd-docs"><label>Supporting documents</label>
+    ${(a.documents||[]).map(d=>`<a class="chipfile" target="_blank" href="${esc(d.path)}">📎 ${esc(d.name||'document')}</a>`).join('')||'<span class="muted">none attached</span>'}</div>
+  <div class="grid2">
+    <div class="field"><label>Reviewing HR officer <span class="muted">(Registration Office staff)</span></label>
+      <select id="cdRevOfficer"><option value="">— optional —</option>${(db.officers||[]).map(o=>
+        `<option value="${esc(o.service_id)}"${o.service_id===deskReviewer?' selected':''}>${esc(o.full_name)} (${esc(o.service_id)}) · ${esc(o.rank)}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Review notes</label><input id="cdRevNotes" placeholder="Verification outcome, evidence checked…"></div>
+  </div>`;
+  const foot=`<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
+    <button class="btn secondary" onclick="conductReviewDecision('${esc(a.action_id)}','review',true)">Mark Under HR Review</button>
+    <button class="btn small" style="background:#c62828" onclick="conductReviewDecision('${esc(a.action_id)}','reject',true)">✕ Reject</button>
+    <button class="btn" style="background:#2e7d32" onclick="conductReviewDecision('${esc(a.action_id)}','approve',true)">✓ Verify &amp; Approve</button>`;
+  openDrawer('HR review · '+a.action_id, body, foot);
+}
+async function conductReviewDecision(aid,decision,fromModal){
+  const a=cdFind(aid);
+  if(!a){showFormError('Conduct file not found');return}
+  if(decision==='approve'&&a.is_rank_action&&!confirm('Approve '+aid+' and execute the rank change\n'+a.officer_rank+' → '+a.proposed_rank+' for '+a.officer_name+'?'))return;
+  const payload={decision};
+  if(fromModal){
+    const rev=document.getElementById('cdRevOfficer');
+    const notes=document.getElementById('cdRevNotes');
+    if(rev&&rev.value)payload.reviewer_officer_id=rev.value;
+    if(notes&&notes.value.trim())payload.reviewer_notes=notes.value.trim();
+  }else{
+    const desk=document.getElementById('cdReviewerSelect');
+    if(desk&&desk.value)payload.reviewer_officer_id=desk.value;
+  }
+  try{
+    const r=await api('/api/conduct/'+encodeURIComponent(aid)+'/review',{method:'POST',body:JSON.stringify(payload)});
+    closeDrawer();
+    const rankMsg=r.action&&r.action.rank_update?` · rank ${r.action.rank_update.from} → ${r.action.rank_update.to}`:'';
+    toast('Conduct file '+r.status,aid+rankMsg);
+    refreshConduct();
+  }catch(e){showFormError(e.message||'The review could not be recorded.')}
 }
 // ---- car registration ----------------------------------------------------------
 function toggleCarCategory(){

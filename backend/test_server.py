@@ -381,6 +381,7 @@ def main():
             'fp.officer':  ('FingerprintUnit', None,   set()),
             'ap.officer':  ('AirportControl',  None,   set()),
             'cid.officer': ('CIDUnit',         None,   set()),
+            'hr.officer':  ('OfficerRegistration', None, set()),
             'cp.south':    ('CheckpointSouth', 'South', set()),
             'cp.east':     ('CheckpointEast',  'East',  set()),
             'cp.west':     ('CheckpointWest',  'West',  set()),
@@ -395,13 +396,15 @@ def main():
             if role == 'SystemAdmin':
                 expected_mods |= {'admin', 'analytics', 'airport', 'checkpoints',
                                   'cid', 'fingerprint', 'people', 'policesearch',
-                                  'stations', 'officers', 'cars', 'crimes'}
+                                  'stations', 'officers', 'cars', 'crimes', 'conduct'}
             elif role == 'FingerprintUnit':
                 expected_mods |= {'fingerprint', 'people', 'policesearch'}
             elif role == 'AirportControl':
                 expected_mods |= {'airport', 'people', 'policesearch'}
             elif role == 'CIDUnit':
                 expected_mods |= {'cid', 'people', 'policesearch', 'crimes'}
+            elif role == 'OfficerRegistration':
+                expected_mods |= {'people', 'policesearch', 'stations', 'officers', 'conduct'}
             elif role.startswith('Checkpoint'):
                 expected_mods |= {'checkpoints'}
             assert set(r['user']['modules']) == expected_mods, (u, r['user'])
@@ -463,10 +466,12 @@ def main():
         assert d_admin['location_scope'] is None
         admin_card_ids = {c['id'] for c in d_admin['cards']}
         assert admin_card_ids == {'central_persons', 'open_cases',
-                                  'pending_clearances', 'active_alerts'}, d_admin['cards']
+                                  'pending_clearances', 'active_alerts',
+                                  'conduct_pending'}, d_admin['cards']
         admin_quick = {q['id'] for q in d_admin['quick_actions']}
         assert admin_quick == {'add_airport', 'add_clearance',
-                                'add_case', 'add_checkpoint'}, d_admin['quick_actions']
+                                'add_case', 'add_checkpoint',
+                                'add_conduct'}, d_admin['quick_actions']
         # Activity feed for an admin is a cross-unit feed (all 4 modules
         # can be present in the same response).
         admin_mods = {e['module'] for e in d_admin['activity']}
@@ -711,12 +716,13 @@ def main():
         assert s == 200
         # Admin must see the GLOBAL cards, NOT the South cards.
         admin_card_ids = {c['id'] for c in d_admin['cards']}
-        assert admin_card_ids == {'central_persons','open_cases','pending_clearances','active_alerts'}, \
+        assert admin_card_ids == {'central_persons','open_cases','pending_clearances',
+                                  'active_alerts','conduct_pending'}, \
             f"admin cards not global: {admin_card_ids}"
         assert d_admin['is_admin'] is True
         assert d_admin['location_scope'] is None
-        # And the quick actions must be all 4 — admin has all of them.
-        assert {q['id'] for q in d_admin['quick_actions']} == {'add_airport','add_clearance','add_case','add_checkpoint'}
+        # And the quick actions must be all of them — admin has all modules.
+        assert {q['id'] for q in d_admin['quick_actions']} == {'add_airport','add_clearance','add_case','add_checkpoint','add_conduct'}
         # Admin can read all location events including the South one.
         s, cps_admin = request(base, 'GET', '/api/checkpoint-events', admin_token2)
         assert s == 200
@@ -1037,7 +1043,8 @@ def main():
         assert d.get('is_admin') is True
         assert d.get('location_scope') is None
         assert {c['id'] for c in d['cards']} == {
-            'central_persons', 'open_cases', 'pending_clearances', 'active_alerts'}
+            'central_persons', 'open_cases', 'pending_clearances', 'active_alerts',
+            'conduct_pending'}
 
         # ---- Session-refresh regression: cp.south end-to-end flow ---------
         # Mirrors the manual verification: login -> dashboard 200 ->
@@ -1562,6 +1569,267 @@ def main():
         assert s == 200 and len(r['items']) >= 1, (s, r)
         print('ok: officer registration (schema, validation, FK, uploads, service ID)')
         print('ok: station codes STN-REG-XXX and crime file CRM-YYYY-STN-XXXX')
+
+        # ---- Officer Conduct, Promotions & Disciplinary Management -------
+        # HR Directorate module: station commanders submit promotion
+        # recommendations / misconduct reports (ACT-YYYY-XXXX files), and
+        # the Officer Registration Office reviews, approves or rejects them.
+        # Approving a rank action automatically updates officers.rank and
+        # writes an immutable officer_service_history entry.
+        def conduct_submit(token, fields=None, files=None):
+            fields = {**{
+                'officer_id': 'POL-2026-0001',
+                'action_type': 'Promotion / Commendation',
+                'classification': 'Rank Advancement',
+                'proposed_rank': 'Inspector',
+                'narrative': 'Station report SR-2026-114: led the Caynabo recovery '
+                             'operation with distinction, recovering all stolen property.',
+                'station_id': 'ST-001',
+                'submitted_at': '2026-09-10T08:30'}, **(fields or {})}
+            if files is None:
+                return request(base, 'POST', '/api/conduct/submit', token, fields)
+            return multipart_request(base, '/api/conduct/submit', token, fields, files)
+
+        # Nomination creation — auto-generated ACT-YYYY-XXXX id, default status.
+        s, r = conduct_submit(tokens['cp.south'],
+                              files={'document_1': ('report.pdf', b'%PDF-1.4 conduct report')})
+        assert s == 201, (s, r)
+        assert r['action_id'] == 'ACT-2026-0001', r
+        assert r['status'] == 'Submitted to HR', r
+        assert r['action']['officer_service_id'] == 'POL-2026-0001', r
+        assert r['action']['station_code'] == 'ST-001', r
+        assert r['action']['documents'][0]['name'] == 'report.pdf', r
+        assert r['action']['rank_applied'] is False, r
+        act_promo = r['action_id']
+
+        # A checkpoint officer (station commander persona) may submit, but
+        # the conduct register and the review desk are HR-only.
+        s, r = request(base, 'GET', '/api/conduct', tokens['cp.south'])
+        assert s == 401, (s, r)
+        s, r = request(base, 'GET', '/api/conduct', tokens['fp.officer'])
+        assert s == 401, (s, r)
+        s, r = request(base, 'GET', '/api/conduct', tokens['hr.officer'])
+        assert s == 200 and len(r['items']) == 1, (s, r)
+        assert r['summary'] == {'total': 1, 'promotion': 1, 'disciplinary': 0,
+                                'pending': 1, 'approved': 0, 'rejected': 0}, r['summary']
+        assert r['action_types'] == ['Promotion / Commendation', 'Disciplinary / Penalty'], r
+        assert r['classifications']['Promotion / Commendation'] == [
+            'Rank Advancement', 'Official Commendation', 'Medal of Bravery', 'Merit Award'], r
+        assert r['classifications']['Disciplinary / Penalty'] == [
+            'Rank Demotion', 'Official Reprimand', 'Temporary Suspension', 'Formal Dismissal'], r
+        assert r['statuses'] == ['Submitted to HR', 'Under HR Review',
+                                 'Verified & Approved', 'Rejected'], r
+
+        # Server validation — mandatory narrative, classification must match
+        # the action type, valid rank transitions, existing FK targets.
+        s, r = conduct_submit(tokens['admin'], fields={'narrative': '  '})
+        assert s == 400 and 'narrative' in r['error'].lower(), (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'narrative': 'too short'})
+        assert s == 400 and 'detailed' in r['error'].lower(), (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'classification': 'Formal Dismissal'})
+        assert s == 400 and 'classification' in r['error'].lower(), (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'action_type': 'Nonsense'})
+        assert s == 400 and 'category' in r['error'].lower(), (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'proposed_rank': 'Constable'})
+        assert s == 400 and 'HIGHER' in r['error'], (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'proposed_rank': 'Sergeant'})
+        assert s == 400 and 'HIGHER' in r['error'], (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'proposed_rank': ''})
+        assert s == 400 and 'proposed rank' in r['error'], (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'officer_id': 'POL-9999-9999'})
+        assert s == 400 and 'officer' in r['error'].lower(), (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'station_id': 'ST-999'})
+        assert s == 400 and 'does not exist' in r['error'], (s, r)
+        s, r = conduct_submit(tokens['admin'], fields={'station_id': '', 'reporting_officer_id': ''})
+        assert s == 400 and 'station or' in r['error'].lower(), (s, r)
+        s, r = conduct_submit(tokens['admin'],
+                              files={'document_1': ('virus.exe', b'MZ...')})
+        assert s == 400 and 'PDF' in r['error'], (s, r)
+        s, r = conduct_submit(tokens['admin'],
+                              files={'document_1': ('huge.pdf', b'%PDF' + b'x' * (5 * 1024 * 1024 + 1))})
+        assert s == 400 and '5MB' in r['error'], (s, r)
+        # A demotion must propose a LOWER rank (officer 1 is a Sergeant).
+        s, r = conduct_submit(tokens['admin'], fields={
+            'action_type': 'Disciplinary / Penalty', 'classification': 'Rank Demotion',
+            'proposed_rank': 'Inspector',
+            'narrative': 'Case ref CRM-2026-0001: falsified the incident register entries.'})
+        assert s == 400 and 'LOWER' in r['error'], (s, r)
+
+        # HR review is restricted to the Officer Registration Office.
+        s, r = request(base, 'POST', f'/api/conduct/{act_promo}/review',
+                       tokens['fp.officer'], {'decision': 'approve'})
+        assert s == 401, (s, r)
+        s, r = request(base, 'POST', f'/api/conduct/{act_promo}/review',
+                       tokens['cp.south'], {'decision': 'approve'})
+        assert s == 401, (s, r)
+        s, r = request(base, 'POST', '/api/conduct/ACT-9999-9999/review',
+                       tokens['hr.officer'], {'decision': 'approve'})
+        assert s == 404, (s, r)
+        s, r = request(base, 'POST', f'/api/conduct/{act_promo}/review',
+                       tokens['hr.officer'], {'decision': 'maybe'})
+        assert s == 400 and 'decision' in r['error'].lower(), (s, r)
+
+        # HR pipeline: mark Under HR Review, then approve. The approval
+        # automatically promotes POL-2026-0001 Sergeant -> Inspector.
+        s, r = request(base, 'POST', f'/api/conduct/{act_promo}/review',
+                       tokens['hr.officer'],
+                       {'decision': 'review', 'reviewer_officer_id': 'POL-2026-0002',
+                        'reviewer_notes': 'Verified with the ST-001 commander.'})
+        assert s == 201 and r['action']['status'] == 'Under HR Review', (s, r)
+        assert r['action']['reviewer_service_id'] == 'POL-2026-0002', r
+
+        s, officers = request(base, 'GET', '/api/officers', tokens['hr.officer'])
+        before = {o['service_id']: o['rank'] for o in officers['items']}
+        assert before['POL-2026-0001'] == 'Sergeant', before
+
+        s, r = request(base, 'POST', f'/api/conduct/{act_promo}/review',
+                       tokens['hr.officer'], {'decision': 'approve'})
+        assert s == 201 and r['status'] == 'Verified & Approved', (s, r)
+        assert r['action']['rank_applied'] is True, r
+        assert r['action']['rank_update'] == {'from': 'Sergeant', 'to': 'Inspector'}, r
+        assert r['action']['officer_rank'] == 'Inspector', r
+
+        # officers.rank in the core register is updated automatically.
+        s, officers = request(base, 'GET', '/api/officers', tokens['hr.officer'])
+        after = {o['service_id']: o['rank'] for o in officers['items']}
+        assert after['POL-2026-0001'] == 'Inspector', after
+
+        # An immutable service-history entry is logged for the officer.
+        s, d = request(base, 'GET', f'/api/conduct/{act_promo}', tokens['hr.officer'])
+        assert s == 200, (s, d)
+        hist = d['officer_service_history']
+        assert len(hist) == 1 and hist[0]['from_rank'] == 'Sergeant' \
+            and hist[0]['to_rank'] == 'Inspector', hist
+        assert hist[0]['action_id'] == act_promo, hist
+
+        # Closed files are immutable — no double approval / double rank change.
+        s, r = request(base, 'POST', f'/api/conduct/{act_promo}/review',
+                       tokens['hr.officer'], {'decision': 'approve'})
+        assert s == 400 and 'already closed' in r['error'], (s, r)
+        s, officers = request(base, 'GET', '/api/officers', tokens['hr.officer'])
+        assert {o['service_id']: o['rank'] for o in officers['items']}['POL-2026-0001'] == 'Inspector'
+
+        # Rank transitions are re-validated at review time against the
+        # officer's CURRENT rank: a stale advancement file is rejected.
+        s, r = conduct_submit(tokens['admin'], fields={
+            'officer_id': 'POL-2026-0002', 'classification': 'Rank Advancement',
+            'proposed_rank': 'Sergeant',
+            'narrative': 'Commendation file CF-2026-31: outstanding traffic-control duty.'})
+        assert s == 201, (s, r)
+        stale = r['action_id']
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:  # POL-2026-0002 is a Constable; jump him to Inspector behind HR's back
+            conn.execute("UPDATE officers SET rank='Inspector' WHERE service_id='POL-2026-0002'")
+            conn.commit()
+        finally:
+            conn.close()
+        s, r = request(base, 'POST', f'/api/conduct/{stale}/review',
+                       tokens['hr.officer'], {'decision': 'approve'})
+        assert s == 400 and 'HIGHER' in r['error'], (s, r)
+
+        # Rejection handling: a rejected demotion leaves officers.rank alone.
+        s, r = conduct_submit(tokens['hr.officer'], fields={
+            'officer_id': 'POL-2026-0002', 'action_type': 'Disciplinary / Penalty',
+            'classification': 'Rank Demotion', 'proposed_rank': 'Constable',
+            'narrative': 'Case ref CID-2026-019: unauthorised release of a suspect.',
+            'reporting_officer_id': 'POL-2026-0001'})
+        assert s == 201 and r['action_id'].startswith('ACT-'), (s, r)
+        demotion = r['action_id']
+        s, r = request(base, 'POST', f'/api/conduct/{demotion}/review',
+                       tokens['hr.officer'],
+                       {'decision': 'reject', 'reviewer_officer_id': 'POL-2026-0001',
+                        'reviewer_notes': 'Insufficient evidence; referred back.'})
+        assert s == 201 and r['action']['status'] == 'Rejected', (s, r)
+        assert r['action']['rank_update'] is None and r['action']['rank_applied'] is False, r
+        s, officers = request(base, 'GET', '/api/officers', tokens['hr.officer'])
+        assert {o['service_id']: o['rank'] for o in officers['items']}['POL-2026-0002'] == 'Inspector'
+
+        # An approved Rank Demotion lowers the rank and logs history.
+        s, r = conduct_submit(tokens['admin'], fields={
+            'officer_id': 'POL-2026-0002', 'action_type': 'Disciplinary / Penalty',
+            'classification': 'Rank Demotion', 'proposed_rank': 'Sergeant',
+            'narrative': 'Disciplinary board DB-2026-04: conduct unbecoming, demotion ordered.',
+            'station_id': 'ST-002'})
+        assert s == 201, (s, r)
+        demotion2 = r['action_id']
+        s, r = request(base, 'POST', f'/api/conduct/{demotion2}/review',
+                       tokens['hr.officer'], {'decision': 'approve'})
+        assert s == 201 and r['action']['rank_update'] == {'from': 'Inspector', 'to': 'Sergeant'}, (s, r)
+        s, officers = request(base, 'GET', '/api/officers', tokens['hr.officer'])
+        assert {o['service_id']: o['rank'] for o in officers['items']}['POL-2026-0002'] == 'Sergeant'
+
+        # Non-rank approvals: a commendation does not touch the rank, and a
+        # Formal Dismissal terminates the officer's duty status.
+        s, r = conduct_submit(tokens['admin'], fields={
+            'officer_id': 'POL-2026-0001', 'classification': 'Official Commendation',
+            'proposed_rank': '',
+            'narrative': 'Commendation CM-2026-77: exemplary community policing in Ceerigaabo.'})
+        assert s == 201, (s, r)
+        commendation = r['action_id']
+        s, r = request(base, 'POST', f'/api/conduct/{commendation}/review',
+                       tokens['hr.officer'], {'decision': 'approve'})
+        assert s == 201 and r['action']['rank_update'] is None, (s, r)
+        s, d = request(base, 'GET', f'/api/conduct/{commendation}', tokens['hr.officer'])
+        assert len(d['officer_service_history']) == 2, d['officer_service_history']
+
+        s, r = conduct_submit(tokens['admin'], fields={
+            'officer_id': 'POL-2026-0002', 'action_type': 'Disciplinary / Penalty',
+            'classification': 'Formal Dismissal',
+            'narrative': 'Disciplinary board DB-2026-07: repeated absence from duty.',
+            'station_id': 'ST-002'})
+        assert s == 201, (s, r)
+        dismissal = r['action_id']
+        s, r = request(base, 'POST', f'/api/conduct/{dismissal}/review',
+                       tokens['hr.officer'], {'decision': 'approve'})
+        assert s == 201 and r['action']['duty_update'] == {'from': 'Active', 'to': 'Terminated'}, (s, r)
+        s, officers = request(base, 'GET', '/api/officers', tokens['hr.officer'])
+        o2 = next(o for o in officers['items'] if o['service_id'] == 'POL-2026-0002')
+        assert o2['duty_status'] == 'Terminated' and o2['rank'] == 'Sergeant', o2
+
+        # Filters: status, category, region, station and officer.
+        s, r = request(base, 'GET', '/api/conduct?status=Rejected', tokens['hr.officer'])
+        assert s == 200 and [i['action_id'] for i in r['items']] == [demotion], (s, r)
+        s, r = request(base, 'GET', '/api/conduct?category=Promotion', tokens['hr.officer'])
+        assert s == 200 and all(i['action_type'] == 'Promotion / Commendation' for i in r['items']), (s, r)
+        s, r = request(base, 'GET', '/api/conduct?category=disciplinary', tokens['hr.officer'])
+        assert s == 200 and all(i['action_type'] == 'Disciplinary / Penalty' for i in r['items']), (s, r)
+        s, r = request(base, 'GET', '/api/conduct?status=Garbage', tokens['hr.officer'])
+        assert s == 400, (s, r)
+        s, r = request(base, 'GET', '/api/conduct?region=Sanaag', tokens['hr.officer'])
+        assert s == 200 and len(r['items']) >= 5, (s, r['summary'])
+        s, r = request(base, 'GET', '/api/conduct?region=Sool', tokens['hr.officer'])
+        assert s == 200 and all(i['station_region'] == 'Sool' or
+                                i['officer_station_region'] == 'Sool' for i in r['items']), (s, r)
+        s, r = request(base, 'GET', '/api/conduct?station=ST-002', tokens['hr.officer'])
+        assert s == 200 and {i['action_id'] for i in r['items']} == {demotion2, dismissal}, (s, r)
+        s, r = request(base, 'GET', '/api/conduct?officer=POL-2026-0001', tokens['hr.officer'])
+        assert s == 200 and {i['action_id'] for i in r['items']} == {act_promo, commendation}, (s, r)
+
+        # The HR dashboard summarises the conduct pipeline.
+        s, r = request(base, 'GET', '/api/dashboard', tokens['hr.officer'])
+        assert s == 200, (s, r)
+        assert any(c['id'] == 'reg_conduct_pending' for c in r['cards']), r['cards']
+        assert any(q['id'] == 'add_conduct' for q in r['quick_actions']), r['quick_actions']
+        s, r = request(base, 'GET', '/api/dashboard', tokens['admin'])
+        assert any(c['id'] == 'conduct_pending' for c in r['cards']), r['cards']
+
+        # The immutable service-history rows are plain audit records: the
+        # review endpoint never rewrites them (one row per approval above).
+        conn = sqlite3.connect(db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = [dict(x) for x in conn.execute(
+                'SELECT officer_id, entry_type, from_rank, to_rank FROM officer_service_history '
+                'ORDER BY id')]
+            assert [(x['entry_type'], x['from_rank'], x['to_rank']) for x in rows] == [
+                ('Rank Advancement', 'Sergeant', 'Inspector'),
+                ('Rank Demotion', 'Inspector', 'Sergeant'),
+                ('Official Commendation', None, None),
+                ('Formal Dismissal', None, None)], rows
+        finally:
+            conn.close()
+        print('ok: conduct module (ACT files, validation, HR approval pipeline, '
+              'automatic rank updates, rejection handling)')
 
         vin_ok = '1HGCM82633A004352'
         fleet = {
