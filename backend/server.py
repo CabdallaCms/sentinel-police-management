@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from vehicles import (
     VEHICLES_SCHEMA, register_vehicle, update_vehicle_alert, list_vehicles,
+    VEHICLE_CATEGORIES, VEHICLE_OP_STATUSES, VEHICLE_ALERTS,
 )
 
 # When this process started — surfaced by /api/health so an operator can tell
@@ -165,6 +166,28 @@ CREATE TABLE IF NOT EXISTS crime_incidents(
   evidence1_type TEXT, evidence1_path TEXT,
   evidence2_type TEXT, evidence2_path TEXT,
   created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS officer_promotions(
+  id INTEGER PRIMARY KEY, nomination_id TEXT UNIQUE NOT NULL,
+  officer_id INTEGER NOT NULL REFERENCES officers(id),
+  current_rank TEXT NOT NULL, proposed_rank TEXT NOT NULL,
+  reason TEXT, effective_date TEXT,
+  verification_status TEXT NOT NULL DEFAULT 'Awaiting Verification',
+  nominated_by INTEGER REFERENCES users(id),
+  verified_by INTEGER REFERENCES users(id), verified_at TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS officer_discipline(
+  id INTEGER PRIMARY KEY, action_id TEXT UNIQUE NOT NULL,
+  officer_id INTEGER NOT NULL REFERENCES officers(id),
+  action_type TEXT NOT NULL,
+  severity TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  from_rank TEXT, to_rank TEXT,
+  suspension_start TEXT, suspension_end TEXT,
+  incident_summary TEXT,
+  reported_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS sessions(
@@ -701,6 +724,39 @@ CRIME_CATEGORIES = ('Theft/Burglary', 'Assault', 'Robbery', 'Traffic Accident', 
                     'Fraud', 'Domestic Incident', 'Public Order', 'Cybercrime', 'Other')
 CRIME_SEVERITIES = ('Low', 'Medium', 'High', 'Critical')
 CRIME_STATUSES = ('Reported / Open', 'Under Investigation', 'Referred to Court', 'Closed', 'Unresolved')
+
+# ---------------------------------------------------------------------------
+# Departmental analytics vocabularies.
+# ---------------------------------------------------------------------------
+# Case lifecycle labels used by the CID crime register. `crime_cases.status`
+# predates CRIME_STATUSES (the intake form), so the union of both lists keeps
+# the analytics axes stable for either spelling.
+CASE_STATUSES = ('Reported', 'Reported / Open', 'Under Investigation',
+                 'Submitted for Prosecution', 'Referred to Court', 'Closed', 'Unresolved')
+
+# 24-hour bands used by every time-of-day chart (fixed order = fixed axis).
+TIME_OF_DAY_BUCKETS = ('Morning (06-12)', 'Afternoon (12-18)',
+                       'Evening (18-24)', 'Night (00-06)')
+
+# Airport movement directions (inbound / outbound counters).
+AIRPORT_MOVEMENTS = ('Arrival', 'Departure')
+
+# HR Directorate (Police Officers Registration Office) lists.
+PROMOTION_STATUSES = ('Awaiting Verification', 'Verified', 'Rejected')
+PROMOTION_PENDING_STATUS = 'Awaiting Verification'
+DISCIPLINE_ACTION_TYPES = ('Misconduct', 'Suspension', 'Demotion', 'Warning', 'Investigation')
+DISCIPLINE_STATUSES = ('Pending', 'In Review', 'Confirmed', 'Closed', 'Appealed')
+# "Open" disciplinary actions — the ones counted by the red badge.
+DISCIPLINE_OPEN_STATUSES = ('Pending', 'In Review', 'Appealed')
+
+# Analytics module names accepted by GET /api/analytics?module=<name>.
+ANALYTICS_MODULES = ('cid', 'officers', 'vehicles', 'stations')
+# The CID analytics bundle covers the four Criminal Investigation Directorate
+# units; a unit officer only ever receives the section for their own module.
+CID_ANALYTICS_SECTIONS = ('fingerprint', 'crime', 'checkpoint', 'airport')
+CID_SECTION_MODULES = {'fingerprint': 'fingerprint', 'crime': 'cid',
+                       'checkpoint': 'checkpoints', 'airport': 'airport'}
+
 REPORTING_PARTY_TYPES = ('Victim', 'Witness', 'Third-Party Representative', 'Police')
 VICTIM_GENDERS = ('Male', 'Female', 'Other / Prefer not to say')
 EVIDENCE_TYPES = ('Photo', 'Statement', 'Physical item', 'Digital file', 'Other')
@@ -906,6 +962,38 @@ def require_module(user, module):
         f'Restricted to {ROLE_LABELS.get(role, role)}')
 
 
+def user_module_set(user):
+    """Every module a user can reach, resolved for the raw role AND its aliases.
+
+    `require_auth` hands out `user_view()` payloads (which already carry a
+    resolved `modules` list); internal callers sometimes pass the raw row, so
+    the role is re-resolved here to keep the answer identical either way.
+    """
+    if not user:
+        return set()
+    mods = set(user.get('modules') or [])
+    role = user.get('role') or ''
+    mods |= set(ROLE_MODULES.get(role, set()))
+    mods |= set(ROLE_MODULES.get(normalize_role(role), set()))
+    mods |= set(ROLE_MODULES.get(spec_role_for(role), set()))
+    return mods
+
+
+def require_any_module(user, modules):
+    """Raise PermissionError unless the user holds at least ONE of `modules`.
+
+    Departmental analytics are shared surfaces: the CID bundle is read by the
+    Fingerprint / Crime / Checkpoint / Airport units, so an any-of gate is the
+    correct RBAC shape (each caller still only receives its own sections).
+    """
+    allowed = set(modules or ())
+    if user_module_set(user) & allowed:
+        return
+    role = (user or {}).get('role') or ''
+    raise PermissionError(
+        f'Restricted to {ROLE_LABELS.get(role, role)}')
+
+
 def checkpoint_scope(user):
     """Return the location code this user is allowed to see for checkpoint data.
 
@@ -1085,17 +1173,21 @@ def init_db():
     # Station" dropdown is populated on first run. Mirrors the frontend seed
     # gazetteer (Sool / Sanaag / East Togdheer).
     if c.execute('SELECT COUNT(*) FROM police_stations').fetchone()[0] == 0:
-        for sid, name, code, region, district, village in (
-                ('ST-001', 'Ceerigaabo Central Station', 'SAN-C-01', 'Sanaag', 'Ceerigaabo', 'Ceerigaabo'),
-                ('ST-002', 'Badhan Station',           'SAN-C-02', 'Sanaag', 'Badhan',     'Badhan'),
-                ('ST-003', 'Caynabo Station',          'SOO-C-03', 'Sool',   'Caynabo',    'Caynabo'),
-                ('ST-004', 'Las Anod Station',         'SOO-C-01', 'Sool',   'Laascaanood','Laascaanood'),
-                ('ST-005', 'Burao Station',            'TOG-C-01', 'East Togdheer', 'Burao', 'Burao'),
-                ('ST-006', 'Oodweyne Station',         'TOG-C-02', 'East Togdheer', 'Oodweyne', 'Oodweyne'),
-                ('ST-007', 'Buuhoodle Station',        'ETG-C-03', 'East Togdheer', 'Buuhoodle', 'Widh Widh'),
-                ('ST-008', 'Adhi Cadeeye Outpost',     'SOO-C-02', 'Sool',   'Laascaanood','Adhi Cadeeye')):
-            c.execute('INSERT INTO police_stations(station_id,name,code,region,district,village) '
-                      'VALUES(?,?,?,?,?,?)', (sid, name, code, region, district, village))
+        # station_tier + cell_capacity are seeded too so the Station Master
+        # Registry analytics (operational capacity by tier) has real axes on
+        # first run instead of eight "Unclassified" stations.
+        for sid, name, code, region, district, village, tier, cells in (
+                ('ST-001', 'Ceerigaabo Central Station', 'SAN-C-01', 'Sanaag', 'Ceerigaabo', 'Ceerigaabo', 'Regional HQ', 24),
+                ('ST-002', 'Badhan Station',           'SAN-C-02', 'Sanaag', 'Badhan',     'Badhan',     'District HQ', 12),
+                ('ST-003', 'Caynabo Station',          'SOO-C-03', 'Sool',   'Caynabo',    'Caynabo',    'District HQ', 10),
+                ('ST-004', 'Las Anod Station',         'SOO-C-01', 'Sool',   'Laascaanood','Laascaanood','Regional HQ', 20),
+                ('ST-005', 'Burao Station',            'TOG-C-01', 'East Togdheer', 'Burao', 'Burao',     'Regional HQ', 24),
+                ('ST-006', 'Oodweyne Station',         'TOG-C-02', 'East Togdheer', 'Oodweyne', 'Oodweyne','District HQ', 12),
+                ('ST-007', 'Buuhoodle Station',        'ETG-C-03', 'East Togdheer', 'Buuhoodle', 'Widh Widh','Outpost', 6),
+                ('ST-008', 'Adhi Cadeeye Outpost',     'SOO-C-02', 'Sool',   'Laascaanood','Adhi Cadeeye','Checkpoint', 4)):
+            c.execute('INSERT INTO police_stations(station_id,name,code,region,district,village,'
+                      'station_tier,cell_capacity) VALUES(?,?,?,?,?,?,?,?)',
+                      (sid, name, code, region, district, village, tier, cells))
     # Normalise the legacy admin account + seed a representative user per role
     # so the RBAC flow is exercised by default. The existing admin keeps its
     # password (idempotent — we only re-tag it on first run).
@@ -1946,21 +2038,9 @@ def build_analytics(c, user):
     for r in crime_rows:
         loc = (r['location'] or 'Unspecified').strip() or 'Unspecified'
         by_location[loc] = by_location.get(loc, 0) + 1
-        # created_at is a SQLite 'YYYY-MM-DD HH:MM:SS' string
-        ts = (r['created_at'] or '').strip()
-        hour = None
-        if len(ts) >= 13 and ts[11:13].isdigit():
-            hour = int(ts[11:13])
-        if hour is None:
-            bucket = 'Unspecified'
-        elif 6 <= hour < 12:
-            bucket = 'Morning (06-12)'
-        elif 12 <= hour < 18:
-            bucket = 'Afternoon (12-18)'
-        elif 18 <= hour < 24:
-            bucket = 'Evening (18-24)'
-        else:
-            bucket = 'Night (00-06)'
+        # created_at is a SQLite 'YYYY-MM-DD HH:MM:SS' string — bucketed by
+        # the shared helper so the executive and CID views always agree.
+        bucket = time_of_day_bucket(r['created_at'])
         by_time[bucket] = by_time.get(bucket, 0) + 1
     # Pad the matrix so the dashboard has stable axes.
     location_order = sorted(by_location.items(), key=lambda x: -x[1])
@@ -2013,6 +2093,973 @@ def build_analytics(c, user):
         'crime_distribution': crime_distribution,
         'checkpoint_volume': volume,
     }
+
+
+# ---------------------------------------------------------------------------
+# Departmental analytics.
+#
+# The monolithic executive analytics page was split into four departmental
+# bundles that are embedded directly in the register they describe:
+#
+#   GET /api/cid/analytics        — CID directorate (Fingerprint · Crime ·
+#                                   Checkpoint · Airport sections)
+#   GET /api/officers/analytics   — Police Officers Registration Office (HR)
+#   GET /api/vehicles/analytics   — Police Car Registration module
+#   GET /api/stations/analytics   — Police Station Master Registry
+#   GET /api/analytics?module=…   — the same four builders behind one route
+#                                   (module=all returns every bundle the
+#                                   caller is entitled to see)
+#
+# Every bundle returns the same envelope shape so the frontend can render any
+# of them with one painter:
+#
+#   {generated_at, module, role, kpis: [card], charts: {name: series},
+#    lists: {name: [row]}, …flat metric keys…}
+#
+# `kpis` drives the tab-specific summary cards, `charts` the lightweight
+# canvas visuals and `lists` the badge lists (green promotion nominations /
+# red disciplinary actions / flagged vehicles / unstaffed stations).
+# ---------------------------------------------------------------------------
+
+def _generated_at():
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
+
+def _today():
+    return time.strftime('%Y-%m-%d', time.gmtime())
+
+
+def _val(row, key, default=None):
+    """Read a column from a sqlite3.Row or a plain dict (None -> default)."""
+    if row is None:
+        return default
+    keys = row.keys() if hasattr(row, 'keys') else ()
+    if key not in keys:
+        return default
+    v = row[key]
+    return default if v is None else v
+
+
+def pct(part, total, digits=1):
+    """Percentage of `part` over `total` — 0.0 when the denominator is 0.
+
+    Every rate in the departmental bundles is produced by this one helper so
+    the arithmetic (and its rounding) is identical server- and client-side.
+    """
+    try:
+        part = float(part or 0)
+        total = float(total or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if total <= 0:
+        return 0.0
+    return round((part / total) * 100.0, digits)
+
+
+def count_by(rows, key, blank='Unspecified', transform=None):
+    """Tally a column across rows -> {label: count} (blank/NULL -> `blank`)."""
+    counts = {}
+    for r in rows:
+        v = _val(r, key, '')
+        v = str(v).strip()
+        if transform:
+            v = str(transform(v) or '').strip()
+        v = v or blank
+        counts[v] = counts.get(v, 0) + 1
+    return counts
+
+
+def series_from_counts(counts, order=(), limit=None):
+    """Build a stable [{label, count}] chart series.
+
+    Labels in `order` come first and are ALWAYS present (zero-padded) so the
+    canvas axes never jump between renders; any other observed label is
+    appended sorted by count desc then alphabetically. `limit` trims the
+    trailing (unordered) extras for "top N" charts.
+    """
+    remaining = dict(counts or {})
+    out = []
+    for label in order:
+        out.append({'label': label, 'count': int(remaining.pop(label, 0) or 0)})
+    extras = sorted(remaining.items(), key=lambda kv: (-int(kv[1] or 0), str(kv[0])))
+    if limit is not None:
+        extras = extras[:max(0, limit)]
+    for label, n in extras:
+        out.append({'label': str(label) or 'Unspecified', 'count': int(n or 0)})
+    return out
+
+
+def sorted_series(counts, limit=None):
+    """[{label,count}] sorted by count desc (no fixed axis) for free text."""
+    return series_from_counts(counts, (), limit)
+
+
+def time_of_day_bucket(ts):
+    """Bucket a 'YYYY-MM-DD HH:MM:SS' / ISO stamp into a 24-hour band."""
+    s = str(ts or '').strip().replace('T', ' ')
+    hour = None
+    if len(s) >= 13 and s[11:13].isdigit():
+        hour = int(s[11:13])
+    if hour is None:
+        return 'Unspecified'
+    if 6 <= hour < 12:
+        return 'Morning (06-12)'
+    if 12 <= hour < 18:
+        return 'Afternoon (12-18)'
+    if 18 <= hour < 24:
+        return 'Evening (18-24)'
+    return 'Night (00-06)'
+
+
+def _years_since(date_str, today=None):
+    """Whole-decimal years between an ISO date and today (None if unparsable)."""
+    s = str(date_str or '').strip()[:10]
+    if len(s) < 10:
+        return None
+    try:
+        d = datetime.date.fromisoformat(s)
+    except ValueError:
+        return None
+    t = today or datetime.datetime.now(datetime.timezone.utc).date()
+    if d > t:
+        return None
+    return round((t - d).days / 365.25, 1)
+
+
+def checkpoint_scope_sql(scope, alias='ce'):
+    """Flexible, case-insensitive location filter for checkpoint_events.
+
+    Mirrors the /api/checkpoint-events read path: a row written with only the
+    friendly label ('South Checkpoint') still matches the officer's scope.
+    Returns ('', ()) when no scope applies (admins see every location).
+    """
+    if not scope:
+        return ('', ())
+    s = str(scope).strip().lower()
+    sql = (f"WHERE (LOWER(TRIM(COALESCE({alias}.location_code,'')))=? "
+           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,'')))=? "
+           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,'')))=? "
+           f"OR LOWER(TRIM(COALESCE({alias}.location,'')))=? "
+           f"OR LOWER(TRIM(COALESCE({alias}.location,''))) LIKE ? "
+           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,''))) LIKE ?)")
+    return (sql, (s, s, f'{s} checkpoint', s, f'%{s}%', f'%{s}%'))
+
+
+def checkpoint_code_of(row):
+    """Canonical checkpoint code (South / East / West) for an event row."""
+    for key in ('location_code', 'checkpoint_location', 'location'):
+        v = str(_val(row, key, '') or '').strip()
+        if not v:
+            continue
+        code = canonical_location_scope(v)
+        if code in CHECKPOINT_LOCATIONS:
+            return code
+        first = v.split()[0]
+        if first in CHECKPOINT_LOCATIONS:
+            return first
+    return 'Other'
+
+
+def kpi(label, value, tone='blue', icon='▦', hint=''):
+    """One summary card for a departmental analytics header."""
+    return {'label': label, 'value': value, 'tone': tone, 'icon': icon, 'hint': hint}
+
+
+# ---- 1) CID · Fingerprint Unit ---------------------------------------------
+def cid_fingerprint_analytics(c):
+    """Biometric capture volume + identity match / suspect hit rates.
+
+    Definitions (fixed so the numbers are reproducible in tests):
+      * total_biometrics_logged  — one clearance application = one logged
+        biometric capture set.
+      * repeat_captures          — captures against a Central Person that was
+        already fingerprinted (total − distinct persons), i.e. the capture
+        matched an existing identity record.
+      * identity_match_rate      — repeat_captures / total_biometrics_logged.
+      * suspect_hits             — captures whose Central Person carries an
+        ACTIVE suspect alert at query time.
+      * hit_rate                 — suspect_hits / total_biometrics_logged.
+    """
+    rows = c.execute('''SELECT ca.person_id, ca.status, ca.purpose, ca.created_at,
+            (SELECT COUNT(*) FROM suspect_alerts sa
+              WHERE sa.person_id = ca.person_id
+                AND sa.role = 'Suspect'
+                AND sa.alert_status = 'Active alert') AS active_alerts
+        FROM clearance_applications ca ORDER BY ca.id''').fetchall()
+    total = len(rows)
+    unique = len({_val(r, 'person_id') for r in rows})
+    repeat = total - unique
+    hits = sum(1 for r in rows if int(_val(r, 'active_alerts', 0) or 0) > 0)
+    statuses = count_by(rows, 'status', 'Unknown')
+    today = _today()
+    logged_today = sum(1 for r in rows
+                       if str(_val(r, 'created_at', '') or '').strip()[:10] == today)
+    approved = int(statuses.get('Approved', 0))
+    pending = int(statuses.get('Pending Review', 0))
+    return {
+        'unit': 'Fingerprint Unit',
+        'total_biometrics_logged': total,
+        'biometrics_logged_today': logged_today,
+        'unique_persons_fingerprinted': unique,
+        'repeat_captures': repeat,
+        'identity_match_rate': pct(repeat, total),
+        'suspect_hits': hits,
+        'hit_rate': pct(hits, total),
+        'approved': approved,
+        'pending_review': pending,
+        'rejected': int(statuses.get('Rejected', 0)),
+        'clearance_rate': pct(approved, total),
+        'kpis': [
+            kpi('Biometrics logged', total, 'blue', '⌁', 'Clearance captures on file'),
+            kpi('Identity match rate', f'{pct(repeat, total)}%', 'purple', '◈',
+                'Captures matched to an existing Central Person'),
+            kpi('Suspect hits', hits, 'red', '!', 'Captures tied to an active suspect alert'),
+            kpi('Hit rate', f'{pct(hits, total)}%', 'red', '%', 'Suspect hits ÷ captures logged'),
+            kpi('Pending review', pending, 'amber', '⧗', 'Awaiting the 12-hour review window'),
+            kpi('Clearances approved', approved, 'green', '✓', f'{pct(approved, total)}% clearance rate'),
+        ],
+        'charts': {
+            'by_status': series_from_counts(statuses, ('Pending Review', 'Approved', 'Rejected')),
+            'by_purpose': series_from_counts(count_by(rows, 'purpose'), CLEARANCE_REASONS),
+        },
+        'lists': {},
+    }
+
+
+# ---- 2) CID · Crime Department ---------------------------------------------
+def cid_crime_analytics(c):
+    """Case volume by location, time-of-day band, category and open/closed."""
+    rows = c.execute('SELECT case_id, category, location, status, created_at '
+                     'FROM crime_cases ORDER BY id').fetchall()
+    total = len(rows)
+    closed = sum(1 for r in rows
+                 if str(_val(r, 'status', '') or '').strip().lower() == 'closed')
+    open_cases = total - closed
+    active_suspects = c.execute(
+        "SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' "
+        "AND alert_status='Active alert'").fetchone()[0]
+    categories = count_by(rows, 'category')
+    top_category = max(categories.items(), key=lambda kv: kv[1])[0] if categories else '—'
+    return {
+        'unit': 'Crime Department',
+        'total_cases': total,
+        'open_cases': open_cases,
+        'closed_cases': closed,
+        'closure_rate': pct(closed, total),
+        'active_suspects': active_suspects,
+        'categories_tracked': len(categories),
+        'top_category': top_category,
+        'kpis': [
+            kpi('Crime cases', total, 'blue', '⚖', 'CID case files on record'),
+            kpi('Open cases', open_cases, 'amber', '◔', 'Everything not yet Closed'),
+            kpi('Closed cases', closed, 'green', '✓', f'{pct(closed, total)}% closure rate'),
+            kpi('Active suspects', active_suspects, 'red', '!', 'Live suspect alerts'),
+            kpi('Top category', top_category, 'purple', '▤', 'Most reported crime category'),
+        ],
+        'charts': {
+            'by_location': sorted_series(count_by(rows, 'location')),
+            'by_time_of_day': series_from_counts(
+                count_by(rows, 'created_at', 'Unspecified', time_of_day_bucket),
+                TIME_OF_DAY_BUCKETS),
+            'by_category': series_from_counts(categories, CRIME_CATEGORIES),
+            'by_status': series_from_counts(count_by(rows, 'status'), CASE_STATUSES),
+            'open_vs_closed': [{'label': 'Open', 'count': open_cases},
+                               {'label': 'Closed', 'count': closed}],
+        },
+        'lists': {},
+    }
+
+
+# ---- 3) CID · Checkpoint Unit ----------------------------------------------
+def cid_checkpoint_analytics(c, user):
+    """Traveler screening volume + flagged suspect hits per checkpoint.
+
+    Scoped exactly like /api/checkpoint-events: a Checkpoint officer only ever
+    sees (and only ever counts) their own South / East / West location.
+    """
+    scope = checkpoint_scope(user)
+    where, params = checkpoint_scope_sql(scope)
+    rows = c.execute(f'''SELECT ce.person_id, ce.location, ce.location_code,
+            ce.checkpoint_location, ce.screening_result, ce.created_at
+        FROM checkpoint_events ce {where} ORDER BY ce.id''', params).fetchall()
+    total = len(rows)
+    flagged = sum(1 for r in rows
+                  if str(_val(r, 'screening_result', '') or '').strip().lower() == 'flagged match')
+    travelers = len({_val(r, 'person_id') for r in rows})
+    today = _today()
+    today_count = sum(1 for r in rows
+                      if str(_val(r, 'created_at', '') or '').strip()[:10] == today)
+    locations = (scope,) if scope in CHECKPOINT_LOCATIONS else CHECKPOINT_LOCATIONS
+    per_location = []
+    for code in locations:
+        at = [r for r in rows if checkpoint_code_of(r) == code]
+        hits = sum(1 for r in at
+                   if str(_val(r, 'screening_result', '') or '').strip().lower() == 'flagged match')
+        per_location.append({'label': code, 'checkpoint': f'{code} Checkpoint',
+                             'count': len(at), 'screenings': len(at),
+                             'flagged': hits, 'cleared': len(at) - hits,
+                             'flag_rate': pct(hits, len(at))})
+    other = [r for r in rows if checkpoint_code_of(r) not in CHECKPOINT_LOCATIONS]
+    if other:
+        per_location.append({'label': 'Other', 'checkpoint': 'Unassigned location',
+                             'count': len(other), 'screenings': len(other),
+                             'flagged': sum(1 for r in other if str(
+                                 _val(r, 'screening_result', '') or '').strip().lower() == 'flagged match'),
+                             'cleared': 0, 'flag_rate': 0.0})
+        per_location[-1]['cleared'] = per_location[-1]['count'] - per_location[-1]['flagged']
+        per_location[-1]['flag_rate'] = pct(per_location[-1]['flagged'], per_location[-1]['count'])
+    return {
+        'unit': 'Checkpoint Unit',
+        'scope': scope or None,
+        'total_screenings': total,
+        'screenings_today': today_count,
+        'flagged_hits': flagged,
+        'cleared': total - flagged,
+        'flag_rate': pct(flagged, total),
+        'distinct_travelers': travelers,
+        'kpis': [
+            kpi('Travelers screened', total, 'blue', '⊙',
+                f'{scope} Checkpoint only' if scope else 'All checkpoints'),
+            kpi('Flagged suspect hits', flagged, 'red', '!', 'Screenings matching an active alert'),
+            kpi('Flag rate', f'{pct(flagged, total)}%', 'amber', '%', 'Flagged ÷ screened'),
+            kpi('Distinct travelers', travelers, 'purple', '◉', 'Unique Central Persons stopped'),
+            kpi('Screened today', today_count, 'green', '⧗', 'UTC day to date'),
+        ],
+        'charts': {
+            'by_location': [{'label': x['label'], 'count': x['count']} for x in per_location],
+            'flagged_by_location': [{'label': x['label'], 'count': x['flagged']} for x in per_location],
+            'screening_by_location': per_location,
+            'by_result': series_from_counts(count_by(rows, 'screening_result'),
+                                            ('Flagged match', 'No active alert', 'Cleared')),
+        },
+        'lists': {'checkpoints': per_location},
+    }
+
+
+# ---- 4) CID · Airport Unit --------------------------------------------------
+def cid_airport_analytics(c):
+    """Inbound / outbound movement counts + active suspect movement alerts."""
+    rows = c.execute('''SELECT ap.person_id, ap.movement, ap.route, ap.travel_date,
+            ap.origin_city, ap.destination_city,
+            (SELECT COUNT(*) FROM suspect_alerts sa
+              WHERE sa.person_id = ap.person_id
+                AND sa.role = 'Suspect'
+                AND sa.alert_status = 'Active alert') AS active_alerts
+        FROM airport_passengers ap ORDER BY ap.id''').fetchall()
+    total = len(rows)
+    movements = count_by(rows, 'movement')
+    inbound = int(movements.get('Arrival', 0))
+    outbound = int(movements.get('Departure', 0))
+    suspect_movements = sum(1 for r in rows if int(_val(r, 'active_alerts', 0) or 0) > 0)
+    suspect_passengers = len({_val(r, 'person_id') for r in rows
+                              if int(_val(r, 'active_alerts', 0) or 0) > 0})
+    active_alerts = c.execute(
+        "SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' "
+        "AND alert_status='Active alert'").fetchone()[0]
+    today = _today()
+    today_count = sum(1 for r in rows
+                      if str(_val(r, 'travel_date', '') or '').strip()[:10] == today)
+    routes = {}
+    for r in rows:
+        label = str(_val(r, 'route', '') or '').strip() or ' / '.join(
+            filter(None, [str(_val(r, 'origin_city', '') or '').strip(),
+                          str(_val(r, 'destination_city', '') or '').strip()]))
+        routes[label or 'Unspecified'] = routes.get(label or 'Unspecified', 0) + 1
+    alert_items = [{'person_id': _val(r, 'person_id'),
+                    'movement': _val(r, 'movement'),
+                    'route': _val(r, 'route') or ' / '.join(
+                        filter(None, [_val(r, 'origin_city'), _val(r, 'destination_city')])),
+                    'travel_date': _val(r, 'travel_date'),
+                    'alert': 'Active suspect alert'}
+                   for r in rows if int(_val(r, 'active_alerts', 0) or 0) > 0]
+    return {
+        'unit': 'Airport Unit',
+        'total_movements': total,
+        'inbound': inbound,
+        'outbound': outbound,
+        'other_movements': total - inbound - outbound,
+        'inbound_share': pct(inbound, total),
+        'outbound_share': pct(outbound, total),
+        'movements_today': today_count,
+        'suspect_movements': suspect_movements,
+        'suspect_passengers': suspect_passengers,
+        'active_suspect_alerts': active_alerts,
+        'kpis': [
+            kpi('Passenger movements', total, 'blue', '✈', 'Airport register total'),
+            kpi('Inbound', inbound, 'green', '↓', f'{pct(inbound, total)}% of movements'),
+            kpi('Outbound', outbound, 'purple', '↑', f'{pct(outbound, total)}% of movements'),
+            kpi('Suspect movements', suspect_movements, 'red', '!',
+                'Movements by persons on an active alert'),
+            kpi('Active suspect alerts', active_alerts, 'red', '⚑', 'Directorate-wide'),
+        ],
+        'charts': {
+            'by_movement': series_from_counts(movements, AIRPORT_MOVEMENTS),
+            'inbound_vs_outbound': [{'label': 'Inbound', 'count': inbound},
+                                    {'label': 'Outbound', 'count': outbound}],
+            'by_route': sorted_series(routes, limit=6),
+        },
+        'lists': {'suspect_movements': alert_items},
+    }
+
+
+def build_cid_analytics(c, user):
+    """CID directorate bundle — one section per unit the caller may access."""
+    mods = user_module_set(user)
+    see_all = 'analytics' in mods          # System Administrator
+    payload = {'generated_at': _generated_at(), 'module': 'cid',
+               'role': (user or {}).get('role') or '',
+               'checkpoint_scope': checkpoint_scope(user) or None,
+               'sections': [], 'kpis': [], 'charts': {}, 'lists': {}}
+    builders = {'fingerprint': lambda: cid_fingerprint_analytics(c),
+                'crime': lambda: cid_crime_analytics(c),
+                'checkpoint': lambda: cid_checkpoint_analytics(c, user),
+                'airport': lambda: cid_airport_analytics(c)}
+    for name in CID_ANALYTICS_SECTIONS:
+        if not (see_all or CID_SECTION_MODULES[name] in mods):
+            continue
+        section = builders[name]()
+        payload[name] = section
+        payload['sections'].append(name)
+        # The umbrella header shows the two most important cards per unit.
+        payload['kpis'].extend(section.get('kpis', [])[:2])
+    return payload
+
+
+# ---- 5) Police Officers Registration Office (HR Directorate) ---------------
+def new_promotion_id(c):
+    year = datetime.datetime.now(datetime.timezone.utc).year
+    prefix = f'PRM-{year}-'
+    n = 1
+    for row in c.execute('SELECT nomination_id FROM officer_promotions WHERE nomination_id LIKE ?',
+                         (prefix + '%',)):
+        try:
+            n = max(n, int(str(row['nomination_id']).rsplit('-', 1)[1]) + 1)
+        except (ValueError, IndexError):
+            pass
+    return f'{prefix}{n:04d}'
+
+
+def new_discipline_id(c):
+    year = datetime.datetime.now(datetime.timezone.utc).year
+    prefix = f'DSC-{year}-'
+    n = 1
+    for row in c.execute('SELECT action_id FROM officer_discipline WHERE action_id LIKE ?',
+                         (prefix + '%',)):
+        try:
+            n = max(n, int(str(row['action_id']).rsplit('-', 1)[1]) + 1)
+        except (ValueError, IndexError):
+            pass
+    return f'{prefix}{n:04d}'
+
+
+PROMOTION_SELECT = '''SELECT pr.*, o.service_id, o.full_name, o.rank AS officer_rank,
+        o.unit, o.duty_status, s.name AS station_name, s.station_id AS station_code,
+        s.region AS station_region, u.display_name AS nominated_by_name,
+        v.display_name AS verified_by_name
+    FROM officer_promotions pr
+    JOIN officers o ON o.id = pr.officer_id
+    LEFT JOIN police_stations s ON s.id = o.station_id
+    LEFT JOIN users u ON u.id = pr.nominated_by
+    LEFT JOIN users v ON v.id = pr.verified_by'''
+
+DISCIPLINE_SELECT = '''SELECT da.*, o.service_id, o.full_name, o.rank AS officer_rank,
+        o.unit, o.duty_status, s.name AS station_name, s.station_id AS station_code,
+        s.region AS station_region, u.display_name AS reported_by_name
+    FROM officer_discipline da
+    JOIN officers o ON o.id = da.officer_id
+    LEFT JOIN police_stations s ON s.id = o.station_id
+    LEFT JOIN users u ON u.id = da.reported_by'''
+
+
+def promotion_row(c, nomination_id):
+    return c.execute(PROMOTION_SELECT + ' WHERE pr.nomination_id=?', (nomination_id,)).fetchone()
+
+
+def discipline_row(c, action_id):
+    return c.execute(DISCIPLINE_SELECT + ' WHERE da.action_id=?', (action_id,)).fetchone()
+
+
+def promotion_rows(c):
+    return c.execute(PROMOTION_SELECT + ' ORDER BY pr.id DESC').fetchall()
+
+
+def discipline_rows(c):
+    return c.execute(DISCIPLINE_SELECT + ' ORDER BY da.id DESC').fetchall()
+
+
+def promotion_view(r):
+    return {
+        'nomination_id': r['nomination_id'],
+        'service_id': _val(r, 'service_id'),
+        'full_name': _val(r, 'full_name'),
+        'officer_rank': _val(r, 'officer_rank'),
+        'current_rank': r['current_rank'],
+        'proposed_rank': r['proposed_rank'],
+        'unit': _val(r, 'unit'),
+        'duty_status': _val(r, 'duty_status'),
+        'station_name': _val(r, 'station_name'),
+        'station_code': _val(r, 'station_code'),
+        'reason': _val(r, 'reason'),
+        'effective_date': _val(r, 'effective_date'),
+        'verification_status': r['verification_status'],
+        'nominated_by': _val(r, 'nominated_by_name'),
+        'verified_by': _val(r, 'verified_by_name'),
+        'verified_by_id': _val(r, 'verified_by'),
+        'verified_at': _val(r, 'verified_at'),
+        'created_at': _val(r, 'created_at'),
+        # The green badge only counts nominations for officers still in
+        # active service that a commander has not verified yet.
+        'awaiting_verification': (r['verification_status'] == PROMOTION_PENDING_STATUS
+                                  and _val(r, 'duty_status') == 'Active'),
+    }
+
+
+def discipline_view(r):
+    status = r['status']
+    return {
+        'action_id': r['action_id'],
+        'service_id': _val(r, 'service_id'),
+        'full_name': _val(r, 'full_name'),
+        'officer_rank': _val(r, 'officer_rank'),
+        'unit': _val(r, 'unit'),
+        'duty_status': _val(r, 'duty_status'),
+        'station_name': _val(r, 'station_name'),
+        'station_code': _val(r, 'station_code'),
+        'action_type': r['action_type'],
+        'severity': _val(r, 'severity'),
+        'status': status,
+        'from_rank': _val(r, 'from_rank'),
+        'to_rank': _val(r, 'to_rank'),
+        'suspension_start': _val(r, 'suspension_start'),
+        'suspension_end': _val(r, 'suspension_end'),
+        'incident_summary': _val(r, 'incident_summary'),
+        'reported_by': _val(r, 'reported_by_name'),
+        'created_at': _val(r, 'created_at'),
+        'open': status in DISCIPLINE_OPEN_STATUSES,
+    }
+
+
+def register_promotion(c, user, data):
+    """Create a promotion nomination awaiting commander verification."""
+    officer = resolve_officer_row(c, data.get('officer_id') or data.get('service_id'))
+    if not officer:
+        raise ValueError('Officer does not exist')
+    current = normalise_choice(data.get('current_rank'), OFFICER_RANKS) or officer['rank']
+    proposed = normalise_choice(data.get('proposed_rank'), OFFICER_RANKS)
+    if not proposed:
+        raise ValueError('Proposed rank is required and must be one of: '
+                         + ', '.join(OFFICER_RANKS))
+    if proposed == current:
+        raise ValueError('Proposed rank must differ from the current rank')
+    status = normalise_choice(data.get('verification_status'), PROMOTION_STATUSES) \
+        or PROMOTION_PENDING_STATUS
+    nid = new_promotion_id(c)
+    c.execute('''INSERT INTO officer_promotions(nomination_id, officer_id, current_rank,
+            proposed_rank, reason, effective_date, verification_status, nominated_by)
+        VALUES(?,?,?,?,?,?,?,?)''',
+              (nid, officer['id'], current, proposed,
+               str(data.get('reason') or '').strip() or None,
+               str(data.get('effective_date') or '').strip() or None,
+               status, user['id']))
+    return promotion_view(promotion_row(c, nid))
+
+
+def verify_promotion(c, user, nomination_id, data):
+    """Commander verification: Accepted/Verified or Rejected."""
+    row = c.execute('SELECT * FROM officer_promotions WHERE nomination_id=?',
+                    (nomination_id,)).fetchone()
+    if not row:
+        raise LookupError('Promotion nomination not found')
+    status = normalise_choice(data.get('verification_status') or data.get('status'),
+                              PROMOTION_STATUSES)
+    if not status:
+        raise ValueError('verification_status must be one of: ' + ', '.join(PROMOTION_STATUSES))
+    stamp = utc_now_stamp() if status != PROMOTION_PENDING_STATUS else None
+    c.execute('UPDATE officer_promotions SET verification_status=?, verified_by=?, verified_at=? '
+              'WHERE nomination_id=?',
+              (status, user['id'] if status != PROMOTION_PENDING_STATUS else None,
+               stamp, nomination_id))
+    return promotion_view(promotion_row(c, nomination_id))
+
+
+def register_discipline(c, user, data):
+    """Record a disciplinary action (misconduct / suspension / demotion)."""
+    officer = resolve_officer_row(c, data.get('officer_id') or data.get('service_id'))
+    if not officer:
+        raise ValueError('Officer does not exist')
+    action_type = normalise_choice(data.get('action_type'), DISCIPLINE_ACTION_TYPES)
+    if not action_type:
+        raise ValueError('Action type is required and must be one of: '
+                         + ', '.join(DISCIPLINE_ACTION_TYPES))
+    status = normalise_choice(data.get('status'), DISCIPLINE_STATUSES) or 'Pending'
+    severity = normalise_choice(data.get('severity'), CRIME_SEVERITIES)
+    if data.get('severity') and not severity:
+        raise ValueError('Severity is invalid')
+    from_rank = to_rank = None
+    if action_type == 'Demotion':
+        from_rank = normalise_choice(data.get('from_rank'), OFFICER_RANKS) or officer['rank']
+        to_rank = normalise_choice(data.get('to_rank'), OFFICER_RANKS)
+        if not to_rank:
+            raise ValueError('Demotions require the rank being demoted to (to_rank)')
+        if OFFICER_RANKS.index(to_rank) >= OFFICER_RANKS.index(from_rank):
+            raise ValueError('to_rank must be junior to from_rank for a demotion')
+    aid = new_discipline_id(c)
+    c.execute('''INSERT INTO officer_discipline(action_id, officer_id, action_type, severity,
+            status, from_rank, to_rank, suspension_start, suspension_end,
+            incident_summary, reported_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+              (aid, officer['id'], action_type, severity, status, from_rank, to_rank,
+               str(data.get('suspension_start') or '').strip() or None,
+               str(data.get('suspension_end') or '').strip() or None,
+               str(data.get('incident_summary') or data.get('notes') or '').strip() or None,
+               user['id']))
+    return discipline_view(discipline_row(c, aid))
+
+
+def build_officer_analytics(c, user):
+    """HR Directorate bundle: roster metrics + green/red badge lists."""
+    rows = c.execute('''SELECT o.*, s.region AS station_region, s.district AS station_district,
+            s.name AS station_name, s.station_id AS station_code
+        FROM officers o LEFT JOIN police_stations s ON s.id = o.station_id
+        ORDER BY o.id''').fetchall()
+    total = len(rows)
+    duty = count_by(rows, 'duty_status', 'Unknown')
+    active = int(duty.get('Active', 0))
+    suspended = int(duty.get('Suspended', 0))
+    ranks = count_by(rows, 'rank', 'Unranked')
+    units = count_by(rows, 'unit', 'Unassigned')
+    regions = {}
+    for r in rows:
+        region = str(_val(r, 'station_region', '') or _val(r, 'region_of_origin', '') or '').strip()
+        regions[region or 'Unassigned'] = regions.get(region or 'Unassigned', 0) + 1
+    service = [v for v in (_years_since(_val(r, 'date_of_enlistment')) for r in rows)
+               if v is not None]
+    avg_service = round(sum(service) / len(service), 1) if service else 0.0
+
+    promotions = [promotion_view(r) for r in promotion_rows(c)]
+    discipline = [discipline_view(r) for r in discipline_rows(c)]
+    # The badge lists are FIFO queues (oldest nomination / action first) so a
+    # commander always works the longest-waiting record next; the *_history
+    # lists stay newest-first for the register view.
+    awaiting = sorted((p for p in promotions if p['awaiting_verification']),
+                      key=lambda p: str(p['nomination_id']))
+    open_actions = sorted((d for d in discipline if d['open']),
+                          key=lambda d: str(d['action_id']))
+    pending_suspensions = sum(1 for d in discipline
+                              if d['action_type'] == 'Suspension' and d['open'])
+    demotions = sum(1 for d in discipline if d['action_type'] == 'Demotion')
+    misconduct = sum(1 for d in discipline if d['action_type'] in ('Misconduct', 'Investigation'))
+    return {
+        'generated_at': _generated_at(),
+        'module': 'officers',
+        'role': (user or {}).get('role') or '',
+        # --- roster metrics -------------------------------------------------
+        'total_officers': total,
+        'active_force': active,
+        'suspended_officers': suspended,
+        'on_leave': int(duty.get('Leave', 0)),
+        'terminated': int(duty.get('Terminated', 0)),
+        'retired': int(duty.get('Retired', 0)),
+        'active_share': pct(active, total),
+        'ranks_tracked': len(ranks),
+        'average_service_years': avg_service,
+        # --- promotion list (green badge) -----------------------------------
+        'promotion_nominations': len(promotions),
+        'promotions_awaiting_verification': len(awaiting),
+        'promotions_verified': sum(1 for p in promotions if p['verification_status'] == 'Verified'),
+        'promotions_rejected': sum(1 for p in promotions if p['verification_status'] == 'Rejected'),
+        # --- disciplinary list (red badge) ----------------------------------
+        'disciplinary_actions': len(discipline),
+        'disciplinary_open': len(open_actions),
+        'misconduct_actions': misconduct,
+        'pending_suspensions': pending_suspensions,
+        'rank_demotions': demotions,
+        'badges': {'promotion': len(awaiting), 'discipline': len(open_actions)},
+        'kpis': [
+            kpi('Total active force', active, 'green', '👤', f'{pct(active, total)}% of {total} registered'),
+            kpi('Officers registered', total, 'blue', '▤', 'Police Officers Registration Office'),
+            kpi('Ranks in service', len(ranks), 'purple', '★', f'Avg {avg_service} years of service'),
+            kpi('Promotions awaiting', len(awaiting), 'green', '▲', 'Active nominations awaiting commander verification'),
+            kpi('Open disciplinary', len(open_actions), 'red', '▼',
+                f'{pending_suspensions} pending suspension(s), {demotions} demotion(s)'),
+            kpi('Suspended officers', suspended, 'amber', '⧗', 'Duty status = Suspended'),
+        ],
+        'charts': {
+            'rank_distribution': series_from_counts(ranks, OFFICER_RANKS),
+            'by_unit': series_from_counts(units, OFFICER_UNITS),
+            'by_duty_status': series_from_counts(duty, OFFICER_DUTY_STATUSES),
+            'by_region': series_from_counts(regions, STATION_REGIONS),
+            'by_action_type': series_from_counts(count_by(discipline, 'action_type'),
+                                                 DISCIPLINE_ACTION_TYPES),
+            'by_promotion_status': series_from_counts(count_by(promotions, 'verification_status'),
+                                                      PROMOTION_STATUSES),
+        },
+        'lists': {
+            'promotions': awaiting,
+            'promotion_history': promotions[:25],
+            'discipline': open_actions,
+            'discipline_history': discipline[:25],
+        },
+    }
+
+
+# ---- 6) Police Car Registration module -------------------------------------
+def build_vehicle_analytics(c, user):
+    """Fleet operational status + security alert breakdown."""
+    rows = c.execute('''SELECT v.*, s.name AS station_name, s.region AS station_region,
+            s.station_id AS station_code
+        FROM vehicles v LEFT JOIN police_stations s ON s.id = v.station_id
+        ORDER BY v.id''').fetchall()
+    total = len(rows)
+    categories = count_by(rows, 'category', 'Unknown')
+    fleet = int(categories.get('Police Fleet', 0))
+    civilian = int(categories.get('Civilian / Commercial', 0))
+    statuses = {}
+    for r in rows:
+        v = str(_val(r, 'operational_status', '') or '').strip() or 'Unassigned'
+        statuses[v] = statuses.get(v, 0) + 1
+    in_service = int(statuses.get('In Service', 0))
+    maintenance = int(statuses.get('Maintenance', 0))
+    out_of_service = int(statuses.get('Out of Service', 0))
+    decommissioned = int(statuses.get('Decommissioned', 0))
+    non_operational = maintenance + out_of_service + decommissioned
+    alerts = count_by(rows, 'security_alert', 'Clean / Normal')
+    clean = int(alerts.get('Clean / Normal', 0))
+    stolen = int(alerts.get('Stolen', 0))
+    wanted = int(alerts.get('Wanted in Crime', 0))
+    impounded = int(alerts.get('Impounded', 0))
+    suspicious = int(alerts.get('Unregistered / Suspicious', 0))
+    flagged = total - clean
+    civilian_clean = sum(1 for r in rows
+                         if str(_val(r, 'category', '') or '') == 'Civilian / Commercial'
+                         and str(_val(r, 'security_alert', 'Clean / Normal') or 'Clean / Normal')
+                         == 'Clean / Normal')
+    civilian_flagged = civilian - civilian_clean
+    fleet_regions = {}
+    for r in rows:
+        if str(_val(r, 'category', '') or '') != 'Police Fleet':
+            continue
+        region = str(_val(r, 'station_region', '') or '').strip() or 'Unassigned'
+        fleet_regions[region] = fleet_regions.get(region, 0) + 1
+    flagged_items = [{
+        'vehicle_id': r['vehicle_id'],
+        'plate_number': r['plate_number'],
+        'category': _val(r, 'category'),
+        'security_alert': _val(r, 'security_alert'),
+        'alert_reason': _val(r, 'alert_reason'),
+        'make_model': _val(r, 'make_model'),
+        'station_name': _val(r, 'station_name'),
+        'owner_full_name': _val(r, 'owner_full_name'),
+        'registration_expiry': _val(r, 'registration_expiry'),
+    } for r in rows
+        if str(_val(r, 'security_alert', 'Clean / Normal') or 'Clean / Normal') != 'Clean / Normal']
+    return {
+        'generated_at': _generated_at(),
+        'module': 'vehicles',
+        'role': (user or {}).get('role') or '',
+        'total_vehicles': total,
+        'police_fleet': fleet,
+        'civilian_registrations': civilian,
+        # --- fleet operational status --------------------------------------
+        'in_service': in_service,
+        'maintenance': maintenance,
+        'out_of_service': out_of_service,
+        'decommissioned': decommissioned,
+        'non_operational': non_operational,
+        'serviceable_ratio': pct(in_service, fleet),
+        'fleet_availability': pct(in_service, total),
+        'maintenance_rate': pct(non_operational, fleet),
+        # --- security alert breakdown --------------------------------------
+        'clean_registrations': clean,
+        'flagged_vehicles': flagged,
+        'stolen': stolen,
+        'wanted_in_crime': wanted,
+        'impounded': impounded,
+        'unregistered_suspicious': suspicious,
+        'alert_rate': pct(flagged, total),
+        'civilian_clean': civilian_clean,
+        'civilian_flagged': civilian_flagged,
+        'kpis': [
+            kpi('Vehicles registered', total, 'blue', '🚓', f'{fleet} fleet · {civilian} civilian'),
+            kpi('In service', in_service, 'green', '✓', f'{pct(in_service, fleet)}% of the police fleet'),
+            kpi('Maintenance / out', non_operational, 'amber', '⚒',
+                f'{maintenance} in maintenance · {decommissioned} decommissioned'),
+            kpi('Serviceable ratio', f'{pct(in_service, fleet)}%', 'purple', '%', 'In service ÷ police fleet'),
+            kpi('Stolen / wanted', stolen + wanted, 'red', '!',
+                f'{stolen} stolen · {wanted} wanted in crime'),
+            kpi('Clean registrations', clean, 'green', '◈',
+                f'{civilian_clean} clean civilian registrations'),
+        ],
+        'charts': {
+            'by_operational_status': series_from_counts(statuses, VEHICLE_OP_STATUSES + ('Unassigned',)),
+            'fleet_status_ratio': [{'label': 'In Service', 'count': in_service},
+                                   {'label': 'Maintenance', 'count': maintenance},
+                                   {'label': 'Out of Service', 'count': out_of_service},
+                                   {'label': 'Decommissioned', 'count': decommissioned}],
+            'by_alert': series_from_counts(alerts, VEHICLE_ALERTS),
+            'alert_breakdown': [{'label': 'Stolen', 'count': stolen},
+                                {'label': 'Wanted in Crime', 'count': wanted},
+                                {'label': 'Impounded', 'count': impounded},
+                                {'label': 'Unregistered / Suspicious', 'count': suspicious},
+                                {'label': 'Clean / Normal', 'count': clean}],
+            'by_category': series_from_counts(categories, VEHICLE_CATEGORIES),
+            'fleet_by_region': series_from_counts(fleet_regions, STATION_REGIONS),
+        },
+        'lists': {'flagged_vehicles': flagged_items},
+    }
+
+
+# ---- 7) Police Station Master Registry -------------------------------------
+def build_station_analytics(c, user):
+    """Operational capacity by tier + the officer deployment matrix."""
+    rows = c.execute('''SELECT s.*,
+            (SELECT COUNT(*) FROM officers o WHERE o.station_id = s.id) AS officer_count,
+            (SELECT COUNT(*) FROM officers o
+              WHERE o.station_id = s.id AND o.duty_status = 'Active') AS active_officer_count,
+            (SELECT COUNT(*) FROM vehicles v WHERE v.station_id = s.id) AS vehicle_count
+        FROM police_stations s ORDER BY s.id''').fetchall()
+    total = len(rows)
+    tiers = count_by(rows, 'station_tier', 'Unclassified')
+    statuses = count_by(rows, 'operational_status', 'Active')
+    cell_capacity = sum(int(_val(r, 'cell_capacity', 0) or 0) for r in rows)
+    reporting_cells = sum(1 for r in rows if _val(r, 'cell_capacity') is not None)
+    officers_deployed = sum(int(_val(r, 'officer_count', 0) or 0) for r in rows)
+    active_deployed = sum(int(_val(r, 'active_officer_count', 0) or 0) for r in rows)
+    vehicles_deployed = sum(int(_val(r, 'vehicle_count', 0) or 0) for r in rows)
+    unassigned = [{'station_id': r['station_id'], 'name': r['name'], 'region': r['region'],
+                   'station_tier': _val(r, 'station_tier')}
+                  for r in rows if int(_val(r, 'officer_count', 0) or 0) == 0]
+    by_region = []
+    matrix = []
+    region_names = list(STATION_REGIONS)
+    for r in rows:                                  # keep any unexpected region visible
+        if r['region'] not in region_names:
+            region_names.append(r['region'])
+    for region in region_names:
+        at = [r for r in rows if r['region'] == region]
+        stations = [{'station_id': r['station_id'], 'name': r['name'], 'code': r['code'],
+                     'district': r['district'], 'village': _val(r, 'village'),
+                     'station_tier': _val(r, 'station_tier') or 'Unclassified',
+                     'operational_status': _val(r, 'operational_status') or 'Active',
+                     'officers': int(_val(r, 'officer_count', 0) or 0),
+                     'active_officers': int(_val(r, 'active_officer_count', 0) or 0),
+                     'vehicles': int(_val(r, 'vehicle_count', 0) or 0)} for r in at]
+        stations.sort(key=lambda s: (-s['officers'], s['name']))
+        block = {'region': region,
+                 'stations': len(at),
+                 'officers': sum(s['officers'] for s in stations),
+                 'active_officers': sum(s['active_officers'] for s in stations),
+                 'vehicles': sum(s['vehicles'] for s in stations),
+                 'station_list': stations}
+        matrix.append(block)
+        by_region.append({'label': region, 'count': block['stations'],
+                          'officers': block['officers'],
+                          'active_officers': block['active_officers'],
+                          'vehicles': block['vehicles']})
+    largest = max(({'name': r['name'], 'station_id': r['station_id'],
+                    'officers': int(_val(r, 'officer_count', 0) or 0)} for r in rows),
+                  key=lambda x: x['officers'], default=None)
+    return {
+        'generated_at': _generated_at(),
+        'module': 'stations',
+        'role': (user or {}).get('role') or '',
+        'total_stations': total,
+        'regional_hq': int(tiers.get('Regional HQ', 0)),
+        'district_hq': int(tiers.get('District HQ', 0)),
+        'outposts': int(tiers.get('Outpost', 0)),
+        'checkpoints': int(tiers.get('Checkpoint', 0)),
+        'border_posts': int(tiers.get('Border Post', 0)),
+        'active_stations': int(statuses.get('Active', 0)),
+        'inactive_stations': int(statuses.get('Inactive', 0)),
+        'maintenance_stations': int(statuses.get('Maintenance', 0)),
+        'total_cell_capacity': cell_capacity,
+        'average_cell_capacity': round(cell_capacity / reporting_cells, 1) if reporting_cells else 0.0,
+        'stations_reporting_cells': reporting_cells,
+        # --- deployment matrix ---------------------------------------------
+        'officers_deployed': officers_deployed,
+        'active_officers_deployed': active_deployed,
+        'vehicles_deployed': vehicles_deployed,
+        'average_officers_per_station': round(officers_deployed / total, 1) if total else 0.0,
+        'unassigned_stations': len(unassigned),
+        'largest_deployment': largest,
+        'kpis': [
+            kpi('Stations registered', total, 'blue', '🏛', f'{int(statuses.get("Active", 0))} active'),
+            kpi('Regional / District HQ', int(tiers.get('Regional HQ', 0)) + int(tiers.get('District HQ', 0)),
+                'purple', '▣',
+                f'{int(tiers.get("Regional HQ", 0))} regional · {int(tiers.get("District HQ", 0))} district'),
+            kpi('Outposts & checkpoints', int(tiers.get('Outpost', 0)) + int(tiers.get('Checkpoint', 0))
+                + int(tiers.get('Border Post', 0)), 'amber', '⊙',
+                f'{int(tiers.get("Outpost", 0))} outpost(s) · {int(tiers.get("Checkpoint", 0))} checkpoint(s)'),
+            kpi('Officers deployed', officers_deployed, 'green', '👤',
+                f'Avg {round(officers_deployed / total, 1) if total else 0.0} per station'),
+            kpi('Unstaffed stations', len(unassigned), 'red', '!', 'No officer assigned yet'),
+            kpi('Cell capacity', cell_capacity, 'blue', '▦', 'Detention capacity across the registry'),
+        ],
+        'charts': {
+            'by_tier': series_from_counts(tiers, STATION_TIERS),
+            'by_status': series_from_counts(statuses, STATION_STATUSES),
+            'stations_by_region': [{'label': b['label'], 'count': b['count']} for b in by_region],
+            'deployment_by_region': by_region,
+            'officers_by_station': sorted_series(
+                {r['name']: int(_val(r, 'officer_count', 0) or 0) for r in rows}, limit=8),
+        },
+        'lists': {'deployment_matrix': matrix, 'by_region': by_region,
+                  'unassigned_stations': unassigned},
+    }
+
+
+# ---- dispatcher -------------------------------------------------------------
+def _officers_bundle(c, user):
+    require_module(user, 'officers')
+    return build_officer_analytics(c, user)
+
+
+def _vehicles_bundle(c, user):
+    require_any_module(user, ('cars', 'policesearch', 'checkpoints', 'crimes'))
+    return build_vehicle_analytics(c, user)
+
+
+def _stations_bundle(c, user):
+    require_any_module(user, ('stations', 'crimes'))
+    return build_station_analytics(c, user)
+
+
+ANALYTICS_BUILDERS = {
+    'cid': build_cid_analytics,
+    'officers': _officers_bundle,
+    'vehicles': _vehicles_bundle,
+    'stations': _stations_bundle,
+}
+
+# Accepted ?module= spellings (aliases keep the frontend free of guesswork).
+ANALYTICS_MODULE_ALIASES = {
+    'cid': 'cid', 'criminal_investigation': 'cid', 'crime': 'cid',
+    'officers': 'officers', 'hr': 'officers', 'police_officers': 'officers',
+    'vehicles': 'vehicles', 'cars': 'vehicles', 'car': 'vehicles',
+    'stations': 'stations', 'station': 'stations', 'police_stations': 'stations',
+}
+
+
+def build_module_analytics(c, user, module):
+    """Resolve `?module=` to a departmental bundle ('all' returns every one).
+
+    Unknown module names raise ValueError -> HTTP 400 (never a silent empty
+    payload), so a typo in the frontend shows up immediately.
+    """
+    key = str(module or '').strip().lower()
+    if key in ('', 'all', 'everything'):
+        bundles = {}
+        for name in ANALYTICS_MODULES:
+            try:
+                bundles[name] = ANALYTICS_BUILDERS[name](c, user)
+            except PermissionError:
+                continue                     # omit bundles the caller may not see
+        return {'generated_at': _generated_at(), 'module': 'all',
+                'role': (user or {}).get('role') or '',
+                'modules': sorted(bundles), 'bundles': bundles}
+    resolved = ANALYTICS_MODULE_ALIASES.get(key)
+    if not resolved:
+        raise ValueError('module must be one of: ' + ', '.join(ANALYTICS_MODULES + ('all',)))
+    return ANALYTICS_BUILDERS[resolved](c, user)
 
 
 def build_dashboard(c, user):
@@ -2673,6 +3720,38 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/admin/analytics':
                 # Aggregate analytics — admin only (module gate above).
                 result = build_analytics(c, user)
+            # ---- departmental analytics -----------------------------------
+            # Each register embeds its own analytics bundle; the CID bundle is
+            # shared by the four directorate units and is sectioned by module
+            # so a unit officer never receives another unit's numbers.
+            elif p.path == '/api/cid/analytics':
+                require_any_module(user, tuple(CID_SECTION_MODULES.values()) + ('analytics',))
+                result = build_cid_analytics(c, user)
+            elif p.path == '/api/officers/analytics':
+                require_module(user, 'officers')
+                result = build_officer_analytics(c, user)
+            elif p.path == '/api/vehicles/analytics':
+                require_any_module(user, ('cars', 'policesearch', 'checkpoints', 'crimes'))
+                result = build_vehicle_analytics(c, user)
+            elif p.path == '/api/stations/analytics':
+                require_any_module(user, ('stations', 'crimes'))
+                result = build_station_analytics(c, user)
+            elif p.path == '/api/analytics':
+                # Unified alias: /api/analytics?module=cid|officers|vehicles|
+                # stations|all — gated per bundle inside the dispatcher.
+                module = parse_qs(p.query).get('module', [''])[0]
+                try:
+                    result = build_module_analytics(c, user, module)
+                except ValueError as e:
+                    self.send_json(400, {'error': str(e),
+                                         'modules': list(ANALYTICS_MODULES) + ['all']})
+                    c.close(); return
+            elif p.path == '/api/officers/promotions':
+                require_module(user, 'officers')
+                result = {'items': [promotion_view(r) for r in promotion_rows(c)]}
+            elif p.path == '/api/officers/discipline':
+                require_module(user, 'officers')
+                result = {'items': [discipline_view(r) for r in discipline_rows(c)]}
             elif p.path == '/api/dashboard' or p.path.startswith('/api/dashboard/'):
                 # Role- and location-scoped operations dashboard. Every
                 # authenticated user can call this; the response is filtered
@@ -3233,6 +4312,25 @@ class API(BaseHTTPRequestHandler):
                       f"{officer['full_name']} @ {officer['station_id']}")
                 c.commit()
                 result = {'service_id': officer['service_id'], 'officer': officer}
+            elif p.path == '/api/officers/promotions':
+                # HR Directorate: a promotion nomination awaiting commander
+                # verification (the green badge on the Police Officers page).
+                data = body_json(self)
+                promotion = register_promotion(c, user, data)
+                audit(c, user, 'CREATE', 'officer_promotion', promotion['nomination_id'],
+                      f"{promotion.get('service_id')} {promotion.get('current_rank')} -> "
+                      f"{promotion.get('proposed_rank')}")
+                c.commit()
+                result = {'nomination_id': promotion['nomination_id'], 'promotion': promotion}
+            elif p.path == '/api/officers/discipline':
+                # HR Directorate: misconduct / suspension / demotion record
+                # (the red badge on the Police Officers page).
+                data = body_json(self)
+                action = register_discipline(c, user, data)
+                audit(c, user, 'CREATE', 'officer_discipline', action['action_id'],
+                      f"{action.get('service_id')} {action.get('action_type')} · {action.get('status')}")
+                c.commit()
+                result = {'action_id': action['action_id'], 'discipline': action}
             elif p.path == '/api/crimes':
                 ctype = self.headers.get('Content-Type', '')
                 if ctype.startswith('multipart/form-data'):
@@ -3297,6 +4395,10 @@ class API(BaseHTTPRequestHandler):
                 require_module(user, 'admin')
             elif p.path.startswith('/api/crime-cases'):
                 require_module(user, 'cid')
+            elif p.path.startswith('/api/officers/'):
+                # HR Directorate writes (promotion verification, …) belong to
+                # the Police Officers Registration Office module.
+                require_module(user, 'officers')
             if p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 row = c.execute('SELECT * FROM persons WHERE person_id=?',(pid,)).fetchone()
@@ -3325,6 +4427,15 @@ class API(BaseHTTPRequestHandler):
                     c.execute(f"UPDATE crime_cases SET {', '.join(updates)} WHERE id=?", params)
                     audit(c,user,'UPDATE','crime_case',cid)
                 c.commit(); result = {'case_id':cid,'updated':True}
+            elif p.path.startswith('/api/officers/promotions/'):
+                # Commander verification of a promotion nomination.
+                nomination_id = p.path.split('/')[4]
+                promotion = verify_promotion(c, user, nomination_id, data)
+                audit(c, user, 'UPDATE', 'officer_promotion', nomination_id,
+                      promotion['verification_status'])
+                c.commit()
+                result = {'nomination_id': nomination_id, 'promotion': promotion,
+                          'updated': True}
             elif p.path.startswith('/api/admin/users/'):
                 # Update an existing user — change role, branch, location, password, active.
                 # /api/admin/users/<id> -> split('/') -> ['', 'api', 'admin', 'users', '<id>']
@@ -3388,6 +4499,9 @@ class API(BaseHTTPRequestHandler):
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
+        except LookupError as e:
+            if c: c.close()
+            self.send_json(404,{'error':str(e)})
         except ValueError as e:
             if c: c.close()
             self.send_json(400,{'error':str(e)})

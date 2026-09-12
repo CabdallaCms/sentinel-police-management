@@ -46,15 +46,21 @@ Change or remove these accounts before any real deployment.
 Every authenticated request is scoped to the user's role. The full role set is:
 
 - `SystemAdmin` — full access, including `/api/admin/*` (User Management and
-  Executive Analytics) and `GET /api/checkpoint-events` (sees all locations).
-- `FingerprintUnit` — only `/api/clearance-applications*`.
-- `AirportControl` — only `/api/airport-records*`.
-- `CIDUnit` — only `/api/crime-cases*` and `/api/suspect-alerts*`.
+  the executive analytics aggregation), every departmental analytics bundle
+  (`/api/cid/analytics` returns all four CID sections) and
+  `GET /api/checkpoint-events` (sees all locations).
+- `FingerprintUnit` — only `/api/clearance-applications*`, plus the
+  `fingerprint` section of `/api/cid/analytics`.
+- `AirportControl` — only `/api/airport-records*`, plus the `airport` section
+  of `/api/cid/analytics`.
+- `CIDUnit` — only `/api/crime-cases*` and `/api/suspect-alerts*`, plus the
+  `crime` section of `/api/cid/analytics`.
 - `CheckpointSouth` / `CheckpointEast` / `CheckpointWest` — only
   `/api/checkpoint-events*`, **scoped to their assigned location**; a South
   officer cannot see, create, or amend any event at the East or West
   checkpoint. The `GET` response carries a `scope` and `visible_locations`
-  field so the client can render the active filter.
+  field so the client can render the active filter, and the `checkpoint`
+  section of `/api/cid/analytics` applies the same scope to every count.
 
 `/api/me` returns the current user, the role-derived `modules` list, the
 `visibility` summary (`is_admin`, `can_manage_users`, `can_view_analytics`,
@@ -187,6 +193,27 @@ identically:
 - `GET /api/vehicles` / `POST /api/vehicles` (SystemAdmin write; Checkpoint, CID and Central Police Search may `GET`. Helpers live in `backend/vehicles.py`. IDs are `VEH-YYYY-XXXX`. Plate is unique uppercase; VIN is 17 characters without I/O/Q and unique. Police Fleet requires `station_id` (optional `officer_id` + operational status). Civilian / Commercial requires owner name, phone and national ID/passport. Security alert defaults to `Clean / Normal`; Stolen / Wanted in Crime / Impounded / Unregistered / Suspicious require `alert_reason`. Optional JPEG/PNG ≤ 5 MB photo.)
 - `POST /api/vehicles/{vehicle_id}/status` (SystemAdmin — update `security_alert` + reason. Checkpoint plate lookup uses `GET /api/vehicles?q=`.)
 
+### Departmental analytics (embedded per register)
+
+Analytics are no longer a single admin-only page: every register embeds its own bundle,
+rendered as KPI cards + lightweight canvas charts above its table/form. Each payload carries
+`kpis` (summary cards), `charts` (zero-padded `[{label,count}]` series) and `lists` (badge rows),
+so the server owns all the arithmetic.
+
+- `GET /api/cid/analytics` (any CID-directorate module — `cid` / `fingerprint` / `checkpoints` / `airport`, or SystemAdmin) — returns one section per module the caller holds in `sections`:
+  `fingerprint` (biometrics logged, unique persons, repeat captures → identity match rate, suspect hits → hit rate, clearance rate, status/reason charts),
+  `crime` (case volume by location, 24-hour time-of-day buckets, category counts, open vs. closed + closure rate, active suspects),
+  `checkpoint` (screening volume, distinct travelers, flagged suspect hits **per checkpoint** South/East/West, flag rate — filtered to the caller's `location_scope`),
+  `airport` (inbound/outbound counts and shares, top routes, movements today, **active suspect movement alerts** list).
+- `GET /api/officers/analytics` (`officers` module) — HR Directorate: roster metrics (active force, rank distribution, duty status, officers per region, average service years), the **green badge** promotion list (nominations `Awaiting Verification` for officers whose `duty_status` is `Active`) and the **red badge** disciplinary list (open `Misconduct` / `Suspension` / `Demotion` / `Warning` / `Investigation` actions).
+- `GET /api/vehicles/analytics` (`cars` / `policesearch` / `checkpoints` / `crimes`) — fleet operational status (In Service vs. Maintenance / Out of Service / Decommissioned, serviceable ratio, availability, maintenance rate) and the security alert breakdown (stolen / wanted / impounded / suspicious vs. clean civilian registrations) plus the flagged-vehicle list.
+- `GET /api/stations/analytics` (`stations` / `crimes`) — operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), status counts, cell capacity totals/averages, and the **deployment matrix** (stations, officers, *active* officers and vehicles per region and per station across Sool · Sanaag · East Togdheer) with the unstaffed-station list.
+- `GET /api/analytics?module=cid|officers|vehicles|stations|all` — unified alias for the same builders (`hr` / `cars` / `station` are accepted aliases; an unknown module answers **400**). `module=all` returns every bundle the caller may see and omits the rest.
+- `GET /api/officers/promotions` / `GET /api/officers/discipline` (`officers` module) — the raw HR lists behind the badges.
+- `POST /api/officers/promotions` (`officers` module) — nominate an officer for promotion (`PRM-YYYY-XXXX`); validates the officer exists and the proposed rank is a different, valid `OFFICER_RANKS` value; defaults to `Awaiting Verification`.
+- `PATCH /api/officers/promotions/{nomination_id}` (`officers` module) — commander verification (`Verified` / `Rejected` / `Awaiting Verification`); stamps `verified_by` + `verified_at`.
+- `POST /api/officers/discipline` (`officers` module) — record a disciplinary action (`DSC-YYYY-XXXX`); a `Demotion` must name a strictly junior `to_rank`.
+
 Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval). Both printable pages load the police emblem from `images/police_logo.png` (served at `/images/...` and `/static/images/...`) and render it twice — as the letterhead logo and as a low-opacity (0.08–0.09) centred watermark behind the document content.
 
 The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoint records must reference a central `person_id` (created or matched automatically from the unified identity form). Person records are merged (never duplicated) when a Tier 1 or Tier 2 match is found; only newly provided fields are updated.
@@ -199,7 +226,12 @@ node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18
 ```
 
 The backend suite starts the server against a temporary database and
-verifies the identity-resolution tiers (including flexible 2/3/4-part
+verifies the **departmental analytics arithmetic** (a second, isolated
+server + deterministic fixture asserts every count, ratio, zero-padded
+chart axis, badge list and RBAC section for `/api/cid/analytics`,
+`/api/officers/analytics`, `/api/vehicles/analytics`,
+`/api/stations/analytics` and `/api/analytics?module=…`), plus the
+identity-resolution tiers (including flexible 2/3/4-part
 partial name matching, case-insensitive/trimmed search and dropdown
 suggestions), optional suspect case linking, auto-create behaviour,
 duplicate protection, the **mandatory clearance reasons** (any value

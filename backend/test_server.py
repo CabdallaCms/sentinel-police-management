@@ -68,6 +68,650 @@ def multipart_request(base, path, token=None, fields=None, files=None):
         return e.code, json.loads(e.read().decode())
 
 
+# ---------------------------------------------------------------------------
+# Departmental analytics suite.
+#
+# The four departmental bundles (CID · Officers · Vehicles · Stations) are
+# pure aggregations, so they are tested against an ISOLATED server + database
+# holding a fully deterministic fixture. Every number the endpoints return is
+# asserted exactly — counts, ratios, zero-padded chart axes, badge lists and
+# the per-role RBAC sectioning.
+#
+#   GET /api/cid/analytics          (fingerprint · crime · checkpoint · airport)
+#   GET /api/officers/analytics     (roster · promotions · discipline)
+#   GET /api/vehicles/analytics     (fleet status · security alerts)
+#   GET /api/stations/analytics     (capacity by tier · deployment matrix)
+#   GET /api/analytics?module=…     (dispatcher: cid|officers|vehicles|stations|all)
+# ---------------------------------------------------------------------------
+ANALYTICS_USERS = ('admin', 'fp.officer', 'ap.officer', 'cid.officer',
+                   'cp.south', 'cp.east', 'cp.west')
+
+OFFICER_RANK_ORDER = ('Constable', 'Corporal', 'Sergeant', 'Inspector',
+                      'Chief Inspector', 'Superintendent', 'Commander', 'General')
+DUTY_ORDER = ('Active', 'Suspended', 'Leave', 'Terminated', 'Retired')
+VEHICLE_OP_ORDER = ('In Service', 'Maintenance', 'Out of Service', 'Decommissioned', 'Unassigned')
+VEHICLE_ALERT_ORDER = ('Clean / Normal', 'Stolen', 'Wanted in Crime', 'Impounded',
+                       'Unregistered / Suspicious')
+STATION_TIER_ORDER = ('Regional HQ', 'District HQ', 'Outpost', 'Checkpoint', 'Border Post')
+TIME_BUCKETS = ('Morning (06-12)', 'Afternoon (12-18)', 'Evening (18-24)', 'Night (00-06)')
+CRIME_CATEGORIES = ('Theft/Burglary', 'Assault', 'Robbery', 'Traffic Accident', 'Homicide',
+                    'Fraud', 'Domestic Incident', 'Public Order', 'Cybercrime', 'Other')
+
+
+def _pct(part, total, digits=1):
+    """Independent copy of the server's percentage rule (0.0 on empty sets)."""
+    if not total:
+        return 0.0
+    return round((float(part) / float(total)) * 100.0, digits)
+
+
+def _bucket(stamp):
+    """Independent copy of the 24-hour banding rule used by the crime charts."""
+    s = str(stamp or '').strip().replace('T', ' ')
+    if len(s) < 13 or not s[11:13].isdigit():
+        return 'Unspecified'
+    hour = int(s[11:13])
+    if 6 <= hour < 12:
+        return TIME_BUCKETS[0]
+    if 12 <= hour < 18:
+        return TIME_BUCKETS[1]
+    if 18 <= hour < 24:
+        return TIME_BUCKETS[2]
+    return TIME_BUCKETS[3]
+
+
+def _series(series):
+    """[{label,count}] -> {label: count} so assertions read like arithmetic."""
+    return {row['label']: row['count'] for row in series}
+
+
+def _assert_chart_shape(charts, names):
+    for name in names:
+        assert name in charts, f'missing chart series {name!r} in {sorted(charts)}'
+        for row in charts[name]:
+            assert set(row) >= {'label', 'count'}, row
+            assert isinstance(row['count'], int), row
+
+
+def departmental_analytics_suite():
+    """Boot an isolated Sentinel server and verify every department's maths."""
+    port = free_port()
+    tmp = tempfile.mkdtemp(prefix='sentinel-analytics-')
+    db_path = os.path.join(tmp, 'analytics.db')
+    env = dict(os.environ, SENTINEL_DB=db_path, PORT=str(port),
+               SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
+    proc = subprocess.Popen([sys.executable, SERVER], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base = f'http://127.0.0.1:{port}'
+    year = datetime.datetime.now(datetime.timezone.utc).year
+    try:
+        for _ in range(60):
+            try:
+                if request(base, 'GET', '/api/health')[0] == 200:
+                    break
+            except Exception:
+                time.sleep(0.2)
+        else:
+            raise RuntimeError('analytics server did not start')
+
+        tokens = {}
+        for username in ANALYTICS_USERS:
+            s, r = request(base, 'POST', '/api/login',
+                           body={'username': username, 'password': 'ChangeMe123!'})
+            assert s == 200 and r.get('token'), (username, s, r)
+            tokens[username] = r['token']
+        admin = tokens['admin']
+
+        def sql(statement, params=(), fetch=False):
+            conn = sqlite3.connect(db_path, timeout=10)
+            conn.row_factory = sqlite3.Row
+            try:
+                cur = conn.execute(statement, params)
+                rows = [dict(r) for r in cur.fetchall()] if fetch else None
+                conn.commit()
+                return rows
+            finally:
+                conn.close()
+
+        def bundle(path, token=admin):
+            s, r = request(base, 'GET', path, token)
+            assert s == 200, (path, s, r)
+            return r
+
+        # ---- 0) unauthenticated access is refused -------------------------
+        s, r = request(base, 'GET', '/api/cid/analytics')
+        assert s == 401, (s, r)
+
+        # ---- 1) the freshly seeded database has known aggregates ----------
+        cid = bundle('/api/cid/analytics')
+        assert cid['module'] == 'cid', cid
+        assert cid['sections'] == ['fingerprint', 'crime', 'checkpoint', 'airport'], cid['sections']
+        assert cid['fingerprint']['total_biometrics_logged'] == 1, cid['fingerprint']
+        assert cid['fingerprint']['pending_review'] == 1, cid['fingerprint']
+        assert cid['crime']['total_cases'] == 2, cid['crime']
+        assert cid['crime']['open_cases'] == 2 and cid['crime']['closed_cases'] == 0, cid['crime']
+        assert cid['checkpoint']['total_screenings'] == 1, cid['checkpoint']
+        assert cid['checkpoint']['flagged_hits'] == 1, cid['checkpoint']
+        assert cid['airport']['total_movements'] == 1, cid['airport']
+        assert cid['airport']['inbound'] == 1 and cid['airport']['outbound'] == 0, cid['airport']
+
+        off = bundle('/api/officers/analytics')
+        assert off['total_officers'] == 0 and off['active_force'] == 0, off
+        # Chart axes are zero-padded even with no data at all.
+        assert _series(off['charts']['rank_distribution']) == {r: 0 for r in OFFICER_RANK_ORDER}, off
+        assert _series(off['charts']['by_duty_status']) == {r: 0 for r in DUTY_ORDER}, off
+
+        veh = bundle('/api/vehicles/analytics')
+        assert veh['total_vehicles'] == 0, veh
+        assert veh['serviceable_ratio'] == 0.0, veh        # never a ZeroDivisionError
+        assert _series(veh['charts']['by_operational_status']) == {
+            'In Service': 0, 'Maintenance': 0, 'Out of Service': 0,
+            'Decommissioned': 0, 'Unassigned': 0}, veh
+
+        stn = bundle('/api/stations/analytics')
+        assert stn['total_stations'] == 8, stn
+        assert _series(stn['charts']['by_tier']) == {
+            'Regional HQ': 3, 'District HQ': 3, 'Outpost': 1, 'Checkpoint': 1, 'Border Post': 0}, stn
+        assert stn['total_cell_capacity'] == (24 + 12 + 10 + 20 + 24 + 12 + 6 + 4) == 112, stn
+        assert stn['average_cell_capacity'] == 14.0, stn
+        assert stn['officers_deployed'] == 0 and stn['unassigned_stations'] == 8, stn
+        print('ok: analytics bundles answer on a fresh database (zero-padded axes, no div-by-zero)')
+
+        # ---- 2) HR fixture: four officers with known ranks / duty states --
+        def new_officer(fields):
+            payload = {**{
+                'unit': 'General Patrol', 'date_of_enlistment': '2020-01-01',
+                'duty_status': 'Active', 'mother_name': 'Hooyo Test',
+                'date_of_birth': '1990-01-01', 'place_of_birth': 'Laascaanood',
+                'contact_number': '+252 63 555 0000', 'guarantor_name': 'Guarantor',
+                'guarantor_address': 'Laascaanood Main', 'guarantor_occupation': 'Trader',
+                'guarantor_relationship': 'Parent', 'guarantor_contact': '+252 63 555 0001',
+                'doc1_type': 'National ID'}, **fields}
+            files = {'photo': ('p.jpg', b'\xff\xd8\xff\xe0x'), 'doc1_file': ('id.pdf', b'%PDF x')}
+            return multipart_request(base, '/api/officers', admin, payload, files)
+
+        roster = [
+            {'rank': 'Sergeant',   'station_id': 'ST-001', 'date_of_enlistment': '2018-01-01',
+             'duty_status': 'Active',    'full_name': 'Maxamed Faarax Nuur'},
+            {'rank': 'Constable',  'station_id': 'ST-004', 'date_of_enlistment': '2020-02-02',
+             'duty_status': 'Active',    'full_name': 'Amina Suleymaan Cabdi'},
+            {'rank': 'Inspector',  'station_id': 'ST-005', 'date_of_enlistment': '2015-03-03',
+             'duty_status': 'Suspended', 'full_name': 'Hassan Cabdi Xirsi',
+             'unit': 'CID / Criminal Investigation'},
+            {'rank': 'Commander',  'station_id': 'ST-002', 'date_of_enlistment': '2010-04-04',
+             'duty_status': 'Retired',   'full_name': 'Sahra Axmed Yuusuf', 'unit': 'Logistics'},
+        ]
+        service_ids = []
+        for i, fields in enumerate(roster, start=1):
+            s, r = new_officer(fields)
+            assert s == 201, (s, r)
+            assert r['service_id'] == f'POL-{year}-{i:04d}', r
+            service_ids.append(r['service_id'])
+
+        off = bundle('/api/officers/analytics')
+        assert off['total_officers'] == 4, off
+        assert off['active_force'] == 2, off
+        assert off['suspended_officers'] == 1 and off['retired'] == 1, off
+        assert off['on_leave'] == 0 and off['terminated'] == 0, off
+        assert off['active_share'] == _pct(2, 4) == 50.0, off
+        assert _series(off['charts']['rank_distribution']) == {
+            **{r: 0 for r in OFFICER_RANK_ORDER},
+            'Sergeant': 1, 'Constable': 1, 'Inspector': 1, 'Commander': 1}, off
+        assert _series(off['charts']['by_duty_status']) == {
+            'Active': 2, 'Suspended': 1, 'Leave': 0, 'Terminated': 0, 'Retired': 1}, off
+        # Deployment region is the ASSIGNED STATION's region.
+        assert _series(off['charts']['by_region']) == {
+            'Sool': 1, 'Sanaag': 2, 'East Togdheer': 1}, off
+        # Average service = mean of each officer's rounded years of service.
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        years = [round((today - datetime.date.fromisoformat(o['date_of_enlistment'])).days / 365.25, 1)
+                 for o in roster]
+        assert off['average_service_years'] == round(sum(years) / len(years), 1), \
+            (off['average_service_years'], years)
+        assert off['promotion_nominations'] == 0 and off['disciplinary_actions'] == 0, off
+        assert off['badges'] == {'promotion': 0, 'discipline': 0}, off
+        _assert_chart_shape(off['charts'], ('rank_distribution', 'by_unit', 'by_duty_status',
+                                            'by_region', 'by_action_type', 'by_promotion_status'))
+
+        # ---- 3) promotion list (green badge) ------------------------------
+        s, r = request(base, 'POST', '/api/officers/promotions', admin,
+                       {'officer_id': service_ids[0], 'proposed_rank': 'Inspector',
+                        'reason': 'Meritorious service'})
+        assert s == 201 and r['nomination_id'] == f'PRM-{year}-0001', (s, r)
+        assert r['promotion']['verification_status'] == 'Awaiting Verification', r
+        assert r['promotion']['awaiting_verification'] is True, r
+        s, r = request(base, 'POST', '/api/officers/promotions', admin,
+                       {'officer_id': service_ids[1], 'proposed_rank': 'Corporal'})
+        assert s == 201 and r['nomination_id'] == f'PRM-{year}-0002', (s, r)
+        # A nomination for a RETIRED officer is stored but must never reach the
+        # green badge (the list is "active officer nominations").
+        s, r = request(base, 'POST', '/api/officers/promotions', admin,
+                       {'officer_id': service_ids[3], 'proposed_rank': 'General'})
+        assert s == 201, (s, r)
+        assert r['promotion']['awaiting_verification'] is False, r
+        # Validation: same rank, unknown officer, unknown rank.
+        s, r = request(base, 'POST', '/api/officers/promotions', admin,
+                       {'officer_id': service_ids[0], 'proposed_rank': 'Sergeant'})
+        assert s == 400 and 'differ' in r['error'], (s, r)
+        s, r = request(base, 'POST', '/api/officers/promotions', admin,
+                       {'officer_id': 'POL-1999-9999', 'proposed_rank': 'Inspector'})
+        assert s == 400 and 'does not exist' in r['error'], (s, r)
+        s, r = request(base, 'POST', '/api/officers/promotions', admin,
+                       {'officer_id': service_ids[0], 'proposed_rank': 'Captain'})
+        assert s == 400 and 'Proposed rank' in r['error'], (s, r)
+        # The register itself is admin-gated.
+        s, r = request(base, 'POST', '/api/officers/promotions', tokens['fp.officer'],
+                       {'officer_id': service_ids[0], 'proposed_rank': 'Inspector'})
+        assert s == 401, (s, r)
+
+        off = bundle('/api/officers/analytics')
+        assert off['promotion_nominations'] == 3, off
+        assert off['promotions_awaiting_verification'] == 2, off
+        assert off['promotions_verified'] == 0 and off['promotions_rejected'] == 0, off
+        assert off['badges']['promotion'] == 2, off
+        assert [p['service_id'] for p in off['lists']['promotions']] == service_ids[:2], off['lists']
+        assert all(p['awaiting_verification'] for p in off['lists']['promotions']), off['lists']
+
+        # Commander verification clears the badge for that nomination.
+        s, r = request(base, 'PATCH', f'/api/officers/promotions/PRM-{year}-0001', admin,
+                       {'verification_status': 'Verified'})
+        assert s == 200 and r['promotion']['verification_status'] == 'Verified', (s, r)
+        assert r['promotion']['verified_by'] == 'Officer A. Hassan', r
+        assert r['promotion']['awaiting_verification'] is False, r
+        s, r = request(base, 'PATCH', f'/api/officers/promotions/PRM-{year}-9999', admin,
+                       {'verification_status': 'Verified'})
+        assert s == 404, (s, r)
+        s, r = request(base, 'PATCH', f'/api/officers/promotions/PRM-{year}-0002', admin,
+                       {'verification_status': 'Maybe'})
+        assert s == 400 and 'verification_status' in r['error'], (s, r)
+
+        off = bundle('/api/officers/analytics')
+        assert off['promotions_awaiting_verification'] == 1, off
+        assert off['promotions_verified'] == 1, off
+        assert off['badges']['promotion'] == 1, off
+        assert _series(off['charts']['by_promotion_status']) == {
+            'Awaiting Verification': 2, 'Verified': 1, 'Rejected': 0}, off
+
+        # ---- 4) disciplinary list (red badge) -----------------------------
+        s, r = request(base, 'POST', '/api/officers/discipline', admin,
+                       {'officer_id': service_ids[0], 'action_type': 'Misconduct',
+                        'status': 'Pending', 'severity': 'Medium',
+                        'incident_summary': 'Late for parade'})
+        assert s == 201 and r['action_id'] == f'DSC-{year}-0001', (s, r)
+        assert r['discipline']['open'] is True, r
+        s, r = request(base, 'POST', '/api/officers/discipline', admin,
+                       {'officer_id': service_ids[2], 'action_type': 'Suspension',
+                        'status': 'Pending', 'severity': 'High',
+                        'suspension_start': '2026-09-01', 'suspension_end': '2026-09-30'})
+        assert s == 201, (s, r)
+        s, r = request(base, 'POST', '/api/officers/discipline', admin,
+                       {'officer_id': service_ids[1], 'action_type': 'Demotion',
+                        'status': 'Confirmed', 'from_rank': 'Constable',
+                        'to_rank': 'Constable'})
+        assert s == 400 and 'junior' in r['error'], (s, r)      # not a demotion
+        s, r = request(base, 'POST', '/api/officers/discipline', admin,
+                       {'officer_id': service_ids[0], 'action_type': 'Demotion',
+                        'status': 'Confirmed', 'from_rank': 'Sergeant', 'to_rank': 'Corporal'})
+        assert s == 201, (s, r)
+        s, r = request(base, 'POST', '/api/officers/discipline', admin,
+                       {'officer_id': service_ids[1], 'action_type': 'Warning', 'status': 'Closed'})
+        assert s == 201, (s, r)
+        s, r = request(base, 'POST', '/api/officers/discipline', admin,
+                       {'officer_id': service_ids[0], 'action_type': 'Furlough'})
+        assert s == 400 and 'Action type' in r['error'], (s, r)
+
+        off = bundle('/api/officers/analytics')
+        assert off['disciplinary_actions'] == 4, off
+        assert off['disciplinary_open'] == 2, off              # Pending + Pending
+        assert off['misconduct_actions'] == 1, off
+        assert off['pending_suspensions'] == 1, off
+        assert off['rank_demotions'] == 1, off
+        assert off['badges']['discipline'] == 2, off
+        assert {d['action_type'] for d in off['lists']['discipline']} == {'Misconduct', 'Suspension'}, off['lists']
+        assert _series(off['charts']['by_action_type']) == {
+            'Misconduct': 1, 'Suspension': 1, 'Demotion': 1, 'Warning': 1, 'Investigation': 0}, off
+        # The green/red badge counts are also exposed as KPI cards.
+        kpi_labels = {k['label']: k['value'] for k in off['kpis']}
+        assert kpi_labels['Promotions awaiting'] == 1, kpi_labels
+        assert kpi_labels['Open disciplinary'] == 2, kpi_labels
+        assert kpi_labels['Total active force'] == 2, kpi_labels
+        print('ok: /api/officers/analytics roster maths + green/red badge lists')
+
+        # ---- 5) fleet + security alert fixture ----------------------------
+        fleet = [
+            {'category': 'Police Fleet', 'plate_number': 'SL-AA-1001', 'vin': '1HGCM82633A004352',
+             'engine_number': 'E1', 'make_model': 'Toyota Hilux', 'station_id': 'ST-001',
+             'operational_status': 'In Service'},
+            {'category': 'Police Fleet', 'plate_number': 'SL-AA-1002', 'vin': '1HGCM82633A004353',
+             'engine_number': 'E2', 'make_model': 'Nissan Patrol', 'station_id': 'ST-001',
+             'operational_status': 'Maintenance'},
+            {'category': 'Police Fleet', 'plate_number': 'SL-AA-1003', 'vin': '1HGCM82633A004354',
+             'engine_number': 'E3', 'make_model': 'Toyota Hilux', 'station_id': 'ST-004',
+             'operational_status': 'In Service'},
+        ]
+        civilian = [
+            {'category': 'Civilian / Commercial', 'plate_number': 'SL-BB-2001',
+             'vin': '1HGCM82633A004355', 'engine_number': 'E4', 'make_model': 'Nissan Sunny',
+             'owner_full_name': 'Ayaan Cali', 'owner_phone': '+25263', 'owner_national_id': 'N1',
+             'security_alert': 'Stolen', 'alert_reason': 'Reported at South Checkpoint'},
+            {'category': 'Civilian / Commercial', 'plate_number': 'SL-BB-2002',
+             'vin': '1HGCM82633A004356', 'engine_number': 'E5', 'make_model': 'Toyota Corolla',
+             'owner_full_name': 'Cabdi Nuur', 'owner_phone': '+25264', 'owner_national_id': 'N2'},
+        ]
+        for payload in fleet + civilian:
+            s, r = request(base, 'POST', '/api/vehicles', admin, payload)
+            assert s == 201, (s, r)
+
+        veh = bundle('/api/vehicles/analytics')
+        assert veh['total_vehicles'] == 5, veh
+        assert veh['police_fleet'] == 3 and veh['civilian_registrations'] == 2, veh
+        assert veh['in_service'] == 2 and veh['maintenance'] == 1, veh
+        assert veh['out_of_service'] == 0 and veh['decommissioned'] == 0, veh
+        assert veh['non_operational'] == 1, veh
+        assert veh['serviceable_ratio'] == _pct(2, 3) == 66.7, veh
+        assert veh['fleet_availability'] == _pct(2, 5) == 40.0, veh
+        assert veh['maintenance_rate'] == _pct(1, 3) == 33.3, veh
+        assert _series(veh['charts']['by_operational_status']) == {
+            'In Service': 2, 'Maintenance': 1, 'Out of Service': 0,
+            'Decommissioned': 0, 'Unassigned': 2}, veh
+        assert sum(x['count'] for x in veh['charts']['fleet_status_ratio']) == 3, veh
+        # Security alert breakdown.
+        assert veh['clean_registrations'] == 4 and veh['flagged_vehicles'] == 1, veh
+        assert veh['stolen'] == 1 and veh['wanted_in_crime'] == 0, veh
+        assert veh['alert_rate'] == _pct(1, 5) == 20.0, veh
+        assert veh['civilian_clean'] == 1 and veh['civilian_flagged'] == 1, veh
+        assert _series(veh['charts']['by_alert']) == {
+            'Clean / Normal': 4, 'Stolen': 1, 'Wanted in Crime': 0,
+            'Impounded': 0, 'Unregistered / Suspicious': 0}, veh
+        assert _series(veh['charts']['fleet_by_region']) == {
+            'Sool': 1, 'Sanaag': 2, 'East Togdheer': 0}, veh
+        assert [v['plate_number'] for v in veh['lists']['flagged_vehicles']] == ['SL-BB-2001'], veh
+        _assert_chart_shape(veh['charts'], ('by_operational_status', 'fleet_status_ratio',
+                                            'by_alert', 'alert_breakdown', 'by_category',
+                                            'fleet_by_region'))
+
+        # Flagging a second vehicle re-computes every ratio.
+        s, vehicles = request(base, 'GET', '/api/vehicles?q=SL-AA-1002', admin)
+        vid = vehicles['items'][0]['vehicle_id']
+        s, r = request(base, 'POST', f'/api/vehicles/{vid}/status', admin,
+                       {'security_alert': 'Wanted in Crime', 'alert_reason': 'Linked to CRM file'})
+        assert s == 201 and r['vehicle']['security_alert'] == 'Wanted in Crime', (s, r)
+        veh = bundle('/api/vehicles/analytics')
+        assert veh['stolen'] == 1 and veh['wanted_in_crime'] == 1, veh
+        assert veh['clean_registrations'] == 3 and veh['flagged_vehicles'] == 2, veh
+        assert veh['alert_rate'] == _pct(2, 5) == 40.0, veh
+        assert len(veh['lists']['flagged_vehicles']) == 2, veh
+        print('ok: /api/vehicles/analytics fleet ratios + security alert breakdown')
+
+        # ---- 6) CID crime fixture (timestamps pinned for the 24h bands) ---
+        pinned = [('CID-2026-101', 'Theft/Burglary', 'Laascaanood', 'Closed', '2026-09-01 07:15:00'),
+                  ('CID-2026-102', 'Assault', 'Burao', 'Under Investigation', '2026-09-02 13:00:00'),
+                  ('CID-2026-103', 'Homicide', 'Laascaanood', 'Reported', '2026-09-03 19:30:00'),
+                  ('CID-2026-104', 'Fraud', 'Ceerigaabo', 'Closed', '2026-09-04 02:00:00')]
+        for case_id, category, location, status, created in pinned:
+            sql('INSERT INTO crime_cases(case_id,category,location,status,incident_summary,created_at) '
+                'VALUES(?,?,?,?,?,?)', (case_id, category, location, status, 'Fixture case', created))
+
+        cid = bundle('/api/cid/analytics')['crime']
+        assert cid['total_cases'] == 6, cid                     # 2 seeded + 4 pinned
+        assert cid['closed_cases'] == 2 and cid['open_cases'] == 4, cid
+        assert cid['closure_rate'] == _pct(2, 6) == 33.3, cid
+        assert cid['active_suspects'] == 1, cid
+        assert cid['categories_tracked'] == 5, cid              # + seeded 'Property crime'
+        assert cid['top_category'] == 'Fraud', cid              # 1 pinned + 1 seeded
+        assert _series(cid['charts']['by_category']) == {
+            **{c: 0 for c in CRIME_CATEGORIES},
+            'Theft/Burglary': 1, 'Assault': 1, 'Homicide': 1, 'Fraud': 2, 'Property crime': 1}, cid
+        assert _series(cid['charts']['by_location']) == {
+            'Laascaanood': 2, 'Burao': 1, 'Ceerigaabo': 1,
+            'Hargeisa Central': 1, 'Jigjiga Yar': 1}, cid
+        assert [x['label'] for x in cid['charts']['by_location']][:2] == ['Laascaanood', 'Burao'], cid
+        assert cid['charts']['open_vs_closed'] == [{'label': 'Open', 'count': 4},
+                                                   {'label': 'Closed', 'count': 2}], cid
+        # Time-of-day bands: the four pinned rows land one per bucket, plus
+        # whatever band the two seeded rows were created in (recomputed here
+        # from the raw timestamps with an independent implementation).
+        raw = sql('SELECT created_at FROM crime_cases', fetch=True)
+        expected_buckets = {b: 0 for b in TIME_BUCKETS}
+        for row in raw:
+            expected_buckets[_bucket(row['created_at'])] += 1
+        assert _series(cid['charts']['by_time_of_day']) == expected_buckets, \
+            (cid['charts']['by_time_of_day'], expected_buckets)
+        assert all(expected_buckets[b] >= 1 for b in TIME_BUCKETS), expected_buckets
+        print('ok: /api/cid/analytics crime volume by location, 24h band, category and open/closed')
+
+        # ---- 7) CID airport fixture --------------------------------------
+        s, r = request(base, 'POST', '/api/airport-records', tokens['ap.officer'], {
+            'first_name': 'Maxamed', 'second_name': 'Nuur', 'third_name': 'Cali',
+            'fourth_name': 'Awil', 'national_id': '10067890', 'date_of_birth': '1989-11-02',
+            'mother_name': 'Khadra Jaamac', 'movement': 'Departure',
+            'travel_date': '2026-09-05', 'flight_number': 'HL-204',
+            'origin_city': 'Hargeisa', 'destination_city': 'Berbera'})
+        assert s == 201, (s, r)
+        s, r = request(base, 'POST', '/api/airport-records', tokens['ap.officer'], {
+            'first_name': 'Sahra', 'second_name': 'Yuusuf', 'third_name': 'Axmed',
+            'fourth_name': 'Aadan', 'national_id': '10024680', 'date_of_birth': '2001-02-26',
+            'mother_name': 'Amina Maxamed', 'movement': 'Arrival',
+            'travel_date': '2026-09-06', 'flight_number': 'HL-118',
+            'origin_city': 'Berbera', 'destination_city': 'Hargeisa'})
+        assert s == 201, (s, r)
+
+        air = bundle('/api/cid/analytics')['airport']
+        assert air['total_movements'] == 3, air                 # 1 seeded arrival + 2 new
+        assert air['inbound'] == 2 and air['outbound'] == 1, air
+        assert air['inbound_share'] == _pct(2, 3) == 66.7, air
+        assert air['outbound_share'] == _pct(1, 3) == 33.3, air
+        # P-0002 carries the seeded active suspect alert -> 1 suspect movement.
+        assert air['suspect_movements'] == 1 and air['suspect_passengers'] == 1, air
+        assert air['active_suspect_alerts'] == 1, air
+        assert _series(air['charts']['by_movement']) == {'Arrival': 2, 'Departure': 1}, air
+        assert air['charts']['inbound_vs_outbound'] == [{'label': 'Inbound', 'count': 2},
+                                                        {'label': 'Outbound', 'count': 1}], air
+        assert len(air['lists']['suspect_movements']) == 1, air
+        assert air['lists']['suspect_movements'][0]['movement'] == 'Departure', air
+        # The airport unit officer only receives the airport section.
+        air_only = bundle('/api/cid/analytics', tokens['ap.officer'])
+        assert air_only['sections'] == ['airport'], air_only['sections']
+        assert air_only['airport']['total_movements'] == 3, air_only
+        print('ok: /api/cid/analytics inbound/outbound counts + suspect movement alerts')
+
+        # ---- 8) CID fingerprint fixture ----------------------------------
+        pid2 = sql("SELECT id FROM persons WHERE person_id='P-0002'", fetch=True)[0]['id']
+        pid3 = sql("SELECT id FROM persons WHERE person_id='P-0003'", fetch=True)[0]['id']
+        sql('INSERT INTO clearance_applications(application_id,person_id,purpose,status,'
+            'guardian_name,created_at) VALUES(?,?,?,?,?,?)',
+            ('FP-2026-0101', pid2, 'Travel', 'Pending Review', 'Guardian', '2026-09-07 09:00:00'))
+        sql('INSERT INTO clearance_applications(application_id,person_id,purpose,status,'
+            'guardian_name,created_at) VALUES(?,?,?,?,?,?)',
+            ('FP-2026-0102', pid3, 'Employment', 'Approved', 'Guardian', '2026-09-08 10:00:00'))
+
+        fp = bundle('/api/cid/analytics')['fingerprint']
+        assert fp['total_biometrics_logged'] == 3, fp
+        assert fp['unique_persons_fingerprinted'] == 2, fp
+        assert fp['repeat_captures'] == 1, fp                   # P-0003 captured twice
+        assert fp['identity_match_rate'] == _pct(1, 3) == 33.3, fp
+        assert fp['suspect_hits'] == 1, fp                      # P-0002 has an active alert
+        assert fp['hit_rate'] == _pct(1, 3) == 33.3, fp
+        assert fp['approved'] == 1 and fp['pending_review'] == 2 and fp['rejected'] == 0, fp
+        assert fp['clearance_rate'] == _pct(1, 3) == 33.3, fp
+        assert _series(fp['charts']['by_status']) == {
+            'Pending Review': 2, 'Approved': 1, 'Rejected': 0}, fp
+        assert _series(fp['charts']['by_purpose']) == {
+            'Education': 1, 'Travel': 1, 'Employment': 1, 'Citizenship': 0, 'Licence': 0}, fp
+        # A Fingerprint officer sees ONLY their own unit's section.
+        fp_only = bundle('/api/cid/analytics', tokens['fp.officer'])
+        assert fp_only['sections'] == ['fingerprint'], fp_only['sections']
+        assert fp_only['fingerprint']['total_biometrics_logged'] == 3, fp_only
+        assert 'crime' not in fp_only and 'checkpoint' not in fp_only, fp_only
+        print('ok: /api/cid/analytics biometrics logged + match/hit rates')
+
+        # ---- 9) CID checkpoint fixture (per-location + scoped reads) -----
+        cp_fields = {'date_of_birth': '2000-01-01', 'current_address': 'X', 'permanent_address': 'Y',
+                     'purpose_of_visit': 'Family', 'guardian_first_name': 'G', 'guardian_second_name': 'A',
+                     'guardian_third_name': 'B', 'guardian_fourth_name': 'C',
+                     'guardian_relationship': 'Father', 'guardian_phone': '+1',
+                     'guardian_address': 'X', 'guardian_occupation': 'Worker'}
+        cp_files = {'doc_tr_0': ('t.pdf', b'x'), 'doc_gd_0': ('g.pdf', b'x'),
+                    'photo': ('p.jpg', b'\xff\xd8\xff\xe0x')}
+
+        def stop(token, location, first, second, third, fourth, national_id=None):
+            fields = dict(cp_fields, location=location, first_name=first, second_name=second,
+                          third_name=third, fourth_name=fourth)
+            if national_id:
+                fields['national_id'] = national_id
+            return multipart_request(base, '/api/checkpoint-events', token, fields, cp_files)
+
+        s, r = stop(tokens['cp.south'], 'South', 'Faadumo', 'Yusuf', 'Cabdalle', 'Cabdi')
+        assert s == 201 and r['screening_result'] == 'No active alert', (s, r)
+        s, r = stop(admin, 'East', 'Maxamed', 'Nuur', 'Cali', 'Awil', national_id='10067890')
+        assert s == 201 and r['screening_result'] == 'Flagged match', (s, r)
+        assert r['location_code'] == 'East' and r['checkpoint_location'] == 'East Checkpoint', r
+        s, r = stop(admin, 'West', 'Nuur', 'Cali', 'Xasan', 'Awil')
+        assert s == 201 and r['screening_result'] == 'No active alert', (s, r)
+
+        cp = bundle('/api/cid/analytics')['checkpoint']
+        assert cp['scope'] is None, cp
+        assert cp['total_screenings'] == 4, cp                  # 1 seeded + 3 new
+        assert cp['flagged_hits'] == 2 and cp['cleared'] == 2, cp
+        assert cp['flag_rate'] == _pct(2, 4) == 50.0, cp
+        assert cp['distinct_travelers'] == 3, cp                # P-0002 counted once
+        by_loc = {x['label']: x for x in cp['charts']['screening_by_location']}
+        assert set(by_loc) == {'South', 'East', 'West'}, by_loc
+        assert (by_loc['South']['count'], by_loc['South']['flagged']) == (2, 1), by_loc
+        assert (by_loc['East']['count'], by_loc['East']['flagged']) == (1, 1), by_loc
+        assert (by_loc['West']['count'], by_loc['West']['flagged']) == (1, 0), by_loc
+        assert by_loc['East']['flag_rate'] == 100.0 and by_loc['West']['flag_rate'] == 0.0, by_loc
+        assert _series(cp['charts']['by_location']) == {'South': 2, 'East': 1, 'West': 1}, cp
+        assert _series(cp['charts']['flagged_by_location']) == {'South': 1, 'East': 1, 'West': 0}, cp
+
+        # A Checkpoint officer's bundle is scoped to their own location and
+        # never leaks another checkpoint's numbers.
+        south = bundle('/api/cid/analytics', tokens['cp.south'])
+        assert south['sections'] == ['checkpoint'], south['sections']
+        assert south['checkpoint_scope'] == 'South', south
+        scp = south['checkpoint']
+        assert scp['scope'] == 'South', scp
+        assert scp['total_screenings'] == 2 and scp['flagged_hits'] == 1, scp
+        assert scp['flag_rate'] == _pct(1, 2) == 50.0, scp
+        assert [x['label'] for x in scp['charts']['screening_by_location']] == ['South'], scp
+        east = bundle('/api/cid/analytics', tokens['cp.east'])['checkpoint']
+        assert east['total_screenings'] == 1 and east['flagged_hits'] == 1, east
+        assert east['flag_rate'] == 100.0, east
+        west = bundle('/api/cid/analytics', tokens['cp.west'])['checkpoint']
+        assert west['total_screenings'] == 1 and west['flagged_hits'] == 0, west
+        # The CID unit officer sees the crime section but no checkpoint data.
+        cid_only = bundle('/api/cid/analytics', tokens['cid.officer'])
+        assert cid_only['sections'] == ['crime'], cid_only['sections']
+        print('ok: /api/cid/analytics checkpoint volume + flagged hits per location (scoped)')
+
+        # ---- 10) station registry: capacity + deployment matrix ----------
+        stn = bundle('/api/stations/analytics')
+        assert stn['total_stations'] == 8, stn
+        assert stn['regional_hq'] == 3 and stn['district_hq'] == 3, stn
+        assert stn['outposts'] == 1 and stn['checkpoints'] == 1 and stn['border_posts'] == 0, stn
+        assert stn['active_stations'] == 8, stn
+        assert stn['total_cell_capacity'] == 112 and stn['average_cell_capacity'] == 14.0, stn
+        assert stn['officers_deployed'] == 4, stn
+        assert stn['active_officers_deployed'] == 2, stn        # Suspended + Retired excluded
+        assert stn['vehicles_deployed'] == 3, stn               # fleet only (civilians unassigned)
+        assert stn['average_officers_per_station'] == round(4 / 8, 1) == 0.5, stn
+        assert stn['unassigned_stations'] == 4, stn
+        assert stn['largest_deployment']['officers'] == 1, stn
+        matrix = {block['region']: block for block in stn['lists']['deployment_matrix']}
+        assert set(matrix) == {'Sool', 'Sanaag', 'East Togdheer'}, matrix
+        assert (matrix['Sanaag']['stations'], matrix['Sanaag']['officers'],
+                matrix['Sanaag']['active_officers'], matrix['Sanaag']['vehicles']) == (2, 2, 1, 2), matrix['Sanaag']
+        assert (matrix['Sool']['stations'], matrix['Sool']['officers'],
+                matrix['Sool']['active_officers'], matrix['Sool']['vehicles']) == (3, 1, 1, 1), matrix['Sool']
+        assert (matrix['East Togdheer']['stations'], matrix['East Togdheer']['officers'],
+                matrix['East Togdheer']['active_officers'], matrix['East Togdheer']['vehicles']) == (3, 1, 0, 0), \
+            matrix['East Togdheer']
+        assert sum(b['officers'] for b in matrix.values()) == 4, matrix
+        assert _series(stn['charts']['stations_by_region']) == {
+            'Sool': 3, 'Sanaag': 2, 'East Togdheer': 3}, stn
+        per_station = {s['station_id']: s['officers']
+                       for b in matrix.values() for s in b['station_list']}
+        assert per_station == {'ST-001': 1, 'ST-002': 1, 'ST-003': 0, 'ST-004': 1,
+                               'ST-005': 1, 'ST-006': 0, 'ST-007': 0, 'ST-008': 0}, per_station
+        assert len(stn['lists']['unassigned_stations']) == 4, stn['lists']
+        _assert_chart_shape(stn['charts'], ('by_tier', 'by_status', 'stations_by_region',
+                                            'deployment_by_region', 'officers_by_station'))
+        print('ok: /api/stations/analytics capacity by tier + deployment matrix per region')
+
+        # ---- 11) dispatcher: /api/analytics?module=… ---------------------
+        def strip(payload):
+            payload = dict(payload)
+            payload.pop('generated_at', None)
+            return payload
+
+        for module, path in (('cid', '/api/cid/analytics'),
+                             ('officers', '/api/officers/analytics'),
+                             ('vehicles', '/api/vehicles/analytics'),
+                             ('stations', '/api/stations/analytics')):
+            s, via_query = request(base, 'GET', f'/api/analytics?module={module}', admin)
+            assert s == 200, (module, s, via_query)
+            assert strip(via_query) == strip(bundle(path)), module
+        s, r = request(base, 'GET', '/api/analytics?module=hr', admin)
+        assert s == 200 and r['module'] == 'officers', (s, r)
+        s, r = request(base, 'GET', '/api/analytics?module=cars', admin)
+        assert s == 200 and r['module'] == 'vehicles', (s, r)
+        s, r = request(base, 'GET', '/api/analytics?module=all', admin)
+        assert s == 200 and r['modules'] == ['cid', 'officers', 'stations', 'vehicles'], (s, r)
+        assert strip(r['bundles']['stations']) == strip(bundle('/api/stations/analytics')), r
+        s, r = request(base, 'GET', '/api/analytics', admin)
+        assert s == 200 and r['module'] == 'all', (s, r)
+        s, r = request(base, 'GET', '/api/analytics?module=bogus', admin)
+        assert s == 400 and 'module must be one of' in r['error'], (s, r)
+
+        # The dispatcher applies the same per-module RBAC as the direct routes.
+        for username, path, expected in (
+                ('fp.officer', '/api/analytics?module=officers', 401),
+                ('fp.officer', '/api/analytics?module=stations', 401),
+                ('fp.officer', '/api/analytics?module=cid', 200),
+                ('fp.officer', '/api/analytics?module=vehicles', 200),
+                ('cid.officer', '/api/analytics?module=officers', 401),
+                ('cid.officer', '/api/analytics?module=stations', 200),
+                ('cp.south', '/api/analytics?module=officers', 401),
+                ('cp.south', '/api/analytics?module=stations', 401),
+                ('cp.south', '/api/analytics?module=cid', 200),
+                ('ap.officer', '/api/officers/analytics', 401),
+                ('ap.officer', '/api/stations/analytics', 401),
+                ('fp.officer', '/api/officers/analytics', 401),
+                ('fp.officer', '/api/stations/analytics', 401),
+                ('cp.south', '/api/officers/analytics', 401),
+                ('cp.south', '/api/stations/analytics', 401)):
+            s, r = request(base, 'GET', path, tokens[username])
+            assert s == expected, (username, path, s, expected, r)
+        # module=all silently omits the bundles the caller may not see.
+        s, r = request(base, 'GET', '/api/analytics?module=all', tokens['fp.officer'])
+        assert s == 200 and r['modules'] == ['cid', 'vehicles'], (s, r)
+        assert r['bundles']['cid']['sections'] == ['fingerprint'], r
+        s, r = request(base, 'GET', '/api/analytics?module=all', tokens['cp.south'])
+        assert s == 200 and r['modules'] == ['cid', 'vehicles'], (s, r)
+        assert r['bundles']['cid']['checkpoint']['scope'] == 'South', r
+        s, r = request(base, 'GET', '/api/analytics?module=all', tokens['cid.officer'])
+        assert s == 200 and r['modules'] == ['cid', 'stations', 'vehicles'], (s, r)
+
+        # ---- 12) KPI contract (the frontend renders these verbatim) ------
+        for path in ('/api/cid/analytics', '/api/officers/analytics',
+                     '/api/vehicles/analytics', '/api/stations/analytics'):
+            payload = bundle(path)
+            cards = payload['kpis']
+            assert cards, path
+            for card in cards:
+                assert set(card) == {'label', 'value', 'tone', 'icon', 'hint'}, card
+                assert card['tone'] in ('blue', 'green', 'red', 'amber', 'purple'), card
+        cid = bundle('/api/cid/analytics')
+        for name in cid['sections']:
+            assert cid[name]['kpis'], name
+            assert isinstance(cid[name]['charts'], dict), name
+        print('ok: /api/analytics?module=… dispatcher, per-module RBAC and KPI contract')
+        return 0
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+
 def main():
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-test-')
@@ -1669,6 +2313,11 @@ def main():
                        tokens['fp.officer'], {})
         assert s == 400 and 'review period active' in review_error(r), (s, r)
         print('ok: audit_instant_approvals detects and reverts premature approvals')
+
+        # ---- departmental analytics (CID · Officers · Vehicles · Stations) ----
+        # Runs against its own isolated server + fixture database so every
+        # asserted number is exact (see departmental_analytics_suite()).
+        departmental_analytics_suite()
 
         print('ALL BACKEND TESTS PASSED')
         return 0

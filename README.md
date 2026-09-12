@@ -14,6 +14,7 @@ A working browser-based prototype for a central police management platform. It i
 - Central Police Search (officers / stations / cars by Region → District → Village)
 - Police Stations / Officers / Cars registration (regional modules)
 - Dashboard and cross-unit activity feed
+- Departmental analytics embedded in each register (CID units, Officers, Cars, Stations)
 
 ## Central-person linking model
 
@@ -79,13 +80,13 @@ The **Add Suspect** modal makes the **linked case strictly optional**: a suspect
 
 Officers sign in with one of seven roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
 
-- **System Admin** — full access to every module plus the Executive Analytics dashboard and the User Management page.
+- **System Admin** — full access to every module, every departmental analytics bundle and the User Management page.
 - **Fingerprint Unit** — Fingerprint module only.
 - **Airport Control** — Airport module only.
 - **CID Criminal Unit** — CID / suspect alerts only.
 - **Checkpoint South / East / West** — only the Checkpoint module, **scoped to their assigned location**; `GET /api/checkpoint-events` returns a `scope` and `visible_locations` payload so the frontend can render the active filter, and `POST /api/checkpoint-events` rejects events at any other location.
 
-The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the analytics aggregation, and a Fingerprint officer cannot list Airport or Crime records.
+The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the executive analytics aggregation, a Fingerprint officer cannot list Airport or Crime records, and each departmental analytics bundle only ever returns the sections its caller's modules allow.
 
 **Session persistence (refresh-safe sign-in).** On sign-in the auth token and user object are stored in browser storage (`localStorage.setItem('sentinel_token', token)` and `localStorage.setItem('sentinel_user', JSON.stringify(user))`, plus the legacy `sentinelSession` object used by the printable pages). On every page load `initApp()` re-hydrates `currentUser` and `authToken` **before** the initial API sync (`syncServer` / `fetchCheckpoints`), and every request automatically carries `Authorization: Bearer ${token}`. A refresh therefore never signs the officer out: only an explicit HTTP **401** from the dedicated auth check (`GET /api/me`) clears the session — non-fatal startup errors (server still booting, transient 5xx, a 404) keep the officer signed in and retry in the background.
 
@@ -100,7 +101,7 @@ The flat module list is reorganised into three **collapsible sidebar groups** (o
 - **Central Search** — *Central Person Search* (the existing `people` registry) and *Central Police Search* (new `policesearch` page: one cascading Region → District → Village/Town filter across the police officers, stations and cars registers, plus a free-text search).
 - **CID — Criminal Investigation Directorate** — *Fingerprint Unit* (`fingerprint`), *Crime Department* (`cid`), *Checkpoint Unit* (`checkpoints`) and *Airport Unit* (`airport`). These are the existing routes, regrouped and re-labelling only — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Department entry.
 - **Police Registrations & Management** (System Admin only) — *Police Stations* (`stations`), *Police Officers* (`officers`) and *Police Cars* (`cars`).
-- **Administration** (System Admin only, as before) — *Analytics* and *User Management*.
+- **Administration** (System Admin only, as before) — *User Management*. (The standalone *Analytics* entry is gone: analytics now live inside each register, see **Departmental analytics** below.)
 
 Visibility is still driven by the `modules` array from `GET /api/me`: a group hides entirely when every item inside it is hidden for the signed-in role.
 
@@ -130,13 +131,49 @@ The **Police Officers** register is a five-step wizard (multi-tab `offStep(n)` f
 
 Server-side validation (`register_officer()`) enforces every mandatory field, the fixed dropdown option lists, the station foreign key, the upload extension/size policy (5 MB), and the coherent Slot 2 pairing — identical rules to the client, so a request that passes the form cannot be rejected by the API (and vice-versa). Uploads are persisted under `backend/uploads/` via `save_upload_validated()`.
 
-### Executive Analytics dashboard (admin only)
+### Departmental analytics (embedded in every register)
 
-The **Analytics** page (admin only) renders lightweight canvas charts backed by `/api/admin/analytics`:
+The single monolithic **Analytics** page was retired. Each sidebar section now embeds its
+**own departmental analytics strip** directly above its register table/form: tab-specific KPI
+summary cards, lightweight canvas charts (no external chart library) and the badge lists that
+belong to that department. Every number is computed server-side; the frontend only renders the
+`kpis` / `charts` / `lists` arrays it receives, and falls back to the same shapes recomputed
+from the local cache when the API is unreachable (the strip is then labelled **Offline cache**).
 
-- **Crime incident heat / distribution** — crime case counts per location (district) and per time-of-day bucket (Morning 06-12, Afternoon 12-18, Evening 18-24, Night 00-06).
-- **Checkpoint volume & demographics** — total screening events per checkpoint (South vs. East vs. West) split by traveler age brackets (`<18`, `18-30`, `31-50`, `50+`).
-- **Operational summary** — KPI tiles for total central persons, active suspect alerts, airport movements and fingerprint records, plus a full summary card (cases total / open, checkpoint events / flagged).
+| Register (sidebar section) | Endpoint | Widgets |
+| --- | --- | --- |
+| CID → **Fingerprint Unit** | `GET /api/cid/analytics` → `fingerprint` | Total biometrics logged, identity match rate, suspect hits + hit rate, pending/approved clearances, status & clearance-reason charts · *Central Person Search* shortcut |
+| CID → **Crime Department** | `GET /api/cid/analytics` → `crime` | Case volume by location, time-of-day buckets (06-12 / 12-18 / 18-24 / 00-06), crime categories (Theft, Assault, Homicide, Fraud, …), open vs. closed ratio + closure rate, active suspects · *Central Person Search* shortcut |
+| CID → **Checkpoint Unit** | `GET /api/cid/analytics` → `checkpoint` | Traveler screening volume, distinct travelers, flagged suspect hits **per checkpoint** (South / East / West), flag rate, screening-result ratio · *Central Person Search* shortcut |
+| CID → **Airport Unit** | `GET /api/cid/analytics` → `airport` | Inbound/outbound movement counts and shares, top routes, **active suspect movement alerts** list · *Central Person Search* shortcut |
+| **Police Officers** (HR Directorate) | `GET /api/officers/analytics` | Roster metrics (total active force, rank distribution, duty status, officers per region, average service years), **Promotion list (green badge)** — active-officer nominations awaiting commander verification, **Disciplinary list (red badge)** — misconduct, pending suspensions and rank demotions · *Central Officer Search* above the register |
+| **Police Cars** | `GET /api/vehicles/analytics` | Fleet operational status (In Service vs. Maintenance / Out of Service / Decommissioned + serviceable ratio), security alert breakdown (Stolen / Wanted vs. clean civilian registrations), fleet by region, flagged-vehicle list · *Central Vehicle Search* above the register |
+| **Police Stations** | `GET /api/stations/analytics` | Operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), cell capacity, **deployment matrix** — officers deployed per station across Sool, Sanaag and East Togdheer, unstaffed-station list · *Central Station Search* above the register |
+
+`GET /api/analytics?module=cid|officers|vehicles|stations|all` is the unified alias for the same
+builders (`hr` / `cars` / `station` are accepted aliases; an unknown module returns **400**, never a
+silent empty payload). `module=all` returns every bundle the caller is entitled to see and silently
+omits the rest.
+
+**RBAC.** The CID bundle is shared by the four directorate units and is *sectioned* by module: a
+Fingerprint officer receives only `sections: ["fingerprint"]`, a Checkpoint officer only
+`sections: ["checkpoint"]` — and that section is filtered to their own `location_scope`
+(a South officer never sees East/West counts). `officers` requires the `officers` module,
+`vehicles` any of `cars` / `policesearch` / `checkpoints` / `crimes`, `stations` any of
+`stations` / `crimes`; everything else answers **401**. The legacy executive aggregation
+(`GET /api/admin/analytics`, admin only) is unchanged and still powers the printable summary.
+
+**HR Directorate records.** The promotion / disciplinary widgets are backed by two new tables
+(`officer_promotions`, `officer_discipline`) with their own routes:
+`POST /api/officers/promotions` (`PRM-YYYY-XXXX`, validates the proposed rank against
+`OFFICER_RANKS` and refuses a same-rank nomination),
+`PATCH /api/officers/promotions/{nomination_id}` (commander verification:
+`Verified` / `Rejected` / `Awaiting Verification`, stamps `verified_by` + `verified_at`),
+`POST /api/officers/discipline` (`DSC-YYYY-XXXX`; a `Demotion` must name a *junior* `to_rank`),
+plus `GET /api/officers/promotions` and `GET /api/officers/discipline` for headless reads.
+The **green badge** counts only nominations that are `Awaiting Verification` **and** belong to an
+officer whose `duty_status` is `Active`; the **red badge** counts actions still open
+(`Pending` / `In Review` / `Appealed`).
 
 ### Admin User Management (admin only)
 
@@ -218,6 +255,28 @@ python3 backend/test_server.py
 
 Covers the identity-resolution tiers, unit-record routes, RBAC module gating, location-scoped checkpoint reads/writes, role-alias normalization (`cp_south` / `CheckpointEast` → `checkpoint_officer` with the scope preserved), the `/api/dashboard` contract for every role and the analytics aggregation.
 
+It also runs a dedicated **departmental analytics suite** (`departmental_analytics_suite()`), which
+boots a *second, isolated* server against a fresh database holding a fully deterministic fixture and
+asserts the **exact arithmetic** of every department endpoint:
+
+- `GET /api/cid/analytics` — biometrics logged / unique persons / repeat captures and the derived
+  identity-match and suspect-hit rates; case volume by location, the four 24-hour buckets
+  (recomputed independently from the raw `created_at` stamps), category counts and open-vs-closed
+  ratios; screenings, flagged hits and flag rate **per checkpoint** plus the scoped read for
+  `cp.south` / `cp.east` / `cp.west`; inbound/outbound counts, shares and suspect-movement alerts.
+- `GET /api/officers/analytics` — active force, rank/duty/region distributions, average service
+  years, the green promotion badge (a retired officer's nomination must *not* count) and the red
+  disciplinary badge (misconduct / pending suspensions / demotions), including commander
+  verification moving a nomination off the badge.
+- `GET /api/vehicles/analytics` — In Service vs. Maintenance / Out of Service / Decommissioned,
+  serviceable ratio, alert breakdown, clean civilian registrations and the flagged-vehicle list
+  (re-asserted after flipping a vehicle to *Wanted in Crime*).
+- `GET /api/stations/analytics` — capacity by tier, cell capacity totals/averages and the
+  deployment matrix (stations, officers, *active* officers and vehicles per region and per station).
+- `GET /api/analytics?module=…` — byte-identical payloads to the direct routes, the `hr` / `cars`
+  aliases, `module=all`, a `400` for an unknown module, and the per-module RBAC matrix
+  (including that `module=all` silently omits bundles the caller may not see).
+
 Frontend session smoke test (Node ≥ 18; executes the real inline script against the real backend in a VM sandbox):
 
 ```bash
@@ -256,7 +315,7 @@ storage. **It is still not ready for real police data.** It currently uses:
 - **SQLite** instead of a production database (PostgreSQL)
 - **Development authentication** — a single hard-coded demo login (`admin` / `ChangeMe123!`), in-memory session tokens, and unsalted SHA-256 password hashing
 - **No HTTPS** — traffic is plain HTTP
-- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and the Executive Analytics dashboard surfaces summary metrics, crime distribution and checkpoint demographics for admins. The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
+- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and departmental analytics embedded in each register surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
 - **No production deployment** configuration
 - **No evidence file security** or chain-of-custody storage
 - **No backup service** or disaster-recovery process
