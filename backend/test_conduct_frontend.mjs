@@ -151,6 +151,30 @@ function buildSandbox({ port, storageDump, consoleSink }) {
   };
   for (const id of extractElementIds()) getElementById(id);
 
+  // Persistent pseudo-elements for the selector families the RBAC code
+  // queries. The sidebar buttons have no element ids, so they cannot be
+  // pre-created from the HTML — the harness fabricates one stub per nav
+  // entry (data-page + data-modules) plus the in-page module gates
+  // ([data-requires-module], e.g. the Conduct & Discipline shortcut on the
+  // Police Officers page). applyNavForRole()/doLogout() write style.display
+  // onto exactly these stubs, so the tests can assert real visibility.
+  const NAV_ENTRIES = [
+    ['dashboard', 'dashboard'], ['people', 'people'], ['policesearch', 'policesearch'],
+    ['fingerprint', 'fingerprint'], ['cid', 'cid'], ['checkpoints', 'checkpoints'],
+    ['airport', 'airport'], ['stations', 'stations'], ['officers', 'officers'],
+    ['conduct', 'conduct'], ['cars', 'cars'], ['crimes', 'crimes'],
+    ['analytics', 'analytics'], ['admin', 'admin'],
+  ];
+  const navButtons = NAV_ENTRIES.map(([page, modules]) => {
+    const el = makeElement('nav-' + page);
+    el.dataset.page = page;
+    el.dataset.modules = modules;
+    return el;
+  });
+  const officersConductLink = getElementById('officersConductLink');
+  officersConductLink.dataset.requiresModule = 'conduct';
+  const requiresModuleEls = [officersConductLink];
+
   const localStorage = makeLocalStorage();
   if (storageDump) {
     Object.entries(storageDump).forEach(([k, v]) => localStorage.setItem(k, v));
@@ -176,13 +200,19 @@ function buildSandbox({ port, storageDump, consoleSink }) {
       getElementById,
       createElement: (tag) => makeElement('<' + tag + '>'),
       querySelector: () => null,
-      querySelectorAll: () => [],
+      querySelectorAll: (sel) => {
+        if (sel === '#nav button[data-page]') return navButtons;
+        if (sel === '[data-requires-module]') return requiresModuleEls;
+        return [];
+      },
       addEventListener() {},
       body: makeElement('body'),
     },
   };
   sandbox.window = sandbox;
   sandbox.self = sandbox;
+  sandbox._navButtons = navButtons;   // exposed to the test assertions
+  sandbox._requiresModuleEls = requiresModuleEls;
   for (const [id, el] of els) {
     if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) sandbox[id] = el;
   }
@@ -282,8 +312,20 @@ async function main() {
       throw new Error('hr.officer role mismatch: ' + JSON.stringify(probe(s1.sandbox, 'sessionUser')));
     if (!probe(s1.sandbox, "sessionUser.modules.includes('conduct')"))
       throw new Error('conduct module missing from HR session');
+
+    // ---- 1b) HR lands directly on the Conduct & Disciplinary desk -------
+    // defaultLandingPage() must send the Officer Registration Office to its
+    // conduct desk (not the generic dashboard) on every sign-in.
+    await waitFor(() => probe(s1.sandbox, "document.getElementById('conduct').classList.contains('active')"),
+      'HR lands on the conduct desk');
+    if (probe(s1.sandbox, "document.getElementById('dashboard').classList.contains('active')"))
+      throw new Error('hr.officer must not land on the dashboard');
+    // The sidebar shows the Conduct & Discipline entry for the HR role.
+    const hrConductBtn = s1.sandbox._navButtons.find(b => b.dataset.page === 'conduct');
+    if (!hrConductBtn || hrConductBtn.style.display === 'none')
+      throw new Error('conduct sidebar entry hidden for hr.officer');
     await waitFor(() => probe(s1.sandbox, '(db.officers||[]).length >= 1'), 'officers synced');
-    console.log('ok 1: hr.officer signed in — conduct module in session, officers register synced');
+    console.log('ok 1: hr.officer signed in — lands on the Conduct desk, sidebar entry visible, officers register synced');
 
     // ---- 2) Navigate to the conduct page and open the HR Action Modal ---
     await probe(s1.sandbox, "go('conduct')");
@@ -433,6 +475,83 @@ async function main() {
     if (fpLogin.user.modules.includes('conduct'))
       throw new Error('fingerprint officer must not carry the conduct module');
     console.log('ok 8: RBAC — /api/conduct is denied to non-HR roles (401)');
+
+    // ---- 9) Admin access: sidebar entry, officers-page shortcut --------
+    // A SystemAdmin must see the Conduct & Discipline sidebar entry under
+    // Police Registrations & Management, reach the desk, and find the
+    // shortcut on the Police Officers page.
+    const s2 = buildSandbox({ port, storageDump: {}, consoleSink: [] });
+    loadApp(s2.sandbox);
+    await waitFor(() => probe(s2.sandbox, '_initDone === true'), 'initApp ran (admin)');
+    s2.getElementById('loginUser').value = 'admin';
+    s2.getElementById('loginPassword').value = 'ChangeMe123!';
+    await probe(s2.sandbox, 'submitLogin')({ preventDefault() {} });
+    await waitFor(() => probe(s2.sandbox, 'serverOn === true && !!sessionUser'
+      + " && sessionUser.role === 'SystemAdmin'"), 'admin sign-in');
+    const adminConductBtn = s2.sandbox._navButtons.find(b => b.dataset.page === 'conduct');
+    if (!adminConductBtn || adminConductBtn.style.display === 'none')
+      throw new Error('conduct sidebar entry hidden for admin');
+    probe(s2.sandbox, "go('conduct')");
+    if (!probe(s2.sandbox, "document.getElementById('conduct').classList.contains('active')"))
+      throw new Error("go('conduct') must keep the admin on the conduct desk");
+    if (!String(s2.getElementById('cdSummaryStrip').innerHTML).includes('Pending HR review'))
+      throw new Error('conduct summary strip not rendered for admin');
+    // Police Officers page carries the Conduct & Discipline shortcut.
+    probe(s2.sandbox, "go('officers')");
+    if (!probe(s2.sandbox, "document.getElementById('officers').classList.contains('active')"))
+      throw new Error("go('officers') must open the officers page for admin");
+    if (s2.getElementById('officersConductLink').style.display === 'none')
+      throw new Error('Conduct & Discipline shortcut hidden on the officers page for admin');
+    // The shortcut badge mirrors the pending queue count (both files created
+    // earlier in this run are closed — one approved, one rejected).
+    if (String(s2.getElementById('officersConductPending').textContent) !== '0')
+      throw new Error('officers-page conduct badge must mirror the pending count, got '
+        + s2.getElementById('officersConductPending').textContent);
+    console.log('ok 9: admin — conduct sidebar entry visible, desk reachable, officers-page shortcut with pending badge');
+
+    // ---- 10) Stale-profile defense -------------------------------------
+    // A profile cached BEFORE the conduct module existed (modules list
+    // without 'conduct') must never hide the desk from a SystemAdmin.
+    probe(s2.sandbox, "sessionUser = Object.assign({}, sessionUser, "
+      + "{modules: ['dashboard','people','fingerprint','airport','cid','checkpoints',"
+      + "'policesearch','stations','officers','cars','crimes','admin','analytics']}); "
+      + "sessionVisibility = null; applyNavForRole();");
+    if (adminConductBtn.style.display === 'none')
+      throw new Error('stale cached profile must not hide the conduct nav entry from an admin');
+    if (s2.getElementById('officersConductLink').style.display === 'none')
+      throw new Error('stale cached profile must not hide the officers-page shortcut from an admin');
+    probe(s2.sandbox, "go('conduct')");
+    if (!probe(s2.sandbox, "document.getElementById('conduct').classList.contains('active')"))
+      throw new Error('stale cached profile must not redirect an admin away from conduct');
+    console.log('ok 10: stale cached admin profile (no conduct module) still sees and reaches the conduct desk');
+
+    // ---- 11) Non-HR roles keep the desk hidden -------------------------
+    // A CID officer has no conduct module: the sidebar entry stays hidden
+    // and go('conduct') redirects — while the CID case workspace (a
+    // sub-page without its own module key) still opens.
+    const s3 = buildSandbox({ port, storageDump: {}, consoleSink: [] });
+    loadApp(s3.sandbox);
+    await waitFor(() => probe(s3.sandbox, '_initDone === true'), 'initApp ran (cid)');
+    s3.getElementById('loginUser').value = 'cid.officer';
+    s3.getElementById('loginPassword').value = 'ChangeMe123!';
+    await probe(s3.sandbox, 'submitLogin')({ preventDefault() {} });
+    await waitFor(() => probe(s3.sandbox, "serverOn === true && !!sessionUser && sessionUser.role === 'CIDUnit'"),
+      'cid sign-in');
+    const cidConductBtn = s3.sandbox._navButtons.find(b => b.dataset.page === 'conduct');
+    if (!cidConductBtn || cidConductBtn.style.display !== 'none')
+      throw new Error('conduct sidebar entry must stay hidden for a CID officer');
+    if (s3.getElementById('officersConductLink').style.display !== 'none')
+      throw new Error('officers-page conduct shortcut must stay hidden for a CID officer');
+    probe(s3.sandbox, "go('conduct')");
+    if (probe(s3.sandbox, "document.getElementById('conduct').classList.contains('active')"))
+      throw new Error("go('conduct') must redirect a CID officer away from the desk");
+    if (!probe(s3.sandbox, "document.getElementById('dashboard').classList.contains('active')"))
+      throw new Error('CID officer should be redirected to the dashboard');
+    // Sub-page inheritance: the case workspace belongs to the cid module.
+    probe(s3.sandbox, "go('caseworkspace')");
+    if (!probe(s3.sandbox, "document.getElementById('caseworkspace').classList.contains('active')"))
+      throw new Error("go('caseworkspace') must open the case workspace for a CID officer");
+    console.log('ok 11: CID officer — conduct desk hidden and redirected; case workspace still opens');
 
     console.log('ALL CONDUCT FRONTEND TESTS PASSED');
     return 0;
