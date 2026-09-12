@@ -521,6 +521,10 @@ ROLE_ADMIN = 'SystemAdmin'
 ROLE_FINGERPRINT = 'FingerprintUnit'
 ROLE_AIRPORT = 'AirportControl'
 ROLE_CID = 'CIDUnit'
+# HR Directorate — the Police Officers Registration Office. Holds the
+# 'officers' module (roster, green-badge promotions, red-badge discipline)
+# plus the station register it needs for postings, WITHOUT any admin rights.
+ROLE_HR = 'hr_officer'
 ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
 ROLE_CHECKPOINT_EAST = 'CheckpointEast'
 ROLE_CHECKPOINT_WEST = 'CheckpointWest'
@@ -626,7 +630,7 @@ def normalize_role(role):
         return ROLE_CHECKPOINT_OFFICER
     return r
 
-ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID,
+ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID, ROLE_HR,
              ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
 
 # Spec-facing snake_case name for every canonical role. Surfaced by
@@ -638,6 +642,7 @@ SPEC_ROLE_ALIASES = {
     ROLE_FINGERPRINT: 'fingerprint_officer',
     ROLE_AIRPORT: 'airport_officer',
     ROLE_CID: 'cid_officer',
+    ROLE_HR: 'hr_officer',
 }
 SPEC_ROLE_DEFAULT = 'fingerprint_officer'
 
@@ -675,6 +680,19 @@ UNIT_ROLE_ALIASES = {
     'cid_officer': ROLE_CID,
     'cidunit': ROLE_CID,
     'criminal_investigation': ROLE_CID,
+    # HR Directorate aliases — 'HROfficer', 'hr', 'Human Resources', … all
+    # resolve to the canonical 'hr_officer' role so a token issued for any
+    # spelling still carries the officers module set.
+    ROLE_HR: ROLE_HR,
+    'hr': ROLE_HR,
+    'hrofficer': ROLE_HR,
+    'hr_officer': ROLE_HR,
+    'hr.officer': ROLE_HR,
+    'hr_directorate': ROLE_HR,
+    'hrdirectorate': ROLE_HR,
+    'human_resources': ROLE_HR,
+    'humanresources': ROLE_HR,
+    'personnel_officer': ROLE_HR,
 }
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
@@ -771,6 +789,7 @@ ROLE_LABELS = {
     ROLE_FINGERPRINT: 'Fingerprint Unit Officer',
     ROLE_AIRPORT: 'Airport Control Officer',
     ROLE_CID: 'CID Criminal Unit Officer',
+    ROLE_HR: 'HR Directorate Officer',
     ROLE_CHECKPOINT_SOUTH: 'Checkpoint Officer (South)',
     ROLE_CHECKPOINT_EAST: 'Checkpoint Officer (East)',
     ROLE_CHECKPOINT_WEST: 'Checkpoint Officer (West)',
@@ -792,6 +811,11 @@ ROLE_MODULES = {
     ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
     ROLE_AIRPORT: {'dashboard', 'people', 'airport', 'policesearch'},
     ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch', 'crimes'},
+    # HR Directorate: the full Police Officers register (roster + promotions +
+    # discipline, and their analytics bundle) plus the station register it
+    # posts officers against and the central registries it searches. No
+    # 'admin', no 'analytics', no CID/checkpoint/airport/fingerprint modules.
+    ROLE_HR: {'dashboard', 'people', 'policesearch', 'stations', 'officers'},
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
@@ -808,6 +832,7 @@ ROLE_LOCATION_SCOPE = {
     ROLE_FINGERPRINT: None,
     ROLE_AIRPORT: None,
     ROLE_CID: None,
+    ROLE_HR: None,
     ROLE_CHECKPOINT_SOUTH: 'South',
     ROLE_CHECKPOINT_EAST: 'East',
     ROLE_CHECKPOINT_WEST: 'West',
@@ -1197,6 +1222,7 @@ def init_db():
             ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,                'ChangeMe123!'),
             ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!'),
             ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!'),
+            ('hr.officer',  'Officer S. Warsame',    ROLE_HR,              'HR Directorate',   None,                'ChangeMe123!'),
             ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_SOUTH,'Checkpoint South', 'South',             'ChangeMe123!'),
             ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_EAST, 'Checkpoint East',  'East',              'ChangeMe123!'),
             ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_WEST, 'Checkpoint West',  'West',              'ChangeMe123!'),
@@ -2715,6 +2741,67 @@ def register_discipline(c, user, data):
     return discipline_view(discipline_row(c, aid))
 
 
+def update_discipline(c, user, action_id, data):
+    """HR Directorate update of an existing disciplinary action.
+
+    Status changes carry the operational side effects the register expects:
+    confirming a **Demotion** writes the junior rank onto the officer,
+    confirming a **Suspension** takes the officer off duty, and closing an
+    action returns an officer with no other open action to Active duty. The
+    analytics bundle (rank distribution, suspended officers, red badge) is
+    derived from the same rows, so the strips follow immediately.
+    """
+    row = c.execute('SELECT * FROM officer_discipline WHERE action_id=?',
+                    (action_id,)).fetchone()
+    if not row:
+        raise LookupError('Disciplinary action not found')
+    status = normalise_choice(data.get('status'), DISCIPLINE_STATUSES)
+    if data.get('status') and not status:
+        raise ValueError('status must be one of: ' + ', '.join(DISCIPLINE_STATUSES))
+    severity = normalise_choice(data.get('severity'), CRIME_SEVERITIES)
+    if data.get('severity') and not severity:
+        raise ValueError('Severity is invalid')
+    updates, params = [], []
+    if severity:
+        updates.append('severity=?'); params.append(severity)
+    if status:
+        updates.append('status=?'); params.append(status)
+    for f in ('suspension_start', 'suspension_end'):
+        if f in data:
+            updates.append(f + '=?')
+            params.append(str(data.get(f) or '').strip() or None)
+    if 'incident_summary' in data or 'notes' in data:
+        updates.append('incident_summary=?')
+        params.append(str(data.get('incident_summary') or data.get('notes') or '').strip() or None)
+    if 'to_rank' in data:
+        to_rank = normalise_choice(data.get('to_rank'), OFFICER_RANKS)
+        if not to_rank:
+            raise ValueError('to_rank must be one of: ' + ', '.join(OFFICER_RANKS))
+        updates.append('to_rank=?'); params.append(to_rank)
+    if updates:
+        params.append(action_id)
+        c.execute('UPDATE officer_discipline SET ' + ', '.join(updates) + ' WHERE action_id=?', params)
+
+    action = discipline_view(discipline_row(c, action_id))
+    if status:
+        officer_id = row['officer_id']
+        if action['action_type'] == 'Demotion' and action['status'] == 'Confirmed' and action['to_rank']:
+            c.execute('UPDATE officers SET rank=? WHERE id=?', (action['to_rank'], officer_id))
+        elif action['action_type'] == 'Suspension' and action['status'] == 'Confirmed':
+            c.execute("UPDATE officers SET duty_status='Suspended' WHERE id=? "
+                      "AND duty_status NOT IN ('Terminated','Retired')", (officer_id,))
+        elif action['status'] == 'Closed':
+            placeholders = ','.join('?' * len(DISCIPLINE_OPEN_STATUSES))
+            sql = ('SELECT COUNT(*) FROM officer_discipline WHERE officer_id=? '
+                   'AND action_id<>? AND status IN (' + placeholders + ')')
+            still_open = c.execute(sql, (officer_id, action_id) + tuple(DISCIPLINE_OPEN_STATUSES)).fetchone()[0]
+            if not still_open:
+                c.execute("UPDATE officers SET duty_status='Active' WHERE id=? "
+                          "AND duty_status='Suspended'", (officer_id,))
+        action = discipline_view(discipline_row(c, action_id))
+    return action
+
+
 def build_officer_analytics(c, user):
     """HR Directorate bundle: roster metrics + green/red badge lists."""
     rows = c.execute('''SELECT o.*, s.region AS station_region, s.district AS station_district,
@@ -3908,6 +3995,12 @@ class API(BaseHTTPRequestHandler):
                 return
             user = require_auth(self); c = db()
             # RBAC: same module gate for the POST/PATCH handlers.
+            # Writes follow the documented ownership of each register: the
+            # station and vehicle registries are SystemAdmin-write (the HR
+            # Directorate and CID may READ stations for postings / intake, and
+            # checkpoint + Central Police Search may read vehicles for plate
+            # lookups), while the officer register belongs to the `officers`
+            # module — SystemAdmin and the HR Directorate.
             post_module_for_path = {
                 '/api/airport-records': 'airport',
                 '/api/clearance-applications': 'fingerprint',
@@ -3916,10 +4009,10 @@ class API(BaseHTTPRequestHandler):
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
-                '/api/stations': 'stations',
+                '/api/stations': 'admin',
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
-                '/api/vehicles': 'cars',
+                '/api/vehicles': 'admin',
             }
             for prefix, mod in post_module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):
@@ -4436,6 +4529,15 @@ class API(BaseHTTPRequestHandler):
                 c.commit()
                 result = {'nomination_id': nomination_id, 'promotion': promotion,
                           'updated': True}
+            elif p.path.startswith('/api/officers/discipline/'):
+                # HR Directorate update of a disciplinary action (status,
+                # severity, suspension window, demotion target). Confirmed
+                # demotions / suspensions are applied to the officer record.
+                action_id = p.path.split('/')[4]
+                action = update_discipline(c, user, action_id, data)
+                audit(c, user, 'UPDATE', 'officer_discipline', action_id, action['status'])
+                c.commit()
+                result = {'action_id': action_id, 'discipline': action, 'updated': True}
             elif p.path.startswith('/api/admin/users/'):
                 # Update an existing user — change role, branch, location, password, active.
                 # /api/admin/users/<id> -> split('/') -> ['', 'api', 'admin', 'users', '<id>']

@@ -712,6 +712,256 @@ def departmental_analytics_suite():
         proc.wait(timeout=10)
 
 
+def hr_directorate_suite():
+    """HR Directorate (`hr_officer`) — the Police Officers register end to end.
+
+    The Police Officers page (roster analytics + green promotion queue + red
+    disciplinary queue) must be fully usable by BOTH `admin` and `hr_officer`,
+    while an HR token still reaches no CID, fleet-write or admin surface. This
+    suite runs against its own isolated server + deterministic fixture.
+    """
+    port = free_port()
+    tmp = tempfile.mkdtemp(prefix='sentinel-hr-')
+    db_path = os.path.join(tmp, 'hr.db')
+    env = dict(os.environ, SENTINEL_DB=db_path, PORT=str(port),
+               SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
+    proc = subprocess.Popen([sys.executable, SERVER], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base = f'http://127.0.0.1:{port}'
+    year = datetime.datetime.now(datetime.timezone.utc).year
+    try:
+        for _ in range(60):
+            try:
+                if request(base, 'GET', '/api/health')[0] == 200:
+                    break
+            except Exception:
+                time.sleep(0.2)
+        else:
+            raise RuntimeError('HR server did not start')
+
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'admin', 'password': 'ChangeMe123!'})
+        assert s == 200 and r.get('token'), (s, r)
+        admin = r['token']
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'hr.officer', 'password': 'ChangeMe123!'})
+        assert s == 200 and r.get('token'), ('hr.officer must be seeded', s, r)
+        hr = r['token']
+
+        # ---- 1) identity: canonical role, label, spec alias, module set ----
+        s, me = request(base, 'GET', '/api/me', hr)
+        assert s == 200, (s, me)
+        assert me['role'] == 'hr_officer', me
+        assert me['role_label'] == 'HR Directorate Officer', me
+        assert me['spec_role'] == 'hr_officer' and me['role_alias'] == 'hr_officer', me
+        assert set(me['modules']) == {'dashboard', 'people', 'policesearch',
+                                      'stations', 'officers'}, me['modules']
+        assert me['visibility']['is_admin'] is False, me['visibility']
+        assert me['visibility']['can_manage_users'] is False, me['visibility']
+        # Every accepted alias spelling lands on the same canonical role.
+        s, u = request(base, 'POST', '/api/admin/users', admin,
+                       {'username': 'hr.alias', 'display_name': 'HR Alias',
+                        'role': 'HROfficer', 'password': 'secret123'})
+        assert s == 201 and u['user']['role'] == 'hr_officer', (s, u)
+        s, lg = request(base, 'POST', '/api/login',
+                        body={'username': 'hr.alias', 'password': 'secret123'})
+        assert s == 200, (s, lg)
+        s, me2 = request(base, 'GET', '/api/me', lg['token'])
+        assert set(me2['modules']) == set(me['modules']), (me2['modules'], me['modules'])
+        # 'hr_officer' is offered in the admin role roster.
+        assert 'hr_officer' in me['roles'], me['roles']
+        assert me['role_labels']['hr_officer'] == 'HR Directorate Officer', me['role_labels']
+        print('ok: hr_officer role — canonical alias, label, module set, no admin rights')
+
+        # ---- 2) HR fixture: HR itself registers the roster -----------------
+        def new_officer(token, fields):
+            payload = {**{
+                'unit': 'General Patrol', 'date_of_enlistment': '2019-01-01',
+                'duty_status': 'Active', 'mother_name': 'Hooyo Test',
+                'date_of_birth': '1990-01-01', 'place_of_birth': 'Laascaanood',
+                'contact_number': '+252 63 555 0000', 'guarantor_name': 'Guarantor',
+                'guarantor_address': 'Laascaanood Main', 'guarantor_occupation': 'Trader',
+                'guarantor_relationship': 'Parent', 'guarantor_contact': '+252 63 555 0001',
+                'doc1_type': 'National ID'}, **fields}
+            files = {'photo': ('p.jpg', b'\xff\xd8\xff\xe0x'), 'doc1_file': ('id.pdf', b'%PDF x')}
+            return multipart_request(base, '/api/officers', token, payload, files)
+
+        s, r = new_officer(hr, {'rank': 'Sergeant', 'station_id': 'ST-001',
+                                'full_name': 'Maxamed Faarax Nuur'})
+        assert s == 201 and r['service_id'] == f'POL-{year}-0001', (s, r)
+        sergeant = r['service_id']
+        s, r = new_officer(hr, {'rank': 'Constable', 'station_id': 'ST-004',
+                                'full_name': 'Amina Suleymaan Cabdi'})
+        assert s == 201 and r['service_id'] == f'POL-{year}-0002', (s, r)
+        constable = r['service_id']
+        s, r = new_officer(hr, {'rank': 'Inspector', 'station_id': 'ST-002',
+                                'full_name': 'Cabdi Xirsi Maxamed',
+                                'duty_status': 'Retired', 'unit': 'Logistics'})
+        assert s == 201, (s, r)
+        retired = r['service_id']
+
+        # ---- 3) analytics parity: HR sees exactly what the admin sees ------
+        s, hr_bundle = request(base, 'GET', '/api/officers/analytics', hr)
+        s2, admin_bundle = request(base, 'GET', '/api/officers/analytics', admin)
+        assert s == 200 and s2 == 200, (s, s2)
+        assert hr_bundle['role'] == 'hr_officer' and admin_bundle['role'] == 'SystemAdmin'
+        comparable = lambda b: {k: v for k, v in b.items() if k not in ('generated_at', 'role')}
+        assert comparable(hr_bundle) == comparable(admin_bundle), 'HR/admin analytics must match'
+        assert hr_bundle['total_officers'] == 3 and hr_bundle['active_force'] == 2, hr_bundle
+        assert hr_bundle['retired'] == 1 and hr_bundle['suspended_officers'] == 0, hr_bundle
+        assert _series(hr_bundle['charts']['rank_distribution']) == {
+            **{r: 0 for r in OFFICER_RANK_ORDER},
+            'Sergeant': 1, 'Constable': 1, 'Inspector': 1}, hr_bundle
+        # the dispatcher alias answers identically for the HR token
+        s, via_alias = request(base, 'GET', '/api/analytics?module=officers', hr)
+        assert s == 200 and comparable(via_alias) == comparable(hr_bundle), (s, via_alias)
+        s, via_hr_alias = request(base, 'GET', '/api/analytics?module=hr', hr)
+        assert s == 200 and via_hr_alias['module'] == 'officers', (s, via_hr_alias)
+        print('ok: hr_officer officer analytics identical to admin (roster + dispatcher aliases)')
+
+        # ---- 4) GREEN badge: nominate -> awaiting -> commander verify ------
+        s, r = request(base, 'POST', '/api/officers/promotions', hr,
+                       {'service_id': constable, 'proposed_rank': 'Corporal',
+                        'reason': 'Commendation — traffic operation'})
+        assert s == 201 and r['nomination_id'] == f'PRM-{year}-0001', (s, r)
+        assert r['promotion']['awaiting_verification'] is True, r
+        assert r['promotion']['nominated_by'] == 'Officer S. Warsame', r['promotion']
+        nomination = r['nomination_id']
+        s, r = request(base, 'POST', '/api/officers/promotions', hr,
+                       {'service_id': sergeant, 'proposed_rank': 'Inspector',
+                        'reason': 'Vacancy fill'})
+        assert s == 201, (s, r)
+        # A retired officer's nomination never reaches the green badge.
+        s, r = request(base, 'POST', '/api/officers/promotions', hr,
+                       {'service_id': retired, 'proposed_rank': 'Superintendent'})
+        assert s == 201 and r['promotion']['awaiting_verification'] is False, (s, r)
+        s, r = request(base, 'GET', '/api/officers/analytics', hr)
+        # `promotion_nominations` counts every nomination ever filed; the green
+        # badge counts only ACTIVE officers awaiting commander verification.
+        assert r['promotion_nominations'] == 3, r
+        assert r['promotions_awaiting_verification'] == 2 and r['badges']['promotion'] == 2, r
+        assert [p['nomination_id'] for p in r['lists']['promotions']] == \
+            [f'PRM-{year}-0001', f'PRM-{year}-0002'], r['lists']['promotions']
+        # verify (the UI's green "Verify" button)
+        s, r = request(base, 'PATCH', f'/api/officers/promotions/{nomination}', hr,
+                       {'verification_status': 'Verified'})
+        assert s == 200 and r['promotion']['verification_status'] == 'Verified', (s, r)
+        assert r['promotion']['verified_by'] == 'Officer S. Warsame', r['promotion']
+        assert r['promotion']['verified_at'], r['promotion']
+        s, r = request(base, 'GET', '/api/officers/analytics', hr)
+        assert r['promotions_awaiting_verification'] == 1 and r['badges']['promotion'] == 1, r
+        assert r['promotions_verified'] == 1, r
+        assert [p['nomination_id'] for p in r['lists']['promotions']] == \
+            [f'PRM-{year}-0002'], r['lists']['promotions']
+        # history is newest-first and still lists every nomination
+        assert [p['nomination_id'] for p in r['lists']['promotion_history']] == \
+            [f'PRM-{year}-0003', f'PRM-{year}-0002', nomination], r['lists']['promotion_history']
+        # validation stays strict for HR too
+        s, r = request(base, 'POST', '/api/officers/promotions', hr,
+                       {'service_id': sergeant, 'proposed_rank': 'Sergeant'})
+        assert s == 400 and 'differ' in r['error'], (s, r)
+        print('ok: hr_officer green badge — nominations, FIFO queue, commander verification')
+
+        # ---- 5) RED badge: suspension confirmed -> roster side effect ------
+        s, r = request(base, 'POST', '/api/officers/discipline', hr,
+                       {'service_id': constable, 'action_type': 'Suspension',
+                        'severity': 'High', 'status': 'Pending',
+                        'suspension_start': f'{year}-09-01',
+                        'suspension_end': f'{year}-09-30',
+                        'incident_summary': 'Absent without leave for 6 days'})
+        assert s == 201 and r['action_id'] == f'DSC-{year}-0001', (s, r)
+        suspension = r['action_id']
+        assert r['discipline']['open'] is True and r['discipline']['status'] == 'Pending', r
+        s, r = request(base, 'GET', '/api/officers/analytics', hr)
+        assert r['disciplinary_actions'] == 1 and r['badges']['discipline'] == 1, r
+        assert r['pending_suspensions'] == 1 and r['suspended_officers'] == 0, r
+        # confirm -> the officer leaves the active force
+        s, r = request(base, 'PATCH', f'/api/officers/discipline/{suspension}', hr,
+                       {'status': 'Confirmed'})
+        assert s == 200 and r['discipline']['status'] == 'Confirmed', (s, r)
+        assert r['discipline']['duty_status'] == 'Suspended', r['discipline']
+        s, r = request(base, 'GET', '/api/officers/analytics', hr)
+        assert r['suspended_officers'] == 1 and r['active_force'] == 1, r
+        assert _series(r['charts']['by_duty_status'])['Suspended'] == 1, r
+        assert r['pending_suspensions'] == 0, r          # no longer an OPEN action
+        # close -> back on active duty
+        s, r = request(base, 'PATCH', f'/api/officers/discipline/{suspension}', hr,
+                       {'status': 'Closed'})
+        assert s == 200 and r['discipline']['status'] == 'Closed', (s, r)
+        assert r['discipline']['duty_status'] == 'Active', r['discipline']
+        s, r = request(base, 'GET', '/api/officers/analytics', hr)
+        assert r['suspended_officers'] == 0 and r['active_force'] == 2, r
+        print('ok: hr_officer red badge — suspension confirmed/closed drives duty status')
+
+        # ---- 6) RED badge: demotion confirmed -> rank change --------------
+        s, r = request(base, 'POST', '/api/officers/discipline', hr,
+                       {'service_id': sergeant, 'action_type': 'Demotion',
+                        'from_rank': 'Sergeant', 'to_rank': 'Corporal',
+                        'severity': 'Medium', 'incident_summary': 'Misconduct on duty'})
+        assert s == 201 and r['action_id'] == f'DSC-{year}-0002', (s, r)
+        demotion = r['action_id']
+        # a demotion to a rank that is NOT junior is rejected
+        s, r = request(base, 'POST', '/api/officers/discipline', hr,
+                       {'service_id': constable, 'action_type': 'Demotion',
+                        'from_rank': 'Constable', 'to_rank': 'General'})
+        assert s == 400 and 'junior' in r['error'], (s, r)
+        s, r = request(base, 'PATCH', f'/api/officers/discipline/{demotion}', hr,
+                       {'status': 'Confirmed'})
+        assert s == 200 and r['discipline']['status'] == 'Confirmed', (s, r)
+        assert r['discipline']['officer_rank'] == 'Corporal', r['discipline']
+        s, r = request(base, 'GET', '/api/officers/analytics', hr)
+        assert _series(r['charts']['rank_distribution']) == {
+            **{x: 0 for x in OFFICER_RANK_ORDER},
+            'Corporal': 1, 'Constable': 1, 'Inspector': 1}, r
+        assert r['rank_demotions'] == 1, r
+        # PATCH validation
+        s, r = request(base, 'PATCH', f'/api/officers/discipline/{demotion}', hr,
+                       {'status': 'Nonsense'})
+        assert s == 400 and 'status must be one of' in r['error'], (s, r)
+        s, r = request(base, 'PATCH', f'/api/officers/discipline/DSC-1999-9999', hr,
+                       {'status': 'Closed'})
+        assert s == 404, (s, r)
+        print('ok: hr_officer red badge — confirmed demotion rewrites the rank record')
+
+        # ---- 7) RBAC: HR is not admin, not CID, not fleet-write -----------
+        for path in ('/api/admin/users', '/api/admin/analytics', '/api/cid/analytics',
+                     '/api/airport-records', '/api/checkpoint-events', '/api/crime-cases'):
+            s, r = request(base, 'GET', path, hr)
+            assert s == 401, (path, s, r)
+        # HR holds `stations` (postings) and `policesearch` (plate lookups), so
+        # those two READ bundles answer — while the Police Cars / Register Crime
+        # pages stay hidden because the nav gates on `cars` / `crimes`.
+        for path in ('/api/stations/analytics', '/api/vehicles/analytics'):
+            s, r = request(base, 'GET', path, hr)
+            assert s == 200, (path, s, r)
+        s, r = request(base, 'POST', '/api/admin/users', hr,
+                       {'username': 'nope', 'display_name': 'Nope',
+                        'role': 'hr_officer', 'password': 'secret123'})
+        assert s == 401, (s, r)
+        s, r = request(base, 'POST', '/api/stations', hr,
+                       {'name': 'HR Station', 'station_tier': 'Outpost',
+                        'region': 'Sool', 'district': 'Xudun',
+                        'contact_phone': '0907111222'})
+        assert s == 401, ('HR may read stations but not create them', s, r)
+        s, r = request(base, 'GET', '/api/stations', hr)
+        assert s == 200 and len(r['items']) == 8, (s, r)
+        # a checkpoint officer never reaches the HR register or its analytics
+        s, cp = request(base, 'POST', '/api/login',
+                        body={'username': 'cp.south', 'password': 'ChangeMe123!'})
+        assert s == 200, (s, cp)
+        for path in ('/api/officers/analytics', '/api/officers/promotions',
+                     '/api/officers/discipline', '/api/analytics?module=officers'):
+            s, r = request(base, 'GET', path, cp['token'])
+            assert s == 401, (path, s, r)
+        s, r = request(base, 'POST', '/api/officers/promotions', cp['token'],
+                       {'service_id': constable, 'proposed_rank': 'Corporal'})
+        assert s == 401, (s, r)
+        print('ok: hr_officer RBAC — no admin/CID/fleet-write, checkpoint blocked from HR')
+        return 0
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
 def main():
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-test-')
@@ -2318,6 +2568,12 @@ def main():
         # Runs against its own isolated server + fixture database so every
         # asserted number is exact (see departmental_analytics_suite()).
         departmental_analytics_suite()
+
+        # ---- HR Directorate role (hr_officer) -------------------------------
+        # The Police Officers register — roster analytics plus the green
+        # promotion and red disciplinary queues — must work for BOTH admin and
+        # hr_officer (see hr_directorate_suite()).
+        hr_directorate_suite()
 
         print('ALL BACKEND TESTS PASSED')
         return 0

@@ -78,12 +78,13 @@ The **Add Suspect** modal makes the **linked case strictly optional**: a suspect
 
 ### Role-Based Access Control & location-isolated checkpoints
 
-Officers sign in with one of seven roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
+Officers sign in with one of eight roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
 
 - **System Admin** — full access to every module, every departmental analytics bundle and the User Management page.
 - **Fingerprint Unit** — Fingerprint module only.
 - **Airport Control** — Airport module only.
-- **CID Criminal Unit** — CID / suspect alerts only.
+- **CID Criminal Unit** — CID / suspect alerts only, plus the `crime` section of the CID analytics bundle.
+- **HR Directorate** (`hr_officer`) — the **Police Officers** register in full (roster, green-badge promotions, red-badge discipline and their analytics bundle) plus read access to **Police Stations** for postings and the two central search registries. No admin, CID, checkpoint, airport or fleet-write rights.
 - **Checkpoint South / East / West** — only the Checkpoint module, **scoped to their assigned location**; `GET /api/checkpoint-events` returns a `scope` and `visible_locations` payload so the frontend can render the active filter, and `POST /api/checkpoint-events` rejects events at any other location.
 
 The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the executive analytics aggregation, a Fingerprint officer cannot list Airport or Crime records, and each departmental analytics bundle only ever returns the sections its caller's modules allow.
@@ -96,14 +97,19 @@ The top bar shows the active officer and location, e.g. **Officer H. Xasan · So
 
 ### Grouped sidebar navigation
 
-The flat module list is reorganised into three **collapsible sidebar groups** (open/closed state persists in `localStorage.sentinelNavGroups`; navigating into a group auto-expands it, and the narrow icon-only mobile rail always shows items flat):
+The flat module list is reorganised into **four collapsible sidebar sections**, in this fixed order (open/closed state persists in `localStorage.sentinelNavGroups`; navigating into a section auto-expands it, and the narrow icon-only mobile rail always shows items flat):
 
-- **Central Search** — *Central Person Search* (the existing `people` registry) and *Central Police Search* (new `policesearch` page: one cascading Region → District → Village/Town filter across the police officers, stations and cars registers, plus a free-text search).
-- **CID — Criminal Investigation Directorate** — *Fingerprint Unit* (`fingerprint`), *Crime Department* (`cid`), *Checkpoint Unit* (`checkpoints`) and *Airport Unit* (`airport`). These are the existing routes, regrouped and re-labelling only — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Department entry.
-- **Police Registrations & Management** (System Admin only) — *Police Stations* (`stations`), *Police Officers* (`officers`) and *Police Cars* (`cars`).
-- **Administration** (System Admin only, as before) — *User Management*. (The standalone *Analytics* entry is gone: analytics now live inside each register, see **Departmental analytics** below.)
+| Section | Items (`data-page` · module) |
+|---------|------------------------------|
+| *(top level)* | **Dashboard** (`dashboard`) |
+| **CENTRAL SEARCH** | *Central Person Search* (`people`), *Central Police Search* (`policesearch` — one cascading Region → District → Village/Town filter across the officers, stations and cars registers plus free-text search) |
+| **CID — CRIMINAL INVESTIGATION DIRECTORATE** | *Fingerprint Unit* (`fingerprint`), *Crime Department* (`cid`), *Checkpoint Unit* (`checkpoints`), *Airport Unit* (`airport`) |
+| **POLICE REGISTRATIONS & MANAGEMENT** | *Police Stations* (`stations`), *Police Officers* (`officers`), *Police Cars* (`cars`), *Register Crime* (`crimes`) |
+| **ADMINISTRATION** | *User Management* (`admin`, System Admin only) |
 
-Visibility is still driven by the `modules` array from `GET /api/me`: a group hides entirely when every item inside it is hidden for the signed-in role.
+The CID regrouping is labelling only — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Department entry. The standalone **Analytics** entry is gone: analytics now live inside each register (see **Departmental analytics** below).
+
+Visibility is driven by the `modules` array from `GET /api/me` in `applyNavForRole()`: each button is gated on its own module, the Administration section on the `is_admin` flag, and a whole section disappears when every item inside it is hidden for the signed-in role (e.g. a Checkpoint officer sees only *CID → Checkpoint Unit*, the HR Directorate sees *Central Search* + *Police Stations*/*Police Officers*).
 
 ### Regional location schema (Sool · Sanaag · East Togdheer)
 
@@ -119,9 +125,26 @@ The three levels are entered as **Dropdown (Region) → Dropdown (District) → 
 - **Station anchor model** — Police **Station Registration** captures *Station Name, Code, Region, District, Village/Town* (`requireLocation()` enforces all three levels) and now persists server-side via `POST /api/stations`. **Police Car** registration links a record to an assigned station; picking a station **pre-fills** the Region/District/Village fields with the station's location as editable defaults (`wireStationLocationDefaults()` → `paintLocationDefaults()`). **Police Officer** registration instead uses the station as a plain foreign-key dropdown (Section 1) and captures the officer's own **Regional & Origin Data** in a separate section (see *Officer Registration* below).
 - **Storage** — **Stations**, **Officers**, **Crime incidents** and **Vehicles** persist in SQLite (`police_stations`, `officers`, `crime_incidents`, `vehicles`) and sync from `GET /api/stations`, `/api/officers`, `/api/crimes` and `/api/vehicles` in `syncServer()` (localStorage remains an offline fallback). Central Police Search filters officers, stations and vehicles through the same cascading location filter — for officers it matches stored **origin** (`officerLocation()`). The `policesearch` / `stations` / `officers` / `cars` / `crimes` module keys are part of `ROLE_MODULES` (policesearch granted to the roles that can see the person registry; registration modules admin-only except crime intake for CID). `/api/me` drives nav visibility and the `go()` RBAC redirect.
 
-### Officer Registration (admin only)
+### Police Officers — HR Directorate register (System Admin + `hr_officer`)
 
-The **Police Officers** register is a five-step wizard (multi-tab `offStep(n)` flow) backed by `POST /api/officers` (multipart) with a mirrored client-side validator (`validateOfficerForm()`). Sections and rules:
+The **Police Officers** page carries three tabs, all of them available to **both** the System
+Admin and the **HR Directorate** role (`hr_officer`), with the embedded HR analytics strip
+(roster KPIs + rank/duty/region charts + the two badge lists) sitting above the tab bar:
+
+| Tab | Colour | Contents |
+|-----|--------|----------|
+| **Officer Registration** | — | the five-step registration wizard and the *Central Officer Search* register table |
+| **Promotions & Commendations** | green `#2e7d32` | nomination form (`POST /api/officers/promotions`), the **awaiting commander verification** queue (FIFO, oldest nomination first) with **Verify** / **Reject** actions, and the verified/rejected history with the verifying commander |
+| **Disciplinary & Misconduct** | red `#c62828` | action form (`POST /api/officers/discipline` — misconduct, suspension, demotion, warning, investigation), the **open actions** queue with **Confirm** / **Close** actions, and the confirmed/closed history |
+
+The two badge tabs are operational views over exactly the rows the analytics strip counts, and
+the tab labels carry live counters (`hrPromoBadge` / `hrDiscBadge`). Confirming an action applies
+its side effect to the officer record — a confirmed **Suspension** sets duty status to *Suspended*
+(leaving the active force), a confirmed **Demotion** rewrites the rank, and **closing** the last
+open action returns a suspended officer to *Active* — so the roster KPIs, rank distribution and
+badge counts all move on the next refresh.
+
+The **Police Officers** register itself is a five-step wizard (multi-tab `offStep(n)` flow) backed by `POST /api/officers` (multipart) with a mirrored client-side validator (`validateOfficerForm()`). Sections and rules:
 
 1. **Official & System identifiers** — auto-generated *Service ID* (`POL-YYYY-XXXX`, from `new_service_id()`), *Rank* (`OFFICER_RANKS`), *Unit / Division* (`OFFICER_UNITS`), *Assigned Station* (foreign key to `police_stations`, required), *Date of Enlistment* (required) and *Duty Status* (`OFFICER_DUTY_STATUSES`, default **Active**).
 2. **Personal identification** — *Full Name*, *Mother's Name*, *DOB*, *Place of Birth*, *Contact Number* (all required), plus *Height*, *Weight*, *Blood Group* (`OFFICER_BLOOD_GROUPS`) and the mandatory *Officer Picture* (JPEG/PNG, ≤ 5 MB).
@@ -158,9 +181,10 @@ omits the rest.
 **RBAC.** The CID bundle is shared by the four directorate units and is *sectioned* by module: a
 Fingerprint officer receives only `sections: ["fingerprint"]`, a Checkpoint officer only
 `sections: ["checkpoint"]` — and that section is filtered to their own `location_scope`
-(a South officer never sees East/West counts). `officers` requires the `officers` module,
-`vehicles` any of `cars` / `policesearch` / `checkpoints` / `crimes`, `stations` any of
-`stations` / `crimes`; everything else answers **401**. The legacy executive aggregation
+(a South officer never sees East/West counts). `officers` requires the `officers` module — held by
+**both** the System Admin and the **HR Directorate** (`hr_officer`), which therefore see an
+identical bundle — `vehicles` any of `cars` / `policesearch` / `checkpoints` / `crimes`, `stations`
+any of `stations` / `crimes`; everything else answers **401**. The legacy executive aggregation
 (`GET /api/admin/analytics`, admin only) is unchanged and still powers the printable summary.
 
 **HR Directorate records.** The promotion / disciplinary widgets are backed by two new tables
@@ -170,7 +194,15 @@ Fingerprint officer receives only `sections: ["fingerprint"]`, a Checkpoint offi
 `PATCH /api/officers/promotions/{nomination_id}` (commander verification:
 `Verified` / `Rejected` / `Awaiting Verification`, stamps `verified_by` + `verified_at`),
 `POST /api/officers/discipline` (`DSC-YYYY-XXXX`; a `Demotion` must name a *junior* `to_rank`),
+`PATCH /api/officers/discipline/{action_id}` (status / severity / suspension window / demotion
+target — confirming a Suspension sets the officer's duty status to *Suspended*, confirming a
+Demotion rewrites their rank, and closing the last open action returns them to *Active*),
 plus `GET /api/officers/promotions` and `GET /api/officers/discipline` for headless reads.
+All of them are gated on the `officers` module, so the System Admin and the HR Directorate share
+the exact same rights here. Station and vehicle **writes** stay SystemAdmin-only
+(`POST /api/stations`, `POST /api/vehicles`, `POST /api/vehicles/{id}/status`): the HR Directorate
+reads the station register for postings and the vehicle register through Central Police Search,
+and the station create form is hidden for them (`.admin-write`).
 The **green badge** counts only nominations that are `Awaiting Verification` **and** belong to an
 officer whose `duty_status` is `Active`; the **red badge** counts actions still open
 (`Pending` / `In Review` / `Appealed`).
@@ -214,7 +246,7 @@ Then open `http://localhost:8001` (the backend serves the UI and the API togethe
 
 ### Demo accounts (development only)
 
-Seven demo users are seeded automatically on first run — one per role — all with
+Eight demo users are seeded automatically on first run — one per role — all with
 password `ChangeMe123!`. This makes it easy to exercise the role-based access
 control and location-isolated checkpoints:
 
@@ -224,6 +256,7 @@ control and location-isolated checkpoints:
 | `fp.officer` | Fingerprint Unit    | Fingerprint only           |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
+| `hr.officer` | HR Directorate      | Police Officers (roster + promotions + discipline) · Police Stations (read) · central search |
 | `cp.south`   | Checkpoint South    | Checkpoint · South only    |
 | `cp.east`    | Checkpoint East     | Checkpoint · East only     |
 | `cp.west`    | Checkpoint West     | Checkpoint · West only     |

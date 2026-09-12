@@ -233,6 +233,33 @@ body.modal-open{overflow:hidden}
 .da-note{margin-top:12px;font-size:11.5px;color:var(--muted)}
 .da-skeleton{color:var(--muted);font-size:12.5px;padding:6px 0}
 .da-restricted{background:#f7f9ff;border:1px dashed #c3d5ff;border-radius:10px;padding:12px 14px;color:#4d5c73;font-size:12.5px}
+/* ==== HR Directorate tabs (Police Officers register) ==== */
+.hr-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.hr-tab{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;border-radius:11px;padding:10px 15px;font-size:13px;font-weight:700;color:#4d5c73;cursor:pointer}
+.hr-tab i{font-style:normal;font-size:14px}
+.hr-tab:hover{border-color:#c3d5ff;background:#f7faff}
+.hr-tab.active{color:#fff;background:var(--blue);border-color:var(--blue)}
+.hr-tab.green.active{background:#2e7d32;border-color:#2e7d32}
+.hr-tab.red.active{background:#c62828;border-color:#c62828}
+.hr-badge{background:#eef2f8;color:#4d5c73;border-radius:99px;padding:1px 8px;font-size:11px;font-weight:800}
+.hr-tab.active .hr-badge{background:#ffffff40;color:#fff}
+.hr-tab.green:not(.active) .hr-badge{background:#e3f7f1;color:#2e7d32}
+.hr-tab.red:not(.active) .hr-badge{background:#ffeaec;color:#c62828}
+.hr-pane{display:none}
+.hr-pane.active{display:block}
+.panel.hr-green{border-top:3px solid #2e7d32}
+.panel.hr-red{border-top:3px solid #c62828}
+.panel.hr-green .panel-head h2{color:#2e7d32}
+.panel.hr-red .panel-head h2{color:#c62828}
+.btn.hr-green{background:#2e7d32;border-color:#2e7d32}
+.btn.hr-red{background:#c62828;border-color:#c62828}
+.st-green{color:#2e7d32;font-weight:700}
+.st-red{color:#c62828;font-weight:700}
+/* SystemAdmin-only controls inside a register the role may still READ — e.g.
+   the HR Directorate opens Police Stations for postings but cannot create one. */
+body:not(.is-admin) .admin-write{display:none !important}
+.admin-write-note{display:none}
+body:not(.is-admin) .admin-write-note{display:block}
 @media(max-width:650px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.da-search{min-width:100%}}
 /* ==== User management ==== */
 .um-table{font-size:13px}
@@ -332,10 +359,14 @@ body.modal-open{overflow:hidden}
 </div>
 </div>
 
-<small class="group-label admin" data-group="admin" style="display:none">Administration</small>
+<div class="nav-group" data-group="admin" style="display:none">
+<button type="button" class="nav-group-toggle" data-group-toggle="admin"><i>⚙</i><span>Administration</span><span class="nav-chev">▾</span></button>
+<div class="nav-group-body" data-group-body="admin">
+<button data-page="admin" data-modules="admin"><i>⚙</i><span>User Management</span></button>
+</div>
+</div>
 <!-- Analytics is no longer a standalone page: every register now embeds its
      own departmental analytics strip (CID units, Officers, Cars, Stations). -->
-<button data-page="admin" data-modules="admin" style="display:none"><i>⚙</i><span>User Management</span></button>
 </nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span></div></aside>
 <main class="main">
 <header class="top" id="topbar"><div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
@@ -620,8 +651,9 @@ body.modal-open{overflow:hidden}
   <div class="da-sub">Operational capacity by tier · officer deployment matrix (Sool · Sanaag · East Togdheer)</div></div></div>
   <div class="da-skeleton">Loading station analytics…</div>
 </div>
+<div class="da-note admin-write-note" style="margin:-6px 0 12px">Creating or editing a police station is a SystemAdmin action — this register is read-only for your role (the station list below still feeds officer postings and the deployment matrix).</div>
 <div class="grid2">
-<div class="panel">
+<div class="panel admin-write">
 <div class="panel-head"><div><h2>Register police station</h2><div class="sub">Station name, code and location</div></div></div>
 <div id="stNotice" class="notice"></div>
 <form class="form" id="stForm" onsubmit="saveStation(event)">
@@ -657,6 +689,13 @@ body.modal-open{overflow:hidden}
   <div class="da-sub">Roster metrics · promotion nominations (green) · disciplinary actions (red)</div></div></div>
   <div class="da-skeleton">Loading officer analytics…</div>
 </div>
+<!-- HR Directorate tabs: registration · promotions (green) · discipline (red) -->
+<div class="hr-tabs" id="hrTabs">
+<button type="button" class="hr-tab active" data-hrtab="register" onclick="hrTab('register')"><i>▤</i><span>Officer Registration</span></button>
+<button type="button" class="hr-tab green" data-hrtab="promotions" onclick="hrTab('promotions')"><i>★</i><span>Promotions &amp; Commendations</span><span class="hr-badge" id="hrPromoBadge">0</span></button>
+<button type="button" class="hr-tab red" data-hrtab="discipline" onclick="hrTab('discipline')"><i>⚑</i><span>Disciplinary &amp; Misconduct</span><span class="hr-badge" id="hrDiscBadge">0</span></button>
+</div>
+<div class="hr-pane active" id="hrPane-register">
 <div class="grid2">
 <div class="panel">
 <div class="panel-head"><div><h2>Register police officer</h2><div class="sub">Five-part record — identifiers, personal details, origin, guarantor and supporting documents</div></div></div>
@@ -743,6 +782,67 @@ body.modal-open{overflow:hidden}
 <div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><span class="badge gray" id="offCount" style="display:none">0</span></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="offSearch" placeholder="Central Officer Search — name, service ID, rank, unit or station…" oninput="renderOfficersTable()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
+</div>
+</div>
+</div><!-- /hrPane-register -->
+
+<!-- TAB 2 · Promotions & Commendations (green badge) -->
+<div class="hr-pane" id="hrPane-promotions">
+<div class="grid2">
+<div class="panel hr-green">
+<div class="panel-head"><div><h2>Nominate for promotion / commendation</h2><div class="sub">Green badge · nominations awaiting commander verification</div></div></div>
+<div id="prmNotice" class="notice"></div>
+<form class="form" id="prmForm" onsubmit="savePromotionNomination(event)">
+<div class="grid2">
+<div class="field"><label>Officer *</label><select id="prmOfficer"></select></div>
+<div class="field"><label>Proposed rank *</label><select id="prmRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
+<div class="field"><label>Effective date</label><input id="prmDate" type="date"></div>
+<div class="field"><label>Nomination ID (auto-generated)</label><input id="prmId" readonly placeholder="PRM-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
+</div>
+<div class="field"><label>Reason / commendation *</label><textarea id="prmReason" placeholder="Operational commendation, examination pass, vacancy fill, long service…"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetPromotionForm()">Clear</button><button class="btn hr-green" type="submit">Submit nomination</button></div>
+</form>
+</div>
+<div class="panel hr-green">
+<div class="panel-head"><div><h2>Awaiting commander verification</h2><div class="sub">FIFO — the longest-waiting nomination is worked first</div></div><span class="badge green" id="prmAwaitCount">0</span></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>Rank change</th><th>Reason</th><th>Action</th></tr></thead><tbody id="prmAwaitTable"></tbody></table></div>
+</div>
+</div>
+<div class="panel hr-green" style="margin-top:14px">
+<div class="panel-head"><div><h2>Promotion &amp; commendation history</h2><div class="sub">Verified and rejected nominations with the verifying commander</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>From → To</th><th>Nominated by</th><th>Verified by</th><th>Status</th></tr></thead><tbody id="prmHistoryTable"></tbody></table></div>
+</div>
+</div>
+
+<!-- TAB 3 · Disciplinary & Misconduct (red badge) -->
+<div class="hr-pane" id="hrPane-discipline">
+<div class="grid2">
+<div class="panel hr-red">
+<div class="panel-head"><div><h2>Record disciplinary action</h2><div class="sub">Red badge · misconduct, pending suspensions and rank demotions</div></div></div>
+<div id="dscNotice" class="notice"></div>
+<form class="form" id="dscForm" onsubmit="saveDisciplineAction(event)">
+<div class="grid2">
+<div class="field"><label>Officer *</label><select id="dscOfficer"></select></div>
+<div class="field"><label>Action type *</label><select id="dscType" onchange="disciplineTypeChanged()"><option value="">— select —</option><option>Misconduct</option><option>Suspension</option><option>Demotion</option><option>Warning</option><option>Investigation</option></select></div>
+<div class="field"><label>Severity</label><select id="dscSeverity"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
+<div class="field"><label>Status</label><select id="dscStatus"><option>Pending</option><option>In Review</option><option>Confirmed</option><option>Appealed</option><option>Closed</option></select></div>
+<div class="field" id="dscFromWrap" style="display:none"><label>From rank</label><input id="dscFromRank" readonly style="background:#f3f6fb;color:#526075" placeholder="current rank"></div>
+<div class="field" id="dscToWrap" style="display:none"><label>Demote to rank *</label><select id="dscToRank"><option value="">— select junior rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
+<div class="field" id="dscStartWrap" style="display:none"><label>Suspension start</label><input id="dscStart" type="date"></div>
+<div class="field" id="dscEndWrap" style="display:none"><label>Suspension end</label><input id="dscEnd" type="date"></div>
+</div>
+<div class="field"><label>Incident summary *</label><textarea id="dscSummary" placeholder="What happened, where, witnesses, evidence reference…"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetDisciplineForm()">Clear</button><button class="btn hr-red" type="submit">Record action</button></div>
+</form>
+</div>
+<div class="panel hr-red">
+<div class="panel-head"><div><h2>Open disciplinary actions</h2><div class="sub">Pending · In Review · Appealed — confirm to apply suspensions and demotions</div></div><span class="badge red" id="dscOpenCount">0</span></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead><tbody id="dscOpenTable"></tbody></table></div>
+</div>
+</div>
+<div class="panel hr-red" style="margin-top:14px">
+<div class="panel-head"><div><h2>Disciplinary history</h2><div class="sub">Confirmed and closed actions · demotions already applied to the rank record</div></div></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Summary</th><th>Reported by</th><th>Status</th></tr></thead><tbody id="dscHistoryTable"></tbody></table></div>
 </div>
 </div>
 </section>
@@ -927,6 +1027,9 @@ let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 // Backfill the regional registration collections for databases persisted
 // before the stations / officers / cars modules existed.
 ['stations','officers','cars'].forEach(k=>{if(!Array.isArray(db[k]))db[k]=seed[k].map(x=>({...x}))});
+// HR Directorate badge queues (promotions / disciplinary actions) are
+// server-backed; older persisted databases simply start with empty lists.
+['promotions','discipline'].forEach(k=>{if(!Array.isArray(db[k]))db[k]=[]});
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
 // ---- session state --------------------------------------------------------
 // `apiToken` is the live Bearer token (a.k.a. authToken), `currentUser` is
@@ -1078,7 +1181,7 @@ function go(page){
   if(page==='admin') renderUserTable();
   if(page==='policesearch') renderPoliceSearch();
   if(page==='stations') renderStationsTable();
-  if(page==='officers') renderOfficersTable();
+  if(page==='officers'){ renderOfficersTable(); refreshHrSelects(); loadHrRecords(true); hrTab(hrActiveTab); }
   if(page==='cars') renderCarsTable();
   if(page==='crimes'){ fillCrimeSelects(); renderCrimesTable(); }
   if(page==='dashboard'){
@@ -1114,7 +1217,7 @@ document.querySelectorAll('#nav button[data-page]').forEach(b=>b.onclick=()=>go(
 //   * registrations — Police Registrations & Management
 // Open/closed state persists across reloads (sentinelNavGroups); opening a
 // page always expands the group that contains it (see go()).
-const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',cars:'registrations',crimes:'registrations'};
+const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',cars:'registrations',crimes:'registrations',admin:'admin'};
 const NAV_GROUPS_KEY='sentinelNavGroups';
 function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
 function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
@@ -2591,6 +2694,8 @@ function renderAll(){
   renderOfficersTable();
   renderCarsTable();
   refreshStationSelects();
+  refreshHrSelects();
+  renderHrPanels();
   renderPoliceSearch();
   // The checkpoint table is filtered by the active location chip.
   // When the Checkpoints page is active, render through the chip-aware
@@ -3034,6 +3139,8 @@ async function syncServer(){
       sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('stations') || sessionUser.modules.includes('crimes') ? safeItems('/api/stations') : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('officers') || sessionUser.modules.includes('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('officers') ? safeItems('/api/officers/promotions') : Promise.resolve({ok:false,items:[]}),
+      sessionUser.modules.includes('officers') ? safeItems('/api/officers/discipline') : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('crimes')     ? safeItems('/api/crimes')                  : Promise.resolve({ok:false,items:[]}),
       (sessionUser.modules.includes('cars') || sessionUser.modules.includes('policesearch') || sessionUser.modules.includes('checkpoints') || sessionUser.modules.includes('crimes')) ? safeItems('/api/vehicles') : Promise.resolve({ok:false,items:[]}),
       api('/api/dashboard').catch(()=>null),
@@ -3047,6 +3154,8 @@ async function syncServer(){
     const cps = results.shift();
     const sts = results.shift();
     const offs = results.shift();
+    const prm = results.shift();
+    const dsc = results.shift();
     const crm = results.shift();
     const veh = results.shift();
     const dash = results.shift();
@@ -3096,6 +3205,12 @@ async function syncServer(){
     if(sts.ok && sts.items.length) db.stations=sts.items.map(s=>({id:s.station_id,name:s.name,code:s.code,region:s.region,district:s.district,village:s.village,notes:s.notes||'',
       station_tier:s.station_tier||'',operational_status:s.operational_status||'Active',cell_capacity:s.cell_capacity||0}));
     if(offs.ok) db.officers=offs.items.map(o=>({...o}));
+    // HR Directorate badge queues (green promotions / red discipline). Both are
+    // server-backed; a failed fetch keeps the cached rows exactly like the
+    // other registers.
+    if(prm.ok) db.promotions=prm.items.map(x=>({...x}));
+    if(dsc.ok) db.discipline=dsc.items.map(x=>({...x}));
+    _hrLoaded=_hrLoaded||(prm.ok&&dsc.ok);
     if(typeof crm!=='undefined' && crm.ok) db.crimes=crm.items;
     if(typeof veh!=='undefined' && veh.ok) db.cars=veh.items.map(mapVehicle);
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
@@ -3269,10 +3384,12 @@ function doLogout(reason){
   document.getElementById('loginPassword').value='';
   document.getElementById('userPill').style.display='none';
   document.getElementById('topbar').classList.remove('is-admin');
-  // Reset side nav: show the default modules again, hide admin ones.
-  document.querySelectorAll('#nav button').forEach(b => b.style.display = '');
-  document.querySelectorAll('#nav .nav-group').forEach(g => g.style.display = '');
-  document.querySelectorAll('.side .group-label').forEach(g => g.style.display = '');
+  // Reset the side nav to the signed-out shape: every section collapses
+  // because no module list is known any more (only Dashboard stays).
+  _hrLoaded = false;
+  db.promotions = []; db.discipline = [];
+  try{ persist(); }catch(_){}
+  applyNavForRole();
   document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">not signed in</span>';
   if(reason==='expired') toast('Session expired','Please sign in again');
   else toast('Signed out');
@@ -3339,28 +3456,46 @@ async function initApp(){
   }
 }
 
+// Sidebar structure — four fixed sections, each a collapsible nav-group:
+//
+//   Dashboard
+//   CENTRAL SEARCH                          people · policesearch
+//   CID — CRIMINAL INVESTIGATION DIRECTORATE fingerprint · cid · checkpoints · airport
+//   POLICE REGISTRATIONS & MANAGEMENT        stations · officers · cars · crimes
+//   ADMINISTRATION                           admin (SystemAdmin only)
+//
+// Every button carries the module it belongs to (`data-modules`), so one pass
+// over the server-issued module list decides the whole menu: a unit officer
+// sees only their own directorate — and the departmental analytics strip
+// embedded inside each view they can open.
 function applyNavForRole(){
-  // Hide nav buttons for modules the current user can't access; show admin items for admins.
-  const mods = sessionUser ? sessionUser.modules : ['dashboard'];
+  const mods = (sessionUser && sessionUser.modules) || ['dashboard'];
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
   document.querySelectorAll('#nav button[data-page]').forEach(b => {
     const m = b.dataset.modules;
-    b.style.display = (m === 'admin')
-      ? (isAdmin ? '' : 'none')
-      : (mods.includes(m) ? '' : 'none');
+    b.style.display = (m === 'admin' ? isAdmin : mods.includes(m)) ? '' : 'none';
   });
-  // A collapsible group disappears when every item inside it is hidden,
-  // e.g. the Registrations group never shows for non-admin roles.
+  // A whole section disappears when every item inside it is hidden — e.g.
+  // Administration for any non-admin, Police Registrations for a checkpoint
+  // officer, CID for the HR Directorate.
   document.querySelectorAll('#nav .nav-group').forEach(g => {
     const items = g.querySelectorAll('button[data-page]');
     let visible = 0;
     items.forEach(b => { if (b.style.display !== 'none') visible++; });
     g.style.display = visible ? '' : 'none';
+    const toggle = g.querySelector('.nav-group-toggle');
+    if(toggle) toggle.style.display = visible ? '' : 'none';
   });
-  const adminLabel = document.querySelector('.side .group-label.admin');
-  if(adminLabel) adminLabel.style.display = isAdmin ? '' : 'none';
   const topbar = document.getElementById('topbar');
   if(topbar) topbar.classList.toggle('is-admin', isAdmin);
+  // `.admin-write` blocks (SystemAdmin-only forms inside a readable register)
+  // follow the same flag.
+  if(document.body) document.body.classList.toggle('is-admin', isAdmin);
+  // The Police Officers tabs (Registration · Promotions [green] ·
+  // Disciplinary [red]) follow the same `officers` module gate as the
+  // embedded HR analytics strip above them.
+  const hrTabs = document.getElementById('hrTabs');
+  if(hrTabs) hrTabs.style.display = mods.includes('officers') ? '' : 'none';
 }
 
 function updateUserPill(){
@@ -4298,6 +4433,327 @@ function paintTableCount(id,list,total){
   el.textContent=(list||[]).length===total?String(total):((list||[]).length+' / '+total);
   el.style.display='';
 }
+// ==================== HR Directorate tabs (Police Officers) =================
+// The Police Officers register is split into three tabs: the officer
+// registration form, the GREEN promotions & commendations queue and the RED
+// disciplinary & misconduct queue. Both badge tabs are operational views over
+// exactly the rows the embedded analytics strip counts — verifying a
+// nomination or confirming a suspension here immediately moves the green/red
+// badge KPIs and the roster metrics above. Visible to SystemAdmin and to the
+// HR Directorate role (`hr_officer`), i.e. anyone holding the `officers` module.
+const HR_TABS = ['register', 'promotions', 'discipline'];
+const HR_GREEN = '#2e7d32', HR_RED = '#c62828';
+const DISCIPLINE_OPEN = ['Pending', 'In Review', 'Appealed'];
+let hrActiveTab = 'register';
+let _hrLoaded = false;
+
+function canManageHr(){
+  return ((sessionUser && sessionUser.modules) || []).includes('officers');
+}
+function hrAwaitingList(){
+  return (db.promotions || []).filter(p => p.awaiting_verification || p.verification_status === 'Awaiting Verification');
+}
+function hrOpenDisciplineList(){
+  return (db.discipline || []).filter(d => d.open || DISCIPLINE_OPEN.includes(d.status));
+}
+function hrTab(name){
+  if(!HR_TABS.includes(name)) name = 'register';
+  hrActiveTab = name;
+  HR_TABS.forEach(t => {
+    const pane = document.getElementById('hrPane-' + t);
+    if(pane) pane.classList.toggle('active', t === name);
+    const btn = document.querySelector('#hrTabs .hr-tab[data-hrtab="' + t + '"]');
+    if(btn) btn.classList.toggle('active', t === name);
+  });
+  if(name !== 'register'){
+    refreshHrSelects();
+    loadHrRecords(!_hrLoaded);
+  }
+  renderHrPanels();
+}
+async function loadHrRecords(force){
+  db.promotions = db.promotions || [];
+  db.discipline = db.discipline || [];
+  if(!canManageHr() || !serverOn){ renderHrPanels(); return; }   // offline keeps the cache
+  if(_hrLoaded && !force){ renderHrPanels(); return; }
+  try{
+    const prm = await api('/api/officers/promotions').catch(() => ({}));
+    if(Array.isArray(prm.items)) db.promotions = prm.items;
+    const dsc = await api('/api/officers/discipline').catch(() => ({}));
+    if(Array.isArray(dsc.items)) db.discipline = dsc.items;
+    _hrLoaded = true;
+    try{ persist(); }catch(_){}
+  }catch(_){ /* keep whatever is cached */ }
+  renderHrPanels();
+}
+function officerByServiceId(sid){
+  return (db.officers || []).find(o => o.service_id === sid) || null;
+}
+function hrOfficerOptions(){
+  const officers = (db.officers || []).slice().sort((a, b) =>
+    String(a.full_name || '').localeCompare(String(b.full_name || '')));
+  return '<option value="">— select officer —</option>' + officers.map(o =>
+    `<option value="${esc(o.service_id || '')}">${esc(o.full_name || '—')} (${esc(o.service_id || '')}) · ${esc(o.rank || '')} · ${esc(o.duty_status || '')}</option>`).join('');
+}
+function refreshHrSelects(){
+  const opts = hrOfficerOptions();
+  ['prmOfficer', 'dscOfficer'].forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    const cur = el.value;
+    el.innerHTML = opts;
+    if(cur) el.value = cur;
+  });
+  disciplineTypeChanged();
+}
+function disciplineTypeChanged(){
+  const t = document.getElementById('dscType');
+  if(!t) return;
+  const demotion = t.value === 'Demotion', suspension = t.value === 'Suspension';
+  const show = (id, on) => { const el = document.getElementById(id); if(el) el.style.display = on ? '' : 'none'; };
+  show('dscFromWrap', demotion); show('dscToWrap', demotion);
+  show('dscStartWrap', suspension); show('dscEndWrap', suspension);
+  if(demotion){
+    const o = officerByServiceId((document.getElementById('dscOfficer') || {}).value);
+    const fr = document.getElementById('dscFromRank');
+    if(fr) fr.value = o ? (o.rank || '') : '';
+  }
+}
+function hrNotice(id, msg, kind){
+  const n = document.getElementById(id);
+  if(!n) return;
+  n.className = 'notice ' + (kind === 'err' ? 'err ' : '') + 'show';
+  n.style.display = 'block';
+  n.textContent = msg;
+}
+function renderHrPanels(){
+  const awaiting = hrAwaitingList().slice().sort((a, b) => String(a.nomination_id).localeCompare(String(b.nomination_id)));
+  const open = hrOpenDisciplineList().slice().sort((a, b) => String(a.action_id).localeCompare(String(b.action_id)));
+  const awaitingIds = new Set(awaiting.map(p => p.nomination_id));
+  const openIds = new Set(open.map(d => d.action_id));
+  const setTxt = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+  setTxt('hrPromoBadge', awaiting.length);
+  setTxt('prmAwaitCount', awaiting.length);
+  setTxt('hrDiscBadge', open.length);
+  setTxt('dscOpenCount', open.length);
+
+  // ---- GREEN · promotions awaiting commander verification ----------------
+  const at = document.getElementById('prmAwaitTable');
+  if(at) at.innerHTML = awaiting.map(p => `<tr>
+      <td><b>${esc(p.nomination_id)}</b><br><small class="muted">${esc(String(p.created_at || '').slice(0, 10))}</small></td>
+      <td><b>${esc(p.full_name || '—')}</b><br><small class="muted">${esc(p.service_id || '')} · ${esc(p.station_name || '')}</small></td>
+      <td>${esc(p.current_rank || p.officer_rank || '')} → <b class="st-green">${esc(p.proposed_rank || '')}</b></td>
+      <td>${esc(p.reason || '—')}<br><small class="muted">by ${esc(p.nominated_by || '—')}</small></td>
+      <td class="actions">
+        <button class="btn small hr-green" type="button" onclick="verifyPromotionNomination('${esc(p.nomination_id)}','Verified')">Verify</button>
+        <button class="btn small ghost" type="button" onclick="verifyPromotionNomination('${esc(p.nomination_id)}','Rejected')">Reject</button>
+      </td></tr>`).join('')
+    || '<tr><td colspan="5" class="empty">No nominations awaiting verification</td></tr>';
+
+  const ph = document.getElementById('prmHistoryTable');
+  if(ph) ph.innerHTML = (db.promotions || []).filter(p => !awaitingIds.has(p.nomination_id)).map(p => `<tr>
+      <td><b>${esc(p.nomination_id)}</b></td>
+      <td>${esc(p.full_name || '—')}<br><small class="muted">${esc(p.service_id || '')}</small></td>
+      <td>${esc(p.current_rank || p.officer_rank || '')} → ${esc(p.proposed_rank || '')}</td>
+      <td>${esc(p.nominated_by || '—')}</td>
+      <td>${esc(p.verified_by || '—')}<br><small class="muted">${esc(String(p.verified_at || '').slice(0, 16))}</small></td>
+      <td><span class="badge ${p.verification_status === 'Verified' ? 'green' : (p.verification_status === 'Rejected' ? 'red' : 'gray')}">${esc(p.verification_status || '')}</span></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">No verified or rejected nominations yet</td></tr>';
+
+  // ---- RED · open disciplinary actions ----------------------------------
+  const ot = document.getElementById('dscOpenTable');
+  if(ot) ot.innerHTML = open.map(d => `<tr>
+      <td><b>${esc(d.action_id)}</b><br><small class="muted">${esc(String(d.created_at || '').slice(0, 10))}</small></td>
+      <td><b>${esc(d.full_name || '—')}</b><br><small class="muted">${esc(d.service_id || '')} · ${esc(d.station_name || '')}</small></td>
+      <td><span class="badge red">${esc(d.action_type || '')}</span>${d.action_type === 'Demotion' && d.to_rank ? `<br><small class="muted">${esc(d.from_rank || d.officer_rank || '')} → ${esc(d.to_rank)}</small>` : ''}${d.action_type === 'Suspension' && d.suspension_end ? `<br><small class="muted">until ${esc(String(d.suspension_end).slice(0, 10))}</small>` : ''}</td>
+      <td>${esc(d.severity || '—')}</td>
+      <td><b class="st-red">${esc(d.status || '')}</b></td>
+      <td class="actions">
+        ${d.status === 'Confirmed' ? '' : `<button class="btn small hr-red" type="button" onclick="setDisciplineStatus('${esc(d.action_id)}','Confirmed')">Confirm</button>`}
+        <button class="btn small ghost" type="button" onclick="setDisciplineStatus('${esc(d.action_id)}','Closed')">Close</button>
+      </td></tr>`).join('')
+    || '<tr><td colspan="6" class="empty">No open disciplinary actions</td></tr>';
+
+  const dh = document.getElementById('dscHistoryTable');
+  if(dh) dh.innerHTML = (db.discipline || []).filter(d => !openIds.has(d.action_id)).map(d => `<tr>
+      <td><b>${esc(d.action_id)}</b></td>
+      <td>${esc(d.full_name || '—')}<br><small class="muted">${esc(d.service_id || '')} · ${esc(d.duty_status || '')}</small></td>
+      <td>${esc(d.action_type || '')}${d.action_type === 'Demotion' && d.to_rank ? `<br><small class="muted">${esc(d.from_rank || d.officer_rank || '')} → ${esc(d.to_rank)}</small>` : ''}</td>
+      <td>${esc(d.incident_summary || '—')}</td>
+      <td>${esc(d.reported_by || '—')}</td>
+      <td><span class="badge ${d.status === 'Confirmed' ? 'red' : 'gray'}">${esc(d.status || '')}</span></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">No confirmed or closed actions yet</td></tr>';
+}
+function resetPromotionForm(){
+  const f = document.getElementById('prmForm');
+  if(f && f.reset) f.reset();
+  const id = document.getElementById('prmId'); if(id) id.value = '';
+  refreshHrSelects();
+}
+function resetDisciplineForm(){
+  const f = document.getElementById('dscForm');
+  if(f && f.reset) f.reset();
+  disciplineTypeChanged();
+}
+async function savePromotionNomination(e){
+  if(e && e.preventDefault) e.preventDefault();
+  const sid = (document.getElementById('prmOfficer') || {}).value || '';
+  const rank = (document.getElementById('prmRank') || {}).value || '';
+  const reason = String((document.getElementById('prmReason') || {}).value || '').trim();
+  const effective = (document.getElementById('prmDate') || {}).value || '';
+  if(!sid || !rank || !reason){
+    showFormError('Select the officer and the proposed rank, and give the reason / commendation.',
+                  {names: ['prmOfficer', 'prmRank', 'prmReason'], notice: 'prmNotice'});
+    return;
+  }
+  const officer = officerByServiceId(sid);
+  if(officer && officer.rank === rank){
+    showFormError('The proposed rank must differ from the officer\'s current rank (' + rank + ').',
+                  {names: ['prmRank'], notice: 'prmNotice'});
+    return;
+  }
+  const payload = {service_id: sid, proposed_rank: rank, reason: reason, effective_date: effective};
+  if(!serverOn){
+    const nid = 'PRM-LOCAL-' + String((db.promotions || []).length + 1).padStart(4, '0');
+    db.promotions = [{nomination_id: nid, service_id: sid, full_name: officer ? officer.full_name : sid,
+      current_rank: officer ? officer.rank : '', officer_rank: officer ? officer.rank : '', proposed_rank: rank,
+      reason: reason, effective_date: effective || null, verification_status: 'Awaiting Verification',
+      awaiting_verification: true, nominated_by: (sessionUser && sessionUser.display_name) || 'Offline',
+      verified_by: null, verified_at: null, created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')}].concat(db.promotions || []);
+    try{ persist(); }catch(_){}
+    hrNotice('prmNotice', 'Offline draft ' + nid + ' stored locally — it is submitted to the commander queue once the server is reachable.');
+    renderHrPanels();
+    return;
+  }
+  try{
+    const r = await api('/api/officers/promotions', {method: 'POST', body: JSON.stringify(payload)});
+    db.promotions = [r.promotion].concat((db.promotions || []).filter(p => p.nomination_id !== r.promotion.nomination_id));
+    try{ persist(); }catch(_){}
+    resetPromotionForm();
+    hrNotice('prmNotice', 'Nomination ' + r.nomination_id + ' submitted — awaiting commander verification.');
+    toast('Nomination submitted', r.nomination_id + ' is on the green badge queue');
+    invalidateDeptAnalytics();
+    loadHrRecords(true);
+    refreshActiveDeptAnalytics();
+  }catch(err){
+    showFormError(err.message || 'Unable to submit the nomination.', {notice: 'prmNotice'});
+  }
+}
+async function verifyPromotionNomination(nominationId, status){
+  if(!nominationId) return;
+  const row = (db.promotions || []).find(p => p.nomination_id === nominationId);
+  if(!serverOn){
+    if(row){
+      row.verification_status = status;
+      row.awaiting_verification = false;
+      row.verified_by = (sessionUser && sessionUser.display_name) || 'Offline';
+      row.verified_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      try{ persist(); }catch(_){}
+    }
+    renderHrPanels();
+    toast('Stored offline', nominationId + ' marked ' + status);
+    return;
+  }
+  try{
+    const r = await api('/api/officers/promotions/' + encodeURIComponent(nominationId),
+                        {method: 'PATCH', body: JSON.stringify({verification_status: status})});
+    db.promotions = (db.promotions || []).map(p => p.nomination_id === nominationId ? r.promotion : p);
+    try{ persist(); }catch(_){}
+    toast(status === 'Verified' ? 'Promotion verified' : 'Nomination rejected',
+          nominationId + (r.promotion && r.promotion.full_name ? ' · ' + r.promotion.full_name : ''));
+    invalidateDeptAnalytics();
+    if(status === 'Verified' && serverOn) await syncServer();   // rank change -> roster metrics
+    loadHrRecords(true);
+    renderOfficersTable();
+    refreshActiveDeptAnalytics();
+  }catch(err){
+    hrNotice('prmNotice', err.message || 'Unable to update ' + nominationId, 'err');
+  }
+}
+async function saveDisciplineAction(e){
+  if(e && e.preventDefault) e.preventDefault();
+  const sid = (document.getElementById('dscOfficer') || {}).value || '';
+  const type = (document.getElementById('dscType') || {}).value || '';
+  const severity = (document.getElementById('dscSeverity') || {}).value || '';
+  const status = (document.getElementById('dscStatus') || {}).value || 'Pending';
+  const summary = String((document.getElementById('dscSummary') || {}).value || '').trim();
+  if(!sid || !type || !summary){
+    showFormError('Select the officer and the action type, and describe the incident.',
+                  {names: ['dscOfficer', 'dscType', 'dscSummary'], notice: 'dscNotice'});
+    return;
+  }
+  const officer = officerByServiceId(sid);
+  const payload = {service_id: sid, action_type: type, severity: severity, status: status,
+                   incident_summary: summary,
+                   suspension_start: (document.getElementById('dscStart') || {}).value || '',
+                   suspension_end: (document.getElementById('dscEnd') || {}).value || ''};
+  if(type === 'Demotion'){
+    payload.from_rank = officer ? (officer.rank || '') : ((document.getElementById('dscFromRank') || {}).value || '');
+    payload.to_rank = (document.getElementById('dscToRank') || {}).value || '';
+    if(!payload.to_rank){
+      showFormError('A demotion needs the rank the officer is being demoted to.',
+                    {names: ['dscToRank'], notice: 'dscNotice'});
+      return;
+    }
+  }
+  if(!serverOn){
+    const aid = 'DSC-LOCAL-' + String((db.discipline || []).length + 1).padStart(4, '0');
+    db.discipline = [{action_id: aid, service_id: sid, full_name: officer ? officer.full_name : sid,
+      officer_rank: officer ? officer.rank : '', duty_status: officer ? officer.duty_status : '',
+      station_name: officer ? (officer.station_name || '') : '', action_type: type, severity: severity || null,
+      status: status, from_rank: payload.from_rank || null, to_rank: payload.to_rank || null,
+      suspension_start: payload.suspension_start || null, suspension_end: payload.suspension_end || null,
+      incident_summary: summary, reported_by: (sessionUser && sessionUser.display_name) || 'Offline',
+      created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      open: DISCIPLINE_OPEN.includes(status)}].concat(db.discipline || []);
+    try{ persist(); }catch(_){}
+    hrNotice('dscNotice', 'Offline draft ' + aid + ' stored locally — it is filed with the HR Directorate once the server is reachable.');
+    resetDisciplineForm();
+    renderHrPanels();
+    return;
+  }
+  try{
+    const r = await api('/api/officers/discipline', {method: 'POST', body: JSON.stringify(payload)});
+    db.discipline = [r.discipline].concat((db.discipline || []).filter(d => d.action_id !== r.discipline.action_id));
+    try{ persist(); }catch(_){}
+    resetDisciplineForm();
+    hrNotice('dscNotice', 'Disciplinary action ' + r.action_id + ' recorded (' + type + ' · ' + status + ').');
+    toast('Action recorded', r.action_id + ' is on the red badge queue');
+    invalidateDeptAnalytics();
+    if(status === 'Confirmed') await syncServer();   // suspension / demotion already applied
+    loadHrRecords(true);
+    renderOfficersTable();
+    refreshActiveDeptAnalytics();
+  }catch(err){
+    showFormError(err.message || 'Unable to record the disciplinary action.', {notice: 'dscNotice'});
+  }
+}
+async function setDisciplineStatus(actionId, status){
+  if(!actionId) return;
+  const row = (db.discipline || []).find(d => d.action_id === actionId);
+  if(!serverOn){
+    if(row){ row.status = status; row.open = DISCIPLINE_OPEN.includes(status); try{ persist(); }catch(_){} }
+    renderHrPanels();
+    toast('Stored offline', actionId + ' marked ' + status);
+    return;
+  }
+  try{
+    const r = await api('/api/officers/discipline/' + encodeURIComponent(actionId),
+                        {method: 'PATCH', body: JSON.stringify({status: status})});
+    db.discipline = (db.discipline || []).map(d => d.action_id === actionId ? r.discipline : d);
+    try{ persist(); }catch(_){}
+    toast(status === 'Confirmed' ? 'Action confirmed' : 'Action ' + status.toLowerCase(),
+          actionId + (r.discipline && r.discipline.full_name ? ' · ' + r.discipline.full_name : ''));
+    invalidateDeptAnalytics();
+    await syncServer();          // duty_status / rank side effects land on the roster
+    loadHrRecords(true);
+    renderOfficersTable();
+    refreshActiveDeptAnalytics();
+  }catch(err){
+    hrNotice('dscNotice', err.message || 'Unable to update ' + actionId, 'err');
+  }
+}
+
 function renderStationsTable(){
   const tb=document.getElementById('stationsTable');if(!tb)return;
   const all=db.stations||[];
