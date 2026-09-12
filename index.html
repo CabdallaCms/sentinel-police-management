@@ -682,7 +682,8 @@ body.modal-open{overflow:hidden}
 </form>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div></div>
+<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div>
+<button class="btn small" id="officersConductLink" data-requires-module="conduct" onclick="go('conduct')" style="display:none" title="Conduct, Promotions &amp; Disciplinary Management (HR Directorate)">🎖 Conduct &amp; Discipline <span class="cd-count amber" id="officersConductPending">0</span></button></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
 </div>
@@ -1102,7 +1103,7 @@ let sessionRoster=null;        // {roles, role_labels, checkpoint_locations}
 function go(page){
   if(!sessionUser){
     if(!ALLOWED_PAGES_WITHOUT_AUTH.has(page)) return;
-  } else if(!sessionUser.modules.includes(page)){
+  } else if(!canAccessModule(page)){
     // RBAC: redirect to the first page the user is allowed to see.
     page = sessionUser.modules.includes('dashboard') ? 'dashboard' : (sessionUser.modules[0] || 'dashboard');
   }
@@ -1958,7 +1959,13 @@ function paintDashboard(d){
   const cards = d.cards || [];
   const cardsEl = document.getElementById('dashboardCards');
   if(!cards.length){
-    cardsEl.innerHTML = '<div class="empty" style="grid-column:1/-1">No metrics available for your role.</div>';
+    // Never a dead end: if the officer's role has a primary desk (e.g. the
+    // Officer Registration Office -> Conduct & Discipline), the empty state
+    // links straight to it.
+    const landing = defaultLandingPage();
+    cardsEl.innerHTML = (landing !== 'dashboard')
+      ? '<div class="empty" style="grid-column:1/-1">No dashboard metrics for this role — open your <a href="#" onclick="go(\'' + landing + '\');return false" style="color:var(--blue);font-weight:800">Conduct &amp; Disciplinary desk →</a></div>'
+      : '<div class="empty" style="grid-column:1/-1">No metrics available for your role.</div>';
   } else {
     cardsEl.innerHTML = cards.map(c =>
       `<div class="card" data-module="${esc(c.module||'')}" data-card-id="${esc(c.id||'')}" data-card-kind="${esc(c.kind||'')}">
@@ -2086,6 +2093,21 @@ function isCheckpointRole(role){
 function isAdminRole(role){
   const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
   return l==='systemadmin'||l==='admin'||l==='administrator';
+}
+// Client-side module gate — mirrors the server's ROLE_MODULES rule.
+// Admins implicitly carry every module, so a stale cached profile (saved
+// before a module like 'conduct' was added) can never lock an admin out
+// of a nav item or page. Non-admins are gated by their module list.
+// Sub-pages that have no module key of their own (the CID case workspace)
+// inherit their parent module.
+const PAGE_MODULE_FALLBACK = { caseworkspace: 'cid' };
+function canAccessModule(m){
+  if(!m) return true;
+  m = PAGE_MODULE_FALLBACK[m] || m;
+  if(!sessionUser) return false;
+  if(isAdminRole(sessionUser.role)) return true;
+  if(sessionVisibility && sessionVisibility.is_admin) return true;
+  return (sessionUser.modules||[]).includes(m);
 }
 
 // Auto-bind the location filter to the signed-in officer's scope on
@@ -2463,12 +2485,25 @@ function renderDashboardLocal(){
     cards.push({id:'cid_active_alerts',label:'Active suspect alerts',icon:'!',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect'&&x.alert==='Active alert').length,trend:'Restricted operational data',trend_kind:'alert',module:'cid'});
     cards.push({id:'cid_cases_today',label:'Cases reported today',icon:'◉',value:db.cases.filter(x=>(x.time||'').slice(0,10)===today).length,trend:'New intake today',module:'cid'});
     cards.push({id:'cid_suspects',label:'Suspects on file',icon:'⌁',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect').length,trend:'All-time suspect listings',module:'cid'});
+  } else if(role === 'OfficerRegistration'){
+    // Offline fallback for the Police Officer Registration Office (HR
+    // Directorate) — mirrors the server's _registration_dashboard_cards()
+    // from the locally cached conduct register, so a degraded sync still
+    // shows the HR desk metrics instead of "No metrics available".
+    const cond = db.conduct || [];
+    const pending = cond.filter(a=>['Submitted to HR','Under HR Review'].includes(a.status));
+    cards.push({id:'reg_conduct_pending',label:'Conduct files pending review',icon:'🎖',value:pending.length,trend:'Awaiting HR verification',module:'conduct'});
+    cards.push({id:'reg_conduct_promotions',label:'Promotion / commendation files',icon:'↑',value:cond.filter(a=>a.action_type==='Promotion / Commendation').length,trend:'Nominations for exemplary service',module:'conduct'});
+    cards.push({id:'reg_conduct_disciplinary',label:'Disciplinary / misconduct files',icon:'!',value:cond.filter(a=>a.action_type==='Disciplinary / Penalty').length,trend:'Violations & penalties',trend_kind:'alert',module:'conduct'});
+    cards.push({id:'reg_rank_changes',label:'Approved rank changes',icon:'≡',value:cond.filter(a=>a.rank_applied).length,trend:'Applied to the officer register',module:'conduct'});
+    cards.push({id:'reg_officers',label:'Officers on the register',icon:'👤',value:(db.officers||[]).filter(o=>(o.duty_status||'Active')==='Active').length,trend:'Active across Sool · Sanaag · East Togdheer',module:'officers'});
   }
   const quick = [];
   if(isAdmin || role==='AirportControl') quick.push({id:'add_airport',label:'+ Airport passenger',kind:'primary',page:'airport',module:'airport'});
   if(isAdmin || role==='FingerprintUnit') quick.push({id:'add_clearance',label:'+ Clearance application',kind:'secondary',page:'fingerprint',module:'fingerprint'});
   if(isAdmin || role==='CIDUnit') quick.push({id:'add_case',label:'+ New crime case',kind:'secondary',page:'cid',module:'cid'});
   if(isAdmin || isCheckpoint) quick.push({id:'add_checkpoint',label:'+ Record checkpoint stop',kind:'primary',page:'checkpoints',module:'checkpoints'});
+  if(isAdmin || role==='OfficerRegistration') quick.push({id:'add_conduct',label:'+ New conduct action',kind:'primary',page:'conduct',module:'conduct'});
   const d = {
     generated_at: new Date().toISOString(),
     role: role, is_admin: isAdmin, location_scope: scope,
@@ -3273,6 +3308,22 @@ function resetSessionState(){
   cpLocationFilter = '';
 }
 
+// Default landing page after sign-in (and after a refresh re-hydration).
+// The Police Officer Registration Office (hr.officer / OfficerRegistration
+// / hr_officer alias) lands directly on its Conduct, Promotions &
+// Disciplinary Management desk instead of the generic Operations
+// dashboard. Every other role keeps the dashboard.
+function defaultLandingPage(){
+  if(!sessionUser) return 'dashboard';
+  const role = sessionUser.role || '';
+  const alias = sessionUser.role_alias || '';
+  const spec = sessionUser.spec_role || sessionUser.role_spec || '';
+  const isHR = role === 'OfficerRegistration' || alias === 'OfficerRegistration'
+    || spec === 'hr_officer' || role === 'hr_officer';
+  if(isHR && canAccessModule('conduct')) return 'conduct';
+  return 'dashboard';
+}
+
 async function loadSession(){
   // Pull /api/me to confirm the role/scope and re-sync from the server.
   try{
@@ -3289,10 +3340,13 @@ async function loadSession(){
   applyNavForRole();
   updateUserPill();
   await syncServer();
-  go('dashboard');
+  // Role-aware landing: the Officer Registration Office opens straight on
+  // its Conduct & Disciplinary desk; everyone else gets the dashboard.
+  const landing = defaultLandingPage();
+  go(landing);
   // The dashboard is now also rendered after syncServer has populated
   // db.dashboard; renderDashboard() picks the server or local pipeline.
-  renderDashboard();
+  if(landing === 'dashboard') renderDashboard();
   return true;
 }
 
@@ -3313,6 +3367,10 @@ function doLogout(reason){
   document.querySelectorAll('#nav button').forEach(b => b.style.display = '');
   document.querySelectorAll('#nav .nav-group').forEach(g => g.style.display = '');
   document.querySelectorAll('.side .group-label').forEach(g => g.style.display = '');
+  // In-page module-gated shortcuts (e.g. the Conduct & Discipline link on
+  // the Police Officers page) return to their hidden default until the next
+  // sign-in re-evaluates the role.
+  document.querySelectorAll('[data-requires-module]').forEach(el => el.style.display = 'none');
   document.getElementById('envBadge').innerHTML='Environment: <span style="color:#e8b96a">not signed in</span>';
   if(reason==='expired') toast('Session expired','Please sign in again');
   else toast('Signed out');
@@ -3358,8 +3416,11 @@ async function initApp(){
     applyNavForRole();
     updateUserPill();
     await syncServer();                   // full data sync (incl. fetchCheckpoints)
-    go('dashboard');
-    renderDashboard();
+    // Role-aware landing on refresh too: the Officer Registration Office
+    // re-opens straight on its Conduct & Disciplinary desk.
+    const landing = defaultLandingPage();
+    go(landing);
+    if(landing === 'dashboard') renderDashboard();
   }catch(e){
     if(e && e.status===401){
       // Explicit auth rejection (expired / revoked token) — the ONLY
@@ -3381,13 +3442,21 @@ async function initApp(){
 
 function applyNavForRole(){
   // Hide nav buttons for modules the current user can't access; show admin items for admins.
-  const mods = sessionUser ? sessionUser.modules : ['dashboard'];
-  const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
+  // An admin implicitly carries EVERY module (canAccessModule), so a
+  // profile cached before a module was added — e.g. 'conduct' — can never
+  // hide a nav item from a SystemAdmin. Non-admins are gated by module list.
+  const isAdmin = isAdminRole(sessionUser && sessionUser.role)
+    || !!(sessionVisibility && sessionVisibility.is_admin);
   document.querySelectorAll('#nav button[data-page]').forEach(b => {
-    const m = b.dataset.modules;
-    b.style.display = (m === 'analytics' || m === 'admin')
-      ? (isAdmin ? '' : 'none')
-      : (mods.includes(m) ? '' : 'none');
+    b.style.display = canAccessModule(b.dataset.modules) ? '' : 'none';
+  });
+  // Generic in-page module gates. Any element tagged
+  // data-requires-module="conduct" (e.g. the Conduct & Discipline
+  // shortcut on the Police Officers page) follows the same rule as the
+  // sidebar, so the desk is reachable from the officers register for
+  // every role allowed to use it.
+  document.querySelectorAll('[data-requires-module]').forEach(el => {
+    el.style.display = canAccessModule(el.dataset.requiresModule) ? '' : 'none';
   });
   // A collapsible group disappears when every item inside it is hidden,
   // e.g. the Registrations group never shows for non-admin roles.
@@ -4187,6 +4256,8 @@ function renderConduct(){
   set('cdDiscCount',disc.length);
   set('cdDeskCount',pending.length);
   set('cdCount',all.length+' file'+(all.length===1?'':'s'));
+  // The Police Officers page shortcut badge mirrors the pending queue count.
+  set('officersConductPending',pending.length);
   // Summary strip.
   const strip=document.getElementById('cdSummaryStrip');
   if(strip){

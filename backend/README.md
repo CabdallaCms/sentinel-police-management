@@ -249,14 +249,22 @@ API sync, never signs the officer out on non-fatal errors, and never
 wipes `db.checkpoints` with an empty sync.
 
 The conduct frontend test drives the Officers Registration Office
-journey through the real `index.html` script: sign in as `hr.officer`,
-open the HR Action Modal, search the target officer by Service ID,
-file a green Rank Advancement with the mandatory narrative, see the
-split-view tab badges update, execute the rank change from the HR
-Approval Desk with one click (the officers register refreshes to the
-new rank), reject a red Rank Demotion without touching the rank, view
-the immutable service history, and confirm `/api/conduct` is denied to
-non-HR roles.
+journey through the real `index.html` script: sign in as `hr.officer`
+(**lands directly on the Conduct & Disciplinary desk** via
+`defaultLandingPage()`), open the HR Action Modal, search the target
+officer by Service ID, file a green Rank Advancement with the mandatory
+narrative, see the split-view tab badges update, execute the rank change
+from the HR Approval Desk with one click (the officers register
+refreshes to the new rank), reject a red Rank Demotion without touching
+the rank, view the immutable service history, and confirm `/api/conduct`
+is denied to non-HR roles. It also covers **admin access** (the Conduct
+& Discipline sidebar entry, the reachable desk and the pending-count
+shortcut on the Police Officers page), the **stale-profile defense**
+(`canAccessModule()` keeps the desk visible and reachable for a
+SystemAdmin even when the cached profile predates the conduct module)
+and the RBAC negative (a CID officer is redirected away from the desk,
+while the case-workspace sub-page — which inherits its parent `cid`
+module — still opens).
 
 This is a development foundation, not an operational police deployment.
 Authentication, database, encryption, roles, file-upload validation and
