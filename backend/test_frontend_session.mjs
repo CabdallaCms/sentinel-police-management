@@ -211,6 +211,107 @@ function loadApp(sandbox) {
   vm.runInContext(script, sandbox, { filename: 'index-inline.js' });
 }
 
+// --------------------------------------------------------------------------
+// Static markup contract: sidebar sections · embedded analytics · HR tabs.
+// --------------------------------------------------------------------------
+const NAV_SECTIONS = [
+  { group: 'search', label: 'Central Search',
+    pages: [['people', 'people', 'Central Person Search'], ['policesearch', 'policesearch', 'Central Police Search']] },
+  { group: 'cid', label: 'CID — Criminal Investigation Directorate',
+    pages: [['fingerprint', 'fingerprint', 'Fingerprint Unit'], ['cid', 'cid', 'Crime Department'],
+            ['checkpoints', 'checkpoints', 'Checkpoint Unit'], ['airport', 'airport', 'Airport Unit']] },
+  { group: 'registrations', label: 'Police Registrations & Management',
+    pages: [['stations', 'stations', 'Police Stations'], ['officers', 'officers', 'Police Officers'],
+            ['cars', 'cars', 'Police Cars'], ['crimes', 'crimes', 'Register Crime']] },
+  { group: 'admin', label: 'Administration', pages: [['admin', 'admin', 'User Management']] },
+];
+// page id -> the analytics mount that must be the FIRST block inside it
+const DEPT_STRIPS = {
+  fingerprint: 'anFingerprint', cid: 'anCrime', checkpoints: 'anCheckpoint',
+  airport: 'anAirport', stations: 'anStations', officers: 'anOfficers', cars: 'anCars',
+};
+const HR_TABS = [
+  ['register', 'Officer Registration', ''],
+  ['promotions', 'Promotions & Commendations', 'green'],
+  ['discipline', 'Disciplinary & Misconduct', 'red'],
+];
+
+// Markup labels arrive HTML-escaped ('&amp;'); the contract is written the way
+// an officer reads it on screen.
+function decodeEntities(text) {
+  return String(text == null ? '' : text)
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+}
+
+function assertShellContract() {
+  const html = readFileSync(path.join(PROJECT_ROOT, 'index.html'), 'utf8');
+  const nav = html.match(/<nav class="nav" id="nav">([\s\S]*?)<\/nav>/);
+  if (!nav) throw new Error('sidebar <nav id="nav"> not found');
+  const navHtml = nav[1];
+
+  // The monolithic analytics page must stay gone.
+  if (/data-page="analytics"/.test(html)) throw new Error('the standalone Analytics nav entry came back');
+  if (/<section id="analytics"/.test(html)) throw new Error('the standalone analytics section came back');
+
+  // (a) the four sections, in order, with their exact labels and items
+  const groupBlocks = [...navHtml.matchAll(/<div class="nav-group[^"]*" data-group="([^"]+)"[^>]*>([\s\S]*?)\n<\/div>/g)]
+    .map((m) => ({ group: m[1], body: m[2] }));
+  const found = groupBlocks.map((g) => g.group);
+  const want = NAV_SECTIONS.map((s) => s.group);
+  if (found.join(',') !== want.join(','))
+    throw new Error(`sidebar sections are ${found.join(' | ')} — expected ${want.join(' | ')}`);
+  NAV_SECTIONS.forEach((spec, i) => {
+    const block = groupBlocks[i];
+    const label = decodeEntities((block.body.match(/data-group-toggle="[^"]+"><i>[^<]*<\/i><span>([^<]+)<\/span>/) || [])[1]);
+    if (label !== spec.label) throw new Error(`section ${spec.group} is labelled "${label}" — expected "${spec.label}"`);
+    const items = [...block.body.matchAll(/<button data-page="([^"]+)" data-modules="([^"]+)"><i>[^<]*<\/i><span>([^<]+)<\/span>/g)]
+      .map((m) => [m[1], m[2], decodeEntities(m[3])]);
+    if (JSON.stringify(items) !== JSON.stringify(spec.pages))
+      throw new Error(`section ${spec.group} holds ${JSON.stringify(items)} — expected ${JSON.stringify(spec.pages)}`);
+  });
+
+  // (b) every register embeds its analytics strip as the FIRST block
+  Object.entries(DEPT_STRIPS).forEach(([page, mount]) => {
+    const sec = html.match(new RegExp(`<section id="${page}" class="page">([\\s\\S]*?)\\n</section>`));
+    if (!sec) throw new Error(`register section #${page} not found`);
+    const body = sec[1].replace(/<!--[\s\S]*?-->/g, '').trim();
+    if (!body.startsWith(`<div class="dept-analytics" id="${mount}">`))
+      throw new Error(`#${page} must open with the embedded analytics strip #${mount}, got: ${body.slice(0, 90)}`);
+  });
+
+  // (c) Police Officers: the three HR tabs + their panes, green/red coded
+  const officers = html.match(/<section id="officers" class="page">([\s\S]*?)\n<\/section>/);
+  if (!officers) throw new Error('officers section not found');
+  const tabs = [...officers[1].matchAll(/<button type="button" class="hr-tab([^"]*)" data-hrtab="([^"]+)"[^>]*>(?:<i>[^<]*<\/i>)?<span>([^<]+)<\/span>/g)]
+    // the default-open tab carries `active` in the markup; the contract is
+    // about the colour coding (green / red), not about which tab is open
+    .map((m) => [m[2], decodeEntities(m[3]).trim(),
+                 m[1].trim().split(/\s+/).filter((c) => c && c !== 'active').join(' ')]);
+  if (JSON.stringify(tabs) !== JSON.stringify(HR_TABS))
+    throw new Error(`HR tabs are ${JSON.stringify(tabs)} — expected ${JSON.stringify(HR_TABS)}`);
+  HR_TABS.forEach(([name]) => {
+    if (!officers[1].includes(`id="hrPane-${name}"`)) throw new Error(`missing HR pane #hrPane-${name}`);
+  });
+  if (!/id="hrPane-register"[\s\S]*id="offForm"/.test(officers[1]))
+    throw new Error('the officer registration form must live inside the registration tab');
+  if (!/id="hrPane-promotions"[\s\S]*id="prmAwaitTable"[\s\S]*id="hrPane-discipline"[\s\S]*id="dscOpenTable"/.test(officers[1]))
+    throw new Error('the green/red badge queues must live inside their own tabs');
+  // exact badge colours from the spec
+  if (!/\.hr-tab\.green\.active\{background:#2e7d32/.test(html)) throw new Error('green tab must use #2e7d32');
+  if (!/\.hr-tab\.red\.active\{background:#c62828/.test(html)) throw new Error('red tab must use #c62828');
+
+  // (d) the tab/queue behaviour is wired, and gated on the `officers` module
+  ['function hrTab(', 'async function loadHrRecords(', 'function renderHrPanels(',
+   'async function savePromotionNomination(', 'async function verifyPromotionNomination(',
+   'async function saveDisciplineAction(', 'async function setDisciplineStatus(',
+   "hrTabs.style.display = mods.includes('officers')"].forEach((needle) => {
+    if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
+  });
+  // the Administration section is gated on the admin flag, not on a module list
+  if (!/(m === 'admin' \? isAdmin : mods\.includes\(m\))/.test(html))
+    throw new Error('applyNavForRole() must gate the admin entry on the admin flag');
+}
 const probe = (sandbox, expr) => vm.runInContext(expr, sandbox);
 
 // --------------------------------------------------------------------------
@@ -505,6 +606,16 @@ async function main() {
     if (probe(sb9, 'backendBuildOk()') !== true)
       throw new Error('backendBuildOk() must recover once the correct build answers');
     console.log('ok 10: correct /api/health build restores normal (lock-aware) rendering');
+
+    // ---- 11) Sidebar structure + embedded analytics + HR tabs -------------
+    // Static contract over the real index.html markup: the four fixed sidebar
+    // sections, one embedded `dept-analytics` strip at the TOP of every
+    // register, and the three Police Officers tabs (registration · green
+    // promotions · red discipline). Guards the reorganisation against
+    // regressions without needing a browser.
+    assertShellContract();
+    console.log('ok 11: sidebar sections, embedded departmental analytics and HR tabs contract');
+
 
     console.log('ALL FRONTEND SESSION TESTS PASSED');
     return 0;

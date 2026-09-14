@@ -29,7 +29,7 @@ password `ChangeMe123!`:
 | `fp.officer` | Fingerprint Unit    | Fingerprint only           |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
-| `hr.officer` | Officer Registration Office (HR) | Officers, stations, conduct |
+| `hr.officer` | HR Directorate      | Police Officers register (roster + green promotions + red discipline), `stations` read, central search |
 | `cp.south`   | Checkpoint South    | Checkpoint · South only    |
 | `cp.east`    | Checkpoint East     | Checkpoint · East only     |
 | `cp.west`    | Checkpoint West     | Checkpoint · West only     |
@@ -47,20 +47,31 @@ Change or remove these accounts before any real deployment.
 Every authenticated request is scoped to the user's role. The full role set is:
 
 - `SystemAdmin` — full access, including `/api/admin/*` (User Management and
-  Executive Analytics) and `GET /api/checkpoint-events` (sees all locations).
-- `FingerprintUnit` — only `/api/clearance-applications*`.
-- `AirportControl` — only `/api/airport-records*`.
-- `CIDUnit` — only `/api/crime-cases*` and `/api/suspect-alerts*`.
-- `OfficerRegistration` — the Police Officer Registration Office (HR
-  Directorate): `/api/stations*`, `/api/officers*` and the conduct, promotions
-  & disciplinary management module (`/api/conduct*` except the open
-  `/api/conduct/submit` intake, which any authenticated officer may call to
-  file a station recommendation or misconduct report).
+  the executive analytics aggregation), every departmental analytics bundle
+  (`/api/cid/analytics` returns all four CID sections) and
+  `GET /api/checkpoint-events` (sees all locations).
+- `FingerprintUnit` — only `/api/clearance-applications*`, plus the
+  `fingerprint` section of `/api/cid/analytics`.
+- `AirportControl` — only `/api/airport-records*`, plus the `airport` section
+  of `/api/cid/analytics`.
+- `CIDUnit` — only `/api/crime-cases*` and `/api/suspect-alerts*`, plus the
+  `crime` section of `/api/cid/analytics`.
+- `hr_officer` (HR Directorate) — the whole Police Officers register:
+  `GET/POST /api/officers*`, `GET/POST /api/officers/promotions`,
+  `PATCH /api/officers/promotions/{id}`, `GET/POST /api/officers/discipline`,
+  `PATCH /api/officers/discipline/{id}` and `GET /api/officers/analytics`
+  (identical payload to the admin's), plus `GET /api/stations` for postings,
+  `/api/persons*` and `/api/vehicles` reads through Central Police Search.
+  **Not** an admin: `/api/admin/*` and `/api/cid/analytics` answer 401, and
+  `POST /api/stations` / `POST /api/vehicles` stay SystemAdmin-only.
+  Aliases `HROfficer`, `HR`, `hr`, `hr_directorate`, `Human Resources`,
+  `personnel_officer` all normalise to `hr_officer`.
 - `CheckpointSouth` / `CheckpointEast` / `CheckpointWest` — only
   `/api/checkpoint-events*`, **scoped to their assigned location**; a South
   officer cannot see, create, or amend any event at the East or West
   checkpoint. The `GET` response carries a `scope` and `visible_locations`
-  field so the client can render the active filter.
+  field so the client can render the active filter, and the `checkpoint`
+  section of `/api/cid/analytics` applies the same scope to every count.
 
 `/api/me` returns the current user, the role-derived `modules` list, the
 `visibility` summary (`is_admin`, `can_manage_users`, `can_view_analytics`,
@@ -172,7 +183,7 @@ identically:
 | `FingerprintUnit` | `fingerprint_officer`, `fingerprint_unit`, `fp_officer` |
 | `AirportControl` | `airport_officer`, `airport_control`, `ap_officer` |
 | `CIDUnit` | `cid_officer`, `criminal_investigation` |
-| `OfficerRegistration` | `hr_officer`, `officer_registration`, `registration_officer`, `police_registration`, `hr` |
+| `hr_officer` | `HROfficer`, `HR`, `hr`, `hr_directorate`, `Human Resources`, `personnel_officer` |
 | `checkpoint_officer` | `CheckpointSouth/East/West`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, … |
 
   A row stored as `fingerprint_officer` therefore keeps its modules, RBAC
@@ -193,10 +204,33 @@ identically:
 - `GET /api/crimes` / `POST /api/crimes` (CID + SystemAdmin — crime/victim intake. File numbers are `CRM-YYYY-{station-code}-XXXX`. Requires station, desk officer, category, incident datetime, location of occurrence and description. Optional victim block, reporting party, severity, two evidence slots.)
 - `GET /api/vehicles` / `POST /api/vehicles` (SystemAdmin write; Checkpoint, CID and Central Police Search may `GET`. Helpers live in `backend/vehicles.py`. IDs are `VEH-YYYY-XXXX`. Plate is unique uppercase; VIN is 17 characters without I/O/Q and unique. Police Fleet requires `station_id` (optional `officer_id` + operational status). Civilian / Commercial requires owner name, phone and national ID/passport. Security alert defaults to `Clean / Normal`; Stolen / Wanted in Crime / Impounded / Unregistered / Suspicious require `alert_reason`. Optional JPEG/PNG ≤ 5 MB photo.)
 - `POST /api/vehicles/{vehicle_id}/status` (SystemAdmin — update `security_alert` + reason. Checkpoint plate lookup uses `GET /api/vehicles?q=`.)
-- `GET /api/conduct` (OfficerRegistration / SystemAdmin — the conduct, promotions & disciplinary register, joined with the target officer, submitting station/commander and reviewing HR officer. Supports `status`, `category` (`promotion` / `disciplinary` or the full action-type names), `region`, `station`, `officer` filters; returns a `summary` of counts plus the fixed option lists.)
-- `GET /api/conduct/{action_id}` (OfficerRegistration / SystemAdmin — full action file detail including the officer's immutable `officer_service_history`.)
-- `POST /api/conduct/submit` (any authenticated officer — station commanders file promotion recommendations / misconduct reports on behalf of their station. Auto-generates the `ACT-YYYY-XXXX` action file id, defaults the status to `Submitted to HR`, and validates: mandatory target officer, action type from `Promotion / Commendation` / `Disciplinary / Penalty`, a classification belonging to that type, a mandatory detailed narrative (≥ 20 chars), a proposed rank that is a **valid transition** for `Rank Advancement` (strictly higher) / `Rank Demotion` (strictly lower), at least one of submitting station / reporting commander, and PDF/JPG supporting documents ≤ 5 MB.)
-- `POST /api/conduct/{action_id}/review` (OfficerRegistration / SystemAdmin — the HR approval desk. `decision` is `approve` / `reject` / `review` (or the equivalent status names), with optional `reviewer_officer_id` and `reviewer_notes`. Approving a `Rank Advancement` / `Rank Demotion` **automatically updates `officers.rank`** (re-validated against the officer's current rank — a stale file is rejected with 400), approving a `Formal Dismissal` / `Temporary Suspension` sets the duty status to `Terminated` / `Suspended`, and every approval writes an immutable `officer_service_history` record. Closed files cannot be reviewed again.)
+- `GET /api/officers/promotions` / `POST /api/officers/promotions` (`officers` module — SystemAdmin + HR Directorate; `PRM-YYYY-XXXX`, the proposed rank must be a different valid `OFFICER_RANKS` value, defaults to `Awaiting Verification`)
+- `PATCH /api/officers/promotions/{nomination_id}` (`officers` module — commander verification `Verified` / `Rejected` / `Awaiting Verification`; stamps `verified_by` + `verified_at`)
+- `GET /api/officers/discipline` / `POST /api/officers/discipline` (`officers` module — `DSC-YYYY-XXXX`; a `Demotion` must name a strictly junior `to_rank`)
+- `PATCH /api/officers/discipline/{action_id}` (`officers` module — status / severity / suspension window / demotion target. **Confirming** a `Suspension` sets the officer's `duty_status` to `Suspended`, **confirming** a `Demotion` rewrites their `rank`, and **closing** the last open action returns a suspended officer to `Active`; unknown action → 404, unknown status → 400.)
+
+  Station and vehicle **writes** (`POST /api/stations`, `POST /api/vehicles`, `POST /api/vehicles/{id}/status`) require the `admin` module — the HR Directorate and CID read those registers but cannot create in them.
+
+### Departmental analytics (embedded per register)
+
+Analytics are no longer a single admin-only page: every register embeds its own bundle,
+rendered as KPI cards + lightweight canvas charts above its table/form. Each payload carries
+`kpis` (summary cards), `charts` (zero-padded `[{label,count}]` series) and `lists` (badge rows),
+so the server owns all the arithmetic.
+
+- `GET /api/cid/analytics` (any CID-directorate module — `cid` / `fingerprint` / `checkpoints` / `airport`, or SystemAdmin) — returns one section per module the caller holds in `sections`:
+  `fingerprint` (biometrics logged, unique persons, repeat captures → identity match rate, suspect hits → hit rate, clearance rate, status/reason charts),
+  `crime` (case volume by location, 24-hour time-of-day buckets, category counts, open vs. closed + closure rate, active suspects),
+  `checkpoint` (screening volume, distinct travelers, flagged suspect hits **per checkpoint** South/East/West, flag rate — filtered to the caller's `location_scope`),
+  `airport` (inbound/outbound counts and shares, top routes, movements today, **active suspect movement alerts** list).
+- `GET /api/officers/analytics` (`officers` module) — HR Directorate: roster metrics (active force, rank distribution, duty status, officers per region, average service years), the **green badge** promotion list (nominations `Awaiting Verification` for officers whose `duty_status` is `Active`) and the **red badge** disciplinary list (open `Misconduct` / `Suspension` / `Demotion` / `Warning` / `Investigation` actions).
+- `GET /api/vehicles/analytics` (`cars` / `policesearch` / `checkpoints` / `crimes`) — fleet operational status (In Service vs. Maintenance / Out of Service / Decommissioned, serviceable ratio, availability, maintenance rate) and the security alert breakdown (stolen / wanted / impounded / suspicious vs. clean civilian registrations) plus the flagged-vehicle list.
+- `GET /api/stations/analytics` (`stations` / `crimes`) — operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), status counts, cell capacity totals/averages, and the **deployment matrix** (stations, officers, *active* officers and vehicles per region and per station across Sool · Sanaag · East Togdheer) with the unstaffed-station list.
+- `GET /api/analytics?module=cid|officers|vehicles|stations|all` — unified alias for the same builders (`hr` / `cars` / `station` are accepted aliases; an unknown module answers **400**). `module=all` returns every bundle the caller may see and omits the rest.
+- `GET /api/officers/promotions` / `GET /api/officers/discipline` (`officers` module) — the raw HR lists behind the badges.
+- `POST /api/officers/promotions` (`officers` module) — nominate an officer for promotion (`PRM-YYYY-XXXX`); validates the officer exists and the proposed rank is a different, valid `OFFICER_RANKS` value; defaults to `Awaiting Verification`.
+- `PATCH /api/officers/promotions/{nomination_id}` (`officers` module) — commander verification (`Verified` / `Rejected` / `Awaiting Verification`); stamps `verified_by` + `verified_at`.
+- `POST /api/officers/discipline` (`officers` module) — record a disciplinary action (`DSC-YYYY-XXXX`); a `Demotion` must name a strictly junior `to_rank`.
 
 Uploaded files are stored under `backend/uploads/` (configurable with `SENTINEL_UPLOADS`) and served from `/uploads/...`. The printable pages are `application.html` (Day-1 review + approve) and `certificate.html` (Day-2 certificate, locked until approval). Both printable pages load the police emblem from `images/police_logo.png` (served at `/images/...` and `/static/images/...`) and render it twice — as the letterhead logo and as a low-opacity (0.08–0.09) centred watermark behind the document content.
 
@@ -211,7 +245,12 @@ node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node
 ```
 
 The backend suite starts the server against a temporary database and
-verifies the identity-resolution tiers (including flexible 2/3/4-part
+verifies the **departmental analytics arithmetic** (a second, isolated
+server + deterministic fixture asserts every count, ratio, zero-padded
+chart axis, badge list and RBAC section for `/api/cid/analytics`,
+`/api/officers/analytics`, `/api/vehicles/analytics`,
+`/api/stations/analytics` and `/api/analytics?module=…`), plus the
+identity-resolution tiers (including flexible 2/3/4-part
 partial name matching, case-insensitive/trimmed search and dropdown
 suggestions), optional suspect case linking, auto-create behaviour,
 duplicate protection, the **mandatory clearance reasons** (any value
@@ -242,11 +281,29 @@ handling (rank untouched), duty-status effects for Formal Dismissal /
 Temporary Suspension, closed-file immutability, and the status /
 category / region / station / officer filters.
 
+A third isolated suite, `hr_directorate_suite()`, covers the **HR
+Directorate role** (`hr_officer`): the canonical role / label / spec alias
+and exact module set, alias normalization (`HROfficer` → `hr_officer`),
+`GET /api/officers/analytics` returning a payload **identical to the
+admin's**, the green-badge flow (nominate → FIFO awaiting queue →
+commander verification with `verified_by`), the red-badge flow
+(suspension confirmed → `duty_status` *Suspended* → closed → *Active*;
+demotion confirmed → the rank record is rewritten and the rank
+distribution follows), and the RBAC walls around it (no `/api/admin/*`,
+no `/api/cid/analytics`, no station/vehicle writes, and a checkpoint
+officer blocked from every HR route).
+
 The frontend smoke test executes the real inline script from
 `index.html` in a Node VM against the live backend and verifies that a
 page refresh re-hydrates `sentinel_token` / `sentinel_user` before the
 API sync, never signs the officer out on non-fatal errors, and never
-wipes `db.checkpoints` with an empty sync.
+wipes `db.checkpoints` with an empty sync. Its last case asserts the
+**shell contract** statically: the four sidebar sections (Central Search ·
+CID · Police Registrations & Management · Administration) with their exact
+labels and items, one embedded `dept-analytics` strip as the first block of
+all seven registers, and the three Police Officers tabs
+(Officer Registration · Promotions & Commendations `#2e7d32` ·
+Disciplinary & Misconduct `#c62828`) with their panes and handlers.
 
 The conduct frontend test drives the Officers Registration Office
 journey through the real `index.html` script: sign in as `hr.officer`,
