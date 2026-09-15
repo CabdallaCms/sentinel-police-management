@@ -15,6 +15,10 @@ What it does:
      ``SystemAdmin`` (the new canonical role).
   5. Seeds one demo user per non-admin role so the RBAC flow can be
      exercised end-to-end with the credentials documented in the README.
+  6. Normalises any legacy spelling of the Chief Commander role
+     (``ChiefCommander`` / ``chief.commander`` / ``hq_command``) to the
+     canonical ``chief_commander`` and seeds the ``chief`` demo user, who
+     holds the global permissions listed in CHIEF_COMMANDER_PERMISSIONS.
 
 Usage::
 
@@ -43,6 +47,18 @@ ROLES = (
     'CheckpointSouth',
     'CheckpointEast',
     'CheckpointWest',
+    'chief_commander',      # Chief Commander of Police Office (HQ / Command)
+)
+# Capability permissions held by the global HQ role (mirrors
+# server.CHIEF_PERMISSIONS). Modules gate pages; permissions gate the
+# cross-department capabilities: global analytics, station management and
+# read access to the CID / Personnel / Transport departments.
+CHIEF_COMMANDER_PERMISSIONS = (
+    'analytics:global',
+    'stations:manage',
+    'cid:view',
+    'personnel:view',
+    'transport:view',
 )
 ROLE_LOCATION_SCOPE = {
     'CheckpointSouth': 'South',
@@ -61,6 +77,7 @@ DEMO_USERS = (
     ('cp.south',    'Officer F. Cali',    'CheckpointSouth',  'Checkpoint South',   'South', DEFAULT_PASSWORD),
     ('cp.east',     'Officer A. Maxamed', 'CheckpointEast',   'Checkpoint East',    'East',  DEFAULT_PASSWORD),
     ('cp.west',     'Officer N. Yuusuf',  'CheckpointWest',   'Checkpoint West',    'West',  DEFAULT_PASSWORD),
+    ('chief',       'Gen. C. Warsame',    'chief_commander',  'Police HQ / Command', None,  DEFAULT_PASSWORD),
 )
 
 
@@ -144,6 +161,15 @@ def main():
                     c.execute('UPDATE users SET location_scope=? WHERE id=?',
                               (ROLE_LOCATION_SCOPE.get('SystemAdmin'), r['id']))
 
+            # 3b) normalise legacy Chief Commander spellings -------------------
+            legacy_chief = c.execute(
+                "SELECT id, role FROM users WHERE LOWER(REPLACE(REPLACE(REPLACE(role,'_',''),'.',''),' ','')) "
+                "IN ('chiefcommander','commanderhq','hqcommand','policehq') AND role<>'chief_commander'"
+            ).fetchall()
+            for r in legacy_chief:
+                c.execute('UPDATE users SET role=? WHERE id=?', ('chief_commander', r['id']))
+                print(f'  ~ migrated user {r["id"]} role {r["role"]} -> chief_commander')
+
             # 4) ensure each canonical role has at least one demo user ---------
             for username, display_name, role, branch, scope, password in DEMO_USERS:
                 row = c.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
@@ -176,6 +202,8 @@ def main():
                 scope_label = scope or branch
                 print(f'  - {username:14s} {role:18s} ({scope_label})')
             print('All demo passwords are: ChangeMe123!')
+            print()
+            print('chief_commander permissions: ' + ', '.join(CHIEF_COMMANDER_PERMISSIONS))
             return 0
         finally:
             c.execute('PRAGMA foreign_keys=ON')

@@ -281,9 +281,9 @@ body.modal-open{overflow:hidden}
 .st-red{color:#c62828;font-weight:700}
 /* SystemAdmin-only controls inside a register the role may still READ — e.g.
    the HR Directorate opens Police Stations for postings but cannot create one. */
-body:not(.is-admin) .admin-write{display:none !important}
+body:not(.is-admin):not(.can-manage-stations) .admin-write{display:none !important}
 .admin-write-note{display:none}
-body:not(.is-admin) .admin-write-note{display:block}
+body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 @media(max-width:650px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.da-search{min-width:100%}}
 /* ==== User management ==== */
 .um-table{font-size:13px}
@@ -364,22 +364,43 @@ body:not(.is-admin) .admin-write-note{display:block}
 </div>
 
 <div class="nav-group open" data-group="cid">
-<button type="button" class="nav-group-toggle" data-group-toggle="cid"><i>⌂</i><span>CID — Criminal Investigation Directorate</span><span class="nav-chev">▾</span></button>
+<button type="button" class="nav-group-toggle" data-group-toggle="cid"><i>⌂</i><span>Dep. Of CID</span><span class="nav-chev">▾</span></button>
 <div class="nav-group-body" data-group-body="cid">
 <button data-page="fingerprint" data-modules="fingerprint"><i>⌁</i><span>Fingerprint Unit</span></button>
-<button data-page="cid" data-modules="cid"><i>⚖</i><span>Crime Department</span></button>
+<button data-page="cid" data-modules="cid"><i>⚖</i><span>Crime Unit</span></button>
 <button data-page="checkpoints" data-modules="checkpoints"><i>⊙</i><span>Checkpoint Unit</span></button>
 <button data-page="airport" data-modules="airport"><i>✈</i><span>Airport Unit</span></button>
 </div>
 </div>
 
-<div class="nav-group open" data-group="registrations">
-<button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i>▤</i><span>Police Registrations &amp; Management</span><span class="nav-chev">▾</span></button>
+<div class="nav-group open" data-group="personnel">
+<button type="button" class="nav-group-toggle" data-group-toggle="personnel"><i>👤</i><span>Dep. of Police Personnel (Registration Police Office)</span><span class="nav-chev">▾</span></button>
+<div class="nav-group-body" data-group-body="personnel">
+<button data-page="officers" data-modules="officers"><i>▤</i><span>Registration Office</span></button>
+<button data-page="conduct" data-modules="conduct"><i>🎖</i><span>Conduct, Promotions &amp; Disciplinary Management</span></button>
+</div>
+</div>
+
+<div class="nav-group open" data-group="transport">
+<button type="button" class="nav-group-toggle" data-group-toggle="transport"><i>🚓</i><span>Dep. of Transport</span><span class="nav-chev">▾</span></button>
+<div class="nav-group-body" data-group-body="transport">
+<button data-page="cars" data-modules="cars"><i>🚓</i><span>Vehicle Registry</span></button>
+<button data-page="vehiclestatus" data-modules="cars"><i>◎</i><span>Vehicle Status &amp; Tracking</span></button>
+</div>
+</div>
+
+<div class="nav-group open" data-group="command">
+<button type="button" class="nav-group-toggle" data-group-toggle="command"><i>★</i><span>Chief Commander of Police Office (HQ / Command)</span><span class="nav-chev">▾</span></button>
+<div class="nav-group-body" data-group-body="command">
+<button data-page="executive" data-modules="executive"><i>▦</i><span>Global Executive Dashboard</span></button>
+<button data-page="oversight" data-modules="oversight"><i>🏛</i><span>Stations Oversight &amp; Regional Data</span></button>
+</div>
+</div>
+
+<div class="nav-group" data-group="registrations">
+<button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i>▤</i><span>Registers</span><span class="nav-chev">▾</span></button>
 <div class="nav-group-body" data-group-body="registrations">
 <button data-page="stations" data-modules="stations"><i>🏛</i><span>Police Stations</span></button>
-<button data-page="officers" data-modules="officers"><i>👤</i><span>Police Officers</span></button>
-<button data-page="conduct" data-modules="conduct"><i>🎖</i><span>Conduct &amp; Discipline</span></button>
-<button data-page="cars" data-modules="cars"><i>🚓</i><span>Police Cars</span></button>
 <button data-page="crimes" data-modules="crimes"><i>⚖</i><span>Register Crime</span></button>
 </div>
 </div>
@@ -1073,6 +1094,76 @@ body:not(.is-admin) .admin-write-note{display:block}
   </div>
 </div>
 </section>
+
+<!-- CHIEF COMMANDER · GLOBAL EXECUTIVE DASHBOARD -->
+<section id="executive" class="page">
+<div class="panel-head" style="margin-bottom:14px">
+  <div>
+    <h2 style="font-size:18px">Global Executive Dashboard</h2>
+    <div class="sub" id="execSub">Chief Commander of Police Office · HQ / Command · cross-department overview</div>
+  </div>
+  <div>
+    <span class="badge blue" id="execStatus" style="margin-right:8px">Live</span>
+    <button class="btn ghost small" type="button" onclick="loadExecutive(true)">↻ Refresh</button>
+  </div>
+</div>
+<div class="kpi-grid" id="execKpis"><div class="empty" style="grid-column:1/-1">Loading executive metrics…</div></div>
+<div class="mini-charts" id="execCharts"></div>
+<div class="grid2" id="execDepartments"></div>
+<div class="panel">
+  <div class="panel-head"><div><h2>Regional stations</h2><div class="sub">Station code · name / region · active officers · crime reports</div></div>
+    <div class="search" style="margin:0"><span>⌕</span><input id="execStationSearch" placeholder="Filter by code, station, region or district…" oninput="renderExecStationsTable()"></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr>
+    <th>Code</th><th>Station / region</th><th>Tier · status</th><th>Officers</th><th>Active officers</th><th>Vehicles</th><th>Crime reports</th>
+  </tr></thead><tbody id="execStationsTable"><tr><td colspan="7" class="empty">Loading stations…</td></tr></tbody></table></div>
+</div>
+</section>
+
+<!-- CHIEF COMMANDER · STATIONS OVERSIGHT & REGIONAL DATA -->
+<section id="oversight" class="page">
+<div class="panel-head" style="margin-bottom:14px">
+  <div>
+    <h2 style="font-size:18px">Stations Oversight &amp; Regional Data</h2>
+    <div class="sub">Regional roll-up · station readiness · crime pressure per station (Sool · Sanaag · East Togdheer)</div>
+  </div>
+  <div>
+    <span class="badge blue" id="ovStatus" style="margin-right:8px">Live</span>
+    <button class="btn ghost small" type="button" onclick="loadExecutive(true)">↻ Refresh</button>
+  </div>
+</div>
+<div class="kpi-grid" id="ovRegionKpis"><div class="empty" style="grid-column:1/-1">Loading regional data…</div></div>
+<div class="panel">
+  <div class="panel-head"><div><h2>Regional summary</h2><div class="sub">Stations, deployment and crime reports per region</div></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr>
+    <th>Region</th><th>Code</th><th>Stations</th><th>Active stations</th><th>Officers</th><th>Active officers</th><th>Vehicles</th><th>Crime reports</th>
+  </tr></thead><tbody id="ovRegionsTable"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table></div>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><h2>Station oversight</h2><div class="sub">Every registered station — filter by region</div></div>
+    <div class="da-tools"><select id="ovRegionFilter" onchange="renderOversightStations()"><option value="">All regions</option></select>
+      <button class="btn secondary small" type="button" onclick="go('stations')">Manage stations →</button></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr>
+    <th>Code</th><th>Station</th><th>Region / district</th><th>Tier</th><th>Status</th><th>Officers</th><th>Active</th><th>Vehicles</th><th>Crime reports</th>
+  </tr></thead><tbody id="ovStationsTable"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody></table></div>
+</div>
+</section>
+
+<!-- TRANSPORT · VEHICLE STATUS & TRACKING -->
+<section id="vehiclestatus" class="page">
+<div class="dept-analytics" id="anVehicleStatus">
+  <div class="da-head"><div><h2>Vehicle status &amp; tracking</h2>
+  <div class="da-sub">Operational readiness · security alerts · station assignment</div></div></div>
+  <div class="da-skeleton">Loading fleet status…</div>
+</div>
+<div class="panel">
+  <div class="panel-head"><div><h2>Fleet status board</h2><div class="sub">Live operational status and security flag for every registered vehicle</div></div>
+    <div class="da-tools"><select id="vsStatusFilter" onchange="renderVehicleStatusTable()"><option value="">All statuses</option><option>In Service</option><option>Maintenance</option><option>Out of Service</option><option>Decommissioned</option></select>
+      <div class="search" style="margin:0"><span>⌕</span><input id="vsSearch" placeholder="Plate, make, station or alert…" oninput="renderVehicleStatusTable()"></div></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr>
+    <th>Plate / ID</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Operational status</th><th>Security alert</th>
+  </tr></thead><tbody id="vsTable"><tr><td colspan="6" class="empty">No vehicles registered yet</td></tr></tbody></table></div>
+</div>
+</section>
 </main></div>
 
 <div class="toast" id="toast"></div>
@@ -1245,17 +1336,29 @@ function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fou
   mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
-const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',crimes:'Crime / victim intake',admin:'User management'};
+const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',crimes:'Crime / victim intake',admin:'User management',executive:'Global Executive Dashboard',oversight:'Stations Oversight & Regional Data',vehiclestatus:'Vehicle Status & Tracking',conduct:'Conduct, Promotions & Disciplinary Management'};
 // Current session ----------------------------------------------------
 let sessionUser=null;          // {id,username,display_name,role,role_label,branch,location,location_scope,modules,active}
 let sessionVisibility=null;    // /api/me visibility
 let sessionRoster=null;        // {roles, role_labels, checkpoint_locations}
+// The landing page after sign-in / refresh. The Chief Commander (HQ /
+// Command) is routed straight to the Global Executive Dashboard; every other
+// role lands on the role-scoped operations dashboard.
+function homePage(){
+  if(sessionUser && (isChiefRole(sessionUser.role) || (sessionUser.modules||[]).includes('executive'))) return 'executive';
+  return 'dashboard';
+}
+// Pages that live under a module with a different name (the module list is
+// the server-issued RBAC contract; these are just extra views of it).
+const PAGE_MODULE={vehiclestatus:'cars',caseworkspace:'cid'};
+function pageModule(page){return PAGE_MODULE[page]||page}
 function go(page){
+  if(page==='home') page = homePage();
   if(!sessionUser){
     if(!ALLOWED_PAGES_WITHOUT_AUTH.has(page)) return;
-  } else if(!sessionUser.modules.includes(page)){
+  } else if(!sessionUser.modules.includes(pageModule(page))){
     // RBAC: redirect to the first page the user is allowed to see.
-    page = sessionUser.modules.includes('dashboard') ? 'dashboard' : (sessionUser.modules[0] || 'dashboard');
+    page = sessionUser.modules.includes('dashboard') ? homePage() : (sessionUser.modules[0] || 'dashboard');
   }
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById(page).classList.add('active');
@@ -1275,6 +1378,8 @@ function go(page){
   if(page==='stations') renderStationsTable();
   if(page==='officers'){ renderOfficersTable(); refreshHrSelects(); loadHrRecords(true); hrTab(hrActiveTab); }
   if(page==='cars') renderCarsTable();
+  if(page==='vehiclestatus'){ renderVehicleStatusTable(); }
+  if(page==='executive' || page==='oversight'){ loadExecutive(page==='executive' && !_execCache); }
   if(page==='crimes'){ fillCrimeSelects(); renderCrimesTable(); }
   if(page==='dashboard'){
     // Force a fresh /api/dashboard fetch on every navigation. This
@@ -1303,13 +1408,17 @@ const ALLOWED_PAGES_WITHOUT_AUTH = new Set();
 document.querySelectorAll('#nav button[data-page]').forEach(b=>b.onclick=()=>go(b.dataset.page));
 
 // ---- collapsible sidebar groups ---------------------------------------------
-// The flat module list is organised into three collapsible groups:
+// The flat module list is organised into collapsible departmental groups:
 //   * search        — Central Search (person + police registers)
-//   * cid           — Criminal Investigation Directorate units
-//   * registrations — Police Registrations & Management
+//   * cid           — Dep. of CID (Fingerprint · Crime · Checkpoint · Airport)
+//   * personnel     — Dep. of Police Personnel (Registration Police Office)
+//   * transport     — Dep. of Transport (Vehicle Registry · Status & Tracking)
+//   * command       — Chief Commander of Police Office (HQ / Command)
+//   * registrations — shared registers (Police Stations · Register Crime)
+//   * admin         — Administration (SystemAdmin only)
 // Open/closed state persists across reloads (sentinelNavGroups); opening a
 // page always expands the group that contains it (see go()).
-const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',stations:'registrations',officers:'registrations',cars:'registrations',crimes:'registrations',admin:'admin'};
+const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',officers:'personnel',conduct:'personnel',cars:'transport',vehiclestatus:'transport',executive:'command',oversight:'command',stations:'registrations',crimes:'registrations',admin:'admin'};
 const NAV_GROUPS_KEY='sentinelNavGroups';
 function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
 function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
@@ -2233,6 +2342,12 @@ function scopeFromRole(role){
 // recognises ('CheckpointSouth', 'checkpoint_officer', 'cp_south', ...).
 function isCheckpointRole(role){
   return normalizeRole(role)==='checkpoint_officer';
+}
+// Chief Commander of Police Office (HQ / Command) — 'chief_commander' and
+// its accepted spellings ('ChiefCommander', 'chief.commander', ...).
+function isChiefRole(role){
+  const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
+  return l==='chiefcommander'||l==='commanderhq'||l==='hqcommand'||l==='policehq';
 }
 // Normalized admin check ('SystemAdmin', 'system_admin', 'Admin', ...).
 function isAdminRole(role){
@@ -3368,6 +3483,7 @@ const DEMO_ACCOUNTS = [
   {username:'cp.south',    label:'Checkpoint · South',     role:'CheckpointSouth',  detail:'South scope'},
   {username:'cp.east',     label:'Checkpoint · East',      role:'CheckpointEast',   detail:'East scope'},
   {username:'cp.west',     label:'Checkpoint · West',      role:'CheckpointWest',   detail:'West scope'},
+  {username:'chief',       label:'Chief Commander (HQ)',   role:'chief_commander',  detail:'Global oversight'},
 ];
 
 function renderDemoAccounts(){
@@ -3431,6 +3547,7 @@ async function submitLogin(ev){
 // The localStorage seed (`sentinelDB`) is intentionally NOT touched so
 // the offline / localStorage-fallback mode still has a fresh baseline.
 function resetSessionState(){
+  _execCache = null;
   apiToken = '';
   sessionUser = null;
   sessionVisibility = null;
@@ -3462,7 +3579,7 @@ async function loadSession(){
   applyNavForRole();
   updateUserPill();
   await syncServer();
-  go('dashboard');
+  go('home');
   // The dashboard is now also rendered after syncServer has populated
   // db.dashboard; renderDashboard() picks the server or local pipeline.
   renderDashboard();
@@ -3533,7 +3650,7 @@ async function initApp(){
     applyNavForRole();
     updateUserPill();
     await syncServer();                   // full data sync (incl. fetchCheckpoints)
-    go('dashboard');
+    go('home');
     renderDashboard();
   }catch(e){
     if(e && e.status===401){
@@ -3554,13 +3671,16 @@ async function initApp(){
   }
 }
 
-// Sidebar structure — four fixed sections, each a collapsible nav-group:
+// Sidebar structure — departmental sections, each a collapsible nav-group:
 //
 //   Dashboard
-//   CENTRAL SEARCH                          people · policesearch
-//   CID — CRIMINAL INVESTIGATION DIRECTORATE fingerprint · cid · checkpoints · airport
-//   POLICE REGISTRATIONS & MANAGEMENT        stations · officers · cars · crimes
-//   ADMINISTRATION                           admin (SystemAdmin only)
+//   CENTRAL SEARCH                                   people · policesearch
+//   DEP. OF CID                                      fingerprint · cid · checkpoints · airport
+//   DEP. OF POLICE PERSONNEL (REGISTRATION OFFICE)   officers · conduct
+//   DEP. OF TRANSPORT                                cars · vehiclestatus
+//   CHIEF COMMANDER OF POLICE OFFICE (HQ / COMMAND)  executive · oversight
+//   REGISTERS                                        stations · crimes
+//   ADMINISTRATION                                   admin (SystemAdmin only)
 //
 // Every button carries the module it belongs to (`data-modules`), so one pass
 // over the server-issued module list decides the whole menu: a unit officer
@@ -3589,6 +3709,11 @@ function applyNavForRole(){
   // `.admin-write` blocks (SystemAdmin-only forms inside a readable register)
   // follow the same flag.
   if(document.body) document.body.classList.toggle('is-admin', isAdmin);
+  // Station registry writes are also open to the `stations:manage`
+  // permission (Chief Commander) — reveal the SystemAdmin-only station form.
+  const canManageStations = isAdmin || !!(sessionVisibility && sessionVisibility.can_manage_stations)
+    || ((sessionUser && sessionUser.permissions) || []).includes('stations:manage');
+  if(document.body) document.body.classList.toggle('can-manage-stations', canManageStations);
   // The Police Officers tabs (Registration · Promotions [green] ·
   // Disciplinary [red]) follow the same `officers` module gate as the
   // embedded HR analytics strip above them.
@@ -3605,6 +3730,7 @@ function updateUserPill(){
   const uScope = sessionUser.location_scope || (isCheckpointRole(sessionUser.role) ? scopeFromRole(sessionUser.role) : '');
   if(uScope && isCheckpointRole(sessionUser.role)) label += ' · ' + uScope + ' Checkpoint';
   else if(isAdminRole(sessionUser.role)) label += ' · ' + (sessionUser.branch || 'Central HQ');
+  else if(isChiefRole(sessionUser.role)) label += ' · ' + (sessionUser.branch || 'Police HQ / Command');
   else label += ' · ' + (sessionUser.branch || '');
   document.getElementById('userRole').textContent = label;
   const ini = (sessionUser.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?';
@@ -3750,6 +3876,9 @@ function drawGroupedBarChart(canvasId, groups, series, colors){
 // below only render them. When the API is unreachable the identical shapes are
 // recomputed locally from `db` and the strip is labelled "Offline cache".
 const DEPT_ANALYTICS={
+  vehiclestatus:{key:'vehiclestatus',endpoint:'/api/vehicles/analytics',bundle:'vehicles',section:null,
+    mount:'anVehicleStatus',title:'Vehicle status & tracking',
+    sub:'Operational readiness · security alerts · station assignment',search:null},
   fingerprint:{key:'fingerprint',endpoint:'/api/cid/analytics',bundle:'cid',section:'fingerprint',
     mount:'anFingerprint',title:'Fingerprint Unit analytics',
     sub:'Biometrics logged · identity match & suspect hit rates',search:'person'},
@@ -3774,6 +3903,7 @@ const DEPT_ANALYTICS={
 };
 const DEPT_COLORS=['#246bfe','#13b8a6','#c98512','#6c3fd4','#d84f5a'];
 const DEPT_CHARTS={
+  get vehiclestatus(){return this.cars},
   fingerprint:[
     {k:'by_status',type:'bar',color:'#246bfe',title:'Applications by review status',sub:'Pending review · approved · rejected'},
     {k:'by_purpose',type:'bar',color:'#6c3fd4',title:'Clearance reason mix',sub:'Education · travel · employment · citizenship · licence'}],
@@ -3808,6 +3938,7 @@ const DEPT_CHARTS={
       series:[{k:'officers',label:'Officers'},{k:'active_officers',label:'Active'},{k:'vehicles',label:'Vehicles'}]}],
 };
 const DEPT_LISTS={
+  get vehiclestatus(){return this.cars},
   checkpoints:[{k:'checkpoints',tone:'blue',title:'Flagged suspect hits per checkpoint',
     empty:'No screening events recorded yet',
     row:x=>`<b>${esc(x.checkpoint||x.label)}</b><small>${num(x.count)} traveler(s) screened · ${num(x.flagged)} flagged hit(s) · ${num(x.flag_rate)}% flag rate</small>`}],
@@ -4347,9 +4478,236 @@ function localDeptAnalytics(cfg){
     case 'airport':return localAirportAnalytics();
     case 'officers':return localOfficerAnalytics();
     case 'cars':return localVehicleAnalytics();
+    case 'vehiclestatus':return localVehicleAnalytics();
     case 'stations':return localStationAnalytics();
   }
   return {kpis:[],charts:{},lists:{}};
+}
+
+
+// ============================ Chief Commander · HQ / Command =================
+// The Global Executive Dashboard and the Stations Oversight page both read the
+// single cross-department bundle at /api/analytics/global (gated server-side
+// by the `analytics:global` permission). The payload is cached per session
+// and repainted on every navigation; a forced refresh re-fetches it.
+let _execCache=null;
+function execLocalFallback(){
+  // Offline / unreachable-server fallback: build the same envelope from the
+  // local register cache so the view never renders empty.
+  const officers=db.officers||[], cars=db.cars||[], stations=db.stations||[], crimes=db.crimes||[];
+  const cases=db.cases||[], cp=db.checkpoints||[];
+  const closed=cases.filter(x=>String(x.status||'').toLowerCase()==='closed').length;
+  const fleet=cars.filter(c=>(c.category||'Police Fleet')==='Police Fleet');
+  const ready=fleet.filter(c=>c.operational_status==='In Service').length;
+  const hits=cp.filter(e=>String(e.result||e.screening_result||'').toLowerCase()==='flagged match').length;
+  const active=officers.filter(o=>(o.duty_status||'Active')==='Active').length;
+  const table=stations.map(st=>{
+    const offs=officers.filter(o=>o.station===st.id||o.station_id===st.id||o.station_code===st.id);
+    return {station_id:st.id,code:st.code,name:st.name,region:st.region,district:st.district,
+      station_tier:st.tier||st.station_tier||'Unclassified',operational_status:st.status||st.operational_status||'Active',
+      officers:offs.length,active_officers:offs.filter(o=>(o.duty_status||'Active')==='Active').length,
+      vehicles:cars.filter(c=>c.station===st.id||c.station===st.code).length,
+      crime_reports:crimes.filter(c=>c.station===st.id||c.station_id===st.id||c.station_code===st.id).length};
+  });
+  const regionNames=[...new Set(['Sool','Sanaag','East Togdheer'].concat(table.map(t=>t.region)))];
+  const regions=regionNames.map(r=>{const at=table.filter(t=>t.region===r);
+    return {region:r,code:r.slice(0,3).toUpperCase(),stations:at.length,
+      active_stations:at.filter(t=>t.operational_status==='Active').length,
+      officers:at.reduce((a,t)=>a+t.officers,0),active_officers:at.reduce((a,t)=>a+t.active_officers,0),
+      vehicles:at.reduce((a,t)=>a+t.vehicles,0),crime_reports:at.reduce((a,t)=>a+t.crime_reports,0)}});
+  return {generated_at:'',module:'global',offline:true,
+    total_officers:officers.length,active_officers:active,
+    cid_total_cases:cases.length,cid_closed_cases:closed,cid_clearance_rate:pctOf(closed,cases.length),
+    checkpoint_hits:hits,checkpoint_screenings:cp.length,
+    fleet_total:fleet.length,fleet_in_service:ready,fleet_readiness:pctOf(ready,fleet.length),
+    total_stations:table.length,total_crime_reports:crimes.length,
+    kpis:[
+      {label:'Total officers',value:officers.length,tone:'blue',icon:'👤',hint:active+' active'},
+      {label:'CID clearance rate',value:pctOf(closed,cases.length)+'%',tone:'green',icon:'⚖',hint:closed+' of '+cases.length+' cases closed'},
+      {label:'Active checkpoint hits',value:hits,tone:'red',icon:'!',hint:cp.length+' travelers screened'},
+      {label:'Fleet readiness',value:pctOf(ready,fleet.length)+'%',tone:'amber',icon:'🚓',hint:ready+' of '+fleet.length+' police vehicles in service'},
+      {label:'Stations',value:table.length,tone:'purple',icon:'🏛',hint:regions.length+' regions · '+crimes.length+' crime reports'}],
+    departments:{
+      cid:{label:'Dep. of CID',total_cases:cases.length,open_cases:cases.length-closed,closed_cases:closed,clearance_rate:pctOf(closed,cases.length),
+           active_suspects:(db.suspects||[]).length,fingerprint_applications:(db.fingerprint||[]).length,
+           fingerprint_approved:(db.fingerprint||[]).filter(x=>x.status==='Approved').length,
+           checkpoint_screenings:cp.length,checkpoint_hits:hits,airport_movements:(db.airport||[]).length},
+      personnel:{label:'Dep. of Police Personnel',total_officers:officers.length,active_officers:active,
+           suspended_officers:officers.filter(o=>o.duty_status==='Suspended').length,
+           pending_promotions:(db.promotions||[]).filter(p=>p.awaiting_verification).length,
+           open_disciplinary_actions:(db.discipline||[]).filter(d=>d.open).length},
+      transport:{label:'Dep. of Transport',fleet_total:fleet.length,in_service:ready,fleet_readiness:pctOf(ready,fleet.length),
+           maintenance:fleet.filter(c=>c.operational_status==='Maintenance').length,
+           out_of_service:fleet.filter(c=>c.operational_status==='Out of Service').length,
+           flagged_vehicles:cars.filter(c=>(c.security_alert||'Clean / Normal')!=='Clean / Normal').length,total_vehicles:cars.length},
+      stations:{label:'Stations & regions',total_stations:table.length,
+           active_stations:table.filter(t=>t.operational_status==='Active').length,
+           unstaffed_stations:table.filter(t=>t.officers===0).length}},
+    charts:{officers_by_region:regions.map(r=>({label:r.region,count:r.officers})),
+            crime_reports_by_region:regions.map(r=>({label:r.region,count:r.crime_reports})),
+            cases_open_vs_closed:[{label:'Open',count:cases.length-closed},{label:'Closed',count:closed}],
+            fleet_status:[{label:'In Service',count:ready},{label:'Not ready',count:Math.max(fleet.length-ready,0)}]},
+    stations:table,regions};
+}
+async function loadExecutive(force){
+  if(!sessionUser)return;
+  let data=null,err=null;
+  if(serverOn&&authToken()&&(force||!_execCache)){
+    try{ _execCache=await api('/api/analytics/global'); }
+    catch(e){ err=e; }
+  }
+  data=_execCache;
+  if(!data){ data=execLocalFallback(); data.offline=true; data.error=err&&err.message; }
+  paintExecutive(data);
+  paintOversight(data);
+}
+function execStatusBadge(id,data){
+  const el=document.getElementById(id); if(!el)return;
+  el.className='badge '+(data.offline?'amber':'green');
+  el.textContent=data.offline?(data.error?'Offline · '+data.error:'Offline cache'):'Live';
+}
+function execDeptCardHTML(title,icon,rows){
+  return `<div class="panel" style="margin-top:0"><div class="panel-head"><div><h2>${icon} ${esc(title)}</h2></div></div>
+    <table class="table"><tbody>${rows.map(([k,v,tone])=>`<tr><td style="color:var(--muted)">${esc(k)}</td><td style="text-align:right"><b>${tone?`<span class="badge ${tone}">${esc(v)}</span>`:esc(v)}</b></td></tr>`).join('')}</tbody></table></div>`;
+}
+function paintExecutive(data){
+  const kpiEl=document.getElementById('execKpis'); if(!kpiEl)return;
+  execStatusBadge('execStatus',data);
+  const sub=document.getElementById('execSub');
+  if(sub) sub.textContent='Chief Commander of Police Office · HQ / Command'+(data.generated_at?' · updated '+String(data.generated_at).replace('T',' ').replace('Z',' UTC'):'');
+  const kpis=(data.kpis||[]).length?data.kpis:[
+    {label:'Total officers',value:num(data.total_officers),tone:'blue',icon:'👤'},
+    {label:'CID clearance rate',value:num(data.cid_clearance_rate)+'%',tone:'green',icon:'⚖'},
+    {label:'Active checkpoint hits',value:num(data.checkpoint_hits),tone:'red',icon:'!'},
+    {label:'Fleet readiness',value:num(data.fleet_readiness)+'%',tone:'amber',icon:'🚓'}];
+  kpiEl.innerHTML=kpis.map(kpiTileHTML).join('');
+  const d=data.departments||{};
+  const cid=d.cid||{}, per=d.personnel||{}, tr=d.transport||{}, st=d.stations||{};
+  const depEl=document.getElementById('execDepartments');
+  if(depEl) depEl.innerHTML=
+    execDeptCardHTML('Dep. of CID','⌂',[
+      ['Crime cases (open / closed)',num(cid.open_cases)+' / '+num(cid.closed_cases)],
+      ['Clearance rate',num(cid.clearance_rate)+'%','green'],
+      ['Active suspect alerts',num(cid.active_suspects),num(cid.active_suspects)?'red':'gray'],
+      ['Fingerprint applications (approved)',num(cid.fingerprint_applications)+' ('+num(cid.fingerprint_approved)+')'],
+      ['Checkpoint screenings / threat hits',num(cid.checkpoint_screenings)+' / '+num(cid.checkpoint_hits)],
+      ['Airport movements',num(cid.airport_movements)]])+
+    execDeptCardHTML('Dep. of Police Personnel','👤',[
+      ['Registered officers',num(per.total_officers)],
+      ['Active force',num(per.active_officers),'green'],
+      ['Suspended',num(per.suspended_officers),num(per.suspended_officers)?'red':'gray'],
+      ['Promotions awaiting verification',num(per.pending_promotions),'amber'],
+      ['Open disciplinary actions',num(per.open_disciplinary_actions),num(per.open_disciplinary_actions)?'red':'gray']])+
+    execDeptCardHTML('Dep. of Transport','🚓',[
+      ['Police fleet',num(tr.fleet_total)],
+      ['In service',num(tr.in_service),'green'],
+      ['Fleet readiness',num(tr.fleet_readiness)+'%','amber'],
+      ['Maintenance / out of service',num(tr.maintenance)+' / '+num(tr.out_of_service)],
+      ['Flagged vehicles',num(tr.flagged_vehicles),num(tr.flagged_vehicles)?'red':'gray'],
+      ['All registered vehicles',num(tr.total_vehicles)]])+
+    execDeptCardHTML('Stations & regions','🏛',[
+      ['Stations registered',num(st.total_stations)],
+      ['Active stations',num(st.active_stations),'green'],
+      ['Unstaffed stations',num(st.unstaffed_stations),num(st.unstaffed_stations)?'amber':'gray'],
+      ['Crime hotspot',st.crime_hotspot?(st.crime_hotspot.name+' ('+num(st.crime_hotspot.crime_reports)+')'):'—']]);
+  const chEl=document.getElementById('execCharts');
+  const charts=[
+    {k:'officers_by_region',type:'bar',color:'#246bfe',title:'Officers by region',sub:'Deployment across Sool · Sanaag · East Togdheer'},
+    {k:'crime_reports_by_region',type:'bar',color:'#d84f5a',title:'Crime reports by region',sub:'Registered crime intake per region'},
+    {k:'cases_open_vs_closed',type:'ratio',colors:['#c98512','#16856b'],title:'CID cases · open vs closed',sub:'Clearance ratio'},
+    {k:'fleet_status',type:'ratio',colors:['#16856b','#8a93a6'],title:'Fleet readiness',sub:'In service vs not ready'}];
+  if(chEl){
+    chEl.innerHTML=charts.map(ch=>{const series=(data.charts&&data.charts[ch.k])||[];
+      return `<div class="mini-chart"><h3>${esc(ch.title)}</h3><div class="mc-sub">${esc(ch.sub)}</div>
+        <div class="${ch.type==='ratio'?'ratio-wrap':'chart-wrap'}"><canvas id="execChart-${ch.k}"></canvas></div>
+        ${ch.type==='ratio'?ratioLegendHTML(series,ch.colors):''}</div>`}).join('');
+    setTimeout(()=>{charts.forEach(ch=>{const series=(data.charts&&data.charts[ch.k])||[];
+      try{
+        if(ch.type==='ratio') drawRatioBar('execChart-'+ch.k,series,ch.colors);
+        else drawBarChart('execChart-'+ch.k,series.map(x=>x.label),series.map(x=>num(x.count)),ch.color);
+      }catch(_){}
+    })},0);
+  }
+  renderExecStationsTable();
+}
+function stationStatusBadge(v){
+  const s=v||'Active';
+  return `<span class="badge ${s==='Active'?'green':(s==='Maintenance'?'amber':'gray')}">${esc(s)}</span>`;
+}
+function renderExecStationsTable(){
+  const tb=document.getElementById('execStationsTable'); if(!tb)return;
+  const data=_execCache||execLocalFallback();
+  const q=searchValue('execStationSearch');
+  const list=(data.stations||[]).filter(s=>!q||[s.code,s.station_id,s.name,s.region,s.district].some(v=>normTxt(v).includes(q)));
+  tb.innerHTML=list.map(s=>`<tr>
+    <td><b>${esc(s.code||s.station_id||'')}</b><br><small class="muted">${esc(s.station_id||'')}</small></td>
+    <td><b>${esc(s.name||'')}</b><br><small class="muted">${esc(s.region||'')}${s.district?' · '+esc(s.district):''}</small></td>
+    <td>${esc(s.station_tier||'—')}<br>${stationStatusBadge(s.operational_status)}</td>
+    <td>${num(s.officers)}</td>
+    <td><span class="badge ${num(s.active_officers)?'green':'gray'}">${num(s.active_officers)}</span></td>
+    <td>${num(s.vehicles)}</td>
+    <td><span class="badge ${num(s.crime_reports)?'red':'gray'}">${num(s.crime_reports)}</span></td></tr>`).join('')
+    ||`<tr><td colspan="7" class="empty">${q?'No station matches that filter':'No stations registered yet'}</td></tr>`;
+}
+function paintOversight(data){
+  const kpiEl=document.getElementById('ovRegionKpis'); if(!kpiEl)return;
+  execStatusBadge('ovStatus',data);
+  const regions=data.regions||[];
+  const st=(data.departments&&data.departments.stations)||{};
+  kpiEl.innerHTML=[
+    {label:'Stations',value:num(data.total_stations),tone:'blue',icon:'🏛',hint:num(st.active_stations)+' active'},
+    {label:'Regions',value:regions.length,tone:'purple',icon:'▣',hint:regions.map(r=>r.code).join(' · ')},
+    {label:'Officers deployed',value:regions.reduce((a,r)=>a+num(r.officers),0),tone:'green',icon:'👤',hint:regions.reduce((a,r)=>a+num(r.active_officers),0)+' active'},
+    {label:'Crime reports',value:num(data.total_crime_reports),tone:'red',icon:'⚖',hint:st.crime_hotspot?('Hotspot: '+st.crime_hotspot.name):'No hotspot'},
+    {label:'Unstaffed stations',value:num(st.unstaffed_stations),tone:'amber',icon:'!',hint:'No officer assigned'}].map(kpiTileHTML).join('');
+  const rt=document.getElementById('ovRegionsTable');
+  if(rt) rt.innerHTML=regions.map(r=>`<tr><td><b>${esc(r.region)}</b></td><td>${esc(r.code||'')}</td><td>${num(r.stations)}</td>
+    <td>${num(r.active_stations)}</td><td>${num(r.officers)}</td><td>${num(r.active_officers)}</td><td>${num(r.vehicles)}</td>
+    <td><span class="badge ${num(r.crime_reports)?'red':'gray'}">${num(r.crime_reports)}</span></td></tr>`).join('')
+    ||'<tr><td colspan="8" class="empty">No regional data yet</td></tr>';
+  const sel=document.getElementById('ovRegionFilter');
+  if(sel){const cur=sel.value;sel.innerHTML='<option value="">All regions</option>'+regions.map(r=>`<option${r.region===cur?' selected':''}>${esc(r.region)}</option>`).join('');}
+  renderOversightStations();
+}
+function renderOversightStations(){
+  const tb=document.getElementById('ovStationsTable'); if(!tb)return;
+  const data=_execCache||execLocalFallback();
+  const sel=document.getElementById('ovRegionFilter'); const region=sel?sel.value:'';
+  const list=(data.stations||[]).filter(s=>!region||s.region===region);
+  tb.innerHTML=list.map(s=>`<tr>
+    <td><b>${esc(s.code||'')}</b></td><td>${esc(s.name||'')}<br><small class="muted">${esc(s.station_id||'')}</small></td>
+    <td>${esc(s.region||'')}<br><small class="muted">${esc(s.district||'')}${s.village?' · '+esc(s.village):''}</small></td>
+    <td>${esc(s.station_tier||'—')}</td><td>${stationStatusBadge(s.operational_status)}</td>
+    <td>${num(s.officers)}</td><td>${num(s.active_officers)}</td><td>${num(s.vehicles)}</td>
+    <td><span class="badge ${num(s.crime_reports)?'red':'gray'}">${num(s.crime_reports)}</span></td></tr>`).join('')
+    ||'<tr><td colspan="9" class="empty">No stations in this region</td></tr>';
+}
+
+// ============================ Transport · vehicle status & tracking ==========
+function vehicleStatusBadge(v){
+  const s=v||'—';
+  const tone=s==='In Service'?'green':(s==='Maintenance'?'amber':(s==='—'?'gray':'red'));
+  return `<span class="badge ${tone}">${esc(s)}</span>`;
+}
+function renderVehicleStatusTable(){
+  const tb=document.getElementById('vsTable'); if(!tb)return;
+  const all=db.cars||[];
+  const q=searchValue('vsSearch');
+  const sel=document.getElementById('vsStatusFilter'); const status=sel?sel.value:'';
+  const list=all.filter(c=>{
+    if(status&&(c.operational_status||'')!==status)return false;
+    if(!q)return true;
+    const st=stationById(c.station);
+    return [c.plate,c.id,c.make,c.model,c.category,c.security_alert,c.operational_status,c.owner_full_name,st&&st.name,st&&st.code].some(v=>normTxt(v).includes(q));
+  });
+  tb.innerHTML=list.map(c=>{const st=stationById(c.station);
+    const who=c.category==='Civilian / Commercial'?esc(c.owner_full_name||'Civilian'):(st?esc(st.name):esc(c.station||'—'));
+    return `<tr><td><b>${esc(c.plate)}</b><br><small class="muted">${esc(c.id||'')}</small></td>
+      <td>${esc(c.make||c.type||'')}${c.model?`<br><small class="muted">${esc(c.model)}</small>`:''}</td>
+      <td>${esc(c.category||'Police Fleet')}</td><td>${who}</td>
+      <td>${c.category==='Civilian / Commercial'?'<span class="badge gray">n/a</span>':vehicleStatusBadge(c.operational_status)}</td>
+      <td>${vehicleAlertBadge(c.security_alert)}</td></tr>`}).join('')
+    ||`<tr><td colspan="6" class="empty">${(q||status)?'No vehicle matches that filter':'No vehicles registered yet'}</td></tr>`;
 }
 
 // ============================ user management =============================

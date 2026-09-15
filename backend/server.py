@@ -190,6 +190,24 @@ CREATE TABLE IF NOT EXISTS officer_discipline(
   reported_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS officer_conduct_actions(
+  id INTEGER PRIMARY KEY, action_id TEXT UNIQUE NOT NULL,
+  officer_id INTEGER NOT NULL REFERENCES officers(id),
+  action_type TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  proposed_rank TEXT,
+  narrative TEXT NOT NULL,
+  station_id INTEGER REFERENCES police_stations(id),
+  reporting_officer_id INTEGER REFERENCES officers(id),
+  submitted_at TEXT,
+  status TEXT NOT NULL DEFAULT 'Submitted to HR',
+  reviewer_officer_id INTEGER REFERENCES officers(id),
+  reviewer_notes TEXT, reviewed_at TEXT,
+  rank_applied INTEGER NOT NULL DEFAULT 0,
+  documents TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -525,9 +543,29 @@ ROLE_CID = 'CIDUnit'
 # 'officers' module (roster, green-badge promotions, red-badge discipline)
 # plus the station register it needs for postings, WITHOUT any admin rights.
 ROLE_HR = 'hr_officer'
+# The Police Officer Registration Office IS the HR Directorate — the
+# dashboard builders refer to it by this name.
+ROLE_REGISTRATION = ROLE_HR
 ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
 ROLE_CHECKPOINT_EAST = 'CheckpointEast'
 ROLE_CHECKPOINT_WEST = 'CheckpointWest'
+# Chief Commander of Police Office (HQ / Command). A GLOBAL, cross-department
+# oversight role: it reads every directorate (CID, Personnel, Transport),
+# owns the executive analytics surface and manages the station registry —
+# but it is NOT a SystemAdmin (no user management, no unit-record writes).
+ROLE_CHIEF = 'chief_commander'
+
+# Fine-grained permission strings. Modules (below) gate which PAGES a role
+# can open; permissions gate cross-cutting CAPABILITIES that do not map onto
+# a single register (global analytics, station management, read-only
+# department views). `has_permission()` is the single lookup.
+PERM_ANALYTICS_GLOBAL = 'analytics:global'
+PERM_STATIONS_MANAGE = 'stations:manage'
+PERM_CID_VIEW = 'cid:view'
+PERM_PERSONNEL_VIEW = 'personnel:view'
+PERM_TRANSPORT_VIEW = 'transport:view'
+CHIEF_PERMISSIONS = frozenset({PERM_ANALYTICS_GLOBAL, PERM_STATIONS_MANAGE,
+                               PERM_CID_VIEW, PERM_PERSONNEL_VIEW, PERM_TRANSPORT_VIEW})
 
 # Canonical normalized alias for any Checkpoint officer regardless of
 # location. The spec mandates that role-checking logic accept BOTH the
@@ -631,7 +669,8 @@ def normalize_role(role):
     return r
 
 ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID, ROLE_HR,
-             ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST)
+             ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST,
+             ROLE_CHIEF)
 
 # Spec-facing snake_case name for every canonical role. Surfaced by
 # /api/me as `role_alias` (and `spec_role`) so a client can key its UI off
@@ -643,6 +682,7 @@ SPEC_ROLE_ALIASES = {
     ROLE_AIRPORT: 'airport_officer',
     ROLE_CID: 'cid_officer',
     ROLE_HR: 'hr_officer',
+    ROLE_CHIEF: 'chief_commander',
 }
 SPEC_ROLE_DEFAULT = 'fingerprint_officer'
 
@@ -693,6 +733,15 @@ UNIT_ROLE_ALIASES = {
     'human_resources': ROLE_HR,
     'humanresources': ROLE_HR,
     'personnel_officer': ROLE_HR,
+    # Chief Commander of Police Office (HQ / Command) aliases.
+    ROLE_CHIEF: ROLE_CHIEF,
+    'chief_commander': ROLE_CHIEF,
+    'chiefcommander': ROLE_CHIEF,
+    'chief.commander': ROLE_CHIEF,
+    'ChiefCommander': ROLE_CHIEF,
+    'commander_hq': ROLE_CHIEF,
+    'hq_command': ROLE_CHIEF,
+    'police_hq': ROLE_CHIEF,
 }
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
@@ -856,6 +905,7 @@ ROLE_LABELS = {
     ROLE_CHECKPOINT_SOUTH: 'Checkpoint Officer (South)',
     ROLE_CHECKPOINT_EAST: 'Checkpoint Officer (East)',
     ROLE_CHECKPOINT_WEST: 'Checkpoint Officer (West)',
+    ROLE_CHIEF: 'Chief Commander (HQ / Command)',
 }
 
 # Map a role to the operational modules it is allowed to use. Admins get
@@ -882,6 +932,15 @@ ROLE_MODULES = {
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
+    # Chief Commander (HQ / Command): the executive dashboard + station
+    # oversight pages, plus READ access to every departmental register
+    # (CID units, Personnel, Transport). Deliberately no 'admin' (user
+    # management) and no 'analytics' (the legacy SystemAdmin flag) — the
+    # global analytics surface is its own module, gated by
+    # `analytics:global`.
+    ROLE_CHIEF: {'dashboard', 'executive', 'oversight', 'people', 'policesearch',
+                 'fingerprint', 'airport', 'cid', 'checkpoints', 'crimes',
+                 'stations', 'officers', 'conduct', 'cars'},
     # Spec step 1: the canonical normalized alias is also a first-class
     # role. Whether the stored role is 'CheckpointSouth' or
     # 'checkpoint_officer', the module set and scope lookup resolve to
@@ -896,6 +955,7 @@ ROLE_LOCATION_SCOPE = {
     ROLE_AIRPORT: None,
     ROLE_CID: None,
     ROLE_HR: None,
+    ROLE_CHIEF: None,
     ROLE_CHECKPOINT_SOUTH: 'South',
     ROLE_CHECKPOINT_EAST: 'East',
     ROLE_CHECKPOINT_WEST: 'West',
@@ -913,6 +973,53 @@ for _alias, _canonical in UNIT_ROLE_ALIASES.items():
     ROLE_MODULES.setdefault(_alias, ROLE_MODULES[_canonical])
     ROLE_LOCATION_SCOPE.setdefault(_alias, ROLE_LOCATION_SCOPE[_canonical])
     ROLE_LABELS.setdefault(_alias, ROLE_LABELS[_canonical])
+
+# Capability permissions per canonical role. SystemAdmin keeps every
+# permission (it already sees everything); the Chief Commander holds the
+# global HQ set; unit roles carry only the view permission of their own
+# department so `has_permission()` answers consistently for every role.
+ROLE_PERMISSIONS = {
+    ROLE_ADMIN: set(CHIEF_PERMISSIONS),
+    ROLE_CHIEF: set(CHIEF_PERMISSIONS),
+    ROLE_FINGERPRINT: {PERM_CID_VIEW},
+    ROLE_AIRPORT: {PERM_CID_VIEW},
+    ROLE_CID: {PERM_CID_VIEW},
+    ROLE_CHECKPOINT_SOUTH: {PERM_CID_VIEW},
+    ROLE_CHECKPOINT_EAST: {PERM_CID_VIEW},
+    ROLE_CHECKPOINT_WEST: {PERM_CID_VIEW},
+    ROLE_CHECKPOINT_OFFICER: {PERM_CID_VIEW},
+    ROLE_HR: {PERM_PERSONNEL_VIEW},
+}
+for _alias, _canonical in UNIT_ROLE_ALIASES.items():
+    ROLE_PERMISSIONS.setdefault(_alias, ROLE_PERMISSIONS.get(_canonical, set()))
+
+
+def user_permissions(user):
+    """Every capability permission a user holds (raw role + aliases)."""
+    if not user:
+        return set()
+    role = user.get('role') or ''
+    perms = set(ROLE_PERMISSIONS.get(role, set()))
+    perms |= set(ROLE_PERMISSIONS.get(normalize_role(role), set()))
+    perms |= set(ROLE_PERMISSIONS.get(canonical_unit_role(role), set()))
+    return perms
+
+
+def has_permission(user, permission):
+    return permission in user_permissions(user)
+
+
+def require_permission(user, permission):
+    """Raise PermissionError unless the user holds `permission`."""
+    if has_permission(user, permission):
+        return
+    role = (user or {}).get('role') or ''
+    raise PermissionError(
+        f'Requires {permission} — restricted to {ROLE_LABELS.get(role, role)}')
+
+
+def is_chief_commander(user):
+    return bool(user) and canonical_unit_role(user.get('role') or '') == ROLE_CHIEF
 
 
 def canonical_location_scope(scope):
@@ -1017,6 +1124,7 @@ def user_view(user):
         'location_scope': scope,
         'location': location,
         'modules': sorted(modules),
+        'permissions': sorted(user_permissions(user)),
         'active': bool(user.get('active', 1)),
     }
 
@@ -1089,7 +1197,7 @@ def checkpoint_scope(user):
     Other unit users see no checkpoint data (empty string).
     """
     role = user.get('role') or ''
-    if role == ROLE_ADMIN:
+    if role == ROLE_ADMIN or canonical_unit_role(role) in (ROLE_ADMIN, ROLE_CHIEF):
         return None
     # Spec step 3: prefer the stored location_scope on the user
     # record over the role-based derivation. A PATCH from
@@ -1122,10 +1230,14 @@ def filter_visibility(user):
     # Resolve aliases first so 'admin' / 'system_admin' behave like the
     # canonical SystemAdmin row.
     is_admin = canonical_unit_role(role) == ROLE_ADMIN
+    chief = canonical_unit_role(role) == ROLE_CHIEF
     return {
         'is_admin': is_admin,
+        'is_chief_commander': chief,
         'can_manage_users': is_admin,
         'can_view_analytics': is_admin,
+        'can_view_global_analytics': has_permission(user, PERM_ANALYTICS_GLOBAL),
+        'can_manage_stations': is_admin or has_permission(user, PERM_STATIONS_MANAGE),
         'checkpoint_scope': checkpoint_scope(user),
     }
 
@@ -1289,6 +1401,7 @@ def init_db():
             ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_SOUTH,'Checkpoint South', 'South',             'ChangeMe123!'),
             ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_EAST, 'Checkpoint East',  'East',              'ChangeMe123!'),
             ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_WEST, 'Checkpoint West',  'West',              'ChangeMe123!'),
+            ('chief',       'Gen. C. Warsame',       ROLE_CHIEF,           'Police HQ / Command', None,             'ChangeMe123!'),
         ]
         for u, dn, role, branch, scope, pw in seeds:
             c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,password_hash) '
@@ -2889,7 +3002,7 @@ def cid_airport_analytics(c):
 def build_cid_analytics(c, user):
     """CID directorate bundle — one section per unit the caller may access."""
     mods = user_module_set(user)
-    see_all = 'analytics' in mods          # System Administrator
+    see_all = 'analytics' in mods or has_permission(user, PERM_ANALYTICS_GLOBAL)  # SystemAdmin / Chief Commander
     payload = {'generated_at': _generated_at(), 'module': 'cid',
                'role': (user or {}).get('role') or '',
                'checkpoint_scope': checkpoint_scope(user) or None,
@@ -3468,11 +3581,17 @@ def _stations_bundle(c, user):
     return build_station_analytics(c, user)
 
 
+def _global_bundle(c, user):
+    require_permission(user, PERM_ANALYTICS_GLOBAL)
+    return build_global_analytics(c, user)
+
+
 ANALYTICS_BUILDERS = {
     'cid': build_cid_analytics,
     'officers': _officers_bundle,
     'vehicles': _vehicles_bundle,
     'stations': _stations_bundle,
+    'global': _global_bundle,
 }
 
 # Accepted ?module= spellings (aliases keep the frontend free of guesswork).
@@ -3481,7 +3600,202 @@ ANALYTICS_MODULE_ALIASES = {
     'officers': 'officers', 'hr': 'officers', 'police_officers': 'officers',
     'vehicles': 'vehicles', 'cars': 'vehicles', 'car': 'vehicles',
     'stations': 'stations', 'station': 'stations', 'police_stations': 'stations',
+    'global': 'global', 'executive': 'global', 'hq': 'global', 'command': 'global',
 }
+
+
+# ---- 9) Chief Commander · Global executive analytics ------------------------
+def build_global_analytics(c, user):
+    """Cross-department HQ bundle for the Chief Commander (HQ / Command).
+
+    Aggregates every directorate into one executive envelope (same
+    {kpis, charts, lists} shape as the departmental bundles, plus a
+    `departments` block and a per-station `stations` oversight table):
+
+      * CID          — crime case clearance rate, open cases, active suspects,
+                       fingerprint clearance rate, checkpoint threat hits,
+                       airport movements / suspect alerts
+      * Personnel    — officer headcount, active / suspended, pending
+                       promotions & open disciplinary actions
+      * Transport    — fleet readiness (in-service ÷ police fleet), flagged
+                       vehicles
+      * Stations     — regional statistics + the station oversight table
+                       (code · name · region · district · tier · status ·
+                       officers · active officers · vehicles · crime reports)
+
+    Gated by the `analytics:global` permission (SystemAdmin + Chief
+    Commander). Never scoped: HQ sees every location.
+    """
+    cid = build_cid_analytics(c, {**(user or {}), 'role': ROLE_ADMIN, 'modules': ['analytics']})
+    crime = cid.get('crime') or {}
+    fp = cid.get('fingerprint') or {}
+    cp = cid.get('checkpoint') or {}
+    ap = cid.get('airport') or {}
+    officers = build_officer_analytics(c, user)
+    vehicles = build_vehicle_analytics(c, user)
+    stations = build_station_analytics(c, user)
+
+    # --- CID ------------------------------------------------------------
+    total_cases = int(crime.get('total_cases', 0) or 0)
+    closed_cases = int(crime.get('closed_cases', 0) or 0)
+    clearance_rate = pct(closed_cases, total_cases)
+    fp_rows = c.execute('SELECT status FROM clearance_applications').fetchall()
+    fp_total = len(fp_rows)
+    fp_approved = sum(1 for r in fp_rows
+                      if str(_val(r, 'status', '') or '').strip().lower() == 'approved')
+    checkpoint_hits = int(cp.get('flagged_hits', 0) or 0)
+    active_suspects = int(crime.get('active_suspects', 0) or 0)
+
+    # --- Personnel --------------------------------------------------------
+    total_officers = int(officers.get('total_officers', 0) or 0)
+    active_officers = int(officers.get('active_force', 0) or 0)
+    suspended_officers = int(officers.get('suspended_officers', 0) or 0)
+    pending_promotions = len((officers.get('lists') or {}).get('promotions', []) or [])
+    open_discipline = len((officers.get('lists') or {}).get('discipline', []) or [])
+
+    # --- Transport --------------------------------------------------------
+    fleet_total = int(vehicles.get('police_fleet', 0) or 0)
+    fleet_in_service = int(vehicles.get('in_service', 0) or 0)
+    fleet_readiness = pct(fleet_in_service, fleet_total)
+    flagged_vehicles = int(vehicles.get('flagged_vehicles', 0) or 0)
+
+    # --- Stations & regions -------------------------------------------------
+    crime_by_station = {}
+    for r in c.execute('SELECT station_id, COUNT(*) AS n FROM crime_incidents GROUP BY station_id'):
+        crime_by_station[r['station_id']] = int(r['n'] or 0)
+    rows = c.execute('''SELECT s.id, s.station_id, s.name, s.code, s.region, s.district, s.village,
+            s.station_tier, s.operational_status,
+            (SELECT COUNT(*) FROM officers o WHERE o.station_id = s.id) AS officer_count,
+            (SELECT COUNT(*) FROM officers o
+              WHERE o.station_id = s.id AND o.duty_status = 'Active') AS active_officer_count,
+            (SELECT COUNT(*) FROM vehicles v WHERE v.station_id = s.id) AS vehicle_count
+        FROM police_stations s ORDER BY s.region, s.district, s.name''').fetchall()
+    station_table = []
+    for r in rows:
+        station_table.append({
+            'station_id': r['station_id'],
+            'code': r['code'],
+            'name': r['name'],
+            'region': r['region'],
+            'district': r['district'],
+            'village': _val(r, 'village'),
+            'station_tier': _val(r, 'station_tier') or 'Unclassified',
+            'operational_status': _val(r, 'operational_status') or 'Active',
+            'officers': int(_val(r, 'officer_count', 0) or 0),
+            'active_officers': int(_val(r, 'active_officer_count', 0) or 0),
+            'vehicles': int(_val(r, 'vehicle_count', 0) or 0),
+            'crime_reports': int(crime_by_station.get(r['id'], 0)),
+        })
+    region_names = list(STATION_REGIONS)
+    for st in station_table:
+        if st['region'] not in region_names:
+            region_names.append(st['region'])
+    regions = []
+    for region in region_names:
+        at = [s for s in station_table if s['region'] == region]
+        regions.append({
+            'region': region, 'code': REGION_CODES.get(region, region[:3].upper()),
+            'stations': len(at),
+            'active_stations': sum(1 for s in at if s['operational_status'] == 'Active'),
+            'officers': sum(s['officers'] for s in at),
+            'active_officers': sum(s['active_officers'] for s in at),
+            'vehicles': sum(s['vehicles'] for s in at),
+            'crime_reports': sum(s['crime_reports'] for s in at),
+        })
+    total_crime_reports = sum(s['crime_reports'] for s in station_table)
+    hotspot = max(station_table, key=lambda s: s['crime_reports'], default=None)
+
+    return {
+        'generated_at': _generated_at(),
+        'module': 'global',
+        'role': (user or {}).get('role') or '',
+        'scope': 'global',
+        # --- flat executive metrics ---------------------------------------
+        'total_officers': total_officers,
+        'active_officers': active_officers,
+        'suspended_officers': suspended_officers,
+        'cid_total_cases': total_cases,
+        'cid_closed_cases': closed_cases,
+        'cid_clearance_rate': clearance_rate,
+        'fingerprint_applications': fp_total,
+        'fingerprint_approved': fp_approved,
+        'fingerprint_clearance_rate': pct(fp_approved, fp_total),
+        'checkpoint_hits': checkpoint_hits,
+        'checkpoint_screenings': int(cp.get('total_screenings', 0) or 0),
+        'active_suspects': active_suspects,
+        'fleet_total': fleet_total,
+        'fleet_in_service': fleet_in_service,
+        'fleet_readiness': fleet_readiness,
+        'flagged_vehicles': flagged_vehicles,
+        'total_stations': len(station_table),
+        'total_crime_reports': total_crime_reports,
+        'kpis': [
+            kpi('Total officers', total_officers, 'blue', '👤',
+                f'{active_officers} active · {suspended_officers} suspended'),
+            kpi('CID clearance rate', f'{clearance_rate}%', 'green', '⚖',
+                f'{closed_cases} of {total_cases} cases closed'),
+            kpi('Active checkpoint hits', checkpoint_hits, 'red', '!',
+                f'{int(cp.get("total_screenings", 0) or 0)} travelers screened · all checkpoints'),
+            kpi('Fleet readiness', f'{fleet_readiness}%', 'amber', '🚓',
+                f'{fleet_in_service} of {fleet_total} police vehicles in service'),
+            kpi('Stations', len(station_table), 'purple', '🏛',
+                f'{len(regions)} regions · {total_crime_reports} crime reports'),
+            kpi('Active suspect alerts', active_suspects, 'red', '◉',
+                'Live CID suspect listings'),
+        ],
+        'departments': {
+            'cid': {
+                'label': 'Dep. of CID',
+                'total_cases': total_cases, 'open_cases': int(crime.get('open_cases', 0) or 0),
+                'closed_cases': closed_cases, 'clearance_rate': clearance_rate,
+                'active_suspects': active_suspects,
+                'fingerprint_applications': fp_total, 'fingerprint_approved': fp_approved,
+                'fingerprint_clearance_rate': pct(fp_approved, fp_total),
+                'fingerprint_suspect_hits': int(fp.get('suspect_hits', 0) or 0),
+                'checkpoint_screenings': int(cp.get('total_screenings', 0) or 0),
+                'checkpoint_hits': checkpoint_hits,
+                'checkpoint_flag_rate': cp.get('flag_rate', 0.0),
+                'checkpoints': (cp.get('lists') or {}).get('checkpoints', []),
+                'airport_movements': int(ap.get('total_movements', 0) or 0),
+                'airport_suspect_alerts': int(ap.get('suspect_movements', 0) or 0),
+            },
+            'personnel': {
+                'label': 'Dep. of Police Personnel',
+                'total_officers': total_officers, 'active_officers': active_officers,
+                'suspended_officers': suspended_officers,
+                'pending_promotions': pending_promotions,
+                'open_disciplinary_actions': open_discipline,
+                'by_rank': (officers.get('charts') or {}).get('rank_distribution', []),
+            },
+            'transport': {
+                'label': 'Dep. of Transport',
+                'fleet_total': fleet_total, 'in_service': fleet_in_service,
+                'fleet_readiness': fleet_readiness,
+                'maintenance': int(vehicles.get('maintenance', 0) or 0),
+                'out_of_service': int(vehicles.get('out_of_service', 0) or 0),
+                'flagged_vehicles': flagged_vehicles,
+                'total_vehicles': int(vehicles.get('total_vehicles', 0) or 0),
+            },
+            'stations': {
+                'label': 'Stations & regions',
+                'total_stations': len(station_table),
+                'active_stations': sum(1 for s in station_table if s['operational_status'] == 'Active'),
+                'unstaffed_stations': sum(1 for s in station_table if s['officers'] == 0),
+                'crime_hotspot': hotspot,
+            },
+        },
+        'charts': {
+            'officers_by_region': [{'label': r['region'], 'count': r['officers']} for r in regions],
+            'crime_reports_by_region': [{'label': r['region'], 'count': r['crime_reports']} for r in regions],
+            'checkpoint_hits_by_location': (cp.get('charts') or {}).get('flagged_by_location', []),
+            'cases_open_vs_closed': (crime.get('charts') or {}).get('open_vs_closed', []),
+            'fleet_status': [{'label': 'In Service', 'count': fleet_in_service},
+                             {'label': 'Not ready', 'count': max(fleet_total - fleet_in_service, 0)}],
+        },
+        'lists': {'stations': station_table, 'regions': regions},
+        'stations': station_table,
+        'regions': regions,
+    }
 
 
 def build_module_analytics(c, user, module):
@@ -3503,7 +3817,7 @@ def build_module_analytics(c, user, module):
                 'modules': sorted(bundles), 'bundles': bundles}
     resolved = ANALYTICS_MODULE_ALIASES.get(key)
     if not resolved:
-        raise ValueError('module must be one of: ' + ', '.join(ANALYTICS_MODULES + ('all',)))
+        raise ValueError('module must be one of: ' + ', '.join(ANALYTICS_MODULES + ('global', 'all')))
     return ANALYTICS_BUILDERS[resolved](c, user)
 
 
@@ -3574,7 +3888,9 @@ def build_dashboard(c, user):
 
     # ---- KPI cards (mini-analytics) ---------------------------------------
     cards = []
-    if is_admin:
+    is_chief = canonical_unit_role(role) == ROLE_CHIEF
+    if is_admin or is_chief:
+        # HQ / Command sees the same cross-unit overview as SystemAdmin.
         cards.extend(_admin_dashboard_cards(c))
     elif is_checkpoint:
         cards.extend(_checkpoint_dashboard_cards(c, scope, today, cp_scope_sql))
@@ -3607,7 +3923,7 @@ def build_dashboard(c, user):
         quick.append({'id':'add_conduct','label':'+ New conduct action','kind':'primary','page':'conduct','module':'conduct'})
 
     # ---- Real-time activity stream (filtered to the user's scope) ---------
-    events = _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_scope_sql)
+    events = _build_activity_feed(c, role, is_admin or is_chief, scope, is_checkpoint, now_ts, cp_scope_sql)
 
     # ---- Spec step 2 alias keys --------------------------------------------
     # The spec's mandated top-level keys for the Checkpoint-officer
@@ -3654,8 +3970,10 @@ def build_dashboard(c, user):
         'total_travelers': total_travelers,
         'peak_travel_hour': peak_travel_hour,
         'activity_feed': events,
+        'is_chief_commander': is_chief,
         'subhead': (
             'System overview · all units' if is_admin else
+            'HQ / Command · global overview' if is_chief else
             (f'{scope} Checkpoint operations · live' if is_checkpoint else
              f'{ROLE_LABELS.get(role, role)} · live operations feed')
         ),
@@ -4239,6 +4557,12 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/stations/analytics':
                 require_any_module(user, ('stations', 'crimes'))
                 result = build_station_analytics(c, user)
+            elif p.path in ('/api/analytics/global', '/api/analytics/global/'):
+                # Chief Commander (HQ / Command) executive bundle — cross-
+                # department aggregate gated by the `analytics:global`
+                # permission (SystemAdmin + chief_commander).
+                require_permission(user, PERM_ANALYTICS_GLOBAL)
+                result = build_global_analytics(c, user)
             elif p.path == '/api/analytics':
                 # Unified alias: /api/analytics?module=cid|officers|vehicles|
                 # stations|all — gated per bundle inside the dispatcher.
@@ -4506,6 +4830,10 @@ class API(BaseHTTPRequestHandler):
                     # review / listing endpoints are restricted to the
                     # conduct module.
                     if p.path == '/api/conduct/submit':
+                        break
+                    # Station registry writes: SystemAdmin OR the
+                    # `stations:manage` permission (Chief Commander).
+                    if prefix == '/api/stations' and has_permission(user, PERM_STATIONS_MANAGE):
                         break
                     require_module(user, mod)
                     break

@@ -962,6 +962,128 @@ def hr_directorate_suite():
         proc.terminate()
         proc.wait(timeout=10)
 
+def chief_commander_suite():
+    """Chief Commander of Police Office (HQ / Command) — `chief_commander`.
+
+    A GLOBAL oversight role: it reads every department, owns the executive
+    analytics endpoint (/api/analytics/global) and may manage stations, but
+    it is not a SystemAdmin (no user management).
+    """
+    port = free_port()
+    tmp = tempfile.mkdtemp(prefix='sentinel-chief-')
+    db_path = os.path.join(tmp, 'chief.db')
+    env = dict(os.environ, SENTINEL_DB=db_path, PORT=str(port),
+               SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
+    proc = subprocess.Popen([sys.executable, SERVER], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base = f'http://127.0.0.1:{port}'
+    try:
+        for _ in range(60):
+            try:
+                if request(base, 'GET', '/api/health')[0] == 200:
+                    break
+            except Exception:
+                time.sleep(0.2)
+        else:
+            raise RuntimeError('chief server did not start')
+
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'chief', 'password': 'ChangeMe123!'})
+        assert s == 200 and r.get('token'), ('chief must be seeded', s, r)
+        chief = r['token']
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'admin', 'password': 'ChangeMe123!'})
+        admin = r['token']
+        s, r = request(base, 'POST', '/api/login',
+                       body={'username': 'fp.officer', 'password': 'ChangeMe123!'})
+        fp = r['token']
+
+        # ---- 1) identity: canonical role, permissions, visibility -----------
+        s, me = request(base, 'GET', '/api/me', chief)
+        assert s == 200, (s, me)
+        assert me['role'] == 'chief_commander' and me['role_alias'] == 'chief_commander', me
+        assert me['role_label'] == 'Chief Commander (HQ / Command)', me
+        assert set(me['permissions']) == {'analytics:global', 'stations:manage',
+                                          'cid:view', 'personnel:view', 'transport:view'}, me
+        assert {'executive', 'oversight', 'fingerprint', 'cid', 'checkpoints', 'airport',
+                'officers', 'conduct', 'cars', 'stations'} <= set(me['modules']), me['modules']
+        assert 'admin' not in me['modules'], me['modules']
+        assert me['visibility']['is_admin'] is False, me['visibility']
+        assert me['visibility']['is_chief_commander'] is True, me['visibility']
+        assert me['visibility']['can_manage_users'] is False, me['visibility']
+        assert me['visibility']['can_view_global_analytics'] is True, me['visibility']
+        assert me['visibility']['can_manage_stations'] is True, me['visibility']
+        assert 'chief_commander' in me['roles'], me['roles']
+
+        # ---- 2) /api/analytics/global — RBAC + shape ------------------------
+        s, g = request(base, 'GET', '/api/analytics/global', chief)
+        assert s == 200, (s, g)
+        assert g['module'] == 'global' and g['scope'] == 'global', g
+        for key in ('total_officers', 'cid_clearance_rate', 'checkpoint_hits',
+                    'fleet_readiness', 'total_stations', 'kpis', 'departments',
+                    'stations', 'regions', 'charts'):
+            assert key in g, key
+        labels = [k['label'] for k in g['kpis']]
+        for want in ('Total officers', 'CID clearance rate', 'Active checkpoint hits',
+                     'Fleet readiness'):
+            assert want in labels, (want, labels)
+        assert set(g['departments']) == {'cid', 'personnel', 'transport', 'stations'}, g['departments']
+        assert len(g['stations']) == g['total_stations'] == 8, g['total_stations']
+        row = g['stations'][0]
+        for key in ('code', 'name', 'region', 'active_officers', 'crime_reports'):
+            assert key in row, (key, row)
+        assert [r['region'] for r in g['regions']] == ['Sool', 'Sanaag', 'East Togdheer'], g['regions']
+        # Checkpoint hits are never scoped for HQ (the seed has one flagged stop).
+        assert g['checkpoint_hits'] == 1 and g['checkpoint_screenings'] == 1, g
+        # SystemAdmin keeps the global permission; unit officers are refused.
+        assert request(base, 'GET', '/api/analytics/global', admin)[0] == 200
+        assert request(base, 'GET', '/api/analytics/global', fp)[0] == 401
+        assert request(base, 'GET', '/api/analytics/global')[0] == 401
+        s, r = request(base, 'GET', '/api/analytics?module=global', chief)
+        assert s == 200 and r['module'] == 'global', (s, r)
+        s, r = request(base, 'GET', '/api/analytics?module=global', fp)
+        assert s == 401, (s, r)
+
+        # ---- 3) cross-department READ access, no admin surface -------------
+        for path in ('/api/cid/analytics', '/api/officers/analytics', '/api/vehicles/analytics',
+                     '/api/stations/analytics', '/api/officers', '/api/stations', '/api/vehicles',
+                     '/api/crime-cases', '/api/checkpoint-events', '/api/clearance-applications',
+                     '/api/airport-records', '/api/dashboard'):
+            s, r = request(base, 'GET', path, chief)
+            assert s == 200, (path, s, r)
+        s, cid = request(base, 'GET', '/api/cid/analytics', chief)
+        assert cid['sections'] == ['fingerprint', 'crime', 'checkpoint', 'airport'], cid['sections']
+        assert cid['checkpoint']['scope'] is None, cid['checkpoint']
+        s, d = request(base, 'GET', '/api/dashboard', chief)
+        assert d['is_chief_commander'] is True and not d.get('degraded'), d
+        assert d['cards'], d
+        for path in ('/api/admin/users', '/api/admin/analytics'):
+            s, r = request(base, 'GET', path, chief)
+            assert s == 401, (path, s, r)
+        s, r = request(base, 'POST', '/api/admin/users', chief,
+                       {'username': 'x', 'display_name': 'x', 'role': 'CIDUnit', 'password': 'Abcdef12!'})
+        assert s == 401, (s, r)
+
+        # ---- 4) stations:manage — the chief may create stations -----------
+        s, r = request(base, 'POST', '/api/stations', chief,
+                       {'name': 'HQ Oversight Post', 'station_tier': 'Outpost',
+                        'region': 'Sanaag', 'district': 'Badhan',
+                        'contact_phone': '0907333444'})
+        assert s == 201 and r['station']['name'] == 'HQ Oversight Post', (s, r)
+        s, g = request(base, 'GET', '/api/analytics/global', chief)
+        assert g['total_stations'] == 9, g['total_stations']
+        assert next(x for x in g['regions'] if x['region'] == 'Sanaag')['stations'] == 3, g['regions']
+        # ...but may not write unit records (vehicles are SystemAdmin-write).
+        s, r = request(base, 'POST', '/api/vehicles', chief,
+                       {'category': 'Police Fleet', 'plate_number': 'HQ-1', 'vin': 'ABCDEFGH123456789',
+                        'engine_number': 'E1', 'make_model': 'Toyota'})
+        assert s == 401, (s, r)
+        print('chief_commander suite: ok')
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+
 def main():
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-test-')
@@ -2842,6 +2964,9 @@ def main():
         # promotion and red disciplinary queues — must work for BOTH admin and
         # hr_officer (see hr_directorate_suite()).
         hr_directorate_suite()
+
+        # ---- Chief Commander (HQ / Command) role (chief_commander) ----------
+        chief_commander_suite()
 
         print('ALL BACKEND TESTS PASSED')
         return 0

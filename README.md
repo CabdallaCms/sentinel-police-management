@@ -79,13 +79,14 @@ The **Add Suspect** modal makes the **linked case strictly optional**: a suspect
 
 ### Role-Based Access Control & location-isolated checkpoints
 
-Officers sign in with one of eight roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
+Officers sign in with one of nine roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
 
 - **System Admin** — full access to every module, every departmental analytics bundle and the User Management page.
 - **Fingerprint Unit** — Fingerprint module only.
 - **Airport Control** — Airport module only.
 - **CID Criminal Unit** — CID / suspect alerts only, plus the `crime` section of the CID analytics bundle.
 - **HR Directorate** (`hr_officer`) — the **Police Officers** register in full (roster, green-badge promotions, red-badge discipline and their analytics bundle) plus read access to **Police Stations** for postings and the two central search registries. No admin, CID, checkpoint, airport or fleet-write rights.
+- **Chief Commander of Police Office (HQ / Command)** (`chief_commander`) — a **global** oversight role. Holds the `analytics:global` and `stations:manage` permissions plus `cid:view` / `personnel:view` / `transport:view`, so it can open every departmental register read-only, create stations, and use the two HQ pages: the **Global Executive Dashboard** (KPI grid — Total Officers · CID Clearance Rate · Active Checkpoint Hits · Fleet Readiness — department cards, charts and the regional stations table) and **Stations Oversight & Regional Data**. Backed by `GET /api/analytics/global` (also `GET /api/analytics?module=global`). No user management and no unit-record writes. Signing in as `chief_commander` lands directly on the Global Executive Dashboard.
 - **Checkpoint South / East / West** — only the Checkpoint module, **scoped to their assigned location**; `GET /api/checkpoint-events` returns a `scope` and `visible_locations` payload so the frontend can render the active filter, and `POST /api/checkpoint-events` rejects events at any other location.
 
 The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the executive analytics aggregation, a Fingerprint officer cannot list Airport or Crime records, and each departmental analytics bundle only ever returns the sections its caller's modules allow.
@@ -98,17 +99,20 @@ The top bar shows the active officer and location, e.g. **Officer H. Xasan · So
 
 ### Grouped sidebar navigation
 
-The flat module list is reorganised into **four collapsible sidebar sections**, in this fixed order (open/closed state persists in `localStorage.sentinelNavGroups`; navigating into a section auto-expands it, and the narrow icon-only mobile rail always shows items flat):
+The flat module list is organised into **departmental collapsible sidebar sections**, in this fixed order (open/closed state persists in `localStorage.sentinelNavGroups`; navigating into a section auto-expands it, and the narrow icon-only mobile rail always shows items flat):
 
 | Section | Items (`data-page` · module) |
 |---------|------------------------------|
 | *(top level)* | **Dashboard** (`dashboard`) |
 | **CENTRAL SEARCH** | *Central Person Search* (`people`), *Central Police Search* (`policesearch` — one cascading Region → District → Village/Town filter across the officers, stations and cars registers plus free-text search) |
-| **CID — CRIMINAL INVESTIGATION DIRECTORATE** | *Fingerprint Unit* (`fingerprint`), *Crime Department* (`cid`), *Checkpoint Unit* (`checkpoints`), *Airport Unit* (`airport`) |
-| **POLICE REGISTRATIONS & MANAGEMENT** | *Police Stations* (`stations`), *Police Officers* (`officers`), *Police Cars* (`cars`), *Register Crime* (`crimes`) |
+| **DEP. OF CID** | *Fingerprint Unit* (`fingerprint`), *Crime Unit* (`cid`), *Checkpoint Unit* (`checkpoints`), *Airport Unit* (`airport`) |
+| **DEP. OF POLICE PERSONNEL (REGISTRATION POLICE OFFICE)** | *Registration Office* (`officers`), *Conduct, Promotions & Disciplinary Management* (`conduct`) |
+| **DEP. OF TRANSPORT** | *Vehicle Registry* (`cars`), *Vehicle Status & Tracking* (`vehiclestatus`, module `cars`) |
+| **CHIEF COMMANDER OF POLICE OFFICE (HQ / COMMAND)** | *Global Executive Dashboard* (`executive`), *Stations Oversight & Regional Data* (`oversight`) |
+| **REGISTERS** | *Police Stations* (`stations`), *Register Crime* (`crimes`) |
 | **ADMINISTRATION** | *User Management* (`admin`, System Admin only) |
 
-The CID regrouping is labelling only — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Department entry. The standalone **Analytics** entry is gone: analytics now live inside each register (see **Departmental analytics** below).
+The departmental regrouping is labelling only for the existing pages — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Unit entry. The standalone **Analytics** entry is gone: analytics now live inside each register (see **Departmental analytics** below), and the cross-department executive view is the Chief Commander's **Global Executive Dashboard**.
 
 Visibility is driven by the `modules` array from `GET /api/me` in `applyNavForRole()`: each button is gated on its own module, the Administration section on the `is_admin` flag, and a whole section disappears when every item inside it is hidden for the signed-in role (e.g. a Checkpoint officer sees only *CID → Checkpoint Unit*, the HR Directorate sees *Central Search* + *Police Stations*/*Police Officers*).
 
@@ -247,7 +251,7 @@ Then open `http://localhost:8001` (the backend serves the UI and the API togethe
 
 ### Demo accounts (development only)
 
-Eight demo users are seeded automatically on first run — one per role — all with
+Nine demo users are seeded automatically on first run — one per role — all with
 password `ChangeMe123!`. This makes it easy to exercise the role-based access
 control and location-isolated checkpoints:
 
@@ -261,6 +265,7 @@ control and location-isolated checkpoints:
 | `cp.south`   | Checkpoint South    | Checkpoint · South only    |
 | `cp.east`    | Checkpoint East     | Checkpoint · East only     |
 | `cp.west`    | Checkpoint West     | Checkpoint · West only     |
+| `chief`      | Chief Commander (HQ / Command) | Global Executive Dashboard · Stations Oversight · read access to CID / Personnel / Transport · station management |
 
 These accounts are created automatically on first run and must be removed or
 changed before any real deployment. To add a real admin, sign in as `admin`
