@@ -316,6 +316,22 @@ asserts the **exact arithmetic** of every department endpoint:
   aliases, `module=all`, a `400` for an unknown module, and the per-module RBAC matrix
   (including that `module=all` silently omits bundles the caller may not see).
 
+Review-gate regression suite (standard library only; boots the server against a temporary database):
+
+```bash
+python3 backend/test_review_gate.py
+```
+
+Pins the three mandated approval rules over HTTP: the **12-hour rule** (a Fingerprint Officer — canonical or `fingerprint_officer` alias, on both `/api/fingerprint/applications/<id>/approve` and the legacy `/api/clearance-applications/<id>/approve` route — gets `400 review_period_active` with the exact spec message on a fresh application; 11.9 h stays locked, 12.1 h releases and issues the certificate), the **admin bypass** (`admin` / `SystemAdmin` approve instantly with `review_period_bypassed: true` and `can_approve: true` even while the row is inside the window), and the fail-closed guarantees (missing `created_at` locks officers but never admins, foreign roles hit the module gate with 401, unknown ids 404, re-approval is idempotent, and the gate still enforces after a server restart on persistent sessions).
+
+Approve/Print button journey (Node ≥ 18; drives the real `index.html`, `application.html` and `certificate.html` scripts against the real backend in VM sandboxes):
+
+```bash
+node backend/test_approval_flow.mjs
+```
+
+Reproduces the "the approve/print button does not work for either users or administrators" report end to end: `syncServer()` merges the server register into `db.fingerprint` (the stray `cd is not defined` line used to abort it before any row was painted), `checkBackendBuild()` resolves instead of rejecting with `seen is not defined`, the officer's fresh-application control renders disabled ("🔒 Review Locked (12h)" + remaining-hours badge) and `approveFP()` refuses without touching the network, the same handler approves successfully once the submission is backdated past +12 h, the admin row renders an enabled "✓ Approve Application (Admin bypass)" immediately and the click executes (201 → certificate), the stale-backend banner is created/removed correctly, the printable page's Approve button mirrors all three rules, and `certificate.html` releases its Print button only after an approval.
+
 Frontend session smoke test (Node ≥ 18; executes the real inline script against the real backend in a VM sandbox):
 
 ```bash

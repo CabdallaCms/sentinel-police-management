@@ -240,7 +240,9 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 
 ```bash
 python3 backend/test_server.py        # API suite (Python stdlib only)
+python3 backend/test_review_gate.py   # 12h review gate + admin bypass (API)
 node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18)
+node backend/test_approval_flow.mjs   # approve/print button journey (Node >= 18)
 node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node >= 18)
 ```
 

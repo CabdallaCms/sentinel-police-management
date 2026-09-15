@@ -2789,7 +2789,24 @@ async function checkBackendBuild(){
   return backendBuildOk();
 }
 function renderStaleBackendBanner(){
-  if(!document || !document.body) return;    // not m server on this port is not the review-lock build, '
+  if(!document || !document.body) return;    // no DOM yet — nothing to paint
+  let bar=document.getElementById('staleBackendBanner');
+  if(!backendIsStale()){
+    // The build is confirmed (or the check is still in flight): drop any
+    // previously painted warning so the app looks normal again.
+    if(bar && typeof bar.remove==='function') bar.remove();
+    return;
+  }
+  const seen=(backendBuild&&backendBuild.build)||'(no build tag)';
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='staleBackendBanner';
+    bar.setAttribute('style','background:#fdeaea;color:#8c1d1d;border-bottom:1px solid #f3c1c1;'
+      +'padding:10px 16px;font:600 13px/1.5 Arial,sans-serif;text-align:center;');
+    if(document.body.firstChild) document.body.insertBefore(bar,document.body.firstChild);
+    else document.body.appendChild(bar);
+  }
+  bar.innerHTML='&#9888; The server on this port is not the review-lock build, '
     +'so approvals are NOT gated. Expected build <code>'+REQUIRED_BUILD_TAG+'</code>, got '
     +'<code>'+seen.replace(/</g,'&lt;')+'</code>. '
     +'Stop every python process on this port and start backend/server.py again. '
@@ -3370,7 +3387,12 @@ async function syncServer(){
     const crm = results.shift();
     const veh = results.shift();
     const dash = results.shift();
-    if(cd && cd.ok) db.conduct = cd.items;
+    // NOTE: the conduct register is deliberately NOT fetched here — it has
+    // its own loader (refreshConduct()/loadHrRecords()) gated on the
+    // 'conduct' module. A stale `if(cd && cd.ok)` line used to sit here and
+    // threw ReferenceError: cd is not defined, which aborted syncServer()
+    // BEFORE any register (db.fingerprint included) was updated — the cause
+    // of the dead Approve/Print buttons for every role.
     if(dash) db.dashboard = dash;
     if(ps.ok) db.people=ps.items.map(mapPerson);
     // Rebuild the per-person unit pills only from collections that actually
