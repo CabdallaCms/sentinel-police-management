@@ -15,7 +15,8 @@ A working browser-based prototype for a central police management platform. It i
 - Police Stations / Officers / Cars registration (regional modules)
 - Officer Conduct, Promotions & Disciplinary Management (Police Officer Registration Office / HR Directorate)
 - Dashboard and cross-unit activity feed
-- Departmental analytics embedded in each register (CID units, Officers, Cars, Stations)
+- Departmental analytics consolidated in a tabbed panel on the Dashboard (CID units, Officers, Cars, Stations)
+- Enterprise layout: full-width register tables and slide-over registration drawers
 
 ## Central-person linking model
 
@@ -112,7 +113,9 @@ The flat module list is organised into **departmental collapsible sidebar sectio
 | **REGISTERS** | *Police Stations* (`stations`), *Register Crime* (`crimes`) |
 | **ADMINISTRATION** | *User Management* (`admin`, System Admin only) |
 
-The departmental regrouping is labelling only for the existing pages — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Unit entry. The standalone **Analytics** entry is gone: analytics now live inside each register (see **Departmental analytics** below), and the cross-department executive view is the Chief Commander's **Global Executive Dashboard**.
+The departmental regrouping is labelling only for the existing pages — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Unit entry. The standalone **Analytics** entry is gone: analytics now live in a tabbed panel on the **Dashboard** (see **Departmental analytics** below), and the cross-department executive view is the Chief Commander's **Global Executive Dashboard**.
+
+**Layout.** Every operational register (Fingerprint, Airport, Crime intake, Checkpoints, Stations, Officers, HR promotions/discipline, Vehicles) is a dedicated full-width table workspace focused on search and filters. The permanent left-hand registration forms were removed: each register carries a **Register new …** action that opens the matching form in a right-anchored **slide-over drawer** (`openRegDrawer()`), and the Dashboard quick-action buttons open the same drawers directly.
 
 Visibility is driven by the `modules` array from `GET /api/me` in `applyNavForRole()`: each button is gated on its own module, the Administration section on the `is_admin` flag, and a whole section disappears when every item inside it is hidden for the signed-in role (e.g. a Checkpoint officer sees only *CID → Checkpoint Unit*, the HR Directorate sees *Central Search* + *Police Stations*/*Police Officers*).
 
@@ -159,12 +162,14 @@ The **Police Officers** register itself is a five-step wizard (multi-tab `offSte
 
 Server-side validation (`register_officer()`) enforces every mandatory field, the fixed dropdown option lists, the station foreign key, the upload extension/size policy (5 MB), and the coherent Slot 2 pairing — identical rules to the client, so a request that passes the form cannot be rejected by the API (and vice-versa). Uploads are persisted under `backend/uploads/` via `save_upload_validated()`.
 
-### Departmental analytics (embedded in every register)
+### Departmental analytics (tabbed panel on the Dashboard)
 
-The single monolithic **Analytics** page was retired. Each sidebar section now embeds its
-**own departmental analytics strip** directly above its register table/form: tab-specific KPI
+The single monolithic **Analytics** page was retired, and the per-register strips were
+consolidated on the **Dashboard**: a tabbed **Department analytics** panel renders one tab per
+unit the signed-in officer can access (RBAC-filtered), each carrying the tab-specific KPI
 summary cards, lightweight canvas charts (no external chart library) and the badge lists that
-belong to that department. Every number is computed server-side; the frontend only renders the
+belong to that department. The registers themselves stay clean, full-width table workspaces.
+Every number is computed server-side; the frontend only renders the
 `kpis` / `charts` / `lists` arrays it receives, and falls back to the same shapes recomputed
 from the local cache when the API is unreachable (the strip is then labelled **Offline cache**).
 

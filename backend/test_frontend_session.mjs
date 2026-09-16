@@ -212,7 +212,8 @@ function loadApp(sandbox) {
 }
 
 // --------------------------------------------------------------------------
-// Static markup contract: sidebar sections · embedded analytics · HR tabs.
+// Static markup contract: sidebar sections · dashboard analytics panel ·
+// drawer-driven registers · HR tabs.
 // --------------------------------------------------------------------------
 const NAV_SECTIONS = [
   { group: 'search', label: 'Central Search',
@@ -232,10 +233,17 @@ const NAV_SECTIONS = [
     pages: [['stations', 'stations', 'Police Stations'], ['crimes', 'crimes', 'Register Crime']] },
   { group: 'admin', label: 'Administration', pages: [['admin', 'admin', 'User Management']] },
 ];
-// page id -> the analytics mount that must be the FIRST block inside it
-const DEPT_STRIPS = {
+// Layout-overhaul contract: department analytics live in the tabbed panel on
+// the Dashboard (pane key -> analytics mount that must open each pane), while
+// every register is a full-width table workspace whose registration form
+// opens in the slide-over drawer (register page -> drawer shell key).
+const DEPT_MOUNTS = {
   fingerprint: 'anFingerprint', cid: 'anCrime', checkpoints: 'anCheckpoint',
-  airport: 'anAirport', stations: 'anStations', officers: 'anOfficers', cars: 'anCars',
+  airport: 'anAirport', officers: 'anOfficers', cars: 'anCars', stations: 'anStations',
+};
+const REGISTER_DRAWERS = {
+  fingerprint: 'fp', airport: 'air', stations: 'st', officers: 'off',
+  crimes: 'crm', cars: 'car',
 };
 const HR_TABS = [
   ['register', 'Officer Registration', ''],
@@ -278,14 +286,33 @@ function assertShellContract() {
       throw new Error(`section ${spec.group} holds ${JSON.stringify(items)} — expected ${JSON.stringify(spec.pages)}`);
   });
 
-  // (b) every register embeds its analytics strip as the FIRST block
-  Object.entries(DEPT_STRIPS).forEach(([page, mount]) => {
+  // (b) analytics consolidated on the Dashboard; registers are drawer-driven
+  const dash = html.match(/<section id="dashboard" class="page">([\s\S]*?)\n<\/section>/);
+  if (!dash) throw new Error('dashboard section not found');
+  if (!dash[1].includes('id="dashAnalyticsPanel"'))
+    throw new Error('dashboard must host the Department analytics panel (#dashAnalyticsPanel)');
+  if (!dash[1].includes('id="dashAnTabs"') || !dash[1].includes('id="dashAnPanes"'))
+    throw new Error('dashboard analytics panel must expose the tab strip (#dashAnTabs) and panes (#dashAnPanes)');
+  Object.entries(DEPT_MOUNTS).forEach(([pane, mount]) => {
+    const re = new RegExp(`<div class="dash-an-pane" data-danpane="${pane}">\\s*<div class="dept-analytics" id="${mount}">`);
+    if (!re.test(dash[1]))
+      throw new Error(`dashboard pane "${pane}" must open with the analytics strip #${mount}`);
+  });
+  Object.entries(REGISTER_DRAWERS).forEach(([page, key]) => {
     const sec = html.match(new RegExp(`<section id="${page}" class="page">([\\s\\S]*?)\\n</section>`));
     if (!sec) throw new Error(`register section #${page} not found`);
-    const body = sec[1].replace(/<!--[\s\S]*?-->/g, '').trim();
-    if (!body.startsWith(`<div class="dept-analytics" id="${mount}">`))
-      throw new Error(`#${page} must open with the embedded analytics strip #${mount}, got: ${body.slice(0, 90)}`);
+    if (/class="dept-analytics"/.test(sec[1]))
+      throw new Error(`#${page} must not embed a departmental analytics strip any more`);
+    if (!sec[1].includes(`openRegDrawer('${key}')`))
+      throw new Error(`#${page} must open its registration form via openRegDrawer('${key}')`);
+    if (!sec[1].includes('table-wrap table-xl'))
+      throw new Error(`#${page} must render its register in a full-width table (.table-xl)`);
   });
+  // HR directorate drawers (green promotions / red discipline) live on the
+  // Officers page next to the register button.
+  const officersSec = html.match(/<section id="officers" class="page">([\s\S]*?)\n<\/section>/);
+  if (!officersSec || !officersSec[1].includes("openRegDrawer('prm')") || !officersSec[1].includes("openRegDrawer('dsc')"))
+    throw new Error('officers page must expose the promotion and disciplinary registration drawers');
 
   // (c) Police Officers: the three HR tabs + their panes, green/red coded
   const officers = html.match(/<section id="officers" class="page">([\s\S]*?)\n<\/section>/);
@@ -300,8 +327,10 @@ function assertShellContract() {
   HR_TABS.forEach(([name]) => {
     if (!officers[1].includes(`id="hrPane-${name}"`)) throw new Error(`missing HR pane #hrPane-${name}`);
   });
-  if (!/id="hrPane-register"[\s\S]*id="offForm"/.test(officers[1]))
-    throw new Error('the officer registration form must live inside the registration tab');
+  if (!/id="hrPane-register"[\s\S]*?openRegDrawer\('off'\)/.test(officers[1]))
+    throw new Error('the officer registration tab must open the registration drawer');
+  if (!/id="regFormParking"[\s\S]*id="offForm"/.test(html))
+    throw new Error('the officer registration form must be parked for the slide-over drawer');
   if (!/id="hrPane-promotions"[\s\S]*id="prmAwaitTable"[\s\S]*id="hrPane-discipline"[\s\S]*id="dscOpenTable"/.test(officers[1]))
     throw new Error('the green/red badge queues must live inside their own tabs');
   // exact badge colours from the spec
@@ -614,14 +643,14 @@ async function main() {
       throw new Error('backendBuildOk() must recover once the correct build answers');
     console.log('ok 10: correct /api/health build restores normal (lock-aware) rendering');
 
-    // ---- 11) Sidebar structure + embedded analytics + HR tabs -------------
-    // Static contract over the real index.html markup: the four fixed sidebar
-    // sections, one embedded `dept-analytics` strip at the TOP of every
-    // register, and the three Police Officers tabs (registration · green
-    // promotions · red discipline). Guards the reorganisation against
-    // regressions without needing a browser.
+    // ---- 11) Sidebar structure + dashboard analytics + HR tabs ------------
+    // Static contract over the real index.html markup: the fixed sidebar
+    // sections, the tabbed Department analytics panel on the Dashboard, the
+    // drawer-driven full-width registers, and the three Police Officers tabs
+    // (registration · green promotions · red discipline). Guards the layout
+    // overhaul against regressions without needing a browser.
     assertShellContract();
-    console.log('ok 11: sidebar sections, embedded departmental analytics and HR tabs contract');
+    console.log('ok 11: sidebar sections, dashboard analytics panel, drawer registers and HR tabs contract');
 
 
     console.log('ALL FRONTEND SESSION TESTS PASSED');

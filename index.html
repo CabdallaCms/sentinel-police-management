@@ -8,6 +8,8 @@
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial;color:var(--ink);background:var(--bg)}
 button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.field input:focus-visible,.field select:focus-visible,.field textarea:focus-visible,.search input:focus-visible{outline:none}
 .app{display:flex;min-height:100vh}.side{width:250px;background:var(--navy);color:#dce7f8;padding:24px 16px;position:fixed;height:100vh;overflow:auto}
 .brand{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:800;letter-spacing:-.4px;padding:4px 10px 30px}
 .crest{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#3c83ff,#18c4ad);display:grid;place-items:center;color:white;font-weight:900}
@@ -29,8 +31,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .metric{font-size:29px;font-weight:800;margin-top:8px}.trend{font-size:12px;color:var(--green);margin-top:7px}
 .panel{padding:22px;margin-top:20px}.panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:12px;flex-wrap:wrap}
 .panel h2{font-size:17px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:5px}
-.btn{background:var(--blue);color:#fff;border-radius:8px;padding:10px 14px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px}
-.btn:hover{filter:brightness(1.05)}.btn.secondary{background:#eef3ff;color:var(--blue)}.btn.ghost{background:#f4f6f9;color:#526075}
+.btn{background:var(--blue);color:#fff;border-radius:8px;padding:10px 16px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px;box-shadow:0 1px 2px #10204026;transition:background .15s ease,filter .15s ease,box-shadow .15s ease,transform .06s ease}
+.btn:hover{filter:brightness(1.06);box-shadow:0 3px 10px #10204022}.btn:active{transform:translateY(1px)}
+.btn.secondary{background:#eef3ff;color:var(--blue)}.btn.ghost{background:#f4f6f9;color:#526075}
 .btn.danger{background:#fff0f1;color:var(--red)}.btn.green{background:#e3f7f1;color:var(--green)}.btn.small{padding:6px 10px;font-size:12px}
 .btn[disabled],button[disabled]{opacity:0.5;pointer-events:none;cursor:not-allowed;filter:grayscale(.4)}
 .btn[disabled]:hover,button[disabled]:hover{filter:grayscale(.4)}
@@ -45,11 +48,16 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .search{position:relative}.search input{width:100%;padding:12px 14px 12px 38px;border:1px solid var(--line);border-radius:9px}
 .search span{position:absolute;left:14px;top:10px;color:#8c99ad}
 .table-wrap{width:100%;overflow:auto;max-height:calc(100vh - 280px);border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:var(--shadow)}
+.table-wrap.table-xl{max-height:calc(100vh - 235px)}
 .table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
-.table th{position:sticky;top:0;background:#f7f9ff;text-align:left;color:#75839a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:12px 12px;border-bottom:1px solid var(--line);z-index:2;white-space:nowrap}
-.table td{padding:13px 12px;border-bottom:1px solid #edf1f6;vertical-align:middle}
+.table th{position:sticky;top:0;background:#f7f9ff;text-align:left;color:#75839a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:12px 16px;border-bottom:1px solid var(--line);z-index:2;white-space:nowrap}
+.table td{padding:13px 16px;border-bottom:1px solid #edf1f6;vertical-align:middle}
 .table tr:last-child td{border-bottom:0}
-.table tr.clickable{cursor:pointer}.table tr.clickable:hover td{background:#f8faff}
+.table tbody tr{transition:background .12s ease}
+.table tbody tr:hover td{background:#f8faff}
+.table tr.clickable{cursor:pointer}.table tr.clickable:hover td{background:#f4f8ff}
+/* register head tools (count badge + primary action) */
+.head-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .table .actions{white-space:nowrap;text-align:right}
 .table .actions .btn{white-space:nowrap}
 .person{display:flex;align-items:center;gap:10px}.mini{width:30px;height:30px;border-radius:8px;background:#eaf0ff;color:var(--blue);display:grid;place-items:center;font-size:11px;font-weight:800;overflow:hidden}
@@ -124,19 +132,25 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .m-item .m-id{color:var(--blue);font-weight:800;font-size:11px;flex:none}
 .m-item.m-new{color:var(--blue);font-weight:700;font-size:12px;background:#f7f9ff}
 .m-photoprev{width:44px;height:44px;border-radius:8px;object-fit:cover;margin-top:6px;display:none}
-/* centered modal */
-.overlay{position:fixed;inset:0;background:#0d1b31b3;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:1100;display:none}
+/* slide-over drawer (right-anchored) — shared by every registration / record dialog */
+.overlay{position:fixed;inset:0;background:#0d1b31b3;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:1100;display:none;animation:overlayIn .2s ease}
 .overlay.on{display:block}
-.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(680px,calc(100vw - 40px));max-height:calc(100vh - 40px);background:#fff;z-index:1200;border-radius:16px;box-shadow:0 30px 70px #10204044;display:none;flex-direction:column;overflow:hidden;animation:modalIn .18s ease}
+@keyframes overlayIn{from{opacity:0}to{opacity:1}}
+.modal{position:fixed;top:0;right:0;height:100vh;height:100dvh;width:min(720px,100vw);background:#fff;z-index:1200;border-radius:0;box-shadow:-28px 0 70px #10204047;display:none;flex-direction:column;overflow:hidden;animation:drawerIn .28s cubic-bezier(.32,.72,.28,1)}
 .modal.on{display:flex}
-@keyframes modalIn{from{opacity:0;transform:translate(-50%,-50%) translateY(8px) scale(.985)}to{opacity:1;transform:translate(-50%,-50%)}}
-.modal-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex:none;background:#fff}
-.modal-head h3{margin:0;font-size:17px}
-.modal-body{padding:20px 22px;overflow-y:auto;max-height:80vh;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
-.modal-foot{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;flex:none;position:sticky;bottom:0;background:#fff}
-.iconbtn{background:#eef1f6;border-radius:8px;width:34px;height:34px;font-size:16px;color:#526075;flex:none}
-@media(max-width:650px){.modal{width:calc(100vw - 24px);max-width:calc(100vw - 24px)}}
+@keyframes drawerIn{from{opacity:.35;transform:translateX(76px)}to{opacity:1;transform:none}}
+.modal-head{padding:20px 26px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex:none;background:#fbfcff}
+.modal-head h3{margin:0;font-size:17px;letter-spacing:-.2px}
+.drawer-sub{color:var(--muted);font-size:12px;margin-top:5px;line-height:1.5}
+.modal-body{padding:22px 26px;overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
+.modal-foot{padding:14px 26px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;flex:none;position:sticky;bottom:0;background:#fff}
+.iconbtn{background:#eef1f6;border-radius:8px;width:34px;height:34px;font-size:16px;color:#526075;flex:none;transition:background .15s ease}
+.iconbtn:hover{background:#e0e6ee}
+@media(max-width:650px){.modal{width:100vw}}
 body.modal-open{overflow:hidden}
+/* registration form shells parked off-page until a drawer opens */
+.regform-shell{display:block}
+.regform-shell .notice{margin-bottom:14px}
 /* file slots */
 .fileslot{border:1.5px dashed #c4d0e3;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;background:#fafcff}
 .fileslot input{font-size:12px}.fileslot .req{color:var(--red);font-weight:800}
@@ -179,6 +193,11 @@ body.modal-open{overflow:hidden}
 .evid-card img{width:100%;height:120px;object-fit:cover;background:#eef1f6;display:block}
 .evid-card .ev-body{padding:10px}.evid-card .ev-body b{font-size:13px;display:block}.evid-card .ev-body small{color:var(--muted)}
 .role-select{display:flex;gap:8px;align-items:center}.role-select select{padding:8px;border-radius:8px;border:1px solid #dce4ef}
+@media(max-width:1240px){.cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1100px){.grid2{grid-template-columns:1fr}.chart-row{grid-template-columns:1fr}}
+/* drawer forms keep a comfortable two-column field layout on desktop widths */
+#drawerBody .grid2{grid-template-columns:1fr 1fr}
+@media(max-width:650px){#drawerBody .grid2,#drawerBody .grid3,#drawerBody .docgrid{grid-template-columns:1fr}.modal-body{padding:18px 16px}.modal-head{padding:16px 16px 13px}.modal-foot{padding:12px 16px}}
 @media(max-width:950px){.side{width:74px;padding:18px 9px}.brand{padding:4px 8px 30px}.brand span,.side small,.nav button span,.side-footer{display:none}.nav button{justify-content:center}.main{margin-left:74px;width:calc(100% - 74px);padding:22px}.cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:650px){.main{padding:16px}.cards,.grid2,.grid3,.docgrid{grid-template-columns:1fr}.top h1{font-size:23px}.user div:not(.avatar){display:none}}
 @media print{.side,.top,.btn,.form-actions,.tabs,.no-print{display:none!important}.main{margin:0;width:100%;padding:0}.panel{box-shadow:none;border:0}.page{display:block!important}}
@@ -212,8 +231,12 @@ body.modal-open{overflow:hidden}
 .kpi-row .kpi-cell.airport .ico{background:#e3f7f1;color:var(--green)}
 .kpi-row .kpi-cell.fp .ico{background:#f0e9ff;color:#6c3fd4}
 .kpi-row .kpi-cell.people .ico{background:#eaf0ff;color:var(--blue)}
-/* ==== Departmental analytics (embedded above each register) ==== */
+/* ==== Departmental analytics (tabbed panel on the Dashboard) ==== */
 .dept-analytics{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);padding:18px 20px;margin-bottom:18px}
+/* inside the dashboard panel the strip drops its own chrome */
+.panel .dept-analytics{border:0;box-shadow:none;padding:0;background:transparent;margin:0;border-radius:0}
+.dash-an-pane{display:none}
+.dash-an-pane.active{display:block}
 .dept-analytics .da-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
 .dept-analytics h2{font-size:16px;margin:0;letter-spacing:-.2px}
 .dept-analytics .da-sub{color:var(--muted);font-size:12px;margin-top:4px}
@@ -411,8 +434,9 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <button data-page="admin" data-modules="admin"><i>⚙</i><span>User Management</span></button>
 </div>
 </div>
-<!-- Analytics is no longer a standalone page: every register now embeds its
-     own departmental analytics strip (CID units, Officers, Cars, Stations). -->
+<!-- Analytics is no longer a standalone page: department analytics live in a
+     tabbed panel on the Dashboard; registers are full-width table workspaces
+     whose registration forms open in the slide-over drawer. -->
 </nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span></div></aside>
 <main class="main">
 <header class="top" id="topbar"><div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
@@ -460,6 +484,66 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div class="hint" id="quickHint" style="margin-top:16px"><b>Identity linking:</b> search a name or ID — the global person registry auto-completes and reuses the existing profile, appending new details instead of creating duplicates.</div>
 </div>
 </div>
+<div class="panel" id="dashAnalyticsPanel">
+<div class="panel-head">
+  <div>
+    <h2>Department analytics</h2>
+    <div class="sub">Role-scoped metrics for every accessible unit — the full registers live in each unit's workspace</div>
+  </div>
+</div>
+<div class="tabs" id="dashAnTabs" style="margin-bottom:14px"></div>
+<div id="dashAnPanes">
+<div class="dash-an-pane" data-danpane="fingerprint">
+<div class="dept-analytics" id="anFingerprint">
+  <div class="da-head"><div><h2>Fingerprint Unit analytics</h2>
+  <div class="da-sub">Biometrics logged · identity match &amp; suspect hit rates</div></div></div>
+  <div class="da-skeleton">Loading fingerprint analytics…</div>
+</div>
+</div>
+<div class="dash-an-pane" data-danpane="cid">
+<div class="dept-analytics" id="anCrime">
+  <div class="da-head"><div><h2>Crime Department analytics</h2>
+  <div class="da-sub">Case volume by location · time-of-day bands · categories · open vs closed</div></div></div>
+  <div class="da-skeleton">Loading crime analytics…</div>
+</div>
+</div>
+<div class="dash-an-pane" data-danpane="checkpoints">
+<div class="dept-analytics" id="anCheckpoint">
+  <div class="da-head"><div><h2>Checkpoint Unit analytics</h2>
+  <div class="da-sub">Traveler screening volume · flagged suspect hits per checkpoint</div></div></div>
+  <div class="da-skeleton">Loading checkpoint analytics…</div>
+</div>
+</div>
+<div class="dash-an-pane" data-danpane="airport">
+<div class="dept-analytics" id="anAirport">
+  <div class="da-head"><div><h2>Airport Unit analytics</h2>
+  <div class="da-sub">Inbound / outbound movements · active suspect movement alerts</div></div></div>
+  <div class="da-skeleton">Loading airport analytics…</div>
+</div>
+</div>
+<div class="dash-an-pane" data-danpane="officers">
+<div class="dept-analytics" id="anOfficers">
+  <div class="da-head"><div><h2>HR Directorate analytics</h2>
+  <div class="da-sub">Roster metrics · promotion nominations (green) · disciplinary actions (red)</div></div></div>
+  <div class="da-skeleton">Loading officer analytics…</div>
+</div>
+</div>
+<div class="dash-an-pane" data-danpane="cars">
+<div class="dept-analytics" id="anCars">
+  <div class="da-head"><div><h2>Fleet analytics</h2>
+  <div class="da-sub">Operational status ratio · security alert breakdown</div></div></div>
+  <div class="da-skeleton">Loading fleet analytics…</div>
+</div>
+</div>
+<div class="dash-an-pane" data-danpane="stations">
+<div class="dept-analytics" id="anStations">
+  <div class="da-head"><div><h2>Station registry analytics</h2>
+  <div class="da-sub">Operational capacity by tier · officer deployment matrix (Sool · Sanaag · East Togdheer)</div></div></div>
+  <div class="da-skeleton">Loading station analytics…</div>
+</div>
+</div>
+</div>
+</div>
 </section>
 
 <!-- PEOPLE -->
@@ -473,92 +557,23 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- FINGERPRINT -->
 <section id="fingerprint" class="page">
-<!-- Departmental analytics: Fingerprint Unit (embedded above the register) -->
-<div class="dept-analytics" id="anFingerprint">
-  <div class="da-head"><div><h2>Fingerprint Unit analytics</h2>
-  <div class="da-sub">Biometrics logged · identity match &amp; suspect hit rates</div></div></div>
-  <div class="da-skeleton">Loading fingerprint analytics…</div>
-</div>
-<div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Clearance application</h2><div class="sub">Fingerprint Unit · Hargeisa Branch</div></div></div>
-<div id="fpNotice" class="notice"></div>
-<div class="record-type">Unit-specific record: guardian, clearance reason and supporting legal documents are stored here — the applicant’s identity is matched/updated in the Central Person Registry.</div>
-<form class="form" id="fpForm" onsubmit="saveFingerprint(event)">
-<div class="section-label">Applicant identity — Central Person Registry</div>
-<div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>: an exact match (National ID/passport or 4-part name + DOB) auto-fills the existing record; if no match exists a new Central Person is created automatically on save.</div>
-<div id="fpIdentity"></div>
-<div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Education</option><option>Travel</option><option>Employment</option><option>Citizenship</option><option>Licence</option></select></div>
-<div class="grid2">
-<div class="field"><label>Gender</label><select id="fpSex"><option value="">Not stated</option><option>Male</option><option>Female</option></select></div>
-<div class="field"><label>Email</label><input id="fpEmail" placeholder="applicant@example.com"></div>
-</div>
-<div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs"></div></div>
-<div class="section-label">Guardian / next of kin</div>
-<div class="grid2">
-<div class="field"><label>Guardian full name *</label><input id="gName" required placeholder="Guardian / relative name"></div>
-<div class="field"><label>Relationship</label><input id="gRelation" placeholder="Father, mother, spouse…"></div>
-<div class="field"><label>Guardian ID (passport / national)</label><input id="gId" placeholder="ID number"></div>
-<div class="field"><label>Occupation</label><input id="gOccupation" placeholder="Guardian occupation"></div>
-<div class="field"><label>Address</label><input id="gAddress" placeholder="Guardian address"></div>
-<div class="field"><label>Contact number</label><input id="gPhone" placeholder="Guardian phone"></div>
-</div>
-<div class="field"><label>Guardian attachments — upload 3, <span class="req">at least 2 required</span></label><div class="docgrid" id="guardDocs"></div></div>
-<div class="field"><label>Supporting document notes</label><textarea id="fpNotes" placeholder="Document types, issuing authority, additional notes"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetFpForm()">Clear</button><button class="btn" type="submit">Save application</button></div>
-</form>
-</div>
-<div class="panel">
-<div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div></div>
+<div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Clearance applications, review and certificates · Hargeisa Branch</div></div><button class="btn" onclick="openRegDrawer('fp')">＋ Register new application</button></div>
 <div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> a Fingerprint Officer can only approve once the 12-hour review period has elapsed; a System Administrator can approve immediately.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
-</div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
 </section>
 
 <!-- AIRPORT -->
 <section id="airport" class="page">
-<!-- Departmental analytics: Airport Unit (embedded above the register) -->
-<div class="dept-analytics" id="anAirport">
-  <div class="da-head"><div><h2>Airport Unit analytics</h2>
-  <div class="da-sub">Inbound / outbound movements · active suspect movement alerts</div></div></div>
-  <div class="da-skeleton">Loading airport analytics…</div>
-</div>
-<div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Register airport passenger</h2><div class="sub">Hargeisa Local Airport · Passenger register</div></div></div>
-<div id="airNotice" class="notice"></div>
-<form class="form" id="airForm" onsubmit="saveAirport(event)">
-<div class="section-label">Passenger identity — Central Person Registry</div>
-<div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
-<div id="airIdentity"></div>
-<div class="section-label">Travel</div>
-<div class="grid2">
-<div class="field"><label>Movement type</label><select id="airMove"><option>Arrival</option><option>Departure</option></select></div>
-<div class="field"><label>Travel date</label><input id="airDate" type="date" value="2026-09-01"></div>
-<div class="field"><label>Flight / transport number *</label><input id="airFlight" required placeholder="e.g. HL-204"></div>
-<div class="field"><label>Airline / carrier</label><input id="airAirline" placeholder="e.g. Sentinel Air"></div>
-<div class="field"><label>Origin city *</label><input id="airOrigin" required placeholder="e.g. Berbera"></div>
-<div class="field"><label>Destination city *</label><input id="airDest" required placeholder="e.g. Hargeisa"></div>
-</div>
-<div class="field"><label>Travel notes</label><textarea id="airNotes"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">Save passenger</button></div>
-</form>
-</div>
-<div class="panel"><div class="panel-head"><div><h2>Recent passenger records</h2><div class="sub">Airport unit register</div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div></div>
-</div>
+<div class="panel-head"><div><h2>Passenger register</h2><div class="sub">Hargeisa Local Airport · inbound and outbound movements</div></div><button class="btn" onclick="openRegDrawer('air')">＋ Register new passenger</button></div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div>
 </div>
 </section>
 
 <!-- CID -->
 <section id="cid" class="page">
-<!-- Departmental analytics: Crime Department (embedded above the case list) -->
-<div class="dept-analytics" id="anCrime">
-  <div class="da-head"><div><h2>Crime Department analytics</h2>
-  <div class="da-sub">Case volume by location · time-of-day bands · categories · open vs closed</div></div></div>
-  <div class="da-skeleton">Loading crime analytics…</div>
-</div>
 <div class="panel">
 <div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><button class="btn" onclick="openCaseDrawer()">+ New case</button></div>
 <div class="hint" style="margin-bottom:14px">Open a case to access its three workspace tabs: <b>Details &amp; incident summary</b>, <b>Participants &amp; suspect linkage</b>, and <b>Evidence &amp; media</b>.</div>
@@ -633,12 +648,6 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- CHECKPOINTS -->
 <section id="checkpoints" class="page">
-<!-- Departmental analytics: Checkpoint Unit (embedded above the screening log) -->
-<div class="dept-analytics" id="anCheckpoint">
-  <div class="da-head"><div><h2>Checkpoint Unit analytics</h2>
-  <div class="da-sub">Traveler screening volume · flagged suspect hits per checkpoint</div></div></div>
-  <div class="da-skeleton">Loading checkpoint analytics…</div>
-</div>
 <div class="panel">
 <div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div>
 <div class="panel-head" style="margin-bottom:14px">
@@ -691,50 +700,17 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- POLICE STATIONS REGISTRATION -->
 <section id="stations" class="page">
-<!-- Departmental analytics: Police Station Master Registry -->
-<div class="dept-analytics" id="anStations">
-  <div class="da-head"><div><h2>Station registry analytics</h2>
-  <div class="da-sub">Operational capacity by tier · officer deployment matrix (Sool · Sanaag · East Togdheer)</div></div></div>
-  <div class="da-skeleton">Loading station analytics…</div>
-</div>
-<div class="da-note admin-write-note" style="margin:-6px 0 12px">Creating or editing a police station is a SystemAdmin action — this register is read-only for your role (the station list below still feeds officer postings and the deployment matrix).</div>
-<div class="grid2">
-<div class="panel admin-write">
-<div class="panel-head"><div><h2>Register police station</h2><div class="sub">Station name, code and location</div></div></div>
-<div id="stNotice" class="notice"></div>
-<form class="form" id="stForm" onsubmit="saveStation(event)">
-<div class="grid2">
-<div class="field"><label>Station name *</label><input id="stName" placeholder="e.g. Burao Central Station"></div>
-<div class="field"><label>Station code (auto)</label><input id="stCode" readonly placeholder="STN-REG-XXX" style="background:#f3f6fb;color:#526075"></div>
-<div class="field"><label>Station tier *</label><select id="stTier"><option value="">— select —</option><option>Regional HQ</option><option>District HQ</option><option>Outpost</option><option>Checkpoint</option><option>Border Post</option></select></div>
-<div class="field"><label>Contact phone *</label><input id="stPhone" placeholder="+252 …"></div>
-<div class="field"><label>Operational status</label><select id="stStatus"><option>Active</option><option>Inactive</option><option>Maintenance</option></select></div>
-<div class="field"><label>Cell capacity</label><input id="stCells" type="number" min="0" placeholder="optional"></div>
-<div class="field"><label>Commander (Inspector+)</label><select id="stCommander"><option value="">— optional —</option></select></div>
-<div class="field"><label>Deputy commander</label><select id="stDeputy"><option value="">— optional —</option></select></div>
-</div>
-<div class="section-label">Location — Sool · Sanaag · East Togdheer</div>
-<div id="st-loc" class="loc-grid"></div>
-<div class="field"><label>Notes</label><textarea id="stNotes" placeholder="Coverage area, shift details…"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" type="submit">Register station</button></div>
-</form>
-</div>
+<div class="da-note admin-write-note" style="margin:0 0 14px">Creating or editing a police station is a SystemAdmin action — this register is read-only for your role (the station list below still feeds officer postings and the deployment matrix).</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div><span class="badge gray" id="stCount" style="display:none">0</span></div>
+<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div>
+<div class="head-tools"><span class="badge gray" id="stCount" style="display:none">0</span><button class="btn admin-write" onclick="openRegDrawer('st')">＋ Register new station</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="stSearch" placeholder="Central Station Search — name, code, region, district or village…" oninput="renderStationsTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
-</div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
 </div>
 </section>
 
 <!-- POLICE OFFICERS REGISTRATION -->
 <section id="officers" class="page">
-<!-- Departmental analytics: Police Officers Registration Office (HR Directorate) -->
-<div class="dept-analytics" id="anOfficers">
-  <div class="da-head"><div><h2>HR Directorate analytics</h2>
-  <div class="da-sub">Roster metrics · promotion nominations (green) · disciplinary actions (red)</div></div></div>
-  <div class="da-skeleton">Loading officer analytics…</div>
-</div>
 <!-- HR Directorate tabs: registration · promotions (green) · discipline (red) -->
 <div class="hr-tabs" id="hrTabs">
 <button type="button" class="hr-tab active" data-hrtab="register" onclick="hrTab('register')"><i>▤</i><span>Officer Registration</span></button>
@@ -742,153 +718,35 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <button type="button" class="hr-tab red" data-hrtab="discipline" onclick="hrTab('discipline')"><i>⚑</i><span>Disciplinary &amp; Misconduct</span><span class="hr-badge" id="hrDiscBadge">0</span></button>
 </div>
 <div class="hr-pane active" id="hrPane-register">
-<div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Register police officer</h2><div class="sub">Five-part record — identifiers, personal details, origin, guarantor and supporting documents</div></div></div>
-<div id="offNotice" class="notice"></div>
-<form class="form" id="offForm" onsubmit="saveOfficer(event)">
-<div class="tabs" id="offStepTabs">
-<button type="button" class="tab active" data-step="1" onclick="offStep(1)">1 · Official &amp; System</button>
-<button type="button" class="tab" data-step="2" onclick="offStep(2)">2 · Personal ID</button>
-<button type="button" class="tab" data-step="3" onclick="offStep(3)">3 · Regional &amp; Origin</button>
-<button type="button" class="tab" data-step="4" onclick="offStep(4)">4 · Guarantor</button>
-<button type="button" class="tab" data-step="5" onclick="offStep(5)">5 · Documents</button>
-</div>
-
-<div class="tabpane active" id="off-step-1">
-<div class="section-label">Official &amp; System Identifiers</div>
-<div class="grid2">
-<div class="field"><label>Service ID (auto-generated)</label><input id="offServiceId" readonly placeholder="POL-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
-<div class="field"><label>Rank *</label><select id="offRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
-<div class="field"><label>Unit / Division *</label><select id="offUnit"><option value="">— select unit —</option><option>General Patrol</option><option>CID / Criminal Investigation</option><option>Traffic Control</option><option>Rapid Response Unit</option><option>Special Protection Unit</option><option>Logistics</option></select></div>
-<div class="field"><label>Assigned Station *</label><select id="offStation"></select></div>
-<div class="field"><label>Date of Enlistment *</label><input id="offEnlist" type="date"></div>
-<div class="field"><label>Duty Status</label><select id="offDuty"><option>Active</option><option>Suspended</option><option>Leave</option><option>Terminated</option><option>Retired</option></select></div>
-</div>
-</div>
-
-<div class="tabpane" id="off-step-2">
-<div class="section-label">Personal Identification</div>
-<div class="grid2">
-<div class="field"><label>Full Name *</label><input id="offName" placeholder="e.g. Maxamed Faarax Nuur"></div>
-<div class="field"><label>Mother's Name *</label><input id="offMother" placeholder="e.g. Khadra Faarax"></div>
-<div class="field"><label>Date of Birth (DOB) *</label><input id="offDob" type="date"></div>
-<div class="field"><label>Place of Birth (POB) *</label><input id="offPob" placeholder="e.g. Ceerigaabo"></div>
-<div class="field"><label>Contact Number *</label><input id="offPhone" type="tel" placeholder="+252 …"></div>
-<div class="field"><label>Blood Group</label><select id="offBlood"><option value="">— select —</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div>
-<div class="field"><label>Height (cm)</label><input id="offHeight" type="number" min="0" step="0.1" placeholder="e.g. 178"></div>
-<div class="field"><label>Weight (kg)</label><input id="offWeight" type="number" min="0" step="0.1" placeholder="e.g. 82"></div>
-</div>
-<div class="field"><label>Officer Picture * <small class="muted">(JPEG/PNG, max 5MB)</small></label><input id="offPhoto" type="file" accept="image/jpeg,image/png"></div>
-</div>
-
-<div class="tabpane" id="off-step-3">
-<div class="section-label">Regional &amp; Origin Data</div>
-<div class="grid2">
-<div class="field"><label>State / Region of Origin</label><select id="offOriginRegion"></select></div>
-<div class="field"><label>District of Origin</label><select id="offOriginDistrict"></select></div>
-<div class="field"><label>Town / Village</label><input id="offTown" type="text" placeholder="e.g. Adhi Cadeeye"></div>
-</div>
-</div>
-
-<div class="tabpane" id="off-step-4">
-<div class="section-label">Guarantor / Emergency Contact</div>
-<div class="grid2">
-<div class="field"><label>Guarantor Name *</label><input id="offGuarName" placeholder="e.g. Faarax Nuur"></div>
-<div class="field"><label>Guarantor Contact *</label><input id="offGuarPhone" type="tel" placeholder="+252 …"></div>
-<div class="field"><label>Occupation</label><input id="offGuarOcc" placeholder="e.g. Merchant"></div>
-<div class="field"><label>Relationship with Officer</label><select id="offGuarRel"><option value="">— select —</option><option>Parent</option><option>Spouse</option><option>Relative</option><option>Community Leader</option><option>Other</option></select></div>
-</div>
-<div class="field"><label>Guarantor Permanent Address *</label><textarea id="offGuarAddr" placeholder="e.g. Ceerigaabo, Shaabada Dhexe"></textarea></div>
-<div class="field"><label>Guarantor Picture <small class="muted">(JPEG/PNG, optional)</small></label><input id="offGuarPhoto" type="file" accept="image/jpeg,image/png"></div>
-</div>
-
-<div class="tabpane" id="off-step-5">
-<div class="section-label">Document Slot 1 <span style="color:var(--red)">(Mandatory)</span></div>
-<div class="grid2">
-<div class="field"><label>Document Type *</label><select id="offDoc1Type"><option value="">— select type —</option><option>National ID</option><option>Passport</option><option>Birth Certificate</option><option>Letter of Guarantee</option></select></div>
-<div class="field"><label>File Upload * <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc1File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
-</div>
-<div class="section-label">Document Slot 2 <span class="muted">(Optional)</span></div>
-<div class="grid2">
-<div class="field"><label>Document Type</label><select id="offDoc2Type"><option value="">— none —</option><option>Background Check</option><option>Reference Letter</option><option>Military Discharge</option><option>Other</option></select></div>
-<div class="field"><label>File Upload <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc2File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
-</div>
-</div>
-
-<div class="form-actions">
-<button class="btn ghost" type="button" onclick="resetOfficerForm()">Clear</button>
-<button class="btn ghost" type="button" id="offBack" onclick="offStep(offCur-1)" style="display:none">← Back</button>
-<button class="btn secondary" type="button" id="offNext" onclick="offStep(offCur+1)">Next →</button>
-<button class="btn" type="submit" id="offSubmit">Register officer</button>
-</div>
-</form>
-</div>
-<div class="panel">
-<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><span class="badge gray" id="offCount" style="display:none">0</span></div>
+<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Five-part record — service ID, rank, unit, assigned station and duty status</div></div>
+<div class="head-tools"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" onclick="openRegDrawer('off')">＋ Register new officer</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="offSearch" placeholder="Central Officer Search — name, service ID, rank, unit or station…" oninput="renderOfficersTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
-</div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
 </div><!-- /hrPane-register -->
 
 <!-- TAB 2 · Promotions & Commendations (green badge) -->
 <div class="hr-pane" id="hrPane-promotions">
-<div class="grid2">
 <div class="panel hr-green">
-<div class="panel-head"><div><h2>Nominate for promotion / commendation</h2><div class="sub">Green badge · nominations awaiting commander verification</div></div></div>
-<div id="prmNotice" class="notice"></div>
-<form class="form" id="prmForm" onsubmit="savePromotionNomination(event)">
-<div class="grid2">
-<div class="field"><label>Officer *</label><select id="prmOfficer"></select></div>
-<div class="field"><label>Proposed rank *</label><select id="prmRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
-<div class="field"><label>Effective date</label><input id="prmDate" type="date"></div>
-<div class="field"><label>Nomination ID (auto-generated)</label><input id="prmId" readonly placeholder="PRM-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
-</div>
-<div class="field"><label>Reason / commendation *</label><textarea id="prmReason" placeholder="Operational commendation, examination pass, vacancy fill, long service…"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetPromotionForm()">Clear</button><button class="btn hr-green" type="submit">Submit nomination</button></div>
-</form>
-</div>
-<div class="panel hr-green">
-<div class="panel-head"><div><h2>Awaiting commander verification</h2><div class="sub">FIFO — the longest-waiting nomination is worked first</div></div><span class="badge green" id="prmAwaitCount">0</span></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>Rank change</th><th>Reason</th><th>Action</th></tr></thead><tbody id="prmAwaitTable"></tbody></table></div>
-</div>
+<div class="panel-head"><div><h2>Awaiting commander verification</h2><div class="sub">FIFO — the longest-waiting nomination is worked first</div></div>
+<div class="head-tools"><span class="badge green" id="prmAwaitCount">0</span><button class="btn hr-green" onclick="openRegDrawer('prm')">＋ Nominate for promotion</button></div></div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>Rank change</th><th>Reason</th><th>Action</th></tr></thead><tbody id="prmAwaitTable"></tbody></table></div>
 </div>
 <div class="panel hr-green" style="margin-top:14px">
 <div class="panel-head"><div><h2>Promotion &amp; commendation history</h2><div class="sub">Verified and rejected nominations with the verifying commander</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>From → To</th><th>Nominated by</th><th>Verified by</th><th>Status</th></tr></thead><tbody id="prmHistoryTable"></tbody></table></div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>From → To</th><th>Nominated by</th><th>Verified by</th><th>Status</th></tr></thead><tbody id="prmHistoryTable"></tbody></table></div>
 </div>
 </div>
-
-<!-- TAB 3 · Disciplinary & Misconduct (red badge) -->
 <div class="hr-pane" id="hrPane-discipline">
-<div class="grid2">
 <div class="panel hr-red">
-<div class="panel-head"><div><h2>Record disciplinary action</h2><div class="sub">Red badge · misconduct, pending suspensions and rank demotions</div></div></div>
-<div id="dscNotice" class="notice"></div>
-<form class="form" id="dscForm" onsubmit="saveDisciplineAction(event)">
-<div class="grid2">
-<div class="field"><label>Officer *</label><select id="dscOfficer"></select></div>
-<div class="field"><label>Action type *</label><select id="dscType" onchange="disciplineTypeChanged()"><option value="">— select —</option><option>Misconduct</option><option>Suspension</option><option>Demotion</option><option>Warning</option><option>Investigation</option></select></div>
-<div class="field"><label>Severity</label><select id="dscSeverity"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
-<div class="field"><label>Status</label><select id="dscStatus"><option>Pending</option><option>In Review</option><option>Confirmed</option><option>Appealed</option><option>Closed</option></select></div>
-<div class="field" id="dscFromWrap" style="display:none"><label>From rank</label><input id="dscFromRank" readonly style="background:#f3f6fb;color:#526075" placeholder="current rank"></div>
-<div class="field" id="dscToWrap" style="display:none"><label>Demote to rank *</label><select id="dscToRank"><option value="">— select junior rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
-<div class="field" id="dscStartWrap" style="display:none"><label>Suspension start</label><input id="dscStart" type="date"></div>
-<div class="field" id="dscEndWrap" style="display:none"><label>Suspension end</label><input id="dscEnd" type="date"></div>
-</div>
-<div class="field"><label>Incident summary *</label><textarea id="dscSummary" placeholder="What happened, where, witnesses, evidence reference…"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetDisciplineForm()">Clear</button><button class="btn hr-red" type="submit">Record action</button></div>
-</form>
-</div>
-<div class="panel hr-red">
-<div class="panel-head"><div><h2>Open disciplinary actions</h2><div class="sub">Pending · In Review · Appealed — confirm to apply suspensions and demotions</div></div><span class="badge red" id="dscOpenCount">0</span></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead><tbody id="dscOpenTable"></tbody></table></div>
-</div>
+<div class="panel-head"><div><h2>Open disciplinary actions</h2><div class="sub">Pending · In Review · Appealed — confirm to apply suspensions and demotions</div></div>
+<div class="head-tools"><span class="badge red" id="dscOpenCount">0</span><button class="btn hr-red" onclick="openRegDrawer('dsc')">＋ Record disciplinary action</button></div></div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead><tbody id="dscOpenTable"></tbody></table></div>
 </div>
 <div class="panel hr-red" style="margin-top:14px">
 <div class="panel-head"><div><h2>Disciplinary history</h2><div class="sub">Confirmed and closed actions · demotions already applied to the rank record</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Summary</th><th>Reported by</th><th>Status</th></tr></thead><tbody id="dscHistoryTable"></tbody></table></div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Summary</th><th>Reported by</th><th>Status</th></tr></thead><tbody id="dscHistoryTable"></tbody></table></div>
 </div>
 </div>
 </section>
@@ -962,108 +820,19 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- CRIME / VICTIM INTAKE -->
 <section id="crimes" class="page">
-<div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Register crime / victim intake</h2><div class="sub">File number is issued automatically · CRM-YYYY-STN-XXXX</div></div></div>
-<div id="crmNotice" class="notice"></div>
-<form class="form" id="crmForm" onsubmit="saveCrime(event)">
-<div class="section-label">1 · Station &amp; desk officer</div>
-<div class="grid2">
-<div class="field"><label>Police station *</label><select id="crmStation"></select></div>
-<div class="field"><label>Desk officer *</label><select id="crmOfficer"></select></div>
-</div>
-<div class="section-label">2 · Incident</div>
-<div class="grid2">
-<div class="field"><label>Category *</label><select id="crmCat"><option value="">— select —</option><option>Theft/Burglary</option><option>Assault</option><option>Robbery</option><option>Traffic Accident</option><option>Homicide</option><option>Fraud</option><option>Domestic Incident</option><option>Public Order</option><option>Cybercrime</option><option>Other</option></select></div>
-<div class="field"><label>Date / time *</label><input id="crmWhen" type="datetime-local"></div>
-<div class="field"><label>Severity</label><select id="crmSev"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
-<div class="field"><label>Status</label><select id="crmStatus"><option>Reported / Open</option><option>Under Investigation</option><option>Referred to Court</option><option>Closed</option><option>Unresolved</option></select></div>
-</div>
-<div class="field"><label>Location of occurrence *</label><input id="crmLoc" placeholder="Street, village, landmark"></div>
-<div class="field"><label>Description *</label><textarea id="crmDesc" required></textarea></div>
-<div class="section-label">3 · Victim / reporting party</div>
-<div class="grid2">
-<div class="field"><label>Reporting party</label><select id="crmParty"><option value="">—</option><option>Victim</option><option>Witness</option><option>Third-Party Representative</option><option>Police</option></select></div>
-<div class="field"><label>Anonymous victim</label><select id="crmAnon"><option value="">No</option><option value="1">Yes</option></select></div>
-<div class="field"><label>Victim full name</label><input id="crmVName"></div>
-<div class="field"><label>Contact</label><input id="crmVPhone"></div>
-<div class="field"><label>National ID</label><input id="crmVNid"></div>
-<div class="field"><label>Gender</label><select id="crmVGender"><option value="">—</option><option>Male</option><option>Female</option><option>Other / Prefer not to say</option></select></div>
-<div class="field"><label>Age</label><input id="crmVAge" type="number" min="0"></div>
-<div class="field"><label>Address</label><input id="crmVAddr"></div>
-</div>
-<div class="field"><label>Statement</label><textarea id="crmStmt"></textarea></div>
-<div class="section-label">4 · Evidence (optional, PDF/JPG/PNG ≤5MB)</div>
-<div class="grid2">
-<div class="field"><label>Evidence 1 type</label><select id="crmE1Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
-<div class="field"><label>Evidence 1 file</label><input id="crmE1" type="file" accept=".pdf,image/jpeg,image/png"></div>
-<div class="field"><label>Evidence 2 type</label><select id="crmE2Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
-<div class="field"><label>Evidence 2 file</label><input id="crmE2" type="file" accept=".pdf,image/jpeg,image/png"></div>
-</div>
-<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">File incident</button></div>
-</form>
-</div>
-<div class="panel">
-<div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer</div></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Category</th><th>Station</th><th>Officer</th><th>Status</th></tr></thead><tbody id="crimesTable"></tbody></table></div>
-</div>
+<div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer · file number issued automatically (CRM-YYYY-STN-XXXX)</div></div><button class="btn" onclick="openRegDrawer('crm')">＋ Register crime / victim intake</button></div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>File</th><th>Category</th><th>Station</th><th>Officer</th><th>Status</th></tr></thead><tbody id="crimesTable"></tbody></table></div>
 </div>
 </section>
 
 <!-- POLICE CARS REGISTRATION -->
 <section id="cars" class="page">
-<!-- Departmental analytics: Police Car Registration module -->
-<div class="dept-analytics" id="anCars">
-  <div class="da-head"><div><h2>Fleet analytics</h2>
-  <div class="da-sub">Operational status ratio · security alert breakdown</div></div></div>
-  <div class="da-skeleton">Loading fleet analytics…</div>
-</div>
-<div class="grid2">
 <div class="panel">
-<div class="panel-head"><div><h2>Vehicle registry</h2><div class="sub">Police fleet and civilian / commercial vehicles — Sool, Sanaag, East Togdheer</div></div></div>
-<div id="carNotice" class="notice"></div>
-<form class="form" id="carForm" onsubmit="saveCar(event)">
-<div class="grid2">
-<div class="field"><label>Category *</label><select id="carCategory" onchange="toggleCarCategory()"><option value="Police Fleet">Police Fleet</option><option value="Civilian / Commercial">Civilian / Commercial</option></select></div>
-<div class="field"><label>Plate number *</label><input id="carPlate" placeholder="e.g. SL-1010-26" style="text-transform:uppercase"></div>
-<div class="field"><label>VIN / chassis (17) *</label><input id="carVin" maxlength="17" placeholder="17 characters, no I/O/Q"></div>
-<div class="field"><label>Engine number *</label><input id="carEngine"></div>
-<div class="field"><label>Make &amp; model *</label><input id="carMake" placeholder="e.g. Toyota Hilux"></div>
-<div class="field"><label>Year (YYYY)</label><input id="carYear" maxlength="4" placeholder="2024"></div>
-<div class="field"><label>Body type</label><select id="carType"><option value="">—</option><option>Pickup 4x4</option><option>SUV</option><option>Sedan</option><option>Armored Patrol</option><option>Truck</option><option>Patrol Motorcycle</option></select></div>
-<div class="field"><label>Primary colour</label><input id="carColor"></div>
-</div>
-<div id="carFleetFields">
-<div class="section-label">Police fleet assignment</div>
-<div class="field"><label>Assigned station *</label><select id="carStation"></select></div>
-<div class="field"><label>Assigned officer</label><select id="carOfficer"><option value="">— optional —</option></select></div>
-<div class="field"><label>Operational status</label><select id="carOpStatus"><option>In Service</option><option>Maintenance</option><option>Out of Service</option><option>Decommissioned</option></select></div>
-<div id="car-loc" class="loc-grid"></div>
-</div>
-<div id="carCivFields" style="display:none">
-<div class="section-label">Civilian owner</div>
-<div class="grid2">
-<div class="field"><label>Owner full name *</label><input id="carOwnerName"></div>
-<div class="field"><label>Owner phone *</label><input id="carOwnerPhone"></div>
-<div class="field"><label>National ID / passport *</label><input id="carOwnerNid"></div>
-<div class="field"><label>Address</label><input id="carOwnerAddr"></div>
-</div>
-</div>
-<div class="section-label">Security alert</div>
-<div class="grid2">
-<div class="field"><label>Status</label><select id="carAlert" onchange="toggleCarAlert()"><option>Clean / Normal</option><option>Stolen</option><option>Wanted in Crime</option><option>Impounded</option><option>Unregistered / Suspicious</option></select></div>
-<div class="field" id="carAlertReasonWrap" style="display:none"><label>Alert reason *</label><input id="carAlertReason"></div>
-<div class="field"><label>Registration expiry</label><input id="carExpiry" type="date"></div>
-<div class="field"><label>Photo (JPEG/PNG ≤5MB)</label><input id="carPhoto" type="file" accept=".jpg,.jpeg,.png"></div>
-</div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register vehicle</button></div>
-</form>
-</div>
-<div class="panel">
-<div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Security badge shown on every record</div></div><span class="badge gray" id="carCount" style="display:none">0</span></div>
+<div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Police fleet and civilian / commercial vehicles — Sool, Sanaag, East Togdheer · security badge on every record</div></div>
+<div class="head-tools"><span class="badge gray" id="carCount" style="display:none">0</span><button class="btn" onclick="openRegDrawer('car')">＋ Register new vehicle</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="carSearch" placeholder="Central Vehicle Search — plate, VIN, make, owner, station or alert…" oninput="renderCarsTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>ID / Plate</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Alert</th></tr></thead><tbody id="carsTable"></tbody></table></div>
-</div>
+<div class="table-wrap table-xl"><table class="table"><thead><tr><th>ID / Plate</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Alert</th></tr></thead><tbody id="carsTable"></tbody></table></div>
 </div>
 </section>
 
@@ -1150,11 +919,6 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- TRANSPORT · VEHICLE STATUS & TRACKING -->
 <section id="vehiclestatus" class="page">
-<div class="dept-analytics" id="anVehicleStatus">
-  <div class="da-head"><div><h2>Vehicle status &amp; tracking</h2>
-  <div class="da-sub">Operational readiness · security alerts · station assignment</div></div></div>
-  <div class="da-skeleton">Loading fleet status…</div>
-</div>
 <div class="panel">
   <div class="panel-head"><div><h2>Fleet status board</h2><div class="sub">Live operational status and security flag for every registered vehicle</div></div>
     <div class="da-tools"><select id="vsStatusFilter" onchange="renderVehicleStatusTable()"><option value="">All statuses</option><option>In Service</option><option>Maintenance</option><option>Out of Service</option><option>Decommissioned</option></select>
@@ -1167,8 +931,263 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 </main></div>
 
 <div class="toast" id="toast"></div>
+<div id="regFormParking" hidden>
+<div class="regform-shell" data-regform="fp" style="display:none">
+<div id="fpNotice" class="notice"></div>
+<div class="record-type">Unit-specific record: guardian, clearance reason and supporting legal documents are stored here — the applicant’s identity is matched/updated in the Central Person Registry.</div>
+<form class="form" id="fpForm" onsubmit="saveFingerprint(event)">
+<div class="section-label">Applicant identity — Central Person Registry</div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>: an exact match (National ID/passport or 4-part name + DOB) auto-fills the existing record; if no match exists a new Central Person is created automatically on save.</div>
+<div id="fpIdentity"></div>
+<div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Education</option><option>Travel</option><option>Employment</option><option>Citizenship</option><option>Licence</option></select></div>
+<div class="grid2">
+<div class="field"><label>Gender</label><select id="fpSex"><option value="">Not stated</option><option>Male</option><option>Female</option></select></div>
+<div class="field"><label>Email</label><input id="fpEmail" placeholder="applicant@example.com"></div>
+</div>
+<div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs"></div></div>
+<div class="section-label">Guardian / next of kin</div>
+<div class="grid2">
+<div class="field"><label>Guardian full name *</label><input id="gName" required placeholder="Guardian / relative name"></div>
+<div class="field"><label>Relationship</label><input id="gRelation" placeholder="Father, mother, spouse…"></div>
+<div class="field"><label>Guardian ID (passport / national)</label><input id="gId" placeholder="ID number"></div>
+<div class="field"><label>Occupation</label><input id="gOccupation" placeholder="Guardian occupation"></div>
+<div class="field"><label>Address</label><input id="gAddress" placeholder="Guardian address"></div>
+<div class="field"><label>Contact number</label><input id="gPhone" placeholder="Guardian phone"></div>
+</div>
+<div class="field"><label>Guardian attachments — upload 3, <span class="req">at least 2 required</span></label><div class="docgrid" id="guardDocs"></div></div>
+<div class="field"><label>Supporting document notes</label><textarea id="fpNotes" placeholder="Document types, issuing authority, additional notes"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetFpForm()">Clear</button><button class="btn" type="submit">Save application</button></div>
+</form>
+</div>
+<div class="regform-shell" data-regform="air" style="display:none">
+<div id="airNotice" class="notice"></div>
+<form class="form" id="airForm" onsubmit="saveAirport(event)">
+<div class="section-label">Passenger identity — Central Person Registry</div>
+<div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
+<div id="airIdentity"></div>
+<div class="section-label">Travel</div>
+<div class="grid2">
+<div class="field"><label>Movement type</label><select id="airMove"><option>Arrival</option><option>Departure</option></select></div>
+<div class="field"><label>Travel date</label><input id="airDate" type="date" value="2026-09-01"></div>
+<div class="field"><label>Flight / transport number *</label><input id="airFlight" required placeholder="e.g. HL-204"></div>
+<div class="field"><label>Airline / carrier</label><input id="airAirline" placeholder="e.g. Sentinel Air"></div>
+<div class="field"><label>Origin city *</label><input id="airOrigin" required placeholder="e.g. Berbera"></div>
+<div class="field"><label>Destination city *</label><input id="airDest" required placeholder="e.g. Hargeisa"></div>
+</div>
+<div class="field"><label>Travel notes</label><textarea id="airNotes"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">Save passenger</button></div>
+</form>
+</div>
+<div class="regform-shell" data-regform="st" style="display:none">
+<div id="stNotice" class="notice"></div>
+<form class="form" id="stForm" onsubmit="saveStation(event)">
+<div class="grid2">
+<div class="field"><label>Station name *</label><input id="stName" placeholder="e.g. Burao Central Station"></div>
+<div class="field"><label>Station code (auto)</label><input id="stCode" readonly placeholder="STN-REG-XXX" style="background:#f3f6fb;color:#526075"></div>
+<div class="field"><label>Station tier *</label><select id="stTier"><option value="">— select —</option><option>Regional HQ</option><option>District HQ</option><option>Outpost</option><option>Checkpoint</option><option>Border Post</option></select></div>
+<div class="field"><label>Contact phone *</label><input id="stPhone" placeholder="+252 …"></div>
+<div class="field"><label>Operational status</label><select id="stStatus"><option>Active</option><option>Inactive</option><option>Maintenance</option></select></div>
+<div class="field"><label>Cell capacity</label><input id="stCells" type="number" min="0" placeholder="optional"></div>
+<div class="field"><label>Commander (Inspector+)</label><select id="stCommander"><option value="">— optional —</option></select></div>
+<div class="field"><label>Deputy commander</label><select id="stDeputy"><option value="">— optional —</option></select></div>
+</div>
+<div class="section-label">Location — Sool · Sanaag · East Togdheer</div>
+<div id="st-loc" class="loc-grid"></div>
+<div class="field"><label>Notes</label><textarea id="stNotes" placeholder="Coverage area, shift details…"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" type="submit">Register station</button></div>
+</form>
+</div>
+<div class="regform-shell" data-regform="off" style="display:none">
+<div id="offNotice" class="notice"></div>
+<form class="form" id="offForm" onsubmit="saveOfficer(event)">
+<div class="tabs" id="offStepTabs">
+<button type="button" class="tab active" data-step="1" onclick="offStep(1)">1 · Official &amp; System</button>
+<button type="button" class="tab" data-step="2" onclick="offStep(2)">2 · Personal ID</button>
+<button type="button" class="tab" data-step="3" onclick="offStep(3)">3 · Regional &amp; Origin</button>
+<button type="button" class="tab" data-step="4" onclick="offStep(4)">4 · Guarantor</button>
+<button type="button" class="tab" data-step="5" onclick="offStep(5)">5 · Documents</button>
+</div>
+
+<div class="tabpane active" id="off-step-1">
+<div class="section-label">Official &amp; System Identifiers</div>
+<div class="grid2">
+<div class="field"><label>Service ID (auto-generated)</label><input id="offServiceId" readonly placeholder="POL-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
+<div class="field"><label>Rank *</label><select id="offRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
+<div class="field"><label>Unit / Division *</label><select id="offUnit"><option value="">— select unit —</option><option>General Patrol</option><option>CID / Criminal Investigation</option><option>Traffic Control</option><option>Rapid Response Unit</option><option>Special Protection Unit</option><option>Logistics</option></select></div>
+<div class="field"><label>Assigned Station *</label><select id="offStation"></select></div>
+<div class="field"><label>Date of Enlistment *</label><input id="offEnlist" type="date"></div>
+<div class="field"><label>Duty Status</label><select id="offDuty"><option>Active</option><option>Suspended</option><option>Leave</option><option>Terminated</option><option>Retired</option></select></div>
+</div>
+</div>
+
+<div class="tabpane" id="off-step-2">
+<div class="section-label">Personal Identification</div>
+<div class="grid2">
+<div class="field"><label>Full Name *</label><input id="offName" placeholder="e.g. Maxamed Faarax Nuur"></div>
+<div class="field"><label>Mother's Name *</label><input id="offMother" placeholder="e.g. Khadra Faarax"></div>
+<div class="field"><label>Date of Birth (DOB) *</label><input id="offDob" type="date"></div>
+<div class="field"><label>Place of Birth (POB) *</label><input id="offPob" placeholder="e.g. Ceerigaabo"></div>
+<div class="field"><label>Contact Number *</label><input id="offPhone" type="tel" placeholder="+252 …"></div>
+<div class="field"><label>Blood Group</label><select id="offBlood"><option value="">— select —</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div>
+<div class="field"><label>Height (cm)</label><input id="offHeight" type="number" min="0" step="0.1" placeholder="e.g. 178"></div>
+<div class="field"><label>Weight (kg)</label><input id="offWeight" type="number" min="0" step="0.1" placeholder="e.g. 82"></div>
+</div>
+<div class="field"><label>Officer Picture * <small class="muted">(JPEG/PNG, max 5MB)</small></label><input id="offPhoto" type="file" accept="image/jpeg,image/png"></div>
+</div>
+
+<div class="tabpane" id="off-step-3">
+<div class="section-label">Regional &amp; Origin Data</div>
+<div class="grid2">
+<div class="field"><label>State / Region of Origin</label><select id="offOriginRegion"></select></div>
+<div class="field"><label>District of Origin</label><select id="offOriginDistrict"></select></div>
+<div class="field"><label>Town / Village</label><input id="offTown" type="text" placeholder="e.g. Adhi Cadeeye"></div>
+</div>
+</div>
+
+<div class="tabpane" id="off-step-4">
+<div class="section-label">Guarantor / Emergency Contact</div>
+<div class="grid2">
+<div class="field"><label>Guarantor Name *</label><input id="offGuarName" placeholder="e.g. Faarax Nuur"></div>
+<div class="field"><label>Guarantor Contact *</label><input id="offGuarPhone" type="tel" placeholder="+252 …"></div>
+<div class="field"><label>Occupation</label><input id="offGuarOcc" placeholder="e.g. Merchant"></div>
+<div class="field"><label>Relationship with Officer</label><select id="offGuarRel"><option value="">— select —</option><option>Parent</option><option>Spouse</option><option>Relative</option><option>Community Leader</option><option>Other</option></select></div>
+</div>
+<div class="field"><label>Guarantor Permanent Address *</label><textarea id="offGuarAddr" placeholder="e.g. Ceerigaabo, Shaabada Dhexe"></textarea></div>
+<div class="field"><label>Guarantor Picture <small class="muted">(JPEG/PNG, optional)</small></label><input id="offGuarPhoto" type="file" accept="image/jpeg,image/png"></div>
+</div>
+
+<div class="tabpane" id="off-step-5">
+<div class="section-label">Document Slot 1 <span style="color:var(--red)">(Mandatory)</span></div>
+<div class="grid2">
+<div class="field"><label>Document Type *</label><select id="offDoc1Type"><option value="">— select type —</option><option>National ID</option><option>Passport</option><option>Birth Certificate</option><option>Letter of Guarantee</option></select></div>
+<div class="field"><label>File Upload * <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc1File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
+</div>
+<div class="section-label">Document Slot 2 <span class="muted">(Optional)</span></div>
+<div class="grid2">
+<div class="field"><label>Document Type</label><select id="offDoc2Type"><option value="">— none —</option><option>Background Check</option><option>Reference Letter</option><option>Military Discharge</option><option>Other</option></select></div>
+<div class="field"><label>File Upload <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc2File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
+</div>
+</div>
+
+<div class="form-actions">
+<button class="btn ghost" type="button" onclick="resetOfficerForm()">Clear</button>
+<button class="btn ghost" type="button" id="offBack" onclick="offStep(offCur-1)" style="display:none">← Back</button>
+<button class="btn secondary" type="button" id="offNext" onclick="offStep(offCur+1)">Next →</button>
+<button class="btn" type="submit" id="offSubmit">Register officer</button>
+</div>
+</form>
+</div>
+<div class="regform-shell" data-regform="prm" style="display:none">
+<div id="prmNotice" class="notice"></div>
+<form class="form" id="prmForm" onsubmit="savePromotionNomination(event)">
+<div class="grid2">
+<div class="field"><label>Officer *</label><select id="prmOfficer"></select></div>
+<div class="field"><label>Proposed rank *</label><select id="prmRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
+<div class="field"><label>Effective date</label><input id="prmDate" type="date"></div>
+<div class="field"><label>Nomination ID (auto-generated)</label><input id="prmId" readonly placeholder="PRM-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
+</div>
+<div class="field"><label>Reason / commendation *</label><textarea id="prmReason" placeholder="Operational commendation, examination pass, vacancy fill, long service…"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetPromotionForm()">Clear</button><button class="btn hr-green" type="submit">Submit nomination</button></div>
+</form>
+</div>
+<div class="regform-shell" data-regform="dsc" style="display:none">
+<div id="dscNotice" class="notice"></div>
+<form class="form" id="dscForm" onsubmit="saveDisciplineAction(event)">
+<div class="grid2">
+<div class="field"><label>Officer *</label><select id="dscOfficer"></select></div>
+<div class="field"><label>Action type *</label><select id="dscType" onchange="disciplineTypeChanged()"><option value="">— select —</option><option>Misconduct</option><option>Suspension</option><option>Demotion</option><option>Warning</option><option>Investigation</option></select></div>
+<div class="field"><label>Severity</label><select id="dscSeverity"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
+<div class="field"><label>Status</label><select id="dscStatus"><option>Pending</option><option>In Review</option><option>Confirmed</option><option>Appealed</option><option>Closed</option></select></div>
+<div class="field" id="dscFromWrap" style="display:none"><label>From rank</label><input id="dscFromRank" readonly style="background:#f3f6fb;color:#526075" placeholder="current rank"></div>
+<div class="field" id="dscToWrap" style="display:none"><label>Demote to rank *</label><select id="dscToRank"><option value="">— select junior rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
+<div class="field" id="dscStartWrap" style="display:none"><label>Suspension start</label><input id="dscStart" type="date"></div>
+<div class="field" id="dscEndWrap" style="display:none"><label>Suspension end</label><input id="dscEnd" type="date"></div>
+</div>
+<div class="field"><label>Incident summary *</label><textarea id="dscSummary" placeholder="What happened, where, witnesses, evidence reference…"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetDisciplineForm()">Clear</button><button class="btn hr-red" type="submit">Record action</button></div>
+</form>
+</div>
+<div class="regform-shell" data-regform="crm" style="display:none">
+<div id="crmNotice" class="notice"></div>
+<form class="form" id="crmForm" onsubmit="saveCrime(event)">
+<div class="section-label">1 · Station &amp; desk officer</div>
+<div class="grid2">
+<div class="field"><label>Police station *</label><select id="crmStation"></select></div>
+<div class="field"><label>Desk officer *</label><select id="crmOfficer"></select></div>
+</div>
+<div class="section-label">2 · Incident</div>
+<div class="grid2">
+<div class="field"><label>Category *</label><select id="crmCat"><option value="">— select —</option><option>Theft/Burglary</option><option>Assault</option><option>Robbery</option><option>Traffic Accident</option><option>Homicide</option><option>Fraud</option><option>Domestic Incident</option><option>Public Order</option><option>Cybercrime</option><option>Other</option></select></div>
+<div class="field"><label>Date / time *</label><input id="crmWhen" type="datetime-local"></div>
+<div class="field"><label>Severity</label><select id="crmSev"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
+<div class="field"><label>Status</label><select id="crmStatus"><option>Reported / Open</option><option>Under Investigation</option><option>Referred to Court</option><option>Closed</option><option>Unresolved</option></select></div>
+</div>
+<div class="field"><label>Location of occurrence *</label><input id="crmLoc" placeholder="Street, village, landmark"></div>
+<div class="field"><label>Description *</label><textarea id="crmDesc" required></textarea></div>
+<div class="section-label">3 · Victim / reporting party</div>
+<div class="grid2">
+<div class="field"><label>Reporting party</label><select id="crmParty"><option value="">—</option><option>Victim</option><option>Witness</option><option>Third-Party Representative</option><option>Police</option></select></div>
+<div class="field"><label>Anonymous victim</label><select id="crmAnon"><option value="">No</option><option value="1">Yes</option></select></div>
+<div class="field"><label>Victim full name</label><input id="crmVName"></div>
+<div class="field"><label>Contact</label><input id="crmVPhone"></div>
+<div class="field"><label>National ID</label><input id="crmVNid"></div>
+<div class="field"><label>Gender</label><select id="crmVGender"><option value="">—</option><option>Male</option><option>Female</option><option>Other / Prefer not to say</option></select></div>
+<div class="field"><label>Age</label><input id="crmVAge" type="number" min="0"></div>
+<div class="field"><label>Address</label><input id="crmVAddr"></div>
+</div>
+<div class="field"><label>Statement</label><textarea id="crmStmt"></textarea></div>
+<div class="section-label">4 · Evidence (optional, PDF/JPG/PNG ≤5MB)</div>
+<div class="grid2">
+<div class="field"><label>Evidence 1 type</label><select id="crmE1Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
+<div class="field"><label>Evidence 1 file</label><input id="crmE1" type="file" accept=".pdf,image/jpeg,image/png"></div>
+<div class="field"><label>Evidence 2 type</label><select id="crmE2Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
+<div class="field"><label>Evidence 2 file</label><input id="crmE2" type="file" accept=".pdf,image/jpeg,image/png"></div>
+</div>
+<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">File incident</button></div>
+</form>
+</div>
+<div class="regform-shell" data-regform="car" style="display:none">
+<div id="carNotice" class="notice"></div>
+<form class="form" id="carForm" onsubmit="saveCar(event)">
+<div class="grid2">
+<div class="field"><label>Category *</label><select id="carCategory" onchange="toggleCarCategory()"><option value="Police Fleet">Police Fleet</option><option value="Civilian / Commercial">Civilian / Commercial</option></select></div>
+<div class="field"><label>Plate number *</label><input id="carPlate" placeholder="e.g. SL-1010-26" style="text-transform:uppercase"></div>
+<div class="field"><label>VIN / chassis (17) *</label><input id="carVin" maxlength="17" placeholder="17 characters, no I/O/Q"></div>
+<div class="field"><label>Engine number *</label><input id="carEngine"></div>
+<div class="field"><label>Make &amp; model *</label><input id="carMake" placeholder="e.g. Toyota Hilux"></div>
+<div class="field"><label>Year (YYYY)</label><input id="carYear" maxlength="4" placeholder="2024"></div>
+<div class="field"><label>Body type</label><select id="carType"><option value="">—</option><option>Pickup 4x4</option><option>SUV</option><option>Sedan</option><option>Armored Patrol</option><option>Truck</option><option>Patrol Motorcycle</option></select></div>
+<div class="field"><label>Primary colour</label><input id="carColor"></div>
+</div>
+<div id="carFleetFields">
+<div class="section-label">Police fleet assignment</div>
+<div class="field"><label>Assigned station *</label><select id="carStation"></select></div>
+<div class="field"><label>Assigned officer</label><select id="carOfficer"><option value="">— optional —</option></select></div>
+<div class="field"><label>Operational status</label><select id="carOpStatus"><option>In Service</option><option>Maintenance</option><option>Out of Service</option><option>Decommissioned</option></select></div>
+<div id="car-loc" class="loc-grid"></div>
+</div>
+<div id="carCivFields" style="display:none">
+<div class="section-label">Civilian owner</div>
+<div class="grid2">
+<div class="field"><label>Owner full name *</label><input id="carOwnerName"></div>
+<div class="field"><label>Owner phone *</label><input id="carOwnerPhone"></div>
+<div class="field"><label>National ID / passport *</label><input id="carOwnerNid"></div>
+<div class="field"><label>Address</label><input id="carOwnerAddr"></div>
+</div>
+</div>
+<div class="section-label">Security alert</div>
+<div class="grid2">
+<div class="field"><label>Status</label><select id="carAlert" onchange="toggleCarAlert()"><option>Clean / Normal</option><option>Stolen</option><option>Wanted in Crime</option><option>Impounded</option><option>Unregistered / Suspicious</option></select></div>
+<div class="field" id="carAlertReasonWrap" style="display:none"><label>Alert reason *</label><input id="carAlertReason"></div>
+<div class="field"><label>Registration expiry</label><input id="carExpiry" type="date"></div>
+<div class="field"><label>Photo (JPEG/PNG ≤5MB)</label><input id="carPhoto" type="file" accept=".jpg,.jpeg,.png"></div>
+</div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register vehicle</button></div>
+</form>
+</div>
+</div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
-<div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
+<div class="modal" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><div class="modal-head"><div style="min-width:0"><h3 id="drawerTitle">Panel</h3><div class="drawer-sub" id="drawerSub" style="display:none"></div></div><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
 
 <script>
 // ============================ state ============================
@@ -1370,9 +1389,9 @@ function go(page){
   if(g) setNavGroupOpen(g, true);
   document.getElementById('pageTitle').textContent=TITLES[page]||'';
   if(page==='cid') renderCases();
-  // Departmental analytics: every register paints its own strip on entry
-  // (forced refresh so the numbers always match the current register).
-  if(DEPT_ANALYTICS[page]){ _deptNavFresh=true; loadDeptAnalytics(page,true); }
+  // Departmental analytics live on the Dashboard now: mark the analytics
+  // panel for a forced refresh the next time it is visible.
+  if(DEPT_ANALYTICS[page]){ _deptNavFresh=true; _dashAnForce=true; }
   if(page==='admin') renderUserTable();
   if(page==='policesearch') renderPoliceSearch();
   if(page==='stations') renderStationsTable();
@@ -1386,6 +1405,7 @@ function go(page){
     // guarantees the active user always sees their own role-scoped
     // payload — a previous session's cached dashboard can never
     // survive a page navigation.
+    _dashAnForce=true;   // fresh department analytics every dashboard visit
     if(serverOn){
       paintDashboardSkeleton('Loading '+ (sessionUser ? (sessionUser.display_name + ' · ' + (sessionUser.role_label||sessionUser.role)) : 'dashboard') +'…');
       fetchDashboard();
@@ -1963,8 +1983,58 @@ async function ensureLocalIdentity(d){
 }
 
 // ============================ drawer ============================
-function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';clearInvalid();hideModalAlert();document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on');document.body.classList.add('modal-open')}
-function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on');document.body.classList.remove('modal-open');hideModalAlert();clearInvalid()}
+// ---- slide-over drawer -------------------------------------------------------
+// Registration forms live parked inside #regFormParking; opening a register
+// drawer moves the form shell into the drawer body, and closing / opening any
+// other dialog parks it back (entered values survive a close).
+function parkRegShells(){
+  const parking=document.getElementById('regFormParking');
+  if(!parking)return;
+  document.querySelectorAll('.regform-shell').forEach(shell=>{
+    if(shell.parentElement!==parking){shell.style.display='none';parking.appendChild(shell)}
+  });
+}
+function openDrawer(title,bodyHtml,footHtml,sub){parkRegShells();document.getElementById('drawerTitle').textContent=title;const ds=document.getElementById('drawerSub');if(ds){if(sub){ds.textContent=sub;ds.style.display=''}else{ds.textContent='';ds.style.display='none'}}document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';clearInvalid();hideModalAlert();document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on');document.body.classList.add('modal-open')}
+function closeDrawer(){parkRegShells();document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on');document.body.classList.remove('modal-open');hideModalAlert();clearInvalid()}
+// ---- registration drawers ----------------------------------------------------
+// The permanent left-hand registration forms were removed from the operational
+// registers; each register is now a full-width table workspace and its form
+// opens in the drawer below ("Register new …" buttons).
+const REG_SHELLS={
+  fp:{title:'Register clearance application',sub:'Fingerprint Unit · Hargeisa Branch — the applicant’s identity is matched against the Central Person Registry in real time'},
+  air:{title:'Register airport passenger',sub:'Hargeisa Local Airport · passenger register — identity is matched against the Central Person Registry in real time'},
+  st:{title:'Register police station',sub:'Station name, code and location — SystemAdmin action'},
+  off:{title:'Register police officer',sub:'Five-part record — identifiers, personal details, origin, guarantor and supporting documents'},
+  prm:{title:'Nominate for promotion / commendation',sub:'Green badge · nominations awaiting commander verification'},
+  dsc:{title:'Record disciplinary action',sub:'Red badge · misconduct, pending suspensions and rank demotions'},
+  crm:{title:'Register crime / victim intake',sub:'File number is issued automatically · CRM-YYYY-STN-XXXX'},
+  car:{title:'Register vehicle',sub:'Police fleet and civilian / commercial vehicles — Sool, Sanaag, East Togdheer'},
+};
+function openRegDrawer(key){
+  const cfg=REG_SHELLS[key];
+  const shell=document.querySelector('.regform-shell[data-regform="'+key+'"]');
+  if(!cfg||!shell)return;
+  // Station registration stays a SystemAdmin action (mirrors the CSS gate).
+  if(key==='st' && !(document.body.classList.contains('is-admin')||document.body.classList.contains('can-manage-stations'))){
+    toast('Registering a police station is a System Admin action.');return;
+  }
+  openDrawer(cfg.title,'','',cfg.sub);
+  shell.style.display='';
+  document.getElementById('drawerBody').appendChild(shell);
+  if(key==='off'){offStep(offCur||1)}
+  if(key==='car'){toggleCarCategory();toggleCarAlert()}
+  if(key==='crm'){fillCrimeSelects()}
+}
+// Dashboard quick-action dispatcher: open the matching registration drawer
+// directly instead of navigating to the register first.
+function quickRegister(page){
+  const map={airport:'air',fingerprint:'fp'};
+  if(map[page])return openRegDrawer(map[page]);
+  if(page==='cid')return openCaseDrawer();
+  if(page==='checkpoints')return openCheckpointDrawer();
+  if(page==='conduct')return openConductModal();
+  go(page);
+}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('drawer').classList.contains('on'))closeDrawer()});
 function val(id){return document.getElementById(id).value.trim()}
 
@@ -2237,7 +2307,7 @@ function paintDashboard(d){
     quickEl.innerHTML = '<div class="empty" style="grid-column:1/-1">No quick-registration actions are available for your role.</div>';
   } else {
     quickEl.innerHTML = quick.map(q =>
-      `<button class="btn ${q.kind==='secondary'?'secondary':''}" onclick="go('${esc(q.page)}')">${esc(q.label)}</button>`
+      `<button class="btn ${q.kind==='secondary'?'secondary':''}" onclick="quickRegister('${esc(q.page)}')">${esc(q.label)}</button>`
     ).join('');
   }
   const quickSub = document.getElementById('quickSub');
@@ -2263,6 +2333,10 @@ function paintDashboard(d){
     else activitySub.textContent = 'Live feed for your module';
   }
   paintActivityFromData(d.activity || []);
+
+  // Department analytics panel — role-scoped tabs, rendered on the Dashboard
+  // instead of inside each operational register.
+  renderDashboardAnalytics();
 }
 // paintActivity() is the unified path used by both server and offline modes.
 function paintActivity(){
@@ -2941,9 +3015,9 @@ function renderAll(){
   if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
     paintActivity();
   }
-  // Departmental analytics: go() already force-refreshed the strip for the
-  // page it just opened; any other re-render (a save, a sync, a login)
-  // queues one debounced refresh so the KPIs above the table never go stale.
+  // Departmental analytics: go() flagged the Dashboard analytics panel for a
+  // forced refresh; any other re-render (a save, a sync, a login) queues one
+  // debounced refresh so the dashboard KPIs never go stale.
   if(DEPT_ANALYTICS[activePage()]){
     if(_deptNavFresh){ _deptNavFresh=false; } else { queueDeptRefresh(); }
   }
@@ -2987,7 +3061,7 @@ async function saveFingerprint(e){
       db.fingerprint.unshift({id:'FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0'),person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim(),created_at:new Date().toISOString()});
       persist();fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application saved (local demo) and linked to '+person.id+'.';
     }
-    fpNotice.className='notice';fpNotice.style.display='block';resetFpForm();await syncServer();toast('Clearance application saved');
+    closeDrawer();fpNotice.className='notice';fpNotice.style.display='none';resetFpForm();await syncServer();toast('Clearance application saved');
   }catch(err){showFormError(err.message||'The clearance application could not be saved.',{notice:'fpNotice',title:'Unable to Save'})}
 }
 async function approveFP(id){
@@ -3069,7 +3143,7 @@ async function saveAirport(e){
       db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p,move:airMove.value,date:airDate.value,flight:airFlight.value.trim(),airline,origin,dest,route,notes:airNotes.value});persist();
       airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved and linked to '+p+' in the Central Person Registry (local demo).';
     }
-    airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';await syncServer();toast('Airport unit record saved');
+    closeDrawer();airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';await syncServer();toast('Airport unit record saved');
   }catch(err){showFormError(err.message||'The passenger record could not be saved.',{notice:'airNotice',title:'Unable to Save'})}
 }
 
@@ -3878,8 +3952,10 @@ function drawGroupedBarChart(canvasId, groups, series, colors){
 }
 
 // ======================= departmental analytics ============================
-// The monolithic executive analytics page is gone. Each sidebar register now
-// embeds its own departmental analytics strip directly above its table/form:
+// The monolithic executive analytics page is gone, and the per-register strips
+// were consolidated into the tabbed Department analytics panel on the main
+// Dashboard (layout overhaul) so each operational register stays a clean,
+// full-width table workspace. The data contract per unit is unchanged:
 //
 //   page         endpoint                     bundle section
 //   fingerprint  GET /api/cid/analytics       cid -> fingerprint
@@ -4030,21 +4106,52 @@ function activePage(){
   return el?(el.id||''):'';
 }
 function invalidateDeptAnalytics(){Object.keys(_deptCache).forEach(k=>{delete _deptCache[k]})}
-// Debounced refresh used after a register mutation (save / sync) so the strip
-// above the table never shows stale numbers.
+// Debounced refresh used after a register mutation (save / sync) so the
+// Department analytics panel on the Dashboard never shows stale numbers.
 function queueDeptRefresh(){
   if(_deptRefreshTimer)return;
   _deptRefreshTimer=setTimeout(()=>{
     _deptRefreshTimer=null;
     invalidateDeptAnalytics();
-    const page=activePage();
-    if(DEPT_ANALYTICS[page])loadDeptAnalytics(page);
+    _dashAnForce=true;
+    if(activePage()==='dashboard'&&dashAnActive)loadDeptAnalytics(dashAnActive,true);
   },600);
 }
 function refreshActiveDeptAnalytics(){
-  const page=activePage();
-  if(DEPT_ANALYTICS[page])loadDeptAnalytics(page,true);
+  if(activePage()==='dashboard'&&dashAnActive)loadDeptAnalytics(dashAnActive,true);
+  else _dashAnForce=true;
 }
+
+// ---- Dashboard analytics panel ------------------------------------------------
+// Layout overhaul: the per-register analytics strips were removed from the
+// operational workspaces and consolidated on the main Dashboard. Each unit
+// the signed-in officer can access gets a tab; the registers themselves stay
+// focused on search, filters and full-width tables.
+const DASH_AN_LABEL={fingerprint:'Fingerprint Unit',cid:'Crime Department',checkpoints:'Checkpoint Unit',airport:'Airport Unit',officers:'HR Directorate',cars:'Vehicle Fleet',stations:'Police Stations'};
+const DASH_AN_ORDER=['fingerprint','cid','checkpoints','airport','officers','cars','stations'];
+let dashAnActive='';
+let _dashAnForce=true;
+function dashAnalyticsKeys(){
+  return DASH_AN_ORDER.filter(k=>!sessionUser||(sessionUser.modules||[]).includes(pageModule(k)));
+}
+function renderDashboardAnalytics(){
+  const tabsEl=document.getElementById('dashAnTabs');
+  const panesWrap=document.getElementById('dashAnPanes');
+  if(!tabsEl||!panesWrap)return;
+  const keys=dashAnalyticsKeys();
+  if(!keys.length){
+    tabsEl.style.display='none';
+    panesWrap.innerHTML='<div class="empty">No department analytics are available for your role.</div>';
+    return;
+  }
+  tabsEl.style.display='';
+  if(!keys.includes(dashAnActive))dashAnActive=keys[0];
+  tabsEl.innerHTML=keys.map(k=>`<button class="tab ${k===dashAnActive?'active':''}" data-dan="${k}" onclick="selectDashAnTab('${k}')">${esc(DASH_AN_LABEL[k]||k)}</button>`).join('');
+  document.querySelectorAll('.dash-an-pane').forEach(p=>p.classList.toggle('active',(p.dataset.danpane||p.getAttribute&&p.getAttribute('data-danpane'))===dashAnActive));
+  const force=_dashAnForce;_dashAnForce=false;
+  loadDeptAnalytics(dashAnActive,force);
+}
+function selectDashAnTab(key){dashAnActive=key;renderDashboardAnalytics()}
 
 // ---- Central Person Search shortcut embedded in every CID strip ------------
 function deptSearchHTML(cfg){
@@ -5099,6 +5206,7 @@ async function savePromotionNomination(e){
       awaiting_verification: true, nominated_by: (sessionUser && sessionUser.display_name) || 'Offline',
       verified_by: null, verified_at: null, created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')}].concat(db.promotions || []);
     try{ persist(); }catch(_){}
+    closeDrawer();
     hrNotice('prmNotice', 'Offline draft ' + nid + ' stored locally — it is submitted to the commander queue once the server is reachable.');
     renderHrPanels();
     return;
@@ -5107,6 +5215,7 @@ async function savePromotionNomination(e){
     const r = await api('/api/officers/promotions', {method: 'POST', body: JSON.stringify(payload)});
     db.promotions = [r.promotion].concat((db.promotions || []).filter(p => p.nomination_id !== r.promotion.nomination_id));
     try{ persist(); }catch(_){}
+    closeDrawer();
     resetPromotionForm();
     hrNotice('prmNotice', 'Nomination ' + r.nomination_id + ' submitted — awaiting commander verification.');
     toast('Nomination submitted', r.nomination_id + ' is on the green badge queue');
@@ -5185,6 +5294,7 @@ async function saveDisciplineAction(e){
       created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
       open: DISCIPLINE_OPEN.includes(status)}].concat(db.discipline || []);
     try{ persist(); }catch(_){}
+    closeDrawer();
     hrNotice('dscNotice', 'Offline draft ' + aid + ' stored locally — it is filed with the HR Directorate once the server is reachable.');
     resetDisciplineForm();
     renderHrPanels();
@@ -5194,6 +5304,7 @@ async function saveDisciplineAction(e){
     const r = await api('/api/officers/discipline', {method: 'POST', body: JSON.stringify(payload)});
     db.discipline = [r.discipline].concat((db.discipline || []).filter(d => d.action_id !== r.discipline.action_id));
     try{ persist(); }catch(_){}
+    closeDrawer();
     resetDisciplineForm();
     hrNotice('dscNotice', 'Disciplinary action ' + r.action_id + ' recorded (' + type + ' · ' + status + ').');
     toast('Action recorded', r.action_id + ' is on the red badge queue');
@@ -5394,7 +5505,7 @@ async function saveStation(e){
       stNotice.className='notice';stNotice.style.display='block';
       stNotice.textContent='Station registered (local demo).';
     }
-    persist();resetStationForm();refreshStationSelects();
+    closeDrawer();persist();resetStationForm();refreshStationSelects();
     renderStationsTable();renderPoliceSearch();
     toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
   }catch(err){showFormError(err.message||'The station could not be registered.',{notice:'stNotice',title:'Unable to Save'})}
@@ -5445,8 +5556,9 @@ async function saveCrime(e){
     if(crmE2.files[0]) fd.append('evidence2', crmE2.files[0]);
     const r=await api('/api/crimes',{method:'POST',body:fd});
     db.crimes=(db.crimes||[]).concat(r.crime);
-    crmNotice.className='notice'; crmNotice.style.display='block';
-    crmNotice.textContent='Filed '+r.file_number+'.';
+    closeDrawer();
+    const crmF=document.getElementById('crmForm'); if(crmF&&crmF.reset)crmF.reset();
+    crmNotice.className='notice'; crmNotice.style.display='none';
     renderCrimesTable(); toast('Crime file created', r.file_number);
   }catch(err){showFormError(err.message||'Could not file the incident.',{notice:'crmNotice',title:'Unable to Save'})}
 }
@@ -5583,7 +5695,7 @@ async function saveOfficer(e){
       offNotice.className='notice';offNotice.style.display='block';
       offNotice.textContent='Officer '+sid+' saved (local demo).';
     }
-    persist();resetOfficerForm();refreshStationSelects();
+    closeDrawer();persist();resetOfficerForm();refreshStationSelects();
     renderOfficersTable();renderPoliceSearch();
     toast('Officer registered',d.full_name+' · '+d.rank+' — assigned to '+(st?st.name:d.station_id));
   }catch(err){showFormError(err.message||'The officer could not be registered.',{notice:'offNotice',title:'Unable to Save'})}
@@ -6129,7 +6241,7 @@ async function saveCar(e){
     }else{
       db.cars=(db.cars||[]).concat({id:'local',plate,type:document.getElementById('carType').value,make,station:carStation.value,category,security_alert:alertSt,vin});
     }
-    persist();resetCarForm();renderCarsTable();renderPoliceSearch();
+    closeDrawer();persist();resetCarForm();renderCarsTable();renderPoliceSearch();
     toast('Vehicle registered',plate);
   }catch(err){
     showFormError(err.message||String(err),{notice:'carNotice'});
