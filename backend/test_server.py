@@ -1397,7 +1397,10 @@ def main():
             'fp.officer':  ('FingerprintUnit', None,   set()),
             'ap.officer':  ('AirportControl',  None,   set()),
             'cid.officer': ('CIDUnit',         None,   set()),
-            'hr.officer':  ('OfficerRegistration', None, set()),
+            # HR Directorate. The server's canonical role id is 'hr_officer'
+            # (server.ROLE_HR); 'OfficerRegistration' is only a human-facing
+            # label, never a value the API returns.
+            'hr.officer':  ('hr_officer',      None,   set()),
             'cp.south':    ('CheckpointSouth', 'South', set()),
             'cp.east':     ('CheckpointEast',  'East',  set()),
             'cp.west':     ('CheckpointWest',  'West',  set()),
@@ -1419,8 +1422,8 @@ def main():
                 expected_mods |= {'airport', 'people', 'policesearch'}
             elif role == 'CIDUnit':
                 expected_mods |= {'cid', 'people', 'policesearch', 'crimes'}
-            elif role == 'OfficerRegistration':
-                expected_mods |= {'people', 'policesearch', 'stations', 'officers', 'conduct'}
+            elif role == 'hr_officer':
+                expected_mods |= {'people', 'policesearch', 'stations', 'officers'}
             elif role.startswith('Checkpoint'):
                 expected_mods |= {'checkpoints'}
             assert set(r['user']['modules']) == expected_mods, (u, r['user'])
