@@ -321,3 +321,34 @@ This is a development foundation, not an operational police deployment.
 Authentication, database, encryption, roles, file-upload validation and
 audit controls need a production hardening pass before use with real
 data.
+
+## Modular layout (refactor of the former single-file server)
+
+`server.py` used to hold the whole backend (~5,500 lines). Its contents
+were extracted **verbatim** — no endpoint, payload, schema column or role
+renamed — into these modules (dependency order, no cycles):
+
+| Module | Owns |
+|---|---|
+| `config.py` | Paths, `SENTINEL_DB` / `SENTINEL_UPLOADS` env, `TOKENS` session map, every domain constant (roles, permissions, module maps, officer / station / crime / conduct vocabularies, review-gate window, API aliases, shared SQL SELECT fragments) |
+| `utils.py` | Password hashing, row conversion, JSON + multipart parsing, upload handling, name/choice normalisation, timestamp helpers, per-entity ID generators |
+| `database.py` | SQLite connectivity (`db()`), schema + vehicle tables, idempotent migrations, first-run seeding (`init_db`) |
+| `auth_views.py` | Sessions (create / lookup / destroy), request auth, role normalisation, module + permission enforcement, location scoping, the fingerprint 12-hour review gate, audit writer |
+| `case_views.py` | Identity resolution (Tier 1/2/3 matcher), person upsert, stations, officer register, crime register, conduct actions, promotion / discipline registers |
+| `analytics.py` | CID / Officers / Vehicles / Stations bundles, global + per-module analytics, role-aware dashboard cards + activity feed |
+| `agents.py` | AI-agent seam (**disabled by default**): prompt registry, `LLMConnectionHandler`, `AgentRouter` with step budget. No LLM call paths exist yet — this module only reserves where they must live |
+| `vehicles.py` | Police / civilian vehicle register (unchanged) |
+| `server.py` | **Entry point only**: imports the modules above, serves the HTTP router (`API`), static files, port takeover and startup. Every symbol it used to define is still importable from `server` (e.g. `server.password_hash`), so existing tooling keeps working |
+
+Start, test and deploy exactly as before:
+
+```bash
+python3 backend/server.py            # serve (SQLite stays active)
+python3 backend/test_server.py       # regression suite
+python3 backend/test_review_gate.py  # 12-hour gate suite
+python3 backend/test_print_fit.py    # A4 template contract
+```
+
+PostgreSQL preparation: `postgres_settings.example.py` holds a commented,
+drop-in Django `DATABASES` dict (psycopg2, credentials via `SENTINEL_DB_*`
+environment variables). It is documentation only — nothing imports it.
