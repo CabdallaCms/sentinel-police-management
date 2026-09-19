@@ -208,6 +208,19 @@ CREATE TABLE IF NOT EXISTS officer_conduct_actions(
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS officer_service_history(
+  id INTEGER PRIMARY KEY,
+  officer_id INTEGER NOT NULL REFERENCES officers(id),
+  action_id TEXT REFERENCES officer_conduct_actions(action_id),
+  entry_type TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  from_rank TEXT, to_rank TEXT,
+  duty_status TEXT,
+  recorded_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_service_history_officer
+  ON officer_service_history(officer_id);
 CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -926,9 +939,13 @@ ROLE_MODULES = {
     ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch', 'crimes'},
     # HR Directorate: the full Police Officers register (roster + promotions +
     # discipline, and their analytics bundle) plus the station register it
-    # posts officers against and the central registries it searches. No
-    # 'admin', no 'analytics', no CID/checkpoint/airport/fingerprint modules.
-    ROLE_HR: {'dashboard', 'people', 'policesearch', 'stations', 'officers'},
+    # posts officers against and the central registries it searches. The
+    # 'conduct' module is the promotions & disciplinary review desk — the HR
+    # Directorate is the authority that reviews, verifies and approves or
+    # rejects the conduct files station commanders submit, so it owns this
+    # register. Still no 'admin', no 'analytics', and no
+    # CID/checkpoint/airport/fingerprint modules.
+    ROLE_HR: {'dashboard', 'people', 'policesearch', 'stations', 'officers', 'conduct'},
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
@@ -4821,6 +4838,11 @@ class API(BaseHTTPRequestHandler):
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
                 '/api/vehicles': 'admin',
+                # Conduct review desk (POST /api/conduct/<id>/review) is HR
+                # Directorate territory. The intake endpoint
+                # (/api/conduct/submit) is deliberately exempted below so any
+                # station commander can still file a report.
+                '/api/conduct': 'conduct',
             }
             for prefix, mod in post_module_for_path.items():
                 if p.path == prefix or p.path.startswith(prefix + '/'):

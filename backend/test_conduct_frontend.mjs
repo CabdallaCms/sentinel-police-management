@@ -7,7 +7,7 @@
  * the real inline <script> from index.html inside a Node VM sandbox with a
  * minimal DOM stub. It exercises the Officers Registration Office journey:
  *
- *   1. Sign in as hr.officer (OfficerRegistration / HR Directorate) — the
+ *   1. Sign in as hr.officer (canonical role `hr_officer` / HR Directorate) — the
  *      conduct module appears in the session's module list and the nav.
  *   2. Register a target officer, then open the HR Action Modal, search the
  *      officer by Service ID (POL-YYYY-XXXX), pick the green Promotion
@@ -278,7 +278,7 @@ async function main() {
     s1.getElementById('loginPassword').value = 'ChangeMe123!';
     await probe(s1.sandbox, 'submitLogin')({ preventDefault() {} });
     await waitFor(() => probe(s1.sandbox, 'serverOn === true && !!sessionUser'), 'HR sign-in');
-    if (probe(s1.sandbox, "sessionUser.role") !== 'OfficerRegistration')
+    if (probe(s1.sandbox, "sessionUser.role") !== 'hr_officer')
       throw new Error('hr.officer role mismatch: ' + JSON.stringify(probe(s1.sandbox, 'sessionUser')));
     if (!probe(s1.sandbox, "sessionUser.modules.includes('conduct')"))
       throw new Error('conduct module missing from HR session');

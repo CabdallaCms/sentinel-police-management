@@ -43,7 +43,9 @@ ROLES = (
     'FingerprintUnit',
     'AirportControl',
     'CIDUnit',
-    'OfficerRegistration',
+    # HR Directorate — canonical role id is 'hr_officer' (server.ROLE_HR);
+    # 'OfficerRegistration' was only ever a human-facing label.
+    'hr_officer',
     'CheckpointSouth',
     'CheckpointEast',
     'CheckpointWest',

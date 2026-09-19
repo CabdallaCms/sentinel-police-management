@@ -755,7 +755,7 @@ def hr_directorate_suite():
         assert me['role_label'] == 'HR Directorate Officer', me
         assert me['spec_role'] == 'hr_officer' and me['role_alias'] == 'hr_officer', me
         assert set(me['modules']) == {'dashboard', 'people', 'policesearch',
-                                      'stations', 'officers'}, me['modules']
+                                      'stations', 'officers', 'conduct'}, me['modules']
         assert me['visibility']['is_admin'] is False, me['visibility']
         assert me['visibility']['can_manage_users'] is False, me['visibility']
         # Every accepted alias spelling lands on the same canonical role.
@@ -1423,7 +1423,8 @@ def main():
             elif role == 'CIDUnit':
                 expected_mods |= {'cid', 'people', 'policesearch', 'crimes'}
             elif role == 'hr_officer':
-                expected_mods |= {'people', 'policesearch', 'stations', 'officers'}
+                expected_mods |= {'people', 'policesearch', 'stations', 'officers',
+                                  'conduct'}
             elif role.startswith('Checkpoint'):
                 expected_mods |= {'checkpoints'}
             assert set(r['user']['modules']) == expected_mods, (u, r['user'])
