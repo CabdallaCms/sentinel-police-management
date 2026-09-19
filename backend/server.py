@@ -141,7 +141,8 @@ SCHEMA = '''
 CREATE TABLE IF NOT EXISTS users(
   id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL,
   display_name TEXT NOT NULL, role TEXT NOT NULL,
-  branch TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER DEFAULT 1
+  branch TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER DEFAULT 1,
+  location_scope TEXT
 );
 CREATE TABLE IF NOT EXISTS locations(
   id SERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL,
@@ -170,6 +171,7 @@ CREATE TABLE IF NOT EXISTS clearance_applications(
   guardian_occupation TEXT, guardian_address TEXT, guardian_phone TEXT,
   legal_document_ref TEXT, notes TEXT,
   applicant_docs TEXT, guardian_docs TEXT, applicant_photo TEXT,
+  sex TEXT, email TEXT,
   status TEXT NOT NULL DEFAULT 'Pending Review',
   certificate_number TEXT, created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')), reviewed_at TEXT
@@ -333,79 +335,455 @@ CREATE TABLE IF NOT EXISTS audit_events(
 );
 '''
 
-# Columns added after the initial migration (applied to existing databases).
-ADDED_COLUMNS = {
-    'users': [
-        ('location_scope', "ALTER TABLE users ADD COLUMN location_scope TEXT"),
-    ],
-    'persons': [
-        ('first_name', "ALTER TABLE persons ADD COLUMN first_name TEXT"),
-        ('second_name', "ALTER TABLE persons ADD COLUMN second_name TEXT"),
-        ('third_name', "ALTER TABLE persons ADD COLUMN third_name TEXT"),
-        ('fourth_name', "ALTER TABLE persons ADD COLUMN fourth_name TEXT"),
-        ('mother_name', "ALTER TABLE persons ADD COLUMN mother_name TEXT"),
-        ('place_of_birth', "ALTER TABLE persons ADD COLUMN place_of_birth TEXT"),
-        ('residence', "ALTER TABLE persons ADD COLUMN residence TEXT"),
-        ('occupation', "ALTER TABLE persons ADD COLUMN occupation TEXT"),
-        ('passport_id', "ALTER TABLE persons ADD COLUMN passport_id TEXT"),
-        ('photo_path', "ALTER TABLE persons ADD COLUMN photo_path TEXT"),
-    ],
-    'airport_passengers': [
-        ('airline', "ALTER TABLE airport_passengers ADD COLUMN airline TEXT"),
-        ('origin_city', "ALTER TABLE airport_passengers ADD COLUMN origin_city TEXT"),
-        ('destination_city', "ALTER TABLE airport_passengers ADD COLUMN destination_city TEXT"),
-    ],
-    'clearance_applications': [
-        ('guardian_id', "ALTER TABLE clearance_applications ADD COLUMN guardian_id TEXT"),
-        ('guardian_occupation', "ALTER TABLE clearance_applications ADD COLUMN guardian_occupation TEXT"),
-        ('guardian_address', "ALTER TABLE clearance_applications ADD COLUMN guardian_address TEXT"),
-        ('guardian_phone', "ALTER TABLE clearance_applications ADD COLUMN guardian_phone TEXT"),
-        ('applicant_docs', "ALTER TABLE clearance_applications ADD COLUMN applicant_docs TEXT"),
-        ('guardian_docs', "ALTER TABLE clearance_applications ADD COLUMN guardian_docs TEXT"),
-        ('applicant_photo', "ALTER TABLE clearance_applications ADD COLUMN applicant_photo TEXT"),
-        # Printable-application extras (Section 01 of the Good Conduct form).
-        ('sex', "ALTER TABLE clearance_applications ADD COLUMN sex TEXT"),
-        ('email', "ALTER TABLE clearance_applications ADD COLUMN email TEXT"),
-    ],
-    'crime_cases': [
-        ('incident_summary', "ALTER TABLE crime_cases ADD COLUMN incident_summary TEXT"),
-    ],
-    'suspect_alerts': [
-        ('role', "ALTER TABLE suspect_alerts ADD COLUMN role TEXT NOT NULL DEFAULT 'Suspect'"),
-        ('origin', "ALTER TABLE suspect_alerts ADD COLUMN origin TEXT NOT NULL DEFAULT 'Direct Intelligence Listing'"),
-    ],
-    'checkpoint_events': [
-        ('purpose_of_visit', "ALTER TABLE checkpoint_events ADD COLUMN purpose_of_visit TEXT"),
-        ('current_address', "ALTER TABLE checkpoint_events ADD COLUMN current_address TEXT"),
-        ('permanent_address', "ALTER TABLE checkpoint_events ADD COLUMN permanent_address TEXT"),
-        ('traveler_photo', "ALTER TABLE checkpoint_events ADD COLUMN traveler_photo TEXT"),
-        ('traveler_docs', "ALTER TABLE checkpoint_events ADD COLUMN traveler_docs TEXT"),
-        ('guardian_person_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_person_id INTEGER REFERENCES persons(id)"),
-        ('guardian_name', "ALTER TABLE checkpoint_events ADD COLUMN guardian_name TEXT"),
-        ('guardian_relationship', "ALTER TABLE checkpoint_events ADD COLUMN guardian_relationship TEXT"),
-        ('guardian_phone', "ALTER TABLE checkpoint_events ADD COLUMN guardian_phone TEXT"),
-        ('guardian_address', "ALTER TABLE checkpoint_events ADD COLUMN guardian_address TEXT"),
-        ('guardian_occupation', "ALTER TABLE checkpoint_events ADD COLUMN guardian_occupation TEXT"),
-        ('guardian_national_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_national_id TEXT"),
-        ('guardian_passport_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_passport_id TEXT"),
-        ('guardian_docs', "ALTER TABLE checkpoint_events ADD COLUMN guardian_docs TEXT"),
-        # Explicit location metadata: 'location_code' is the canonical short code
-        # (South / East / West); 'checkpoint_location' is the human-friendly label
-        # (e.g. 'South Checkpoint'). Both are written on every create so dashboards,
-        # the identity profile, and the activity feed can show the exact location
-        # without joining the locations table.
-        ('location_code', "ALTER TABLE checkpoint_events ADD COLUMN location_code TEXT"),
-        ('checkpoint_location', "ALTER TABLE checkpoint_events ADD COLUMN checkpoint_location TEXT"),
-    ],
-    'police_stations': [
-        ('station_tier', "ALTER TABLE police_stations ADD COLUMN station_tier TEXT"),
-        ('commander_id', "ALTER TABLE police_stations ADD COLUMN commander_id INTEGER REFERENCES officers(id)"),
-        ('deputy_id', "ALTER TABLE police_stations ADD COLUMN deputy_id INTEGER REFERENCES officers(id)"),
-        ('contact_phone', "ALTER TABLE police_stations ADD COLUMN contact_phone TEXT"),
-        ('cell_capacity', "ALTER TABLE police_stations ADD COLUMN cell_capacity INTEGER"),
-        ('operational_status', "ALTER TABLE police_stations ADD COLUMN operational_status TEXT DEFAULT 'Active'"),
-    ],
+# ---------------------------------------------------------------------------
+# Canonical column manifest — the auto-evolution half of the startup schema
+# synchroniser. The SCHEMA script above builds brand-new databases; this
+# manifest upgrades databases that already exist in pgAdmin and have drifted
+# behind the codebase. Every column the codebase reads or writes is listed
+# per table, in physical order, with the exact definition SCHEMA declares —
+# migrate() replays each entry as
+#     ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <column> <definition>
+# so a `persons` table missing `full_name` or `national_id` (or any other
+# expected column) is repaired automatically on the next startup.
+#
+# assert_manifest_matches_schema() — called once at import time and again
+# inside migrate() — refuses to run when this manifest and the SCHEMA script
+# disagree, so the two can never silently drift apart during development.
+# ---------------------------------------------------------------------------
+
+# created_at / updated_at / reviewed_at style columns share one definition:
+# a UTC wall-clock stamp rendered as 'YYYY-MM-DD HH24:MI:SS' text — exactly
+# the default the SCHEMA script declares.
+STAMP_DEFAULT = ("TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC',"
+                 "'YYYY-MM-DD HH24:MI:SS'))")
+
+TABLE_COLUMNS = {
+    'users': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('username', 'TEXT UNIQUE NOT NULL'),
+        ('display_name', 'TEXT NOT NULL'),
+        ('role', 'TEXT NOT NULL'),
+        ('branch', 'TEXT NOT NULL'),
+        ('password_hash', 'TEXT NOT NULL'),
+        ('active', 'INTEGER DEFAULT 1'),
+        ('location_scope', 'TEXT'),
+    ),
+    'locations': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('code', 'TEXT UNIQUE NOT NULL'),
+        ('label', 'TEXT NOT NULL'),
+        ('kind', 'TEXT NOT NULL'),
+    ),
+    'persons': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('person_id', 'TEXT UNIQUE NOT NULL'),
+        ('full_name', 'TEXT NOT NULL'),
+        ('first_name', 'TEXT'),
+        ('second_name', 'TEXT'),
+        ('third_name', 'TEXT'),
+        ('fourth_name', 'TEXT'),
+        ('national_id', 'TEXT UNIQUE'),
+        ('date_of_birth', 'TEXT'),
+        ('phone', 'TEXT'),
+        ('mother_name', 'TEXT'),
+        ('place_of_birth', 'TEXT'),
+        ('residence', 'TEXT'),
+        ('occupation', 'TEXT'),
+        ('passport_id', 'TEXT'),
+        ('photo_path', 'TEXT'),
+        ('created_at', STAMP_DEFAULT),
+        ('updated_at', STAMP_DEFAULT),
+    ),
+    'airport_passengers': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('record_id', 'TEXT UNIQUE NOT NULL'),
+        ('person_id', 'INTEGER NOT NULL REFERENCES persons(id)'),
+        ('movement', 'TEXT NOT NULL'),
+        ('travel_date', 'TEXT NOT NULL'),
+        ('flight_number', 'TEXT NOT NULL'),
+        ('airline', 'TEXT'),
+        ('origin_city', 'TEXT'),
+        ('destination_city', 'TEXT'),
+        ('route', 'TEXT NOT NULL'),
+        ('notes', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'clearance_applications': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('application_id', 'TEXT UNIQUE NOT NULL'),
+        ('person_id', 'INTEGER NOT NULL REFERENCES persons(id)'),
+        ('purpose', 'TEXT NOT NULL'),
+        ('guardian_name', 'TEXT'),
+        ('guardian_relationship', 'TEXT'),
+        ('guardian_id', 'TEXT'),
+        ('guardian_occupation', 'TEXT'),
+        ('guardian_address', 'TEXT'),
+        ('guardian_phone', 'TEXT'),
+        ('legal_document_ref', 'TEXT'),
+        ('notes', 'TEXT'),
+        ('applicant_docs', 'TEXT'),
+        ('guardian_docs', 'TEXT'),
+        ('applicant_photo', 'TEXT'),
+        ('sex', 'TEXT'),
+        ('email', 'TEXT'),
+        ('status', "TEXT NOT NULL DEFAULT 'Pending Review'"),
+        ('certificate_number', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+        ('reviewed_at', 'TEXT'),
+    ),
+    'crime_cases': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('case_id', 'TEXT UNIQUE NOT NULL'),
+        ('category', 'TEXT NOT NULL'),
+        ('location', 'TEXT'),
+        ('status', "TEXT NOT NULL DEFAULT 'Reported'"),
+        ('incident_summary', 'TEXT'),
+        ('notes', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'suspect_alerts': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('alert_id', 'TEXT UNIQUE NOT NULL'),
+        ('person_id', 'INTEGER NOT NULL REFERENCES persons(id)'),
+        ('case_id', 'INTEGER REFERENCES crime_cases(id)'),
+        ('role', "TEXT NOT NULL DEFAULT 'Suspect'"),
+        ('alert_status', "TEXT NOT NULL DEFAULT 'Active alert'"),
+        ('origin', "TEXT NOT NULL DEFAULT 'Direct Intelligence Listing'"),
+        ('notes', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'case_evidence': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('evidence_id', 'TEXT UNIQUE NOT NULL'),
+        ('case_id', 'INTEGER NOT NULL REFERENCES crime_cases(id)'),
+        ('caption', 'TEXT'),
+        ('file_path', 'TEXT'),
+        ('file_name', 'TEXT'),
+        ('file_type', 'TEXT'),
+        ('uploaded_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'checkpoint_events': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('event_id', 'TEXT UNIQUE NOT NULL'),
+        ('person_id', 'INTEGER NOT NULL REFERENCES persons(id)'),
+        ('location', 'TEXT NOT NULL'),
+        ('location_code', 'TEXT'),
+        ('checkpoint_location', 'TEXT'),
+        ('screening_result', 'TEXT NOT NULL'),
+        ('action_taken', "TEXT NOT NULL DEFAULT 'Cleared'"),
+        ('notes', 'TEXT'),
+        ('purpose_of_visit', 'TEXT'),
+        ('current_address', 'TEXT'),
+        ('permanent_address', 'TEXT'),
+        ('traveler_photo', 'TEXT'),
+        ('traveler_docs', 'TEXT'),
+        ('guardian_person_id', 'INTEGER REFERENCES persons(id)'),
+        ('guardian_name', 'TEXT'),
+        ('guardian_relationship', 'TEXT'),
+        ('guardian_phone', 'TEXT'),
+        ('guardian_address', 'TEXT'),
+        ('guardian_occupation', 'TEXT'),
+        ('guardian_national_id', 'TEXT'),
+        ('guardian_passport_id', 'TEXT'),
+        ('guardian_docs', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'police_stations': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('station_id', 'TEXT UNIQUE NOT NULL'),
+        ('name', 'TEXT NOT NULL'),
+        ('code', 'TEXT UNIQUE NOT NULL'),
+        ('region', 'TEXT NOT NULL'),
+        ('district', 'TEXT NOT NULL'),
+        ('village', 'TEXT'),
+        ('station_tier', 'TEXT'),
+        ('commander_id', 'INTEGER'),
+        ('deputy_id', 'INTEGER'),
+        ('contact_phone', 'TEXT'),
+        ('cell_capacity', 'INTEGER'),
+        ('operational_status', "TEXT DEFAULT 'Active'"),
+        ('notes', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'officers': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('service_id', 'TEXT UNIQUE NOT NULL'),
+        ('rank', 'TEXT NOT NULL'),
+        ('unit', 'TEXT NOT NULL'),
+        ('station_id', 'INTEGER NOT NULL REFERENCES police_stations(id)'),
+        ('date_of_enlistment', 'TEXT NOT NULL'),
+        ('duty_status', "TEXT NOT NULL DEFAULT 'Active'"),
+        ('full_name', 'TEXT NOT NULL'),
+        ('mother_name', 'TEXT NOT NULL'),
+        ('date_of_birth', 'TEXT NOT NULL'),
+        ('place_of_birth', 'TEXT NOT NULL'),
+        ('contact_number', 'TEXT NOT NULL'),
+        ('height_cm', 'TEXT'),
+        ('weight_kg', 'TEXT'),
+        ('blood_group', 'TEXT'),
+        ('photo_path', 'TEXT'),
+        ('region_of_origin', 'TEXT'),
+        ('district_of_origin', 'TEXT'),
+        ('town_village', 'TEXT'),
+        ('guarantor_name', 'TEXT NOT NULL'),
+        ('guarantor_address', 'TEXT NOT NULL'),
+        ('guarantor_occupation', 'TEXT'),
+        ('guarantor_relationship', 'TEXT'),
+        ('guarantor_contact', 'TEXT NOT NULL'),
+        ('guarantor_photo', 'TEXT'),
+        ('doc1_type', 'TEXT NOT NULL'),
+        ('doc1_path', 'TEXT NOT NULL'),
+        ('doc2_type', 'TEXT'),
+        ('doc2_path', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'crime_incidents': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('file_number', 'TEXT UNIQUE NOT NULL'),
+        ('station_id', 'INTEGER NOT NULL REFERENCES police_stations(id)'),
+        ('officer_id', 'INTEGER NOT NULL REFERENCES officers(id)'),
+        ('category', 'TEXT NOT NULL'),
+        ('incident_at', 'TEXT NOT NULL'),
+        ('location_of_occurrence', 'TEXT'),
+        ('severity', 'TEXT'),
+        ('description', 'TEXT NOT NULL'),
+        ('case_status', "TEXT NOT NULL DEFAULT 'Reported / Open'"),
+        ('reporting_party_type', 'TEXT'),
+        ('victim_anonymous', 'INTEGER DEFAULT 0'),
+        ('victim_full_name', 'TEXT'),
+        ('victim_contact', 'TEXT'),
+        ('victim_national_id', 'TEXT'),
+        ('victim_gender', 'TEXT'),
+        ('victim_age', 'INTEGER'),
+        ('victim_address', 'TEXT'),
+        ('statement', 'TEXT'),
+        ('evidence1_type', 'TEXT'),
+        ('evidence1_path', 'TEXT'),
+        ('evidence2_type', 'TEXT'),
+        ('evidence2_path', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'officer_promotions': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('nomination_id', 'TEXT UNIQUE NOT NULL'),
+        ('officer_id', 'INTEGER NOT NULL REFERENCES officers(id)'),
+        ('current_rank', 'TEXT NOT NULL'),
+        ('proposed_rank', 'TEXT NOT NULL'),
+        ('reason', 'TEXT'),
+        ('effective_date', 'TEXT'),
+        ('verification_status', "TEXT NOT NULL DEFAULT 'Awaiting Verification'"),
+        ('nominated_by', 'INTEGER REFERENCES users(id)'),
+        ('verified_by', 'INTEGER REFERENCES users(id)'),
+        ('verified_at', 'TEXT'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'officer_discipline': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('action_id', 'TEXT UNIQUE NOT NULL'),
+        ('officer_id', 'INTEGER NOT NULL REFERENCES officers(id)'),
+        ('action_type', 'TEXT NOT NULL'),
+        ('severity', 'TEXT'),
+        ('status', "TEXT NOT NULL DEFAULT 'Pending'"),
+        ('from_rank', 'TEXT'),
+        ('to_rank', 'TEXT'),
+        ('suspension_start', 'TEXT'),
+        ('suspension_end', 'TEXT'),
+        ('incident_summary', 'TEXT'),
+        ('reported_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'officer_conduct_actions': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('action_id', 'TEXT UNIQUE NOT NULL'),
+        ('officer_id', 'INTEGER NOT NULL REFERENCES officers(id)'),
+        ('action_type', 'TEXT NOT NULL'),
+        ('classification', 'TEXT NOT NULL'),
+        ('proposed_rank', 'TEXT'),
+        ('narrative', 'TEXT NOT NULL'),
+        ('station_id', 'INTEGER REFERENCES police_stations(id)'),
+        ('reporting_officer_id', 'INTEGER REFERENCES officers(id)'),
+        ('submitted_at', 'TEXT'),
+        ('status', "TEXT NOT NULL DEFAULT 'Submitted to HR'"),
+        ('reviewer_officer_id', 'INTEGER REFERENCES officers(id)'),
+        ('reviewer_notes', 'TEXT'),
+        ('reviewed_at', 'TEXT'),
+        ('rank_applied', 'INTEGER NOT NULL DEFAULT 0'),
+        ('documents', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'officer_service_history': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('officer_id', 'INTEGER NOT NULL REFERENCES officers(id)'),
+        ('action_id', 'TEXT REFERENCES officer_conduct_actions(action_id)'),
+        ('entry_type', 'TEXT NOT NULL'),
+        ('summary', 'TEXT NOT NULL'),
+        ('from_rank', 'TEXT'),
+        ('to_rank', 'TEXT'),
+        ('duty_status', 'TEXT'),
+        ('recorded_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'sessions': (
+        ('token', 'TEXT PRIMARY KEY'),
+        ('user_id', 'INTEGER NOT NULL REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'audit_events': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('user_id', 'INTEGER REFERENCES users(id)'),
+        ('action', 'TEXT NOT NULL'),
+        ('entity', 'TEXT NOT NULL'),
+        ('entity_id', 'TEXT'),
+        ('details', 'TEXT'),
+        ('created_at', STAMP_DEFAULT),
+    ),
+    'vehicles': (
+        ('id', 'SERIAL PRIMARY KEY'),
+        ('vehicle_id', 'TEXT UNIQUE NOT NULL'),
+        ('category', 'TEXT NOT NULL'),
+        ('plate_number', 'TEXT UNIQUE NOT NULL'),
+        ('vin', 'TEXT UNIQUE NOT NULL'),
+        ('engine_number', 'TEXT NOT NULL'),
+        ('make_model', 'TEXT NOT NULL'),
+        ('year_of_manufacture', 'INTEGER'),
+        ('body_type', 'TEXT'),
+        ('primary_color', 'TEXT'),
+        ('secondary_color', 'TEXT'),
+        ('station_id', 'INTEGER REFERENCES police_stations(id)'),
+        ('officer_id', 'INTEGER REFERENCES officers(id)'),
+        ('operational_status', 'TEXT'),
+        ('owner_full_name', 'TEXT'),
+        ('owner_phone', 'TEXT'),
+        ('owner_national_id', 'TEXT'),
+        ('owner_address', 'TEXT'),
+        ('security_alert', "TEXT NOT NULL DEFAULT 'Clean / Normal'"),
+        ('alert_reason', 'TEXT'),
+        ('registration_expiry', 'TEXT'),
+        ('photo_path', 'TEXT'),
+        ('created_by', 'INTEGER REFERENCES users(id)'),
+        ('created_at', STAMP_DEFAULT),
+    ),
 }
+
+
+def _parse_schema_tables(ddl):
+    """Parse CREATE TABLE blocks into {table: [(column, definition), ...]}.
+
+    Understands exactly the SQL shapes the SCHEMA script uses: '--' line
+    comments (stripped first), several columns on one physical line, and
+    column defaults that themselves contain commas — e.g.
+    to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') —
+    because the split only breaks on commas at parenthesis depth zero.
+    Table-level clauses (PRIMARY KEY (...), UNIQUE (...), FOREIGN KEY ...,
+    CHECK (...), CONSTRAINT ...) are recognised and skipped: the SCHEMA
+    script declares every constraint inline on its column, so anything
+    table-level would be a new pattern worth failing on rather than
+    silently mis-parsing.
+    """
+    tables = {}
+    cleaned = re.sub(r'--[^\n]*', '', ddl)
+    for stmt in re.finditer(
+            r'CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)\s*;',
+            cleaned, re.I | re.S):
+        table, body = stmt.group(1), stmt.group(2)
+        depth, current, parts = 0, '', []
+        for ch in body:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                parts.append(current)
+                current = ''
+            else:
+                current += ch
+        if current.strip():
+            parts.append(current)
+        columns = []
+        for part in parts:
+            definition = re.sub(r'\s+', ' ', part).strip()
+            if not definition:
+                continue
+            head = definition.split(' ', 1)[0].upper()
+            if head in ('PRIMARY', 'UNIQUE', 'FOREIGN', 'CHECK',
+                        'CONSTRAINT', 'LIKE', 'EXCLUDE'):
+                continue
+            bits = definition.split(' ', 1)
+            if len(bits) != 2:
+                raise RuntimeError(
+                    'cannot parse SCHEMA column definition: ' + repr(definition))
+            columns.append((bits[0], bits[1].strip()))
+        tables[table] = columns
+    return tables
+
+
+def assert_manifest_matches_schema():
+    """Refuse to run when SCHEMA and TABLE_COLUMNS disagree (pure text — no
+    database I/O).
+
+    Fresh databases are built from the SCHEMA script while existing
+    databases are evolved from TABLE_COLUMNS; if the two ever described
+    different structures, brand-new deployments and upgraded deployments
+    would silently diverge. This check makes that drift impossible: the
+    developer gets a precise, column-level diff at import/startup time
+    instead of a mysterious bug report from a database that "should be
+    identical".
+    """
+    parsed = _parse_schema_tables(SCHEMA + '\n' + VEHICLES_SCHEMA)
+    problems = []
+    for table, manifest_columns in TABLE_COLUMNS.items():
+        if table not in parsed:
+            problems.append("table '%s' is listed in TABLE_COLUMNS but has no "
+                            'CREATE TABLE statement in SCHEMA/VEHICLES_SCHEMA' % table)
+            continue
+        ddl_columns = parsed.pop(table)
+        manifest = [(name, re.sub(r'\s+', ' ', definition).strip())
+                    for name, definition in manifest_columns]
+        if ddl_columns == manifest:
+            continue
+        ddl_names = [name for name, _ in ddl_columns]
+        manifest_names = [name for name, _ in manifest]
+        if ddl_names != manifest_names:
+            only_ddl = [n for n in ddl_names if n not in manifest_names]
+            only_manifest = [n for n in manifest_names if n not in ddl_names]
+            if only_ddl:
+                problems.append("table '%s': SCHEMA has column(s) TABLE_COLUMNS "
+                                'lacks: %s' % (table, ', '.join(only_ddl)))
+            if only_manifest:
+                problems.append("table '%s': TABLE_COLUMNS has column(s) SCHEMA "
+                                'lacks: %s' % (table, ', '.join(only_manifest)))
+            if sorted(ddl_names) == sorted(manifest_names):
+                problems.append("table '%s': column order differs between SCHEMA "
+                                'and TABLE_COLUMNS' % table)
+        else:
+            for (ddl_name, ddl_def), (_, manifest_def) in zip(ddl_columns, manifest):
+                if ddl_def != manifest_def:
+                    problems.append("column '%s.%s': SCHEMA defines '%s' but "
+                                    'TABLE_COLUMNS defines %r'
+                                    % (table, ddl_name, ddl_def, manifest_def))
+    for orphan in sorted(parsed):
+        problems.append("table '%s' has a CREATE TABLE statement but is missing "
+                        'from TABLE_COLUMNS' % orphan)
+    if problems:
+        raise RuntimeError(
+            'SCHEMA and TABLE_COLUMNS are out of sync — the CREATE TABLE script '
+            'and the startup auto-repair manifest must describe identical '
+            'structures:\n  - ' + '\n  - '.join(problems))
+
+
+# Fail fast — even on a plain `import server` (tests, tooling) — if the DDL
+# script and the auto-repair manifest ever drift apart during development.
+assert_manifest_matches_schema()
 
 NAME_PART_FIELDS = ('first_name', 'second_name', 'third_name', 'fourth_name')
 PERSON_FIELDS = NAME_PART_FIELDS + ('full_name', 'national_id', 'date_of_birth', 'phone',
@@ -1400,63 +1778,197 @@ def relax_not_null(c, table, col):
     """
     c.execute(f'ALTER TABLE {table} ALTER COLUMN {col} DROP NOT NULL')
 
-def migrate(c):
-    """Idempotent in-place migration of an existing PostgreSQL database.
+def existing_columns(c, table):
+    """Set of column names `table` currently has in the public schema."""
+    return {r['name'] for r in c.execute(
+        'SELECT column_name AS name FROM information_schema.columns '
+        "WHERE table_schema='public' AND table_name=%s", (table,))}
 
-    * relaxes the legacy NOT NULL columns (persons.national_id,
-      suspect_alerts.case_id) that older databases may still carry,
-    * adds every column introduced after the initial schema
-      (see ADDED_COLUMNS), and
-    * backfills the 4-part name columns and the explicit checkpoint
-      location metadata for legacy rows.
+
+def ensure_column(c, table, col, definition, pk_expr):
+    """Add `table`.`col` if it is missing — even when the table already holds
+    rows — enforcing the canonical `definition` from TABLE_COLUMNS.
+
+    PostgreSQL rejects ADD COLUMN ... NOT NULL on a populated table unless a
+    DEFAULT backfills the existing rows, so the repair runs through
+    strategies, most faithful first:
+
+      1. One statement:
+             ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <col> <definition>
+         Succeeds for every nullable column, every column with a DEFAULT
+         (the default seeds the legacy rows), and every NOT NULL column on
+         an empty table. `id SERIAL PRIMARY KEY` also lands here:
+         PostgreSQL backfills existing rows from the new sequence.
+      2. Populated table + NOT NULL without DEFAULT (e.g. persons.full_name):
+         the column is added without the NOT NULL qualifier, legacy rows are
+         backfilled (distinct '<col>-legacy-<pk>' markers for UNIQUE / PRIMARY
+         KEY columns so the unique constraint cannot collide, '' for TEXT,
+         0 for INTEGER), and NOT NULL is then enforced with SET NOT NULL.
+      3. Populated table + NOT NULL + REFERENCES (e.g. officers.station_id):
+         no blanket value can satisfy the foreign key, so the column is added
+         nullable with the foreign key intact and a warning is printed.
+         Every INSERT path in this codebase supplies these columns
+         explicitly, so runtime behaviour is unchanged.
+
+    Any other failure (missing referenced table, permission error, typo in
+    the manifest) propagates and aborts startup — never silently ignored.
     """
-    tables = {r['name'] for r in c.execute(
-        "SELECT table_name AS name FROM information_schema.tables "
-        "WHERE table_schema='public' AND table_type='BASE TABLE'")}
-    if 'persons' in tables and has_notnull(c, 'persons', 'national_id'):
-        relax_not_null(c, 'persons', 'national_id')
-    if 'suspect_alerts' in tables and has_notnull(c, 'suspect_alerts', 'case_id'):
-        relax_not_null(c, 'suspect_alerts', 'case_id')
-    for table, cols in ADDED_COLUMNS.items():
-        if table not in tables:
-            continue
-        existing = {r['name'] for r in c.execute(
-            "SELECT column_name AS name FROM information_schema.columns "
-            "WHERE table_schema='public' AND table_name=%s", (table,))}
-        for col, sql in cols:
-            if col not in existing:
-                c.execute(sql)
-    # Circular foreign key closure: police_stations.commander_id / deputy_id
-    # point at officers(id) while officers.station_id points back at
-    # police_stations(id). The CREATE TABLE script must declare them as plain
-    # INTEGER columns (PostgreSQL validates REFERENCES at DDL time and the
-    # forward reference is impossible); the constraints are added here, once
-    # both tables — and the ADDED_COLUMNS pass — are guaranteed to exist.
+    c.execute('SAVEPOINT sentinel_ensure_column')
+    try:
+        c.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {definition}')
+        c.execute('RELEASE SAVEPOINT sentinel_ensure_column')
+        return
+    except psycopg2.Error:
+        c.execute('ROLLBACK TO SAVEPOINT sentinel_ensure_column')
+        c.execute('RELEASE SAVEPOINT sentinel_ensure_column')
+    upper = definition.upper()
+    if 'NOT NULL' not in upper and 'PRIMARY KEY' not in upper:
+        # The failure was not the populated-table NOT NULL case — re-raise
+        # so the real cause surfaces in the startup error report.
+        raise
+    # --- strategy 2 / 3: two-phase repair for populated legacy tables -----
+    base = re.sub(r'\s+NOT\s+NULL', '', definition, flags=re.I)
+    base = re.sub(r'\s+PRIMARY\s+KEY', '', base, flags=re.I).strip()
+    c.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {base}')
+    if 'REFERENCES' in upper:
+        print(f'  [schema] WARNING: {table}.{col} added nullable — it is NOT NULL '
+              'with a foreign key, so existing rows cannot be backfilled '
+              'automatically; every API write path supplies it explicitly.')
+        return
+    if 'UNIQUE' in upper or 'PRIMARY KEY' in upper:
+        # Distinct per-row markers keep UNIQUE / PRIMARY KEY columns valid.
+        filler = f"'{col}-legacy-' || {pk_expr}"
+    elif re.match(r'(SMALLINT|INTEGER|BIGINT|SERIAL)\b', definition, re.I):
+        filler = '0'
+    else:
+        filler = "''"
+    c.execute(f'UPDATE {table} SET {col} = {filler} WHERE {col} IS NULL')
+    if not has_notnull(c, table, col):
+        c.execute('SAVEPOINT sentinel_tighten_column')
+        try:
+            c.execute(f'ALTER TABLE {table} ALTER COLUMN {col} SET NOT NULL')
+            c.execute('RELEASE SAVEPOINT sentinel_tighten_column')
+        except psycopg2.Error:
+            c.execute('ROLLBACK TO SAVEPOINT sentinel_tighten_column')
+            c.execute('RELEASE SAVEPOINT sentinel_tighten_column')
+            print(f'  [schema] WARNING: could not enforce NOT NULL on '
+                  f'{table}.{col}; the column exists and every API write path '
+                  'populates it, but legacy rows may hold NULLs.')
+    if 'PRIMARY KEY' in upper:
+        # sessions.token is the only natural-key primary key; restore the
+        # constraint itself once every legacy row carries a distinct marker.
+        c.execute(f'''DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                               WHERE conname = '{table}_pkey'
+                                 AND conrelid = '{table}'::regclass) THEN
+                    ALTER TABLE {table} ADD CONSTRAINT {table}_pkey
+                        PRIMARY KEY ({col});
+                END IF;
+            END $$;''')
+
+
+def migrate(c):
+    """Synchronise the live PostgreSQL schema with this codebase — the
+    complete, automatic, idempotent startup migration.
+
+    Phases, in order (each one is a no-op when the database is current):
+
+      0. Manifest self-check — SCHEMA and TABLE_COLUMNS must describe
+         identical structures (pure text comparison, no database I/O).
+      1. CREATE TABLE IF NOT EXISTS for every table — fresh databases get
+         the full canonical DDL: every column, data type, default and
+         reference constraint the codebase uses.
+      2. ALTER TABLE ... ADD COLUMN IF NOT EXISTS for every expected column
+         — databases that already exist in pgAdmin but drifted behind the
+         codebase are evolved in place: a persons table missing full_name
+         or national_id (or any other column) is repaired automatically.
+      3. Circular foreign-key closure: police_stations.commander_id and
+         deputy_id -> officers(id). They are declared as plain INTEGER
+         columns at CREATE time because officers.station_id references
+         police_stations(id) back, and PostgreSQL validates REFERENCES at
+         DDL time; the constraints are attached here, once both tables —
+         and the phase-2 column pass — are guaranteed to exist.
+      4. Legacy NOT NULL relaxation: persons.national_id and
+         suspect_alerts.case_id were mandatory in the SQLite era and are
+         optional now.
+      5. Data backfills so legacy rows speak the current column dialect:
+         suspect origin, the 4-part name columns <-> full_name (both
+         directions), and the explicit checkpoint location metadata.
+
+    Returns the list of 'table.column' repairs phase 2 performed, so the
+    startup banner can report exactly what was synchronized.
+    """
+    assert_manifest_matches_schema()
+    repairs = []
+    # -- Phase 1: create any missing table with the full canonical DDL ------
+    c.executescript(SCHEMA)
+    c.executescript(VEHICLES_SCHEMA)
+    # -- Phase 2: evolve every existing table to the current column set -----
+    for table, columns in TABLE_COLUMNS.items():
+        present = existing_columns(c, table)
+        pk_expr = ('id::text' if any(name == 'id' for name, _ in columns)
+                   else 'ctid::text')
+        for col, definition in columns:
+            if col not in present:
+                ensure_column(c, table, col, definition, pk_expr)
+                repairs.append(f'{table}.{col}')
+    # -- Phase 3: circular foreign-key closure ------------------------------
     # Idempotent: pg_constraint is checked so repeated startups are no-ops.
-    c.execute('''
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                           WHERE conname = 'fk_police_stations_commander') THEN
-                ALTER TABLE police_stations ADD CONSTRAINT fk_police_stations_commander
-                    FOREIGN KEY (commander_id) REFERENCES officers(id);
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                           WHERE conname = 'fk_police_stations_deputy') THEN
-                ALTER TABLE police_stations ADD CONSTRAINT fk_police_stations_deputy
-                    FOREIGN KEY (deputy_id) REFERENCES officers(id);
-            END IF;
-        END $$;''')
+    # A legacy commander/deputy row pointing at a missing officer degrades
+    # to a loud warning instead of aborting the whole startup.
+    c.execute('SAVEPOINT sentinel_fk_closure')
+    try:
+        c.execute('''
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                               WHERE conname = 'fk_police_stations_commander') THEN
+                    ALTER TABLE police_stations ADD CONSTRAINT fk_police_stations_commander
+                        FOREIGN KEY (commander_id) REFERENCES officers(id);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                               WHERE conname = 'fk_police_stations_deputy') THEN
+                    ALTER TABLE police_stations ADD CONSTRAINT fk_police_stations_deputy
+                        FOREIGN KEY (deputy_id) REFERENCES officers(id);
+                END IF;
+            END $$;''')
+        c.execute('RELEASE SAVEPOINT sentinel_fk_closure')
+    except psycopg2.Error as exc:
+        c.execute('ROLLBACK TO SAVEPOINT sentinel_fk_closure')
+        c.execute('RELEASE SAVEPOINT sentinel_fk_closure')
+        print('  [schema] WARNING: could not attach the commander/deputy foreign '
+              f'keys ({exc}). The columns exist, but a legacy officer reference '
+              'is probably dangling — fix that row in pgAdmin to enable the '
+              'constraint.')
+    # -- Phase 4: relax legacy NOT NULL columns -----------------------------
+    if has_notnull(c, 'persons', 'national_id'):
+        relax_not_null(c, 'persons', 'national_id')
+    if has_notnull(c, 'suspect_alerts', 'case_id'):
+        relax_not_null(c, 'suspect_alerts', 'case_id')
+    # -- Phase 5: data backfills for legacy rows ----------------------------
     # Existing case-linked suspects are recorded as case links.
     c.execute("UPDATE suspect_alerts SET origin='Case Link' "
               "WHERE case_id IS NOT NULL AND origin='Direct Intelligence Listing'")
-    # Backfill 4-part name columns from legacy full_name values.
+    # Backfill the 4-part name columns from legacy full_name values.
     rows = c.execute("SELECT id,full_name FROM persons "
                      "WHERE TRIM(COALESCE(first_name,''))=''").fetchall()
     for r in rows:
         a, b, d, e = raw_parts(r['full_name'])
         c.execute('UPDATE persons SET first_name=%s,second_name=%s,third_name=%s,fourth_name=%s WHERE id=%s',
                   (a, b, d, e, r['id']))
+    # And the mirror image: a legacy table that had the name parts but no
+    # full_name column (added nullable by phase 2) gets full_name rebuilt
+    # from the parts, so the NOT NULL constraint holds a real value.
+    c.execute("""UPDATE persons SET full_name =
+                     TRIM(BOTH FROM REGEXP_REPLACE(
+                         CONCAT_WS(' ', first_name, second_name, third_name, fourth_name),
+                         '\\s+', ' ', 'g'))
+                 WHERE TRIM(COALESCE(full_name,''))=''
+                   AND (TRIM(COALESCE(first_name,''))<>''
+                        OR TRIM(COALESCE(second_name,''))<>''
+                        OR TRIM(COALESCE(third_name,''))<>''
+                        OR TRIM(COALESCE(fourth_name,''))<>'')""")
     # Backfill the explicit checkpoint location metadata so the dashboard
     # and identity profile can show 'Checkpoint (South)' for legacy rows
     # where only the short 'location' code is present.
@@ -1476,12 +1988,64 @@ def migrate(c):
     # NOTE: unlike SQLite, PostgreSQL enforces foreign keys on every
     # statement — there is no PRAGMA foreign_keys toggle and no deferred
     # foreign_key_check pass; any violation aborts the statement itself.
+    return repairs
 
-def init_db():
-    c = get_db_connection()
-    c.executescript(SCHEMA)
-    c.executescript(VEHICLES_SCHEMA)
-    migrate(c)
+
+def verify_database_ready(c):
+    """Pre-flight gate: prove the synchronised database is complete.
+
+    Every table and every column from TABLE_COLUMNS must exist in the public
+    schema, and a live COUNT(*) must run against every table — only then is
+    the database certified ready for transactions. Any gap raises
+    RuntimeError naming exactly what is missing (or unreadable), which
+    init_db() turns into a clean startup failure BEFORE the listening banner
+    is ever printed.
+
+    Data-type mismatches on pre-existing columns (a column an operator made
+    INTEGER in pgAdmin where the codebase expects TEXT, say) cannot be
+    auto-repaired without touching data, so they are reported as loud
+    warnings instead — the column is present and the API works, but the
+    operator should reconcile it.
+    """
+    missing = []
+    type_warnings = []
+    for table, columns in TABLE_COLUMNS.items():
+        reg = c.execute('SELECT to_regclass(%s) AS reg', (f'public.{table}',)).fetchone()
+        if not reg or not reg['reg']:
+            missing.append(f'table {table}')
+            continue
+        present = {r['name']: (r['udt'] or '').lower() for r in c.execute(
+            'SELECT column_name AS name, udt_name AS udt FROM information_schema.columns '
+            "WHERE table_schema='public' AND table_name=%s", (table,))}
+        for col, definition in columns:
+            if col not in present:
+                missing.append(f'column {table}.{col}')
+                continue
+            expected = definition.split(' ', 1)[0].upper()
+            family = {'TEXT': ('text', 'varchar', 'bpchar'),
+                      'INTEGER': ('int4',), 'SERIAL': ('int4',),
+                      'SMALLINT': ('int2',), 'BIGINT': ('int8',)}.get(expected)
+            if family and present[col] not in family:
+                type_warnings.append(f'{table}.{col} is {present[col]} in pgAdmin '
+                                     f'but the codebase expects {expected}')
+    if missing:
+        raise RuntimeError('schema verification failed — missing '
+                           + ', '.join(missing))
+    for warning in sorted(set(type_warnings)):
+        print(f'  [schema] WARNING: {warning}')
+    # Read-proof every table with a live COUNT(*) — a full pass means the
+    # connection can transact against the synchronised schema.
+    for table in TABLE_COLUMNS:
+        c.execute(f'SELECT COUNT(*) FROM {table}').fetchone()
+
+
+def seed_initial_data(c):
+    """Seed the canonical reference rows and the demo dataset on first run.
+
+    Every block is guarded by a COUNT(*)==0 check, so the seeds run exactly
+    once against an empty database and are permanent no-ops afterwards —
+    data an operator already has in pgAdmin is never touched.
+    """
     # Canonical checkpoint locations — referenced by both the data and the RBAC layer.
     if c.execute('SELECT COUNT(*) FROM locations').fetchone()[0] == 0:
         for code, label in (('South', 'South Checkpoint'),
@@ -1566,7 +2130,31 @@ def init_db():
             checkpoint_location,screening_result,action_taken,created_by,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                   ('CP-'+secrets.token_hex(4),susp_pid,'South','South','South Checkpoint',
                    'Flagged match','Supervisor contacted',admin_id,'2026-08-30 08:42:00'))
-    c.commit(); c.close()
+
+def init_db():
+    """The complete startup database hook: create, evolve, seed, verify.
+
+    Everything runs inside ONE connection and ONE transaction — the CREATE
+    TABLE pass, every ALTER TABLE repair, the circular foreign keys, the
+    backfills and the seed rows either all commit together or all roll back
+    together, so a half-synchronised database can never be left behind for
+    the next request to trip over.
+
+    Returns the list of column repairs migrate() performed (empty when the
+    database was already current) so the startup banner can report them.
+    """
+    c = get_db_connection()
+    try:
+        repairs = migrate(c)
+        seed_initial_data(c)
+        verify_database_ready(c)
+        c.commit()
+        return repairs
+    except Exception:
+        c.rollback()
+        raise
+    finally:
+        c.close()
 
 # ---- helpers ----------------------------------------------------------------
 def password_hash(value): return hashlib.sha256(value.encode()).hexdigest()
@@ -5691,8 +6279,9 @@ def bind_server(port):
 
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', '8001'))
     try:
-        init_db()
+        repairs = init_db()
     except psycopg2.OperationalError as exc:
         # Fail loudly and legibly when the PostgreSQL engine is unreachable —
         # the usual causes are a stopped server or missing .env settings.
@@ -5706,11 +6295,28 @@ if __name__ == '__main__':
             'SENTINEL_DB_NAME / SENTINEL_DB_USER / SENTINEL_DB_PASSWORD / '
             'SENTINEL_DB_HOST / SENTINEL_DB_PORT.\n'
             f'       Driver error: {exc}')
-    port = int(os.environ.get('PORT','8001'))
+    except Exception as exc:
+        # The entire startup synchronisation sequence is wrapped end-to-end:
+        # any failure (a DDL error, manifest drift, an unreadable table)
+        # aborts BEFORE the listening banner — the server never announces
+        # itself on a database that is not 100% ready for transactions.
+        raise SystemExit(
+            'FATAL: database startup synchronisation failed — the server was '
+            'NOT started.\n'
+            f'       {type(exc).__name__}: {exc}')
     if not review_lock_armed():
         # Refuse to serve rather than quietly answer approvals unlocked.
         raise SystemExit('FATAL: fingerprint review lock failed its self-test; '
                          'refusing to start an unlocked server.')
+    # init_db() returned, so every table, column and constraint verified:
+    # the database is fully ready. Report what was synchronised and only
+    # then announce the listening socket.
+    if repairs:
+        shown = ', '.join(repairs[:10]) + (' ...' if len(repairs) > 10 else '')
+        print(f'  schema auto-repair: added {len(repairs)} column(s): {shown}')
+    print(f'  database verified: {len(TABLE_COLUMNS)} tables / '
+          f'{sum(len(cols) for cols in TABLE_COLUMNS.values())} columns '
+          'synchronised — ready for transactions')
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
     print(f'  database: PostgreSQL '
