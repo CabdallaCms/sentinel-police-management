@@ -9,7 +9,7 @@ VEHICLE_ALERTS = ('Clean / Normal', 'Stolen', 'Wanted in Crime', 'Impounded', 'U
 
 VEHICLES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS vehicles(
-  id INTEGER PRIMARY KEY, vehicle_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, vehicle_id TEXT UNIQUE NOT NULL,
   category TEXT NOT NULL, plate_number TEXT UNIQUE NOT NULL,
   vin TEXT UNIQUE NOT NULL, engine_number TEXT NOT NULL,
   make_model TEXT NOT NULL, year_of_manufacture INTEGER,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS vehicles(
   security_alert TEXT NOT NULL DEFAULT 'Clean / Normal',
   alert_reason TEXT, registration_expiry TEXT, photo_path TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 """
 
@@ -32,7 +32,7 @@ def new_vehicle_id(c):
     year = datetime.datetime.now(datetime.timezone.utc).year
     prefix = 'VEH-%s-' % year
     n = 1
-    for row in c.execute('SELECT vehicle_id FROM vehicles WHERE vehicle_id LIKE ?', (prefix + '%',)):
+    for row in c.execute('SELECT vehicle_id FROM vehicles WHERE vehicle_id ILIKE %s', (prefix + '%',)):
         try:
             n = max(n, int(str(row['vehicle_id']).rsplit('-', 1)[1]) + 1)
         except (ValueError, IndexError):
@@ -48,7 +48,7 @@ def vehicle_sql_row(c, vid):
         "FROM vehicles v "
         "LEFT JOIN police_stations s ON s.id=v.station_id "
         "LEFT JOIN officers o ON o.id=v.officer_id "
-        "WHERE v.vehicle_id=?",
+        "WHERE v.vehicle_id=%s",
         (vid,)).fetchone()
 
 
@@ -90,7 +90,7 @@ def register_vehicle(c, user, fields, files, helpers):
         scode = str(fields.get('station_id') or '').strip()
         if not scode:
             raise ValueError('Assigned station is required for police fleet vehicles')
-        station = c.execute('SELECT * FROM police_stations WHERE station_id=?', (scode,)).fetchone()
+        station = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (scode,)).fetchone()
         if not station:
             raise ValueError('Station "%s" does not exist' % scode)
         officer = resolve_officer_row(c, fields.get('officer_id'))
@@ -115,9 +115,9 @@ def register_vehicle(c, user, fields, files, helpers):
     expiry = str(fields.get('registration_expiry') or '').strip() or None
     photo = save_upload_validated(files.get('photo') or files.get('vehicle_photo'),
                                   image_exts, 'Vehicle picture')
-    if c.execute('SELECT 1 FROM vehicles WHERE plate_number=?', (plate,)).fetchone():
+    if c.execute('SELECT 1 FROM vehicles WHERE plate_number=%s', (plate,)).fetchone():
         raise ValueError('A vehicle with this plate number already exists')
-    if c.execute('SELECT 1 FROM vehicles WHERE vin=?', (vin,)).fetchone():
+    if c.execute('SELECT 1 FROM vehicles WHERE vin=%s', (vin,)).fetchone():
         raise ValueError('A vehicle with this VIN already exists')
     vid = new_vehicle_id(c)
     c.execute(
@@ -125,7 +125,7 @@ def register_vehicle(c, user, fields, files, helpers):
         "year_of_manufacture,body_type,primary_color,secondary_color,station_id,officer_id,operational_status,"
         "owner_full_name,owner_phone,owner_national_id,owner_address,security_alert,alert_reason,"
         "registration_expiry,photo_path,created_by) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (vid, category, plate, vin, engine, make_model, year, body, primary, secondary,
          station['id'] if station else None, officer['id'] if officer else None, op_status,
          owner_name, owner_phone, owner_nid, owner_addr, alert, reason, expiry,
@@ -135,7 +135,7 @@ def register_vehicle(c, user, fields, files, helpers):
 
 def update_vehicle_alert(c, user, vehicle_id, data, helpers):
     normalise_choice = helpers['normalise_choice']
-    row = c.execute('SELECT * FROM vehicles WHERE vehicle_id=?', (vehicle_id,)).fetchone()
+    row = c.execute('SELECT * FROM vehicles WHERE vehicle_id=%s', (vehicle_id,)).fetchone()
     if not row:
         raise LookupError('Vehicle not found')
     alert = normalise_choice(data.get('security_alert') or data.get('alert'), VEHICLE_ALERTS)
@@ -144,7 +144,7 @@ def update_vehicle_alert(c, user, vehicle_id, data, helpers):
     reason = str(data.get('alert_reason') or data.get('reason') or '').strip() or None
     if alert != 'Clean / Normal' and not reason:
         raise ValueError('Alert reason is required when security alert is not Clean / Normal')
-    c.execute('UPDATE vehicles SET security_alert=?, alert_reason=? WHERE vehicle_id=?',
+    c.execute('UPDATE vehicles SET security_alert=%s, alert_reason=%s WHERE vehicle_id=%s',
               (alert, reason, vehicle_id))
     return dict(vehicle_sql_row(c, vehicle_id))
 

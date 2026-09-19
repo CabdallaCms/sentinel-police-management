@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Sentinel backend.
-Development-only API using the Python standard library + SQLite.
+Development-only API built on the Python standard library HTTP stack and a
+live PostgreSQL database (psycopg2 driver).
 Supports central persons (with an optional linked case, universal identity
 resolution and auto-create/merge), airport records, fingerprint clearance
 applications (with file attachments), CID crime cases (participants +
@@ -11,9 +12,12 @@ Identity matching tiers (used by /api/persons/resolve and every unit route):
   Tier 2 — exact 4-part name + date of birth match        (high-confidence link)
   Tier 3 — 3-part name + mother's name match              (fuzzy warning only)
 
-Replace SQLite and demo authentication before any operational deployment.
+Replace demo authentication before any operational deployment.
 """
-import datetime, hashlib, json, os, re, secrets, signal, socket, sqlite3, subprocess, time
+import datetime, decimal, hashlib, json, os, re, secrets, signal, socket, subprocess, time
+import psycopg2
+import psycopg2.extensions
+from psycopg2.extras import RealDictCursor, RealDictRow
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from vehicles import (
@@ -21,53 +25,146 @@ from vehicles import (
     VEHICLE_CATEGORIES, VEHICLE_OP_STATUSES, VEHICLE_ALERTS,
 )
 
+
+# ---- secure environment loading ---------------------------------------------
+def load_env_file():
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_path = os.path.join(base_dir, '.env')
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line: continue
+                key, val = line.split('=', 1)
+                os.environ[key.strip()] = val.strip()
+
+
+# Load the project-root .env into the process environment BEFORE any of the
+# SENTINEL_* engine settings below are read (standard library only — no
+# python-dotenv dependency).
+load_env_file()
+
 # When this process started — surfaced by /api/health so an operator can tell
 # a freshly started server from one that has been serving for hours.
 SERVER_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(ROOT)
-DB_PATH = os.environ.get('SENTINEL_DB', os.path.join(ROOT, 'sentinel.db'))
 UPLOAD_DIR = os.environ.get('SENTINEL_UPLOADS', os.path.join(ROOT, 'uploads'))
 TOKENS = {}
 
-def db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA foreign_keys=ON')
-    conn.execute('PRAGMA busy_timeout=8000')
-    conn.execute('PRAGMA journal_mode=WAL')
-    return conn
+
+# ---- PostgreSQL engine layer -------------------------------------------------
+# Row type: a RealDictCursor dictionary row (column-name keyed, exactly what
+# the JSON serializers expect) that ALSO keeps the positional access the
+# original sqlite3.Row offered, so `row[0]` (e.g. on `SELECT COUNT(*)`)
+# keeps working.
+class SentinelRow(RealDictRow):
+    """Dictionary-mapped result row with sqlite3.Row-style index fallback."""
+
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            if isinstance(key, int):
+                values = list(self.values())
+                if -len(values) <= key < len(values):
+                    return values[key]
+            raise
+
+
+class SentinelCursor(RealDictCursor):
+    """Cursor producing SentinelRow rows (dict access + positional access)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.row_factory = SentinelRow
+
+
+class SentinelPGConnection(psycopg2.extensions.connection):
+    """PostgreSQL connection exposing the sqlite3-style helpers the API
+    layer was written against, so every route keeps its
+    `conn.execute(sql, params).fetchone()` chaining:
+
+      execute(sql, params) -> cursor   (params may be a tuple / list / dict,
+                                        or None / empty for literal SQL)
+      executescript(sql)   -> cursor   (multi-statement DDL / seed batches)
+    """
+
+    def execute(self, sql, params=None):
+        cur = self.cursor(cursor_factory=SentinelCursor)
+        # With no parameters psycopg2 uses the simple query protocol: literal
+        # '%' is safe and multi-statement scripts are allowed. An empty
+        # parameter sequence is treated the same way unless the statement
+        # actually contains placeholders.
+        if params is None or (isinstance(params, (tuple, list)) and not params
+                              and '%s' not in sql):
+            cur.execute(sql)
+        else:
+            cur.execute(sql, params)
+        return cur
+
+    def executescript(self, script):
+        cur = self.cursor(cursor_factory=SentinelCursor)
+        cur.execute(script)
+        return cur
+
+
+def get_db_connection():
+    """Open a new PostgreSQL connection for the caller.
+
+    Thread safety: the API is served by ThreadingHTTPServer (one thread per
+    request) and every call returns a brand-new, privately-owned connection —
+    there is no shared connection object, no lock and no cross-thread reuse,
+    so concurrent requests can never interfere with each other's cursors or
+    transactions. The caller owns the lifecycle (commit() / close()), exactly
+    like the previous per-call sqlite3.connect() helper.
+
+    Engine settings come from the process environment / root .env:
+      SENTINEL_DB_NAME, SENTINEL_DB_USER, SENTINEL_DB_PASSWORD,
+      SENTINEL_DB_HOST, SENTINEL_DB_PORT
+    """
+    return psycopg2.connect(
+        dbname=os.environ.get('SENTINEL_DB_NAME', 'sentinel_police'),
+        user=os.environ.get('SENTINEL_DB_USER', 'postgres'),
+        password=os.environ.get('SENTINEL_DB_PASSWORD', ''),
+        host=os.environ.get('SENTINEL_DB_HOST', 'localhost'),
+        port=os.environ.get('SENTINEL_DB_PORT', '5432'),
+        connection_factory=SentinelPGConnection,
+        cursor_factory=SentinelCursor,
+        connect_timeout=10,
+        application_name='sentinel-backend',
+    )
 
 # ---- schema -----------------------------------------------------------------
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS users(
-  id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL,
   display_name TEXT NOT NULL, role TEXT NOT NULL,
   branch TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS locations(
-  id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL,
   label TEXT NOT NULL, kind TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS persons(
-  id INTEGER PRIMARY KEY, person_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, person_id TEXT UNIQUE NOT NULL,
   full_name TEXT NOT NULL, first_name TEXT, second_name TEXT, third_name TEXT, fourth_name TEXT,
   national_id TEXT UNIQUE, date_of_birth TEXT, phone TEXT,
   mother_name TEXT, place_of_birth TEXT, residence TEXT,
   occupation TEXT, passport_id TEXT, photo_path TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')), updated_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS airport_passengers(
-  id INTEGER PRIMARY KEY, record_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, record_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id), movement TEXT NOT NULL,
   travel_date TEXT NOT NULL, flight_number TEXT NOT NULL,
   airline TEXT, origin_city TEXT, destination_city TEXT,
   route TEXT NOT NULL, notes TEXT, created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS clearance_applications(
-  id INTEGER PRIMARY KEY, application_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, application_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id), purpose TEXT NOT NULL,
   guardian_name TEXT, guardian_relationship TEXT, guardian_id TEXT,
   guardian_occupation TEXT, guardian_address TEXT, guardian_phone TEXT,
@@ -75,33 +172,33 @@ CREATE TABLE IF NOT EXISTS clearance_applications(
   applicant_docs TEXT, guardian_docs TEXT, applicant_photo TEXT,
   status TEXT NOT NULL DEFAULT 'Pending Review',
   certificate_number TEXT, created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP, reviewed_at TEXT
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')), reviewed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS crime_cases(
-  id INTEGER PRIMARY KEY, case_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, case_id TEXT UNIQUE NOT NULL,
   category TEXT NOT NULL, location TEXT, status TEXT NOT NULL DEFAULT 'Reported',
   incident_summary TEXT, notes TEXT, created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS suspect_alerts(
-  id INTEGER PRIMARY KEY, alert_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, alert_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id),
   case_id INTEGER REFERENCES crime_cases(id),
   role TEXT NOT NULL DEFAULT 'Suspect',
   alert_status TEXT NOT NULL DEFAULT 'Active alert',
   origin TEXT NOT NULL DEFAULT 'Direct Intelligence Listing',
   notes TEXT, created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS case_evidence(
-  id INTEGER PRIMARY KEY, evidence_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, evidence_id TEXT UNIQUE NOT NULL,
   case_id INTEGER NOT NULL REFERENCES crime_cases(id),
   caption TEXT, file_path TEXT, file_name TEXT, file_type TEXT,
   uploaded_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS checkpoint_events(
-  id INTEGER PRIMARY KEY, event_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, event_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id),
   location TEXT NOT NULL, location_code TEXT, checkpoint_location TEXT,
   screening_result TEXT NOT NULL,
@@ -113,20 +210,24 @@ CREATE TABLE IF NOT EXISTS checkpoint_events(
   guardian_address TEXT, guardian_occupation TEXT,
   guardian_national_id TEXT, guardian_passport_id TEXT, guardian_docs TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS police_stations(
-  id INTEGER PRIMARY KEY, station_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, station_id TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL, code TEXT UNIQUE NOT NULL,
   region TEXT NOT NULL, district TEXT NOT NULL, village TEXT,
-  station_tier TEXT, commander_id INTEGER REFERENCES officers(id),
-  deputy_id INTEGER REFERENCES officers(id), contact_phone TEXT,
+  -- commander_id / deputy_id reference officers(id), while officers
+  -- references police_stations(id) back — a circular foreign key.
+  -- PostgreSQL validates REFERENCES at DDL time (SQLite did not), so these
+  -- two constraints are added after both tables exist; see migrate().
+  station_tier TEXT, commander_id INTEGER,
+  deputy_id INTEGER, contact_phone TEXT,
   cell_capacity INTEGER, operational_status TEXT DEFAULT 'Active',
   notes TEXT, created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS officers(
-  id INTEGER PRIMARY KEY, service_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, service_id TEXT UNIQUE NOT NULL,
   -- Section 1: Official & System identifiers
   rank TEXT NOT NULL, unit TEXT NOT NULL,
   station_id INTEGER NOT NULL REFERENCES police_stations(id),
@@ -148,10 +249,10 @@ CREATE TABLE IF NOT EXISTS officers(
   doc1_type TEXT NOT NULL, doc1_path TEXT NOT NULL,
   doc2_type TEXT, doc2_path TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS crime_incidents(
-  id INTEGER PRIMARY KEY, file_number TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, file_number TEXT UNIQUE NOT NULL,
   station_id INTEGER NOT NULL REFERENCES police_stations(id),
   officer_id INTEGER NOT NULL REFERENCES officers(id),
   category TEXT NOT NULL, incident_at TEXT NOT NULL,
@@ -166,20 +267,20 @@ CREATE TABLE IF NOT EXISTS crime_incidents(
   evidence1_type TEXT, evidence1_path TEXT,
   evidence2_type TEXT, evidence2_path TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS officer_promotions(
-  id INTEGER PRIMARY KEY, nomination_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, nomination_id TEXT UNIQUE NOT NULL,
   officer_id INTEGER NOT NULL REFERENCES officers(id),
   current_rank TEXT NOT NULL, proposed_rank TEXT NOT NULL,
   reason TEXT, effective_date TEXT,
   verification_status TEXT NOT NULL DEFAULT 'Awaiting Verification',
   nominated_by INTEGER REFERENCES users(id),
   verified_by INTEGER REFERENCES users(id), verified_at TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS officer_discipline(
-  id INTEGER PRIMARY KEY, action_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, action_id TEXT UNIQUE NOT NULL,
   officer_id INTEGER NOT NULL REFERENCES officers(id),
   action_type TEXT NOT NULL,
   severity TEXT,
@@ -188,10 +289,10 @@ CREATE TABLE IF NOT EXISTS officer_discipline(
   suspension_start TEXT, suspension_end TEXT,
   incident_summary TEXT,
   reported_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS officer_conduct_actions(
-  id INTEGER PRIMARY KEY, action_id TEXT UNIQUE NOT NULL,
+  id SERIAL PRIMARY KEY, action_id TEXT UNIQUE NOT NULL,
   officer_id INTEGER NOT NULL REFERENCES officers(id),
   action_type TEXT NOT NULL,
   classification TEXT NOT NULL,
@@ -206,10 +307,10 @@ CREATE TABLE IF NOT EXISTS officer_conduct_actions(
   rank_applied INTEGER NOT NULL DEFAULT 0,
   documents TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS officer_service_history(
-  id INTEGER PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   officer_id INTEGER NOT NULL REFERENCES officers(id),
   action_id TEXT REFERENCES officer_conduct_actions(action_id),
   entry_type TEXT NOT NULL,
@@ -217,18 +318,18 @@ CREATE TABLE IF NOT EXISTS officer_service_history(
   from_rank TEXT, to_rank TEXT,
   duty_status TEXT,
   recorded_by INTEGER REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE INDEX IF NOT EXISTS idx_service_history_officer
   ON officer_service_history(officer_id);
 CREATE TABLE IF NOT EXISTS sessions(
   token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS audit_events(
-  id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id),
+  id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id),
   action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT,
-  details TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  details TEXT, created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 '''
 
@@ -363,12 +464,12 @@ def is_fingerprint_officer(user):
 
 
 def utc_now_stamp():
-    """UTC 'YYYY-MM-DD HH:MM:SS' — the same shape as SQLite CURRENT_TIMESTAMP."""
+    """UTC 'YYYY-MM-DD HH:MM:SS' — the same shape the TEXT timestamp columns store."""
     return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def parse_stamp(value):
-    """Parse a SQLite / ISO-8601 timestamp into a POSIX timestamp, or None."""
+    """Parse a stored / ISO-8601 timestamp into a POSIX timestamp, or None."""
     dt = parse_created_at(value)
     return dt.timestamp() if dt else None
 
@@ -376,7 +477,7 @@ def parse_stamp(value):
 def parse_created_at(value):
     """Parse a stored `created_at` into a timezone-aware UTC datetime.
 
-    Accepts the SQLite shape ('YYYY-MM-DD HH:MM:SS' — stored in UTC), ISO-8601
+    Accepts the stored TEXT shape ('YYYY-MM-DD HH:MM:SS' — UTC), ISO-8601
     with or without a 'Z'/'offset' suffix, and date-only values. A naive value
     is assumed to be UTC. Returns None when nothing can be parsed.
     """
@@ -1283,99 +1384,101 @@ def build_full_name(data):
     return str(data.get('full_name') or '').strip()
 
 def has_notnull(c, table, col):
-    for r in c.execute(f'PRAGMA table_info({table})'):
-        if r['name'] == col:
-            return bool(r['notnull'])
-    return False
+    """True when `table`.`col` is declared NOT NULL (PostgreSQL catalogue)."""
+    row = c.execute("SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name=%s AND column_name=%s",
+                    (table, col)).fetchone()
+    return bool(row) and row['is_nullable'] == 'NO'
 
-def rebuild_persons(c):
-    """Rebuild persons so national_id/passport can be optional (dev migration)."""
-    c.execute('''CREATE TABLE persons_new(
-      id INTEGER PRIMARY KEY, person_id TEXT UNIQUE NOT NULL,
-      full_name TEXT NOT NULL, first_name TEXT, second_name TEXT, third_name TEXT, fourth_name TEXT,
-      national_id TEXT UNIQUE, date_of_birth TEXT, phone TEXT,
-      mother_name TEXT, place_of_birth TEXT, residence TEXT,
-      occupation TEXT, passport_id TEXT, photo_path TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )''')
-    c.execute('''INSERT INTO persons_new(id,person_id,full_name,national_id,date_of_birth,phone,
-        mother_name,place_of_birth,residence,occupation,passport_id,photo_path,created_at,updated_at)
-      SELECT id,person_id,full_name,national_id,date_of_birth,phone,
-        mother_name,place_of_birth,residence,occupation,passport_id,photo_path,created_at,updated_at
-      FROM persons''')
-    c.execute('DROP TABLE persons')
-    c.execute('ALTER TABLE persons_new RENAME TO persons')
+def relax_not_null(c, table, col):
+    """Drop a legacy NOT NULL constraint in place.
 
-def rebuild_suspect_alerts(c):
-    """Rebuild suspect_alerts so the linked case is optional (dev migration)."""
-    c.execute('''CREATE TABLE suspect_alerts_new(
-      id INTEGER PRIMARY KEY, alert_id TEXT UNIQUE NOT NULL,
-      person_id INTEGER NOT NULL REFERENCES persons(id),
-      case_id INTEGER REFERENCES crime_cases(id),
-      role TEXT NOT NULL DEFAULT 'Suspect',
-      alert_status TEXT NOT NULL DEFAULT 'Active alert',
-      origin TEXT NOT NULL DEFAULT 'Direct Intelligence Listing',
-      notes TEXT, created_by INTEGER REFERENCES users(id),
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )''')
-    c.execute('''INSERT INTO suspect_alerts_new(id,alert_id,person_id,case_id,role,alert_status,
-        notes,created_by,created_at)
-      SELECT id,alert_id,person_id,case_id,role,alert_status,notes,created_by,created_at
-      FROM suspect_alerts''')
-    c.execute("UPDATE suspect_alerts_new SET origin='Case Link' WHERE case_id IS NOT NULL")
-    c.execute('DROP TABLE suspect_alerts')
-    c.execute('ALTER TABLE suspect_alerts_new RENAME TO suspect_alerts')
+    SQLite could not drop NOT NULL without rebuilding the whole table; the
+    original code rebuilt `persons` and `suspect_alerts` row-by-row for this.
+    PostgreSQL relaxes the constraint natively with one ALTER TABLE, keeping
+    every row, every foreign key and every index intact.
+    """
+    c.execute(f'ALTER TABLE {table} ALTER COLUMN {col} DROP NOT NULL')
 
 def migrate(c):
-    tables = {r['name'] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    # Table rebuilds must run with foreign keys off, then be validated after.
-    c.execute('PRAGMA foreign_keys=OFF')
-    try:
-        if 'persons' in tables and has_notnull(c, 'persons', 'national_id'):
-            rebuild_persons(c)
-        if 'suspect_alerts' in tables and has_notnull(c, 'suspect_alerts', 'case_id'):
-            rebuild_suspect_alerts(c)
-        for table, cols in ADDED_COLUMNS.items():
-            if table not in tables:
-                continue
-            existing = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
-            for col, sql in cols:
-                if col not in existing:
-                    c.execute(sql)
-        # Existing case-linked suspects are recorded as case links.
-        c.execute("UPDATE suspect_alerts SET origin='Case Link' "
-                  "WHERE case_id IS NOT NULL AND origin='Direct Intelligence Listing'")
-        # Backfill 4-part name columns from legacy full_name values.
-        rows = c.execute("SELECT id,full_name FROM persons "
-                         "WHERE TRIM(COALESCE(first_name,''))=''").fetchall()
-        for r in rows:
-            a, b, d, e = raw_parts(r['full_name'])
-            c.execute('UPDATE persons SET first_name=?,second_name=?,third_name=?,fourth_name=? WHERE id=?',
-                      (a, b, d, e, r['id']))
-        # Backfill the explicit checkpoint location metadata so the dashboard
-        # and identity profile can show 'Checkpoint (South)' for legacy rows
-        # where only the short 'location' code is present.
-        cp_rows = c.execute(
-            "SELECT id, location FROM checkpoint_events "
-            "WHERE TRIM(COALESCE(location_code,''))='' OR TRIM(COALESCE(checkpoint_location,''))=''"
-        ).fetchall()
-        for r in cp_rows:
-            short = (r['location'] or '').strip()
-            if not short: continue
-            # Normalise the legacy short code into a canonical short code
-            # (e.g. 'South Checkpoint' -> 'South') and a friendly label.
-            canonical = short if short in CHECKPOINT_LOCATIONS else short.split()[0]
-            label = f'{canonical} Checkpoint'
-            c.execute('UPDATE checkpoint_events SET location_code=?, checkpoint_location=? WHERE id=?',
-                      (canonical, label, r['id']))
-        violations = c.execute('PRAGMA foreign_key_check').fetchall()
-        if violations:
-            raise RuntimeError(f'Foreign key violations after migration: {violations[:3]}')
-    finally:
-        c.execute('PRAGMA foreign_keys=ON')
+    """Idempotent in-place migration of an existing PostgreSQL database.
+
+    * relaxes the legacy NOT NULL columns (persons.national_id,
+      suspect_alerts.case_id) that older databases may still carry,
+    * adds every column introduced after the initial schema
+      (see ADDED_COLUMNS), and
+    * backfills the 4-part name columns and the explicit checkpoint
+      location metadata for legacy rows.
+    """
+    tables = {r['name'] for r in c.execute(
+        "SELECT table_name AS name FROM information_schema.tables "
+        "WHERE table_schema='public' AND table_type='BASE TABLE'")}
+    if 'persons' in tables and has_notnull(c, 'persons', 'national_id'):
+        relax_not_null(c, 'persons', 'national_id')
+    if 'suspect_alerts' in tables and has_notnull(c, 'suspect_alerts', 'case_id'):
+        relax_not_null(c, 'suspect_alerts', 'case_id')
+    for table, cols in ADDED_COLUMNS.items():
+        if table not in tables:
+            continue
+        existing = {r['name'] for r in c.execute(
+            "SELECT column_name AS name FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name=%s", (table,))}
+        for col, sql in cols:
+            if col not in existing:
+                c.execute(sql)
+    # Circular foreign key closure: police_stations.commander_id / deputy_id
+    # point at officers(id) while officers.station_id points back at
+    # police_stations(id). The CREATE TABLE script must declare them as plain
+    # INTEGER columns (PostgreSQL validates REFERENCES at DDL time and the
+    # forward reference is impossible); the constraints are added here, once
+    # both tables — and the ADDED_COLUMNS pass — are guaranteed to exist.
+    # Idempotent: pg_constraint is checked so repeated startups are no-ops.
+    c.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                           WHERE conname = 'fk_police_stations_commander') THEN
+                ALTER TABLE police_stations ADD CONSTRAINT fk_police_stations_commander
+                    FOREIGN KEY (commander_id) REFERENCES officers(id);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                           WHERE conname = 'fk_police_stations_deputy') THEN
+                ALTER TABLE police_stations ADD CONSTRAINT fk_police_stations_deputy
+                    FOREIGN KEY (deputy_id) REFERENCES officers(id);
+            END IF;
+        END $$;''')
+    # Existing case-linked suspects are recorded as case links.
+    c.execute("UPDATE suspect_alerts SET origin='Case Link' "
+              "WHERE case_id IS NOT NULL AND origin='Direct Intelligence Listing'")
+    # Backfill 4-part name columns from legacy full_name values.
+    rows = c.execute("SELECT id,full_name FROM persons "
+                     "WHERE TRIM(COALESCE(first_name,''))=''").fetchall()
+    for r in rows:
+        a, b, d, e = raw_parts(r['full_name'])
+        c.execute('UPDATE persons SET first_name=%s,second_name=%s,third_name=%s,fourth_name=%s WHERE id=%s',
+                  (a, b, d, e, r['id']))
+    # Backfill the explicit checkpoint location metadata so the dashboard
+    # and identity profile can show 'Checkpoint (South)' for legacy rows
+    # where only the short 'location' code is present.
+    cp_rows = c.execute(
+        "SELECT id, location FROM checkpoint_events "
+        "WHERE TRIM(COALESCE(location_code,''))='' OR TRIM(COALESCE(checkpoint_location,''))=''"
+    ).fetchall()
+    for r in cp_rows:
+        short = (r['location'] or '').strip()
+        if not short: continue
+        # Normalise the legacy short code into a canonical short code
+        # (e.g. 'South Checkpoint' -> 'South') and a friendly label.
+        canonical = short if short in CHECKPOINT_LOCATIONS else short.split()[0]
+        label = f'{canonical} Checkpoint'
+        c.execute('UPDATE checkpoint_events SET location_code=%s, checkpoint_location=%s WHERE id=%s',
+                  (canonical, label, r['id']))
+    # NOTE: unlike SQLite, PostgreSQL enforces foreign keys on every
+    # statement — there is no PRAGMA foreign_keys toggle and no deferred
+    # foreign_key_check pass; any violation aborts the statement itself.
 
 def init_db():
-    c = db()
+    c = get_db_connection()
     c.executescript(SCHEMA)
     c.executescript(VEHICLES_SCHEMA)
     migrate(c)
@@ -1384,7 +1487,7 @@ def init_db():
         for code, label in (('South', 'South Checkpoint'),
                              ('East', 'East Checkpoint'),
                              ('West', 'West Checkpoint')):
-            c.execute('INSERT INTO locations(code,label,kind) VALUES(?,?,?)',
+            c.execute('INSERT INTO locations(code,label,kind) VALUES(%s,%s,%s)',
                       (code, label, 'Checkpoint'))
     # Seed the Station Registration table so the officer form's "Assigned
     # Station" dropdown is populated on first run. Mirrors the frontend seed
@@ -1403,7 +1506,7 @@ def init_db():
                 ('ST-007', 'Buuhoodle Station',        'ETG-C-03', 'East Togdheer', 'Buuhoodle', 'Widh Widh','Outpost', 6),
                 ('ST-008', 'Adhi Cadeeye Outpost',     'SOO-C-02', 'Sool',   'Laascaanood','Adhi Cadeeye','Checkpoint', 4)):
             c.execute('INSERT INTO police_stations(station_id,name,code,region,district,village,'
-                      'station_tier,cell_capacity) VALUES(?,?,?,?,?,?,?,?)',
+                      'station_tier,cell_capacity) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)',
                       (sid, name, code, region, district, village, tier, cells))
     # Normalise the legacy admin account + seed a representative user per role
     # so the RBAC flow is exercised by default. The existing admin keeps its
@@ -1422,45 +1525,45 @@ def init_db():
         ]
         for u, dn, role, branch, scope, pw in seeds:
             c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,password_hash) '
-                      'VALUES(?,?,?,?,?,?)',
+                      'VALUES(%s,%s,%s,%s,%s,%s)',
                       (u, dn, role, branch, scope, password_hash(pw)))
     if c.execute('SELECT COUNT(*) FROM persons').fetchone()[0] == 0:
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation,passport_id)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                   ('P-0001','Ayaan Cabdi Xasan Axmed','Ayaan','Cabdi','Xasan','Axmed',
                    '10012345','1997-04-18','+252 63 555 0199','Faadumo Cali',
                    'Hargeisa, Jigjiga Yar','Civil servant','P0011223'))
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                   ('P-0002','Maxamed Nuur Cali Awil','Maxamed','Nuur','Cali','Awil',
                    '10067890','1989-11-02','+252 63 555 0188','Khadra Jaamac',
                    'Hargeisa Central','Trader'))
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                   ('P-0003','Sahra Yuusuf Axmed Aadan','Sahra','Yuusuf','Axmed','Aadan',
                    '10024680','2001-02-26','+252 63 555 0144','Amina Maxamed',
                    'Hargeisa, 26 June','Student'))
         pid = c.execute("SELECT id FROM persons WHERE person_id='P-0001'").fetchone()[0]
         c.execute('''INSERT INTO airport_passengers(record_id,person_id,movement,travel_date,flight_number,
-            airline,origin_city,destination_city,route) VALUES(?,?,?,?,?,?,?,?,?)''',
+            airline,origin_city,destination_city,route) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                   ('AR-1001',pid,'Arrival','2026-07-18','HL-118','Sentinel Air','Berbera','Hargeisa','Berbera / Hargeisa'))
         fp_pid = c.execute("SELECT id FROM persons WHERE person_id='P-0003'").fetchone()[0]
-        c.execute("INSERT INTO clearance_applications(application_id,person_id,purpose,guardian_name,guardian_relationship,guardian_phone,status) VALUES(?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO clearance_applications(application_id,person_id,purpose,guardian_name,guardian_relationship,guardian_phone,status) VALUES(%s,%s,%s,%s,%s,%s,%s)",
                   ('FP-2026-0042',fp_pid,'Education','Yuusuf Axmed','Father','+252 63 555 0200','Pending Review'))
-        c.execute('INSERT INTO crime_cases(case_id,category,location,status,incident_summary) VALUES(?,?,?,?,?)',
+        c.execute('INSERT INTO crime_cases(case_id,category,location,status,incident_summary) VALUES(%s,%s,%s,%s,%s)',
                   ('CID-2026-008','Property crime','Hargeisa Central','Under Investigation','Shop burglary overnight; cash and goods reported missing.'))
-        c.execute('INSERT INTO crime_cases(case_id,category,location,status,incident_summary) VALUES(?,?,?,?,?)',
+        c.execute('INSERT INTO crime_cases(case_id,category,location,status,incident_summary) VALUES(%s,%s,%s,%s,%s)',
                   ('CID-2026-009','Fraud','Jigjiga Yar','Submitted for Prosecution','Advance-fee fraud reported by a local business owner.'))
         susp_pid = c.execute("SELECT id FROM persons WHERE person_id='P-0002'").fetchone()[0]
         susp_case = c.execute("SELECT id FROM crime_cases WHERE case_id='CID-2026-008'").fetchone()[0]
-        c.execute('INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,origin) VALUES(?,?,?,?,?,?)',
+        c.execute('INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,origin) VALUES(%s,%s,%s,%s,%s,%s)',
                   ('AL-'+secrets.token_hex(4),susp_pid,susp_case,'Suspect','Active alert','Case Link'))
         admin_id = c.execute("SELECT id FROM users WHERE username='admin'").fetchone()[0]
         c.execute("""INSERT INTO checkpoint_events(event_id,person_id,location,location_code,
-            checkpoint_location,screening_result,action_taken,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)""",
+            checkpoint_location,screening_result,action_taken,created_by,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                   ('CP-'+secrets.token_hex(4),susp_pid,'South','South','South Checkpoint',
                    'Flagged match','Supervisor contacted',admin_id,'2026-08-30 08:42:00'))
     c.commit(); c.close()
@@ -1523,13 +1626,13 @@ def lookup_session(token):
     Sessions used to live only in the in-memory TOKENS map, so every server
     restart invalidated every signed-in browser and /api/me started answering
     401 — which pushed the frontends into their offline fallbacks. Sessions
-    are now stored in SQLite and survive a restart.
+    are now stored in PostgreSQL and survive a restart.
     """
     if not token:
         return None
-    c = db()
+    c = get_db_connection()
     try:
-        row = c.execute('SELECT user_id FROM sessions WHERE token=?', (token,)).fetchone()
+        row = c.execute('SELECT user_id FROM sessions WHERE token=%s', (token,)).fetchone()
     finally:
         c.close()
     return row['user_id'] if row else None
@@ -1539,9 +1642,11 @@ def create_session(user_id):
     """Issue a new session token (memory cache + persistent row)."""
     token = secrets.token_urlsafe(32)
     TOKENS[token] = user_id
-    c = db()
+    c = get_db_connection()
     try:
-        c.execute('INSERT OR REPLACE INTO sessions(token,user_id) VALUES(?,?)', (token, user_id))
+        c.execute('INSERT INTO sessions(token,user_id) VALUES(%s,%s) '
+                  'ON CONFLICT(token) DO UPDATE SET user_id=EXCLUDED.user_id',
+                  (token, user_id))
         c.commit()
     finally:
         c.close()
@@ -1553,9 +1658,9 @@ def destroy_session(token):
     if not token:
         return
     TOKENS.pop(token, None)
-    c = db()
+    c = get_db_connection()
     try:
-        c.execute('DELETE FROM sessions WHERE token=?', (token,))
+        c.execute('DELETE FROM sessions WHERE token=%s', (token,))
         c.commit()
     finally:
         c.close()
@@ -1571,22 +1676,22 @@ def require_auth(handler):
         user_id = lookup_session(token)
         if user_id: TOKENS[token] = user_id
     if not user_id: raise PermissionError('Authentication required')
-    c = db()
+    c = get_db_connection()
     user = rowdict(c.execute(
         'SELECT id,username,display_name,role,branch,location_scope,active '
-        'FROM users WHERE id=? AND active=1',(user_id,)).fetchone())
+        'FROM users WHERE id=%s AND active=1',(user_id,)).fetchone())
     c.close()
     if not user: raise PermissionError('Authentication required')
     return user_view(user)
 
 def audit(c, user, action, entity, entity_id, details=''):
-    c.execute('INSERT INTO audit_events(user_id,action,entity,entity_id,details) VALUES(?,?,?,?,?)',
+    c.execute('INSERT INTO audit_events(user_id,action,entity,entity_id,details) VALUES(%s,%s,%s,%s,%s)',
               (user['id'], action, entity, entity_id, details))
 
 def new_person_id(c):
     while True:
         pid = 'P-' + str(int(time.time()*1000))[-8:]
-        if not c.execute('SELECT 1 FROM persons WHERE person_id=?',(pid,)).fetchone():
+        if not c.execute('SELECT 1 FROM persons WHERE person_id=%s',(pid,)).fetchone():
             return pid
 
 # ---- officer registration helpers -------------------------------------------
@@ -1619,7 +1724,7 @@ def new_service_id(c):
     """Auto-generated officer Service ID in the POL-YYYY-XXXX format."""
     year = datetime.date.today().year
     prefix = f'POL-{year}-'
-    row = c.execute('SELECT service_id FROM officers WHERE service_id LIKE ? '
+    row = c.execute('SELECT service_id FROM officers WHERE service_id ILIKE %s '
                     'ORDER BY service_id DESC LIMIT 1', (prefix + '%',)).fetchone()
     n = 1
     if row:
@@ -1682,7 +1787,7 @@ def station_view(row):
 def new_station_code(c, region):
     prefix = f"STN-{REGION_CODES[region]}-"
     n = 1
-    for row in c.execute('SELECT code FROM police_stations WHERE code LIKE ?', (prefix + '%',)):
+    for row in c.execute('SELECT code FROM police_stations WHERE code ILIKE %s', (prefix + '%',)):
         try:
             n = max(n, int(str(row['code']).rsplit('-', 1)[1]) + 1)
         except (ValueError, IndexError):
@@ -1695,7 +1800,7 @@ def new_crime_file_number(c, station_code):
     token = re.sub(r'[^A-Za-z0-9-]', '', station_code or 'STN')
     prefix = f'CRM-{year}-{token}-'
     n = 1
-    for row in c.execute('SELECT file_number FROM crime_incidents WHERE file_number LIKE ?', (prefix + '%',)):
+    for row in c.execute('SELECT file_number FROM crime_incidents WHERE file_number ILIKE %s', (prefix + '%',)):
         try:
             n = max(n, int(str(row['file_number']).rsplit('-', 1)[1]) + 1)
         except (ValueError, IndexError):
@@ -1708,8 +1813,8 @@ def resolve_officer_row(c, value):
     if not v:
         return None
     if v.isdigit():
-        return c.execute('SELECT * FROM officers WHERE id=?', (int(v),)).fetchone()
-    return c.execute('SELECT * FROM officers WHERE service_id=?', (v,)).fetchone()
+        return c.execute('SELECT * FROM officers WHERE id=%s', (int(v),)).fetchone()
+    return c.execute('SELECT * FROM officers WHERE service_id=%s', (v,)).fetchone()
 
 
 def crime_view(row):
@@ -1781,7 +1886,7 @@ def register_officer(c, user, fields, files):
         raise ValueError('Unit / Division is required and must be one of: '
                          + ', '.join(OFFICER_UNITS))
     station_code = req('station_id', 'Assigned station')
-    station = c.execute('SELECT * FROM police_stations WHERE station_id=?',
+    station = c.execute('SELECT * FROM police_stations WHERE station_id=%s',
                         (station_code,)).fetchone()
     if not station:
         raise ValueError(f'Assigned station "{station_code}" does not exist')
@@ -1852,7 +1957,7 @@ def register_officer(c, user, fields, files):
         guarantor_name,guarantor_address,guarantor_occupation,guarantor_relationship,
         guarantor_contact,guarantor_photo,
         doc1_type,doc1_path,doc2_type,doc2_path,created_by,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
         (service_id, rank, unit, station['id'], date_of_enlistment, duty_status,
          full_name, mother_name, date_of_birth, place_of_birth, contact_number,
          height_cm or None, weight_kg or None, blood_group,
@@ -1865,7 +1970,7 @@ def register_officer(c, user, fields, files):
          user['id'], utc_now_stamp()))
     row = c.execute('SELECT o.*, s.station_id AS station_code, s.name AS station_name '
                     'FROM officers o LEFT JOIN police_stations s ON s.id = o.station_id '
-                    'WHERE o.service_id=?', (service_id,)).fetchone()
+                    'WHERE o.service_id=%s', (service_id,)).fetchone()
     return officer_view(row)
 
 
@@ -1908,12 +2013,12 @@ def register_station(c, user, data):
     station_id = new_station_id(c)
     c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
         station_tier,commander_id,deputy_id,contact_phone,cell_capacity,operational_status,notes,created_by)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
         (station_id, name, code, region, district, village or None,
          tier, commander['id'] if commander else None, deputy['id'] if deputy else None,
          phone, cell_capacity, status,
          str(data.get('notes') or '').strip() or None, user['id']))
-    row = c.execute('SELECT * FROM police_stations WHERE station_id=?',
+    row = c.execute('SELECT * FROM police_stations WHERE station_id=%s',
                     (station_id,)).fetchone()
     return station_view(row)
 
@@ -1922,7 +2027,7 @@ def register_crime(c, user, fields, files):
     station_code = str(fields.get('station_id') or '').strip()
     if not station_code:
         raise ValueError('station_id is required')
-    station = c.execute('SELECT * FROM police_stations WHERE station_id=?', (station_code,)).fetchone()
+    station = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (station_code,)).fetchone()
     if not station:
         raise ValueError(f'Station "{station_code}" does not exist')
     officer = resolve_officer_row(c, fields.get('officer_id'))
@@ -1970,7 +2075,7 @@ def register_crime(c, user, fields, files):
         location_of_occurrence,severity,description,case_status,reporting_party_type,
         victim_anonymous,victim_full_name,victim_contact,victim_national_id,victim_gender,victim_age,
         victim_address,statement,evidence1_type,evidence1_path,evidence2_type,evidence2_path,created_by)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
         (file_number, station['id'], officer['id'], category, incident_at,
          location,
          severity, description, status, party, 1 if anon else 0,
@@ -1985,7 +2090,7 @@ def register_crime(c, user, fields, files):
         FROM crime_incidents ci
         JOIN police_stations s ON s.id=ci.station_id
         JOIN officers o ON o.id=ci.officer_id
-        WHERE ci.file_number=?''', (file_number,)).fetchone()
+        WHERE ci.file_number=%s''', (file_number,)).fetchone()
     return crime_view(row)
 
 # ---- officer conduct, promotions & disciplinary management ------------------
@@ -2000,7 +2105,7 @@ def new_conduct_action_id(c):
     """Auto-generated conduct action file identifier (ACT-YYYY-XXXX)."""
     year = datetime.datetime.now(datetime.timezone.utc).year
     prefix = f'ACT-{year}-'
-    row = c.execute('SELECT action_id FROM officer_conduct_actions WHERE action_id LIKE ? '
+    row = c.execute('SELECT action_id FROM officer_conduct_actions WHERE action_id ILIKE %s '
                     'ORDER BY action_id DESC LIMIT 1', (prefix + '%',)).fetchone()
     n = 1
     if row:
@@ -2032,10 +2137,10 @@ def resolve_station_row(c, value):
     if not v:
         return None
     if v.isdigit():
-        return c.execute('SELECT * FROM police_stations WHERE id=?', (int(v),)).fetchone()
-    row = c.execute('SELECT * FROM police_stations WHERE station_id=?', (v,)).fetchone()
+        return c.execute('SELECT * FROM police_stations WHERE id=%s', (int(v),)).fetchone()
+    row = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (v,)).fetchone()
     if not row:
-        row = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(?)', (v,)).fetchone()
+        row = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s)', (v,)).fetchone()
     return row
 
 
@@ -2101,11 +2206,11 @@ def conduct_summary(c):
         return c.execute(sql, args).fetchone()[0]
     return {
         'total': count('SELECT COUNT(*) FROM officer_conduct_actions'),
-        'promotion': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?", ('Promotion / Commendation',)),
-        'disciplinary': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?", ('Disciplinary / Penalty',)),
-        'pending': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (?, ?)", CONDUCT_PENDING_STATUSES),
-        'approved': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status=?", (CONDUCT_STATUS_APPROVED,)),
-        'rejected': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status=?", (CONDUCT_STATUS_REJECTED,)),
+        'promotion': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=%s", ('Promotion / Commendation',)),
+        'disciplinary': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=%s", ('Disciplinary / Penalty',)),
+        'pending': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (%s, %s)", CONDUCT_PENDING_STATUSES),
+        'approved': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status=%s", (CONDUCT_STATUS_APPROVED,)),
+        'rejected': count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status=%s", (CONDUCT_STATUS_REJECTED,)),
     }
 
 
@@ -2185,14 +2290,14 @@ def submit_conduct_action(c, user, fields, files):
     c.execute('''INSERT INTO officer_conduct_actions(action_id,officer_id,action_type,
         classification,proposed_rank,narrative,station_id,reporting_officer_id,
         submitted_at,status,documents,created_by,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
         (action_id, officer['id'], action_type, classification, proposed_rank,
          narrative, station['id'] if station else None,
          reporting_officer['id'] if reporting_officer else None,
          submitted_at, CONDUCT_STATUS_DEFAULT,
          json.dumps(documents) if documents else None,
          user['id'], utc_now_stamp()))
-    row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=?', (action_id,)).fetchone()
+    row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=%s', (action_id,)).fetchone()
     return conduct_view(row)
 
 
@@ -2237,7 +2342,7 @@ def review_conduct_action(c, user, action_row, data):
 
     rank_update = None
     duty_update = None
-    officer = c.execute('SELECT * FROM officers WHERE id=?', (action_row['officer_id'],)).fetchone()
+    officer = c.execute('SELECT * FROM officers WHERE id=%s', (action_row['officer_id'],)).fetchone()
 
     if new_status == CONDUCT_STATUS_APPROVED:
         classification = action_row['classification']
@@ -2247,14 +2352,14 @@ def review_conduct_action(c, user, action_row, data):
         if classification in CONDUCT_RANK_CLASSIFICATIONS:
             proposed = action_row['proposed_rank']
             validate_rank_transition(officer['rank'], proposed, classification)
-            c.execute('UPDATE officers SET rank=? WHERE id=?', (proposed, officer['id']))
-            c.execute('UPDATE officer_conduct_actions SET rank_applied=1 WHERE id=?',
+            c.execute('UPDATE officers SET rank=%s WHERE id=%s', (proposed, officer['id']))
+            c.execute('UPDATE officer_conduct_actions SET rank_applied=1 WHERE id=%s',
                       (action_row['id'],))
             rank_update = {'from': officer['rank'], 'to': proposed}
         # Disciplinary penalties that adjust the duty status.
         duty_target = CONDUCT_DUTY_EFFECTS.get(classification)
         if duty_target and officer['duty_status'] != duty_target:
-            c.execute('UPDATE officers SET duty_status=? WHERE id=?',
+            c.execute('UPDATE officers SET duty_status=%s WHERE id=%s',
                       (duty_target, officer['id']))
             duty_update = {'from': officer['duty_status'], 'to': duty_target}
         # Immutable personnel record in the officer's service history.
@@ -2265,18 +2370,18 @@ def review_conduct_action(c, user, action_row, data):
             summary += f' · duty status {duty_update["from"]} → {duty_update["to"]}'
         c.execute('''INSERT INTO officer_service_history(officer_id,action_id,entry_type,
             summary,from_rank,to_rank,duty_status,recorded_by,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?)''',
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
             (officer['id'], action_row['action_id'], classification, summary,
              rank_update['from'] if rank_update else None,
              rank_update['to'] if rank_update else None,
              duty_update['to'] if duty_update else officer['duty_status'],
              user['id'], utc_now_stamp()))
 
-    c.execute('''UPDATE officer_conduct_actions SET status=?, reviewer_officer_id=?,
-        reviewer_notes=?, reviewed_at=? WHERE id=?''',
+    c.execute('''UPDATE officer_conduct_actions SET status=%s, reviewer_officer_id=%s,
+        reviewer_notes=%s, reviewed_at=%s WHERE id=%s''',
         (new_status, reviewer['id'] if reviewer else action_row['reviewer_officer_id'],
          reviewer_notes or action_row['reviewer_notes'], utc_now_stamp(), action_row['id']))
-    row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=?', (action_row['action_id'],)).fetchone()
+    row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=%s', (action_row['action_id'],)).fetchone()
     result = conduct_view(row)
     result['rank_update'] = rank_update
     result['duty_update'] = duty_update
@@ -2296,11 +2401,11 @@ def find_by_id(c, data):
     national_id = norm(data.get('national_id'))
     passport_id = norm(data.get('passport_id'))
     if national_id:
-        row = c.execute("SELECT * FROM persons WHERE LOWER(TRIM(COALESCE(national_id,''))) = ?",
+        row = c.execute("SELECT * FROM persons WHERE LOWER(TRIM(COALESCE(national_id,''))) = %s",
                         (national_id,)).fetchone()
         if row: return rowdict(row), 1
     if passport_id:
-        row = c.execute("SELECT * FROM persons WHERE LOWER(TRIM(COALESCE(passport_id,''))) = ?",
+        row = c.execute("SELECT * FROM persons WHERE LOWER(TRIM(COALESCE(passport_id,''))) = %s",
                         (passport_id,)).fetchone()
         if row: return rowdict(row), 1
     return None, 0
@@ -2440,13 +2545,13 @@ def create_person(c, data, photo_path=None, allow_no_id=False):
     pid = new_person_id(c)
     c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
         national_id,date_of_birth,phone,mother_name,place_of_birth,residence,occupation,
-        passport_id,photo_path) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+        passport_id,photo_path) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
               (pid, full_name, a, b, d, e, national_id,
                data.get('date_of_birth',''), data.get('phone',''),
                data.get('mother_name',''), data.get('place_of_birth',''),
                data.get('residence',''), data.get('occupation',''),
                passport_id, photo_path))
-    return rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (pid,)).fetchone()), True
+    return rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s', (pid,)).fetchone()), True
 
 def enrich_person(c, data, person, photo_path=None):
     """Fill any empty/null central-person fields from incoming unit request data.
@@ -2454,7 +2559,7 @@ def enrich_person(c, data, person, photo_path=None):
     Never overwrites existing non-null values. This lets an officer complete
     missing profile details (mother's name, phone, occupation, address,
     passport, photo, etc.) while recording a unit event, and enriches the
-    linked Central Person record in SQLite. Returns (updated_row, changed).
+    linked Central Person record in PostgreSQL. Returns (updated_row, changed).
     """
     updates, params = [], []
     for f in PERSON_FIELDS:
@@ -2467,12 +2572,12 @@ def enrich_person(c, data, person, photo_path=None):
             incoming = incoming.upper()
         stored = str(person.get(f) or '').strip()
         if incoming and not stored:
-            updates.append(f'{f}=?'); params.append(incoming)
+            updates.append(f'{f}=%s'); params.append(incoming)
     if updates:
-        updates.append('updated_at=CURRENT_TIMESTAMP')
+        updates.append("updated_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')")
         params.append(person['id'])
-        c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=?", params)
-        return rowdict(c.execute('SELECT * FROM persons WHERE id=?', (person['id'],)).fetchone()), True
+        c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=%s", params)
+        return rowdict(c.execute('SELECT * FROM persons WHERE id=%s', (person['id'],)).fetchone()), True
     return person, False
 
 def upsert_person(c, data, photo_path=None, allow_no_id=False):
@@ -2499,7 +2604,7 @@ def ensure_person(c, data, photo_path=None, allow_no_id=False):
     existing non-null data). Returns (row, created)."""
     pid = norm(data.get('person_id'))
     if pid:
-        row = rowdict(c.execute('SELECT * FROM persons WHERE person_id=?', (pid,)).fetchone())
+        row = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s', (pid,)).fetchone())
         if row:
             row, _ = enrich_person(c, data, row, photo_path)
             return row, False
@@ -2552,7 +2657,7 @@ def build_analytics(c, user):
     for r in crime_rows:
         loc = (r['location'] or 'Unspecified').strip() or 'Unspecified'
         by_location[loc] = by_location.get(loc, 0) + 1
-        # created_at is a SQLite 'YYYY-MM-DD HH:MM:SS' string — bucketed by
+        # created_at is a 'YYYY-MM-DD HH:MM:SS' UTC string — bucketed by
         # the shared helper so the executive and CID views always agree.
         bucket = time_of_day_bucket(r['created_at'])
         by_time[bucket] = by_time.get(bucket, 0) + 1
@@ -2644,7 +2749,7 @@ def _today():
 
 
 def _val(row, key, default=None):
-    """Read a column from a sqlite3.Row or a plain dict (None -> default)."""
+    """Read a column from a result row (dict) or a plain dict (None -> default)."""
     if row is None:
         return default
     keys = row.keys() if hasattr(row, 'keys') else ()
@@ -2750,12 +2855,12 @@ def checkpoint_scope_sql(scope, alias='ce'):
     if not scope:
         return ('', ())
     s = str(scope).strip().lower()
-    sql = (f"WHERE (LOWER(TRIM(COALESCE({alias}.location_code,'')))=? "
-           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,'')))=? "
-           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,'')))=? "
-           f"OR LOWER(TRIM(COALESCE({alias}.location,'')))=? "
-           f"OR LOWER(TRIM(COALESCE({alias}.location,''))) LIKE ? "
-           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,''))) LIKE ?)")
+    sql = (f"WHERE (LOWER(TRIM(COALESCE({alias}.location_code,'')))=%s "
+           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,'')))=%s "
+           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,'')))=%s "
+           f"OR LOWER(TRIM(COALESCE({alias}.location,'')))=%s "
+           f"OR LOWER(TRIM(COALESCE({alias}.location,''))) ILIKE %s "
+           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,''))) ILIKE %s)")
     return (sql, (s, s, f'{s} checkpoint', s, f'%{s}%', f'%{s}%'))
 
 
@@ -3044,7 +3149,7 @@ def new_promotion_id(c):
     year = datetime.datetime.now(datetime.timezone.utc).year
     prefix = f'PRM-{year}-'
     n = 1
-    for row in c.execute('SELECT nomination_id FROM officer_promotions WHERE nomination_id LIKE ?',
+    for row in c.execute('SELECT nomination_id FROM officer_promotions WHERE nomination_id ILIKE %s',
                          (prefix + '%',)):
         try:
             n = max(n, int(str(row['nomination_id']).rsplit('-', 1)[1]) + 1)
@@ -3057,7 +3162,7 @@ def new_discipline_id(c):
     year = datetime.datetime.now(datetime.timezone.utc).year
     prefix = f'DSC-{year}-'
     n = 1
-    for row in c.execute('SELECT action_id FROM officer_discipline WHERE action_id LIKE ?',
+    for row in c.execute('SELECT action_id FROM officer_discipline WHERE action_id ILIKE %s',
                          (prefix + '%',)):
         try:
             n = max(n, int(str(row['action_id']).rsplit('-', 1)[1]) + 1)
@@ -3086,11 +3191,11 @@ DISCIPLINE_SELECT = '''SELECT da.*, o.service_id, o.full_name, o.rank AS officer
 
 
 def promotion_row(c, nomination_id):
-    return c.execute(PROMOTION_SELECT + ' WHERE pr.nomination_id=?', (nomination_id,)).fetchone()
+    return c.execute(PROMOTION_SELECT + ' WHERE pr.nomination_id=%s', (nomination_id,)).fetchone()
 
 
 def discipline_row(c, action_id):
-    return c.execute(DISCIPLINE_SELECT + ' WHERE da.action_id=?', (action_id,)).fetchone()
+    return c.execute(DISCIPLINE_SELECT + ' WHERE da.action_id=%s', (action_id,)).fetchone()
 
 
 def promotion_rows(c):
@@ -3170,7 +3275,7 @@ def register_promotion(c, user, data):
     nid = new_promotion_id(c)
     c.execute('''INSERT INTO officer_promotions(nomination_id, officer_id, current_rank,
             proposed_rank, reason, effective_date, verification_status, nominated_by)
-        VALUES(?,?,?,?,?,?,?,?)''',
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s)''',
               (nid, officer['id'], current, proposed,
                str(data.get('reason') or '').strip() or None,
                str(data.get('effective_date') or '').strip() or None,
@@ -3180,7 +3285,7 @@ def register_promotion(c, user, data):
 
 def verify_promotion(c, user, nomination_id, data):
     """Commander verification: Accepted/Verified or Rejected."""
-    row = c.execute('SELECT * FROM officer_promotions WHERE nomination_id=?',
+    row = c.execute('SELECT * FROM officer_promotions WHERE nomination_id=%s',
                     (nomination_id,)).fetchone()
     if not row:
         raise LookupError('Promotion nomination not found')
@@ -3189,8 +3294,8 @@ def verify_promotion(c, user, nomination_id, data):
     if not status:
         raise ValueError('verification_status must be one of: ' + ', '.join(PROMOTION_STATUSES))
     stamp = utc_now_stamp() if status != PROMOTION_PENDING_STATUS else None
-    c.execute('UPDATE officer_promotions SET verification_status=?, verified_by=?, verified_at=? '
-              'WHERE nomination_id=?',
+    c.execute('UPDATE officer_promotions SET verification_status=%s, verified_by=%s, verified_at=%s '
+              'WHERE nomination_id=%s',
               (status, user['id'] if status != PROMOTION_PENDING_STATUS else None,
                stamp, nomination_id))
     return promotion_view(promotion_row(c, nomination_id))
@@ -3220,7 +3325,7 @@ def register_discipline(c, user, data):
     aid = new_discipline_id(c)
     c.execute('''INSERT INTO officer_discipline(action_id, officer_id, action_type, severity,
             status, from_rank, to_rank, suspension_start, suspension_end,
-            incident_summary, reported_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+            incident_summary, reported_by) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
               (aid, officer['id'], action_type, severity, status, from_rank, to_rank,
                str(data.get('suspension_start') or '').strip() or None,
                str(data.get('suspension_end') or '').strip() or None,
@@ -3239,7 +3344,7 @@ def update_discipline(c, user, action_id, data):
     analytics bundle (rank distribution, suspended officers, red badge) is
     derived from the same rows, so the strips follow immediately.
     """
-    row = c.execute('SELECT * FROM officer_discipline WHERE action_id=?',
+    row = c.execute('SELECT * FROM officer_discipline WHERE action_id=%s',
                     (action_id,)).fetchone()
     if not row:
         raise LookupError('Disciplinary action not found')
@@ -3251,40 +3356,40 @@ def update_discipline(c, user, action_id, data):
         raise ValueError('Severity is invalid')
     updates, params = [], []
     if severity:
-        updates.append('severity=?'); params.append(severity)
+        updates.append('severity=%s'); params.append(severity)
     if status:
-        updates.append('status=?'); params.append(status)
+        updates.append('status=%s'); params.append(status)
     for f in ('suspension_start', 'suspension_end'):
         if f in data:
-            updates.append(f + '=?')
+            updates.append(f + '=%s')
             params.append(str(data.get(f) or '').strip() or None)
     if 'incident_summary' in data or 'notes' in data:
-        updates.append('incident_summary=?')
+        updates.append('incident_summary=%s')
         params.append(str(data.get('incident_summary') or data.get('notes') or '').strip() or None)
     if 'to_rank' in data:
         to_rank = normalise_choice(data.get('to_rank'), OFFICER_RANKS)
         if not to_rank:
             raise ValueError('to_rank must be one of: ' + ', '.join(OFFICER_RANKS))
-        updates.append('to_rank=?'); params.append(to_rank)
+        updates.append('to_rank=%s'); params.append(to_rank)
     if updates:
         params.append(action_id)
-        c.execute('UPDATE officer_discipline SET ' + ', '.join(updates) + ' WHERE action_id=?', params)
+        c.execute('UPDATE officer_discipline SET ' + ', '.join(updates) + ' WHERE action_id=%s', params)
 
     action = discipline_view(discipline_row(c, action_id))
     if status:
         officer_id = row['officer_id']
         if action['action_type'] == 'Demotion' and action['status'] == 'Confirmed' and action['to_rank']:
-            c.execute('UPDATE officers SET rank=? WHERE id=?', (action['to_rank'], officer_id))
+            c.execute('UPDATE officers SET rank=%s WHERE id=%s', (action['to_rank'], officer_id))
         elif action['action_type'] == 'Suspension' and action['status'] == 'Confirmed':
-            c.execute("UPDATE officers SET duty_status='Suspended' WHERE id=? "
+            c.execute("UPDATE officers SET duty_status='Suspended' WHERE id=%s "
                       "AND duty_status NOT IN ('Terminated','Retired')", (officer_id,))
         elif action['status'] == 'Closed':
-            placeholders = ','.join('?' * len(DISCIPLINE_OPEN_STATUSES))
-            sql = ('SELECT COUNT(*) FROM officer_discipline WHERE officer_id=? '
-                   'AND action_id<>? AND status IN (' + placeholders + ')')
+            placeholders = ','.join('%s' * len(DISCIPLINE_OPEN_STATUSES))
+            sql = ('SELECT COUNT(*) FROM officer_discipline WHERE officer_id=%s '
+                   'AND action_id<>%s AND status IN (' + placeholders + ')')
             still_open = c.execute(sql, (officer_id, action_id) + tuple(DISCIPLINE_OPEN_STATUSES)).fetchone()[0]
             if not still_open:
-                c.execute("UPDATE officers SET duty_status='Active' WHERE id=? "
+                c.execute("UPDATE officers SET duty_status='Active' WHERE id=%s "
                           "AND duty_status='Suspended'", (officer_id,))
         action = discipline_view(discipline_row(c, action_id))
     return action
@@ -3889,17 +3994,17 @@ def build_dashboard(c, user):
         """Flexible case-insensitive match against any of the four
         location columns so a row that was just saved with the friendly
         checkpoint label is returned in the very next poll even if
-        `location_code` was not populated. Adds a LIKE '%scope%'
+        `location_code` was not populated. Adds an ILIKE '%scope%'
         fallback so any trailing space, casing, or punctuation variation
         in 'location' / 'checkpoint_location' is still caught.
         """
         if not scope: return ("", ())
-        sql = ("WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=? "
-               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
-               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
-               "OR LOWER(TRIM(COALESCE(ce.location,'')))=? "
-               "OR LOWER(TRIM(COALESCE(ce.location,''))) LIKE ? "
-               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) LIKE ?)")
+        sql = ("WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=%s "
+               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
+               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
+               "OR LOWER(TRIM(COALESCE(ce.location,'')))=%s "
+               "OR LOWER(TRIM(COALESCE(ce.location,''))) ILIKE %s "
+               "OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) ILIKE %s)")
         return (sql, (scope.lower(), scope.lower(), f"{scope.lower()} checkpoint",
                       scope.lower(), f"%{scope.lower()}%", f"%{scope.lower()}%"))
 
@@ -4012,7 +4117,7 @@ def _admin_dashboard_cards(c):
          'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
          'trend':'Restricted operational data','trend_kind':'alert','module':'cid'},
         {'id':'conduct_pending','label':'Conduct files pending HR review','icon':'🎖',
-         'value':c.execute("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (?, ?)",
+         'value':c.execute("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (%s, %s)",
                            CONDUCT_PENDING_STATUSES).fetchone()[0],
          'trend':'Promotions & disciplinary actions','module':'conduct'},
     ]
@@ -4026,15 +4131,15 @@ def _registration_dashboard_cards(c, today):
         return c.execute(sql, args).fetchone()[0]
     return [
         {'id':'reg_conduct_pending','label':'Conduct files pending review','icon':'🎖',
-         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (?, ?)",
+         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE status IN (%s, %s)",
                        CONDUCT_PENDING_STATUSES),
          'trend':'Awaiting HR verification','module':'conduct'},
         {'id':'reg_conduct_promotions','label':'Promotion / commendation files','icon':'↑',
-         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?",
+         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=%s",
                        ('Promotion / Commendation',)),
          'trend':'Nominations for exemplary service','module':'conduct'},
         {'id':'reg_conduct_disciplinary','label':'Disciplinary / misconduct files','icon':'!',
-         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=?",
+         'value':count("SELECT COUNT(*) FROM officer_conduct_actions WHERE action_type=%s",
                        ('Disciplinary / Penalty',)),
          'trend':'Violations & penalties','trend_kind':'alert','module':'conduct'},
         {'id':'reg_rank_changes','label':'Approved rank changes','icon':'≡',
@@ -4064,12 +4169,12 @@ def _checkpoint_dashboard_cards(c, scope, today, cp_scope_sql):
 
     screenings_today = c.execute(
         f"SELECT COUNT(*) FROM checkpoint_events ce {filter_sql} "
-        f"AND substr(ce.created_at,1,10)=?",
+        f"AND substr(ce.created_at,1,10)=%s",
         (*filter_args, today)).fetchone()[0]
     flagged_today = c.execute(
         f"SELECT COUNT(*) FROM checkpoint_events ce {filter_sql} "
         f"AND ce.screening_result='Flagged match' "
-        f"AND substr(ce.created_at,1,10)=?",
+        f"AND substr(ce.created_at,1,10)=%s",
         (*filter_args, today)).fetchone()[0]
     total_local = c.execute(
         f"SELECT COUNT(*) FROM checkpoint_events ce {filter_sql}", filter_args).fetchone()[0]
@@ -4078,13 +4183,13 @@ def _checkpoint_dashboard_cards(c, scope, today, cp_scope_sql):
         filter_args).fetchone()[0]
 
     # Peak travel hour — bucket created_at into 2-hour slices for the
-    # last 7 days. SQLite has no native date arithmetic on TEXT so we
-    # use a LIKE prefix on the YYYY-MM-DD portion.
+    # last 7 days. The stored created_at is TEXT, so the 7-day window is
+    # a prefix comparison on the YYYY-MM-DD portion.
     seven_days_ago = time.strftime('%Y-%m-%d', time.gmtime(time.time() - 7 * 86400))
     peak_row = c.execute(
         f"SELECT substr(ce.created_at,12,2) AS hh, COUNT(*) AS n "
         f"FROM checkpoint_events ce {filter_sql} "
-        f"AND substr(ce.created_at,1,10) >= ? "
+        f"AND substr(ce.created_at,1,10) >= %s "
         f"GROUP BY hh ORDER BY n DESC, hh ASC LIMIT 1",
         (*filter_args, seven_days_ago)).fetchone()
     if peak_row and peak_row['hh']:
@@ -4146,7 +4251,7 @@ def _fingerprint_dashboard_cards(c, today):
          'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Pending Review'").fetchone()[0],
          'trend':'Require officer review','module':'fingerprint'},
         {'id':'fp_today','label':'Applications today','icon':'◉',
-         'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE substr(created_at,1,10)=?", (today,)).fetchone()[0],
+         'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE substr(created_at,1,10)=%s", (today,)).fetchone()[0],
          'trend':f'New intake · {today}','module':'fingerprint'},
         {'id':'fp_approved','label':'Approved clearances','icon':'✓',
          'value':c.execute("SELECT COUNT(*) FROM clearance_applications WHERE status='Approved'").fetchone()[0],
@@ -4162,7 +4267,7 @@ def _airport_dashboard_cards(c, today):
     arrivals = c.execute("SELECT COUNT(*) FROM airport_passengers WHERE movement='Arrival'").fetchone()[0]
     departures = c.execute("SELECT COUNT(*) FROM airport_passengers WHERE movement='Departure'").fetchone()[0]
     today_movements = c.execute(
-        "SELECT COUNT(*) FROM airport_passengers WHERE travel_date=?", (today,)).fetchone()[0]
+        "SELECT COUNT(*) FROM airport_passengers WHERE travel_date=%s", (today,)).fetchone()[0]
     return [
         {'id':'ap_today','label':'Movements today','icon':'✈',
          'value':today_movements,'trend':f'Travel date {today}','module':'airport'},
@@ -4184,7 +4289,7 @@ def _cid_dashboard_cards(c, today):
          'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
          'trend':'Restricted operational data','trend_kind':'alert','module':'cid'},
         {'id':'cid_cases_today','label':'Cases reported today','icon':'◉',
-         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE substr(created_at,1,10)=?", (today,)).fetchone()[0],
+         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE substr(created_at,1,10)=%s", (today,)).fetchone()[0],
          'trend':f'New intake · {today}','module':'cid'},
         {'id':'cid_suspects','label':'Suspects on file','icon':'⌁',
          'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect'").fetchone()[0],
@@ -4195,7 +4300,7 @@ def _cid_dashboard_cards(c, today):
 def _time_ago(iso_ts, now_ts):
     """Best-effort "N mins ago" formatter for the live activity feed.
 
-    Accepts SQLite CURRENT_TIMESTAMP-style strings ("YYYY-MM-DD HH:MM:SS")
+    Accepts stored timestamp strings ("YYYY-MM-DD HH:MM:SS", UTC)
     or date-only strings ("YYYY-MM-DD"). Returns '' on parse failure.
     """
     if not iso_ts:
@@ -4334,11 +4439,30 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
     return events[:16]
 
 
+def _json_default(value):
+    """JSON fallback for values the PostgreSQL driver may return.
+
+    The schema stores timestamps as TEXT ('YYYY-MM-DD HH:MM:SS', UTC) so rows
+    are already JSON-safe; this guard only fires if a column is ever migrated
+    to a native DATE / TIMESTAMP / NUMERIC type, keeping send_json working
+    instead of raising TypeError.
+    """
+    if isinstance(value, datetime.datetime):
+        return value.isoformat(sep=' ')
+    if isinstance(value, (datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    if isinstance(value, bytes):
+        return value.decode('utf-8', 'replace')
+    raise TypeError(f'Object of type {type(value).__name__} is not JSON serializable')
+
+
 class API(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args): print('%s - %s' % (self.address_string(), fmt % args))
 
     def send_json(self, status, data, extra_headers=None):
-        out = json.dumps(data, ensure_ascii=False).encode()
+        out = json.dumps(data, ensure_ascii=False, default=_json_default).encode()
         self.send_response(status)
         self.send_header('Content-Type','application/json; charset=utf-8')
         self.send_header('Content-Length',str(len(out)))
@@ -4410,7 +4534,8 @@ class API(BaseHTTPRequestHandler):
                 # fingerprint review lock (a stale process is the usual cause
                 # of "the fix did not take effect").
                 return self.send_json(200, {'status':'ok','service':'sentinel-backend',
-                                            'database':'sqlite-development',
+                                            'database':'postgresql',
+                                            'database_name':os.environ.get('SENTINEL_DB_NAME', 'sentinel_police'),
                                             'build':BUILD_TAG,
                                             # Live proof the gate is armed: the
                                             # boot self-test is re-run on every
@@ -4432,7 +4557,7 @@ class API(BaseHTTPRequestHandler):
                                             'conduct_action_types':list(CONDUCT_ACTION_TYPES),
                                             'conduct_classifications':{k: list(v) for k, v in CONDUCT_CLASSIFICATIONS.items()},
                                             'conduct_statuses':list(CONDUCT_STATUSES)})
-            user = require_auth(self); c = db()
+            user = require_auth(self); c = get_db_connection()
             # RBAC module-gating. Every authenticated user can see /api/me and
             # the central /api/persons registry, but each unit endpoint is
             # restricted to the roles that operate that module.
@@ -4472,23 +4597,23 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/persons':
                 q = re.sub(r'\s+', ' ', parse_qs(p.query).get('q',[''])[0]).strip()
                 like = f'%{q}%'
-                rows = c.execute('''SELECT * FROM persons WHERE full_name LIKE ? OR person_id LIKE ?
-                    OR national_id LIKE ? OR phone LIKE ? OR passport_id LIKE ? OR mother_name LIKE ?
-                    OR first_name LIKE ? OR second_name LIKE ? OR third_name LIKE ? OR fourth_name LIKE ?
+                rows = c.execute('''SELECT * FROM persons WHERE full_name ILIKE %s OR person_id ILIKE %s
+                    OR national_id ILIKE %s OR phone ILIKE %s OR passport_id ILIKE %s OR mother_name ILIKE %s
+                    OR first_name ILIKE %s OR second_name ILIKE %s OR third_name ILIKE %s OR fourth_name ILIKE %s
                     ORDER BY id DESC''', (like,like,like,like,like,like,like,like,like,like)).fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
-                person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=?',(pid,)).fetchone())
+                person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone())
                 if not person: self.send_json(404,{'error':'Person not found'}); c.close(); return
-                person['airport'] = [dict(r) for r in c.execute('SELECT record_id,movement,travel_date,flight_number,route FROM airport_passengers WHERE person_id=?',(person['id'],)).fetchall()]
-                person['clearance'] = [dict(r) for r in c.execute('SELECT application_id,purpose,status,certificate_number FROM clearance_applications WHERE person_id=?',(person['id'],)).fetchall()]
+                person['airport'] = [dict(r) for r in c.execute('SELECT record_id,movement,travel_date,flight_number,route FROM airport_passengers WHERE person_id=%s',(person['id'],)).fetchall()]
+                person['clearance'] = [dict(r) for r in c.execute('SELECT application_id,purpose,status,certificate_number FROM clearance_applications WHERE person_id=%s',(person['id'],)).fetchall()]
                 person['alerts'] = [dict(r) for r in c.execute('''SELECT sa.alert_id,sa.role,sa.alert_status,sa.origin,cc.case_id
                     FROM suspect_alerts sa LEFT JOIN crime_cases cc ON cc.id=sa.case_id
-                    WHERE sa.person_id=?''',(person['id'],)).fetchall()]
+                    WHERE sa.person_id=%s''',(person['id'],)).fetchall()]
                 person['checkpoints'] = [dict(r) for r in c.execute('''SELECT event_id,location,location_code,checkpoint_location,
                     screening_result,action_taken,notes,created_at
-                    FROM checkpoint_events WHERE person_id=? ORDER BY id DESC''',(person['id'],)).fetchall()]
+                    FROM checkpoint_events WHERE person_id=%s ORDER BY id DESC''',(person['id'],)).fetchall()]
                 result = person
             elif p.path == '/api/airport-records':
                 rows = c.execute('''SELECT a.record_id,a.movement,a.travel_date,a.flight_number,a.airline,
@@ -4514,7 +4639,7 @@ class API(BaseHTTPRequestHandler):
                 a = rowdict(c.execute('''SELECT a.*,p.full_name,p.national_id,p.date_of_birth,p.mother_name,
                     p.place_of_birth,p.residence,p.occupation,p.passport_id,p.photo_path,p.phone
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id
-                    WHERE a.application_id=?''',(aid,)).fetchone())
+                    WHERE a.application_id=%s''',(aid,)).fetchone())
                 if not a: self.send_json(404,{'error':'Application not found'}); c.close(); return
                 # 12-hour mandatory review window metadata for the printable page.
                 a['review'] = fingerprint_review_state(a)
@@ -4527,14 +4652,14 @@ class API(BaseHTTPRequestHandler):
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path.startswith('/api/crime-cases/'):
                 cid = p.path.split('/')[3]
-                case = rowdict(c.execute('SELECT * FROM crime_cases WHERE case_id=?',(cid,)).fetchone())
+                case = rowdict(c.execute('SELECT * FROM crime_cases WHERE case_id=%s',(cid,)).fetchone())
                 if not case: self.send_json(404,{'error':'Case not found'}); c.close(); return
                 case['participants'] = [dict(r) for r in c.execute('''SELECT sa.alert_id,sa.role,sa.notes,sa.alert_status,
                     sa.origin,cc.case_id,p.person_id,p.full_name,p.national_id,p.phone FROM suspect_alerts sa
                     JOIN persons p ON p.id=sa.person_id JOIN crime_cases cc ON cc.id=sa.case_id
-                    WHERE sa.case_id=? ORDER BY sa.id''',(case['id'],)).fetchall()]
+                    WHERE sa.case_id=%s ORDER BY sa.id''',(case['id'],)).fetchall()]
                 case['evidence'] = [dict(r) for r in c.execute('''SELECT evidence_id,caption,file_path,file_name,file_type,created_at
-                    FROM case_evidence WHERE case_id=? ORDER BY id DESC''',(case['id'],)).fetchall()]
+                    FROM case_evidence WHERE case_id=%s ORDER BY id DESC''',(case['id'],)).fetchall()]
                 result = case
             elif p.path == '/api/admin/users' or p.path.startswith('/api/admin/users/'):
                 if p.path == '/api/admin/users':
@@ -4549,7 +4674,7 @@ class API(BaseHTTPRequestHandler):
                     if not uid or not uid.isdigit():
                         self.send_json(400, {'error': 'user id required'}); c.close(); return
                     row = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active
-                        FROM users WHERE id=?''', (int(uid),)).fetchone()
+                        FROM users WHERE id=%s''', (int(uid),)).fetchone()
                     if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
                     result = {'user': user_view(rowdict(row)),
                               'roles': list(ALL_ROLES),
@@ -4650,7 +4775,7 @@ class API(BaseHTTPRequestHandler):
                 # the friendly checkpoint label ('South Checkpoint') is
                 # returned in the very next poll even if 'location_code' was
                 # not populated. The match is also case-insensitive (LOWER
-                # on both sides) and uses a LIKE '%south%' fallback so any
+                # on both sides) and uses an ILIKE '%south%' fallback so any
                 # trailing space, casing, or punctuation variation in
                 # 'location' / 'checkpoint_location' is still caught.
                 scope = checkpoint_scope(user)
@@ -4663,18 +4788,18 @@ class API(BaseHTTPRequestHandler):
                     p.person_id,p.full_name,p.national_id,p.passport_id'''
                 if scope:
                     # Case-insensitive match against all four location columns
-                    # plus a LIKE '%scope%' fallback. The OR-clause catches
+                    # plus an ILIKE '%scope%' fallback. The OR-clause catches
                     # any combination the data layer might have written
                     # (short code, friendly label, or trailing spaces).
                     rows = c.execute(
                         f"SELECT {base_cols} FROM checkpoint_events ce "
                         f"JOIN persons p ON p.id=ce.person_id "
-                        f"WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=? "
-                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
-                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=? "
-                        f"OR LOWER(TRIM(COALESCE(ce.location,'')))=? "
-                        f"OR LOWER(TRIM(COALESCE(ce.location,''))) LIKE ? "
-                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) LIKE ?) "
+                        f"WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=%s "
+                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
+                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
+                        f"OR LOWER(TRIM(COALESCE(ce.location,'')))=%s "
+                        f"OR LOWER(TRIM(COALESCE(ce.location,''))) ILIKE %s "
+                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) ILIKE %s) "
                         f"ORDER BY ce.id DESC",
                         (scope.lower(), scope.lower(), f"{scope.lower()} checkpoint",
                          scope.lower(), f"%{scope.lower()}%", f"%{scope.lower()}%")).fetchall()
@@ -4721,7 +4846,7 @@ class API(BaseHTTPRequestHandler):
                 if (q.get('status', [''])[0] or '').strip() and not status:
                     raise ValueError('status must be one of: ' + ', '.join(CONDUCT_STATUSES))
                 if status:
-                    where.append('a.status=?'); args.append(status)
+                    where.append('a.status=%s'); args.append(status)
                 category = normalise_conduct_type(q.get('category', [''])[0]
                                                   or q.get('action_type', [''])[0])
                 if (q.get('category', [''])[0] or q.get('action_type', [''])[0] or '').strip() \
@@ -4729,23 +4854,23 @@ class API(BaseHTTPRequestHandler):
                     raise ValueError('category must be one of: '
                                      + ', '.join(CONDUCT_ACTION_TYPES))
                 if category:
-                    where.append('a.action_type=?'); args.append(category)
+                    where.append('a.action_type=%s'); args.append(category)
                 region = str(q.get('region', [''])[0] or '').strip()
                 if region:
                     # Region of the submitting station OR of the target
                     # officer's assigned station — either anchors the file.
-                    where.append('(s.region=? OR os.region=?)')
+                    where.append('(s.region=%s OR os.region=%s)')
                     args.extend([region, region])
                 station = str(q.get('station', [''])[0]
                               or q.get('station_id', [''])[0] or '').strip()
                 if station:
-                    where.append('(s.station_id=? OR CAST(s.id AS TEXT)=? '
-                                 'OR os.station_id=? OR CAST(os.id AS TEXT)=?)')
+                    where.append('(s.station_id=%s OR CAST(s.id AS TEXT)=%s '
+                                 'OR os.station_id=%s OR CAST(os.id AS TEXT)=%s)')
                     args.extend([station, station, station, station])
                 officer = str(q.get('officer', [''])[0]
                               or q.get('officer_id', [''])[0] or '').strip()
                 if officer:
-                    where.append('(o.service_id=? OR CAST(o.id AS TEXT)=?)')
+                    where.append('(o.service_id=%s OR CAST(o.id AS TEXT)=%s)')
                     args.extend([officer, officer])
                 sql = CONDUCT_SELECT
                 if where:
@@ -4760,7 +4885,7 @@ class API(BaseHTTPRequestHandler):
                           'ranks': list(OFFICER_RANKS)}
             elif p.path.startswith('/api/conduct/'):
                 aid = p.path.split('/')[3]
-                row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=?', (aid,)).fetchone()
+                row = c.execute(CONDUCT_SELECT + ' WHERE a.action_id=%s', (aid,)).fetchone()
                 if not row:
                     self.send_json(404, {'error': 'Conduct action file not found'}); c.close(); return
                 detail = conduct_view(row)
@@ -4769,7 +4894,7 @@ class API(BaseHTTPRequestHandler):
                 detail['officer_service_history'] = [dict(r) for r in c.execute('''
                     SELECT h.action_id, h.entry_type, h.summary, h.from_rank, h.to_rank,
                            h.duty_status, h.created_at
-                    FROM officer_service_history h WHERE h.officer_id=?
+                    FROM officer_service_history h WHERE h.officer_id=%s
                     ORDER BY h.id DESC''', (row['officer_id'],)).fetchall()]
                 result = detail
             else:
@@ -4797,8 +4922,8 @@ class API(BaseHTTPRequestHandler):
             if canonical_api_path(p.path) != p.path:
                 p = p._replace(path=canonical_api_path(p.path))
             if p.path == '/api/login':
-                data = body_json(self); c = db()
-                u = c.execute('SELECT * FROM users WHERE username=? AND password_hash=? AND active=1',
+                data = body_json(self); c = get_db_connection()
+                u = c.execute('SELECT * FROM users WHERE username=%s AND password_hash=%s AND active=1',
                               (data.get('username'), password_hash(data.get('password','')))).fetchone(); c.close()
                 if not u: self.send_json(401,{'error':'Invalid username or password'}); return
                 # Persistent session: the token survives a server restart, so
@@ -4818,7 +4943,7 @@ class API(BaseHTTPRequestHandler):
                                extra_headers=[('Set-Cookie',
                                                'sentinel_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax')])
                 return
-            user = require_auth(self); c = db()
+            user = require_auth(self); c = get_db_connection()
             # RBAC: same module gate for the POST/PATCH handlers.
             # Writes follow the documented ownership of each register: the
             # station and vehicle registries are SystemAdmin-write (the HR
@@ -4889,7 +5014,7 @@ class API(BaseHTTPRequestHandler):
                     route = (origin + ' / ' + destination) if origin and destination else (origin or destination)
                 rid = 'AR-'+str(int(time.time()*1000))[-8:]
                 c.execute('''INSERT INTO airport_passengers(record_id,person_id,movement,travel_date,
-                    flight_number,airline,origin_city,destination_city,route,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                    flight_number,airline,origin_city,destination_city,route,notes,created_by) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                     (rid,person['id'],data.get('movement','Arrival'),data.get('travel_date',''),
                      data.get('flight_number',''),data.get('airline',''),origin,destination,
                      route,data.get('notes',''),user['id']))
@@ -4930,7 +5055,7 @@ class API(BaseHTTPRequestHandler):
                     guardian_name,guardian_relationship,guardian_id,guardian_occupation,guardian_address,
                     guardian_phone,legal_document_ref,notes,applicant_docs,guardian_docs,applicant_photo,
                     sex,email,created_by,created_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                     (aid,person['id'],purpose,fields.get('guardian_name',''),
                      fields.get('guardian_relationship',''),fields.get('guardian_id',''),
                      fields.get('guardian_occupation',''),fields.get('guardian_address',''),
@@ -4948,7 +5073,7 @@ class API(BaseHTTPRequestHandler):
             elif p.path.startswith('/api/clearance-applications/') and p.path.endswith('/approve'):
                 aid = p.path.split('/')[3]
                 row = c.execute('SELECT application_id,status,certificate_number,created_at '
-                                'FROM clearance_applications WHERE application_id=?', (aid,)).fetchone()
+                                'FROM clearance_applications WHERE application_id=%s', (aid,)).fetchone()
                 if not row:
                     self.send_json(404, {'error':'Application not found'}); c.close(); return
                 app_row = rowdict(row)
@@ -4981,7 +5106,7 @@ class API(BaseHTTPRequestHandler):
                                              'enforced_by':'inline_43200s_guard'})
                         c.close(); return
                 cert = app_row['certificate_number'] or ('CL-'+str(int(time.time()*1000))[-8:])
-                c.execute("UPDATE clearance_applications SET status='Approved',certificate_number=?,reviewed_at=CURRENT_TIMESTAMP WHERE application_id=?",
+                c.execute("UPDATE clearance_applications SET status='Approved',certificate_number=%s,reviewed_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE application_id=%s",
                           (cert,aid))
                 audit(c,user,'APPROVE','clearance_application',aid,
                       f"{cert} by {user.get('role')}"
@@ -4997,20 +5122,20 @@ class API(BaseHTTPRequestHandler):
                 nxt = c.execute('SELECT COUNT(*) FROM crime_cases').fetchone()[0]+8
                 case_id = 'CID-2026-'+str(nxt).zfill(3)
                 c.execute('''INSERT INTO crime_cases(case_id,category,location,status,incident_summary,notes,created_by)
-                    VALUES(?,?,?,?,?,?,?)''',(case_id,data['category'],data.get('location','Not specified'),
+                    VALUES(%s,%s,%s,%s,%s,%s,%s)''',(case_id,data['category'],data.get('location','Not specified'),
                     data.get('status','Reported'),data.get('incident_summary',''),data.get('notes',''),user['id']))
                 audit(c,user,'CREATE','crime_case',case_id); c.commit()
                 result = {'case_id':case_id,'category':data['category'],'status':'Reported'}
             elif p.path.startswith('/api/crime-cases/') and p.path.endswith('/evidence'):
                 cid = p.path.split('/')[3]
-                case = c.execute('SELECT id FROM crime_cases WHERE case_id=?',(cid,)).fetchone()
+                case = c.execute('SELECT id FROM crime_cases WHERE case_id=%s',(cid,)).fetchone()
                 if not case: raise ValueError('case_id must refer to an existing case')
                 fields, files = parse_multipart(self)
                 if 'file' not in files: raise ValueError('An evidence file is required')
                 meta = save_upload(files['file'])
                 eid = 'EV-'+secrets.token_hex(4)
                 c.execute('''INSERT INTO case_evidence(evidence_id,case_id,caption,file_path,file_name,file_type,uploaded_by)
-                    VALUES(?,?,?,?,?,?,?)''',(eid,case['id'],fields.get('caption',''),meta['path'],
+                    VALUES(%s,%s,%s,%s,%s,%s,%s)''',(eid,case['id'],fields.get('caption',''),meta['path'],
                     meta['name'],fields.get('file_type','Evidence'),user['id']))
                 audit(c,user,'UPLOAD','evidence',eid,cid); c.commit()
                 result = {'evidence_id':eid,'file_path':meta['path']}
@@ -5046,13 +5171,13 @@ class API(BaseHTTPRequestHandler):
                     raise ValueError('location_scope is required for Checkpoint roles')
                 if scope and scope not in CHECKPOINT_LOCATIONS:
                     raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
-                if c.execute('SELECT 1 FROM users WHERE username=?', (username,)).fetchone():
+                if c.execute('SELECT 1 FROM users WHERE username=%s', (username,)).fetchone():
                     self.send_json(409, {'error': f'Username "{username}" already exists'}); c.close(); return
                 c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active)
-                    VALUES(?,?,?,?,?,?,?)''',
+                    VALUES(%s,%s,%s,%s,%s,%s,%s)''',
                     (username, display_name, role, branch, scope, password_hash(password),
                      1 if data.get('active', True) else 0))
-                new = rowdict(c.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone())
+                new = rowdict(c.execute('SELECT * FROM users WHERE username=%s', (username,)).fetchone())
                 audit(c, user, 'CREATE', 'user', str(new['id']), username)
                 c.commit()
                 result = {'user': user_view(new)}
@@ -5061,7 +5186,7 @@ class API(BaseHTTPRequestHandler):
                 case = None
                 case_id = (data.get('case_id') or '').strip()
                 if case_id:
-                    case = c.execute('SELECT id,case_id,category FROM crime_cases WHERE case_id=?',(case_id,)).fetchone()
+                    case = c.execute('SELECT id,case_id,category FROM crime_cases WHERE case_id=%s',(case_id,)).fetchone()
                     if not case: raise ValueError('case_id must refer to an existing CID case')
                 reason = (data.get('notes') or data.get('reason') or '').strip()
                 if case and not reason:
@@ -5078,10 +5203,10 @@ class API(BaseHTTPRequestHandler):
                 else:
                     audit(c,user,'ENRICH','person',person['person_id'],'suspect listing filled missing details')
                 if case:
-                    dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id=? AND alert_status=?',
+                    dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=%s AND case_id=%s AND alert_status=%s',
                                     (person['id'],case['id'],'Active alert')).fetchone()
                 else:
-                    dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=? AND case_id IS NULL AND alert_status=?',
+                    dup = c.execute('SELECT alert_id FROM suspect_alerts WHERE person_id=%s AND case_id IS NULL AND alert_status=%s',
                                     (person['id'],'Active alert')).fetchone()
                 if dup:
                     self.send_json(409,{'error':'An active alert already links this person' +
@@ -5089,7 +5214,7 @@ class API(BaseHTTPRequestHandler):
                                         'alert_id':dup['alert_id']}); c.close(); return
                 alert_id = 'AL-'+secrets.token_hex(4)
                 c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,origin,notes,created_by)
-                    VALUES(?,?,?,?,?,?,?,?)''',(alert_id,person['id'], case['id'] if case else None,
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)''',(alert_id,person['id'], case['id'] if case else None,
                     data.get('role','Suspect'),'Active alert',origin,reason,user['id']))
                 audit(c,user,'CREATE','suspect_alert',alert_id,
                       data.get('case_id','') or ('no case - '+origin)); c.commit()
@@ -5147,10 +5272,10 @@ class API(BaseHTTPRequestHandler):
                 guardian_person = None
                 gd_pid = (data.get('guardian_person_id') or '').strip()
                 if gd_pid:
-                    guardian_person = c.execute('SELECT id FROM persons WHERE person_id=?',(gd_pid,)).fetchone()
+                    guardian_person = c.execute('SELECT id FROM persons WHERE person_id=%s',(gd_pid,)).fetchone()
                 if not guardian_person:
                     match, _ = find_by_id(c, gd_identity)
-                    guardian_person = c.execute('SELECT id FROM persons WHERE id=?',(match['id'],)).fetchone() if match else None
+                    guardian_person = c.execute('SELECT id FROM persons WHERE id=%s',(match['id'],)).fetchone() if match else None
                 location = (data.get('location') or '').strip()
                 if not location: raise ValueError('location is required')
                 # Normalise casing / trailing whitespace to the canonical
@@ -5186,7 +5311,7 @@ class API(BaseHTTPRequestHandler):
                 if scope and location != scope:
                     raise ValueError(
                         f'Checkpoint officers can only record stops at their assigned location ({scope})')
-                alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=? AND role='Suspect'
+                alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=%s AND role='Suspect'
                     AND alert_status='Active alert' LIMIT 1''',(person['id'],)).fetchone()
                 screen = 'Flagged match' if alerted else 'No active alert'
                 action = 'Supervisor contacted' if alerted else 'Cleared'
@@ -5207,7 +5332,7 @@ class API(BaseHTTPRequestHandler):
                     current_address,permanent_address,traveler_photo,traveler_docs,
                     guardian_person_id,guardian_name,guardian_relationship,guardian_phone,
                     guardian_address,guardian_occupation,guardian_national_id,guardian_passport_id,
-                    guardian_docs,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                    guardian_docs,created_by) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                     (event_id,person['id'],location,location_code,checkpoint_location,
                      screen,action,(data.get('notes') or '').strip(),
                      purpose,current_addr,(data.get('permanent_address') or '').strip(),
@@ -5321,7 +5446,7 @@ class API(BaseHTTPRequestHandler):
                 # Advancement / Rank Demotion automatically updates
                 # officers.rank and writes an immutable service history row.
                 aid = p.path.split('/')[3]
-                row = c.execute('SELECT * FROM officer_conduct_actions WHERE action_id=?',
+                row = c.execute('SELECT * FROM officer_conduct_actions WHERE action_id=%s',
                                 (aid,)).fetchone()
                 if not row:
                     self.send_json(404, {'error': 'Conduct action file not found'}); c.close(); return
@@ -5345,7 +5470,7 @@ class API(BaseHTTPRequestHandler):
         except ValueError as e:
             if c: c.close()
             self.send_json(400,{'error':str(e)})
-        except sqlite3.IntegrityError as e:
+        except psycopg2.IntegrityError as e:
             if c: c.close()
             self.send_json(409,{'error':'Database constraint failed','details':str(e)})
         except Exception as e:
@@ -5357,7 +5482,7 @@ class API(BaseHTTPRequestHandler):
         c = None
         try:
             p = urlparse(self.path)
-            user = require_auth(self); data = body_json(self); c = db()
+            user = require_auth(self); data = body_json(self); c = get_db_connection()
             # RBAC: only admins can edit user records; CID module updates CID cases.
             if p.path.startswith('/api/admin/users'):
                 require_module(user, 'admin')
@@ -5369,30 +5494,30 @@ class API(BaseHTTPRequestHandler):
                 require_module(user, 'officers')
             if p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
-                row = c.execute('SELECT * FROM persons WHERE person_id=?',(pid,)).fetchone()
+                row = c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone()
                 if not row: self.send_json(404,{'error':'Person not found'}); c.close(); return
                 updates, params = [], []
                 for f in PERSON_FIELDS:
                     val = data.get(f)
                     if val is not None and str(val).strip()!='':
-                        updates.append(f'{f}=?'); params.append(str(val).strip())
+                        updates.append(f'{f}=%s'); params.append(str(val).strip())
                 if updates:
-                    updates.append('updated_at=CURRENT_TIMESTAMP'); params.append(row['id'])
-                    c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=?", params)
+                    updates.append("updated_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')"); params.append(row['id'])
+                    c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=%s", params)
                     audit(c,user,'UPDATE','person',pid)
                 c.commit()
-                result = {'person': rowdict(c.execute('SELECT * FROM persons WHERE id=?',(row['id'],)).fetchone())}
+                result = {'person': rowdict(c.execute('SELECT * FROM persons WHERE id=%s',(row['id'],)).fetchone())}
             elif p.path.startswith('/api/crime-cases/'):
                 cid = p.path.split('/')[3]
-                row = c.execute('SELECT id FROM crime_cases WHERE case_id=?',(cid,)).fetchone()
+                row = c.execute('SELECT id FROM crime_cases WHERE case_id=%s',(cid,)).fetchone()
                 if not row: self.send_json(404,{'error':'Case not found'}); c.close(); return
                 updates, params = [], []
                 for f in ('category','location','status','incident_summary','notes'):
                     val = data.get(f)
-                    if val is not None: updates.append(f'{f}=?'); params.append(val)
+                    if val is not None: updates.append(f'{f}=%s'); params.append(val)
                 if updates:
                     params.append(row['id'])
-                    c.execute(f"UPDATE crime_cases SET {', '.join(updates)} WHERE id=?", params)
+                    c.execute(f"UPDATE crime_cases SET {', '.join(updates)} WHERE id=%s", params)
                     audit(c,user,'UPDATE','crime_case',cid)
                 c.commit(); result = {'case_id':cid,'updated':True}
             elif p.path.startswith('/api/officers/promotions/'):
@@ -5420,12 +5545,12 @@ class API(BaseHTTPRequestHandler):
                 uid = parts[4] if len(parts) > 4 else ''
                 if not uid or not uid.isdigit():
                     self.send_json(400, {'error': 'user id required'}); c.close(); return
-                row = c.execute('SELECT * FROM users WHERE id=?', (int(uid),)).fetchone()
+                row = c.execute('SELECT * FROM users WHERE id=%s', (int(uid),)).fetchone()
                 if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
                 updates, params = [], []
                 for f in ('display_name', 'branch'):
                     if f in data and str(data[f]).strip():
-                        updates.append(f'{f}=?'); params.append(str(data[f]).strip())
+                        updates.append(f'{f}=%s'); params.append(str(data[f]).strip())
                 if 'role' in data:
                     # Spec step 1: accept both the legacy compound forms
                     # and the canonical 'checkpoint_officer' alias — and
@@ -5438,7 +5563,7 @@ class API(BaseHTTPRequestHandler):
                     if role not in accepted_roles:
                         raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))} '
                                          '(Checkpoint aliases such as CheckpointSouth / cp_south are also accepted)')
-                    updates.append('role=?'); params.append(role)
+                    updates.append('role=%s'); params.append(role)
                     # If the new role dictates a location_scope, refresh
                     # it. For 'checkpoint_officer' (the canonical alias)
                     # the table-lookup default is empty; in that case
@@ -5450,25 +5575,25 @@ class API(BaseHTTPRequestHandler):
                     if 'location_scope' not in data:
                         default_scope = derived_scope or ROLE_LOCATION_SCOPE.get(role)
                         if default_scope:
-                            updates.append('location_scope=?'); params.append(default_scope)
+                            updates.append('location_scope=%s'); params.append(default_scope)
                         # else: keep the existing scope (no-op).
                 if 'location_scope' in data:
                     scope = canonical_location_scope(data['location_scope'])
                     if scope and scope not in CHECKPOINT_LOCATIONS:
                         raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
-                    updates.append('location_scope=?'); params.append(scope)
+                    updates.append('location_scope=%s'); params.append(scope)
                 if 'active' in data:
-                    updates.append('active=?'); params.append(1 if data['active'] else 0)
+                    updates.append('active=%s'); params.append(1 if data['active'] else 0)
                 if data.get('password'):
                     if len(str(data['password'])) < 6:
                         raise ValueError('password must be at least 6 characters')
-                    updates.append('password_hash=?'); params.append(password_hash(str(data['password'])))
+                    updates.append('password_hash=%s'); params.append(password_hash(str(data['password'])))
                 if updates:
                     params.append(int(uid))
-                    c.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", params)
+                    c.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=%s", params)
                     audit(c, user, 'UPDATE', 'user', uid)
                 c.commit()
-                updated = rowdict(c.execute('SELECT * FROM users WHERE id=?', (int(uid),)).fetchone())
+                updated = rowdict(c.execute('SELECT * FROM users WHERE id=%s', (int(uid),)).fetchone())
                 result = {'user': user_view(updated)}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
@@ -5566,7 +5691,21 @@ def bind_server(port):
 
 
 if __name__ == '__main__':
-    init_db()
+    try:
+        init_db()
+    except psycopg2.OperationalError as exc:
+        # Fail loudly and legibly when the PostgreSQL engine is unreachable —
+        # the usual causes are a stopped server or missing .env settings.
+        raise SystemExit(
+            'FATAL: cannot connect to PostgreSQL — '
+            f'{os.environ.get("SENTINEL_DB_NAME", "sentinel_police")} at '
+            f'{os.environ.get("SENTINEL_DB_HOST", "localhost")}:'
+            f'{os.environ.get("SENTINEL_DB_PORT", "5432")} as '
+            f'{os.environ.get("SENTINEL_DB_USER", "postgres")}.\n'
+            '       Check the server is running and the root .env defines '
+            'SENTINEL_DB_NAME / SENTINEL_DB_USER / SENTINEL_DB_PASSWORD / '
+            'SENTINEL_DB_HOST / SENTINEL_DB_PORT.\n'
+            f'       Driver error: {exc}')
     port = int(os.environ.get('PORT','8001'))
     if not review_lock_armed():
         # Refuse to serve rather than quietly answer approvals unlocked.
@@ -5574,6 +5713,10 @@ if __name__ == '__main__':
                          'refusing to start an unlocked server.')
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
+    print(f'  database: PostgreSQL '
+          f'{os.environ.get("SENTINEL_DB_NAME", "sentinel_police")} @ '
+          f'{os.environ.get("SENTINEL_DB_HOST", "localhost")}:'
+          f'{os.environ.get("SENTINEL_DB_PORT", "5432")}')
     print(f'  fingerprint review window: {FINGERPRINT_REVIEW_WINDOW_HOURS}h '
           f'(admin/SystemAdmin bypasses, every other role is locked)')
     print(f'  {review_lock_self_test()}')

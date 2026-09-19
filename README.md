@@ -41,7 +41,7 @@ The same interactive matching engine (Tier 1 exact ID/passport auto-merge, Tier 
 
 ### Central Person enrichment on submission
 
-When a unit record (Airport, Checkpoint, Fingerprint or CID/suspect) links to an **existing Central Person ID**, the backend checks the incoming submission for any values that are still **null/empty** in the person's profile (e.g. Mother's name, Phone, Occupation, Address, Passport ID, photo). It **automatically enriches** the SQLite `persons` record with those non-empty new values **without overwriting existing non-null data** — so an officer can complete a partially-filled profile (e.g. the blank "Mother's name" in the Airport form) and the central record is updated on save.
+When a unit record (Airport, Checkpoint, Fingerprint or CID/suspect) links to an **existing Central Person ID**, the backend checks the incoming submission for any values that are still **null/empty** in the person's profile (e.g. Mother's name, Phone, Occupation, Address, Passport ID, photo). It **automatically enriches** the central `persons` record with those non-empty new values **without overwriting existing non-null data** — so an officer can complete a partially-filled profile (e.g. the blank "Mother's name" in the Airport form) and the central record is updated on save.
 
 The same fill-only enrichment applies to the identity-merge path (`/api/persons/upsert` and the unit routes' auto-resolve): matched records never get overwritten, only missing fields are filled.
 
@@ -128,7 +128,7 @@ The three levels are entered as **Dropdown (Region) → Dropdown (District) → 
 
 - **Reusable component** — `locationDropdowns(prefix, opts)` renders and wires the control (`{prefix}-region` select, `{prefix}-district` select, `{prefix}-village` text input) into a `.loc-grid` container: choosing a Region populates its official Districts (and clears the typed Village/Town); choosing a District clears the typed Village/Town. `opts.withAll` adds "All …" placeholders (used by the Central Police Search filter) and `opts.disabled` renders the whole block locked (for fixed-location contexts). `readLocation(prefix)` / `setLocation(prefix, loc)` read and write the three levels; `requireLocation(prefix)` enforces all three (village must be non-empty text).
 - **Station anchor model** — Police **Station Registration** captures *Station Name, Code, Region, District, Village/Town* (`requireLocation()` enforces all three levels) and now persists server-side via `POST /api/stations`. **Police Car** registration links a record to an assigned station; picking a station **pre-fills** the Region/District/Village fields with the station's location as editable defaults (`wireStationLocationDefaults()` → `paintLocationDefaults()`). **Police Officer** registration instead uses the station as a plain foreign-key dropdown (Section 1) and captures the officer's own **Regional & Origin Data** in a separate section (see *Officer Registration* below).
-- **Storage** — **Stations**, **Officers**, **Crime incidents** and **Vehicles** persist in SQLite (`police_stations`, `officers`, `crime_incidents`, `vehicles`) and sync from `GET /api/stations`, `/api/officers`, `/api/crimes` and `/api/vehicles` in `syncServer()` (localStorage remains an offline fallback). Central Police Search filters officers, stations and vehicles through the same cascading location filter — for officers it matches stored **origin** (`officerLocation()`). The `policesearch` / `stations` / `officers` / `cars` / `crimes` module keys are part of `ROLE_MODULES` (policesearch granted to the roles that can see the person registry; registration modules admin-only except crime intake for CID). `/api/me` drives nav visibility and the `go()` RBAC redirect.
+- **Storage** — **Stations**, **Officers**, **Crime incidents** and **Vehicles** persist in PostgreSQL (`police_stations`, `officers`, `crime_incidents`, `vehicles`) and sync from `GET /api/stations`, `/api/officers`, `/api/crimes` and `/api/vehicles` in `syncServer()` (localStorage remains an offline fallback). Central Police Search filters officers, stations and vehicles through the same cascading location filter — for officers it matches stored **origin** (`officerLocation()`). The `policesearch` / `stations` / `officers` / `cars` / `crimes` module keys are part of `ROLE_MODULES` (policesearch granted to the roles that can see the person registry; registration modules admin-only except crime intake for CID). `/api/me` drives nav visibility and the `go()` RBAC redirect.
 
 ### Police Officers — HR Directorate register (System Admin + `hr_officer`)
 
@@ -227,7 +227,7 @@ python3 backend/migrate_rbac.py
 The system now has two parts:
 
 - **Frontend** — `index.html`, a single-page browser application.
-- **Central backend** — `backend/server.py`, a Python (standard library only) HTTP API backed by SQLite. It serves the frontend and a JSON REST API from the same origin, and enforces the central-person rule on the server.
+- **Central backend** — `backend/server.py`, a Python standard-library HTTP API backed by PostgreSQL via psycopg2. It serves the frontend and a JSON REST API from the same origin, and enforces the central-person rule on the server.
 
 Airport, Fingerprint, CID and Checkpoint unit records are all written to the central database; checkpoint screening results (Flagged match / No active alert) are computed server-side from active suspect alerts, and the action follows automatically (Supervisor contacted / Cleared).
 
@@ -247,7 +247,7 @@ Windows:
 py backend/server.py
 ```
 
-Then open `http://localhost:8001` (the backend serves the UI and the API together). The port can be changed with the `PORT` environment variable, and the database location with `SENTINEL_DB`.
+Then open `http://localhost:8001` (the backend serves the UI and the API together). The port can be changed with the `PORT` environment variable, and the PostgreSQL engine settings (database, user, password, host, port) with the `SENTINEL_DB_*` variables in the root `.env` — see `backend/README.md`.
 
 ### Demo accounts (development only)
 
@@ -373,10 +373,13 @@ Uploaded files are stored in `backend/uploads/` (git-ignored) and served from `/
 ## Important implementation note — development only, not for operational police data
 
 This is now a **connected development system**: the browser UI talks to a central
-backend API, and server data is stored in SQLite instead of only browser local
-storage. **It is still not ready for real police data.** It currently uses:
+backend API, and server data is stored in a live PostgreSQL database
+(`sentinel_police`, configured through the root `.env` / `SENTINEL_DB_*` variables)
+instead of only browser local storage. **It is still not ready for real police
+data.** It currently uses:
 
-- **SQLite** instead of a production database (PostgreSQL)
+- **psycopg2 + PostgreSQL** — a real engine, but with development-grade
+  connection defaults and no TLS/credential-management hardening yet
 - **Development authentication** — a single hard-coded demo login (`admin` / `ChangeMe123!`), in-memory session tokens, and unsalted SHA-256 password hashing
 - **No HTTPS** — traffic is plain HTTP
 - **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and departmental analytics embedded in each register surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.

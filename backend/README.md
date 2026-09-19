@@ -1,6 +1,21 @@
 # Sentinel backend foundation
 
-This is the server-side foundation for the Sentinel system. It uses only Python's standard library and SQLite so it can run immediately without installing packages.
+This is the server-side foundation for the Sentinel system. It uses Python's standard library HTTP stack on top of a live PostgreSQL database (psycopg2 driver) — the schema, seeds and migrations are applied automatically on startup.
+
+## Database / environment configuration
+
+The server reads its engine settings from the process environment, falling back to a root `.env` file (see `.env.example`) loaded with a small standard-library reader:
+
+| Variable               | Default          | Purpose                       |
+|------------------------|------------------|-------------------------------|
+| `SENTINEL_DB_NAME`     | `sentinel_police`| PostgreSQL database name      |
+| `SENTINEL_DB_USER`     | `postgres`       | PostgreSQL role               |
+| `SENTINEL_DB_PASSWORD` | *(empty)*        | PostgreSQL password           |
+| `SENTINEL_DB_HOST`     | `localhost`      | PostgreSQL host               |
+| `SENTINEL_DB_PORT`     | `5432`           | PostgreSQL port               |
+| `PORT`                 | `8001`           | HTTP port the API listens on  |
+
+Install the driver first (`pip install psycopg2-binary`) and create the database (e.g. `sentinel_police` in pgAdmin). Tables are created with `CREATE TABLE IF NOT EXISTS`, so pointing the server at an empty database or an already-initialised one both work.
 
 ## Start
 
@@ -39,6 +54,11 @@ To re-seed / upgrade an existing database to include the demo users, run:
 ```bash
 python3 backend/migrate_rbac.py
 ```
+
+> Note: `migrate_rbac.py` (and `audit_instant_approvals.py`) are legacy
+> one-off utilities written against the retired SQLite file database — they
+> do not apply to the live PostgreSQL database. `backend/server.py` now seeds
+> the demo users and applies every column migration automatically on startup.
 
 Change or remove these accounts before any real deployment.
 
