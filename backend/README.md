@@ -322,13 +322,16 @@ The frontend smoke test executes the real inline script from
 page refresh re-hydrates `sentinel_token` / `sentinel_user` before the
 API sync, never signs the officer out on non-fatal errors, and never
 wipes `db.checkpoints` with an empty sync. Its last case asserts the
-**shell contract** statically: the four sidebar sections (Central Search ·
-CID · Police Registrations & Management · Administration) with their exact
-labels and items, **no per-unit `dept-analytics` strip on any operational
-page**, every registration form parked in a slide-over drawer behind its
-primary action button (not rendered inline in any page section), and the
-three Police Officers tabs (Officer Registration · Promotions &
-Commendations `#2e7d32` · Disciplinary & Misconduct `#c62828`) with their
+**shell contract** statically: the seven sidebar sections (Central Search ·
+Dep. of CID · Police Personnel · Transport · Chief Commander HQ/Command ·
+Registers · Administration) with their exact labels and items, **no per-unit
+`dept-analytics` strip on any operational page**, every registration form
+parked in a centered entry modal (`.cmodal`, `openEntryModal()`) behind its
+primary action button (not rendered inline in any page section), a compact
+unit overview strip mounted at the top of every operational page (painted by
+`renderUnitStats()`), a search box wired into every register table's header
+toolbar, and the three Police Officers tabs (Officer Registration · Promotions
+& Commendations `#2e7d32` · Disciplinary & Misconduct `#c62828`) with their
 panes and handlers.
 
 The conduct frontend test drives the Officers Registration Office

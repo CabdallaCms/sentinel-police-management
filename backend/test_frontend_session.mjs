@@ -212,8 +212,9 @@ function loadApp(sandbox) {
 }
 
 // --------------------------------------------------------------------------
-// Static markup contract: sidebar sections · clean registers (slide-over
-// drawers, no per-unit analytics strips) · HR tabs.
+// Static markup contract: sidebar sections · clean registers (centered entry
+// modals, no per-unit analytics strips) · compact unit overview strips ·
+// search box on every register table · HR tabs.
 // --------------------------------------------------------------------------
 const NAV_SECTIONS = [
   { group: 'search', label: 'Central Search',
@@ -234,13 +235,32 @@ const NAV_SECTIONS = [
   { group: 'admin', label: 'Administration', pages: [['admin', 'admin', 'User Management']] },
 ];
 // Operational pages are clean: no per-unit analytics strips anywhere (the
-// only analytics surface is the Global Executive Dashboard), and every
-// registration form lives in a right-hand slide-over drawer opened by the
-// page's primary action button — never rendered inline on the page.
-const DRAWER_FORMS = {
+// only full analytics surface is the Global Executive Dashboard), and every
+// registration form lives in a centered entry modal (dark blurred backdrop,
+// fade/scale-in) opened by the page's primary action button — never rendered
+// inline on the page. Each page also opens with a compact unit overview
+// strip, and every register table has a search/filter box in its toolbar.
+const MODAL_FORMS = {
   fpDrawer: 'fpForm', airDrawer: 'airForm', stDrawer: 'stForm',
   offDrawer: 'offForm', prmDrawer: 'prmForm', dscDrawer: 'dscForm',
   crmDrawer: 'crmForm', carDrawer: 'carForm',
+};
+// Compact unit overview strip mounted at the top of each operational page
+// (above the search bar and data table), painted by renderUnitStats().
+const UNIT_STATS_MOUNTS = {
+  fingerprint: 'usFingerprint', airport: 'usAirport', cid: 'usCid',
+  checkpoints: 'usCheckpoints', stations: 'usStations', officers: 'usOfficers',
+  crimes: 'usCrimes', cars: 'usCars', vehiclestatus: 'usVehicleStatus',
+};
+// Every register table carries a search/filter box wired to a renderer.
+const TABLE_SEARCHES = {
+  fpSearch: 'renderFingerprintTable()', airSearch: 'renderAirportTable()',
+  caseSearch: 'renderCases()', suspectSearch: 'renderSuspectTable()',
+  cpSearch: 'renderCheckpointPage()', crmSearch: 'renderCrimesTable()',
+  prmSearch: 'renderHrPanels()', dscSearch: 'renderHrPanels()',
+  stSearch: 'renderStationsTable()', offSearch: 'renderOfficersTable()',
+  carSearch: 'renderCarsTable()', vsSearch: 'renderVehicleStatusTable()',
+  personSearch: 'renderPeople()', psSearch: 'renderPoliceSearch()',
 };
 const HR_TABS = [
   ['register', 'Officer Registration', ''],
@@ -284,17 +304,21 @@ function assertShellContract() {
   });
 
   // (b) operational pages are clean: no per-unit analytics strips, and the
-  //     registration forms live in slide-over drawers (not inline).
+  //     registration forms live in centered entry modals (not inline).
   if (html.includes('dept-analytics'))
     throw new Error('per-unit dept-analytics strips came back on an operational page');
-  Object.entries(DRAWER_FORMS).forEach(([drawer, form]) => {
-    const m = html.match(new RegExp(`<aside class="sdrawer" id="${drawer}"[\\s\\S]*?</aside>`));
-    if (!m) throw new Error(`slide-over drawer #${drawer} not found`);
+  Object.entries(MODAL_FORMS).forEach(([modal, form]) => {
+    // each modal wraps exactly one form; the match runs from the .cmodal
+    // container through the form to the modal's closing tags
+    const m = html.match(new RegExp(`<div class="cmodal" id="${modal}"[\\s\\S]*?</form>[\\s\\S]*?</div>\\s*</div>`));
+    if (!m) throw new Error(`centered entry modal #${modal} not found`);
     if (!m[0].includes(`id="${form}"`))
-      throw new Error(`drawer #${drawer} must contain the ${form} registration form`);
-    if (!html.includes(`openSlideDrawer('${drawer}')`))
-      throw new Error(`no primary action button opens #${drawer}`);
+      throw new Error(`modal #${modal} must contain the ${form} registration form`);
+    if (!html.includes(`openEntryModal('${modal}')`))
+      throw new Error(`no primary action button opens #${modal}`);
   });
+  if (!/function openEntryModal\(id\)/.test(html) || !/function closeEntryModal\(id\)/.test(html))
+    throw new Error('openEntryModal()/closeEntryModal() are missing from index.html');
   // the inline forms must be gone from every page section (sections do not
   // nest, so a section's body is its own text up to the first </section>)
   const PAGES = ['people','policesearch','fingerprint','cid','caseworkspace','checkpoints',
@@ -303,10 +327,29 @@ function assertShellContract() {
   PAGES.forEach((page) => {
     const sec = html.match(new RegExp(`<section id="${page}" class="page">[\\s\\S]*?</section>`));
     if (!sec) throw new Error(`section #${page} not found`);
-    Object.values(DRAWER_FORMS).forEach((form) => {
+    Object.values(MODAL_FORMS).forEach((form) => {
       if (sec[0].includes(`id="${form}"`))
         throw new Error(`${form} must not render inline inside the #${page} section`);
     });
+  });
+
+  // (b2) every operational page opens with its compact unit overview strip
+  Object.entries(UNIT_STATS_MOUNTS).forEach(([page, mount]) => {
+    const sec = html.match(new RegExp(`<section id="${page}" class="page">[\\s\\S]*?</section>`));
+    if (!sec) throw new Error(`section #${page} not found`);
+    if (!sec[0].includes(`class="unit-stats" id="${mount}"`))
+      throw new Error(`#${page} must open with its compact unit-stats strip #${mount}`);
+  });
+  if (!/function renderUnitStats\(/.test(html))
+    throw new Error('renderUnitStats() is missing from index.html');
+  if (!/function renderAll\(\)\{\s*\n\s*renderUnitStats\(\);/.test(html))
+    throw new Error('renderAll() must re-paint the unit overview strips');
+
+  // (b3) every register table has a search/filter box wired to a renderer
+  const regexEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  Object.entries(TABLE_SEARCHES).forEach(([id, fn]) => {
+    if (!new RegExp(`id="${id}"[\\s\\S]{0,160}?oninput="${regexEscape(fn)}"`).test(html))
+      throw new Error(`table search #${id} missing or not wired to ${fn}`);
   });
 
   // (c) Police Officers: the three HR tabs + their panes, green/red coded
@@ -322,8 +365,8 @@ function assertShellContract() {
   HR_TABS.forEach(([name]) => {
     if (!officers[1].includes(`id="hrPane-${name}"`)) throw new Error(`missing HR pane #hrPane-${name}`);
   });
-  if (!/id="hrPane-register"[\s\S]*openSlideDrawer\('offDrawer'\)/.test(officers[1]))
-    throw new Error('the registration tab must open the officer form slide-over drawer');
+  if (!/id="hrPane-register"[\s\S]*openEntryModal\('offDrawer'\)/.test(officers[1]))
+    throw new Error('the registration tab must open the officer form centered modal');
   if (!/id="hrPane-promotions"[\s\S]*id="prmAwaitTable"[\s\S]*id="hrPane-discipline"[\s\S]*id="dscOpenTable"/.test(officers[1]))
     throw new Error('the green/red badge queues must live inside their own tabs');
   // exact badge colours from the spec
@@ -639,13 +682,15 @@ async function main() {
     // ---- 11) Sidebar structure + clean registers + HR tabs ----------------
     // Static contract over the real index.html markup: the four fixed sidebar
     // sections, NO per-unit `dept-analytics` strip on any operational page
-    // (analytics is exclusive to the Global Executive Dashboard), every
-    // registration form parked in a slide-over drawer behind a primary action
-    // button, and the three Police Officers tabs (registration · green
-    // promotions · red discipline). Guards the reorganisation against
-    // regressions without needing a browser.
+    // (the only full analytics surface is the Global Executive Dashboard),
+    // every registration form parked in a centered entry modal behind a
+    // primary action button, a compact unit overview strip on top of every
+    // operational page, a search box in every register table's toolbar, and
+    // the three Police Officers tabs (registration · green promotions · red
+    // discipline). Guards the reorganisation against regressions without
+    // needing a browser.
     assertShellContract();
-    console.log('ok 11: sidebar sections, drawer forms (no per-unit analytics) and HR tabs contract');
+    console.log('ok 11: sidebar sections, centered entry modals, unit overview strips, table searches and HR tabs contract');
 
 
     console.log('ALL FRONTEND SESSION TESTS PASSED');

@@ -137,19 +137,38 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .iconbtn{background:#eef1f6;border-radius:8px;width:34px;height:34px;font-size:16px;color:#526075;flex:none}
 @media(max-width:650px){.modal{width:calc(100vw - 24px);max-width:calc(100vw - 24px)}}
 body.modal-open{overflow:hidden}
-/* ==== Slide-over drawers (unit registration forms) ==== */
+/* register table header toolbars: search box + action button */
+.table-toolbar{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex:1;min-width:0;flex-wrap:wrap}
+.table-toolbar .search{flex:1;min-width:200px;max-width:400px}
+/* ==== Compact unit overview strip (top of every operational page) ==== */
+.unit-stats{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);padding:13px 18px;margin-bottom:18px}
+.unit-stats .us-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.unit-stats .us-head span{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.9px;color:var(--blue)}
+.unit-stats .us-head small{color:var(--muted);font-size:11px}
+.us-row{display:flex;gap:10px;flex-wrap:wrap}
+.us-tile{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:#fbfcff;border-radius:11px;padding:9px 13px;flex:1;min-width:128px;max-width:230px}
+.us-tile .us-ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:14px;flex:none;background:#eaf0ff;color:var(--blue)}
+.us-tile b{font-size:19px;font-weight:800;line-height:1;display:block}
+.us-tile small{color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;display:block;margin-top:3px;white-space:nowrap}
+.us-tile.green .us-ico{background:#e3f7f1;color:var(--green)}
+.us-tile.red .us-ico{background:#ffeaec;color:var(--red)}
+.us-tile.amber .us-ico{background:#fff3d9;color:var(--amber)}
+.us-tile.purple .us-ico{background:#f0e9ff;color:#6c3fd4}
+/* ==== Centered entry modals (unit registration forms) ==== */
 /* Each operational page keeps its register full-width; the entry form lives
-   in a right-hand slide-over drawer opened by the page's primary action
-   button. The form stays in the document (parked off-canvas, hidden with
-   visibility), so every field id, event wire and validator keeps working. */
-.sd-ov{position:fixed;inset:0;background:#0d1b31b3;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:1150;opacity:0;pointer-events:none;transition:opacity .28s ease}
-.sd-ov.on{opacity:1;pointer-events:auto}
-.sdrawer{position:fixed;top:0;right:0;bottom:0;width:min(760px,calc(100vw - 48px));background:#fff;z-index:1160;box-shadow:-28px 0 64px #10204038;display:flex;flex-direction:column;transform:translateX(104%);visibility:hidden;transition:transform .34s cubic-bezier(.32,.72,.35,1),visibility 0s linear .34s}
-.sdrawer.open{transform:translateX(0);visibility:visible;transition:transform .34s cubic-bezier(.32,.72,.35,1)}
-.sd-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none;background:#fff}
-.sd-head h3{margin:0;font-size:17px}
-.sd-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
-@media(max-width:650px){.sdrawer{width:100vw}}
+   in a centered popup modal opened by the page's primary action button.
+   Dark blurred backdrop + smooth fade/scale-in (and scale-out) animation.
+   The form stays in the document (hidden until opened), so every field id,
+   event wire and validator keeps working. */
+.cmodal-ov{position:fixed;inset:0;background:#0d1b31b3;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:1150;opacity:0;pointer-events:none;transition:opacity .2s ease}
+.cmodal-ov.on{opacity:1;pointer-events:auto}
+.cmodal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.955);width:min(720px,calc(100vw - 40px));max-height:calc(100vh - 48px);background:#fff;z-index:1160;border-radius:16px;box-shadow:0 30px 70px #10204059;display:flex;flex-direction:column;overflow:hidden;opacity:0;visibility:hidden;transition:opacity .22s ease,transform .22s cubic-bezier(.32,.72,.35,1),visibility 0s linear .22s}
+.cmodal.open{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1);transition:opacity .22s ease,transform .22s cubic-bezier(.32,.72,.35,1)}
+.cmodal.closing{opacity:0;transform:translate(-50%,-50%) scale(.97)}
+.cm-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none;background:#fff}
+.cm-head h3{margin:0;font-size:17px}
+.cm-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
+@media(max-width:650px){.cmodal{width:calc(100vw - 24px);max-width:calc(100vw - 24px)}}
 /* file slots */
 .fileslot{border:1.5px dashed #c4d0e3;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;background:#fafcff}
 .fileslot input{font-size:12px}.fileslot .req{color:var(--red);font-weight:800}
@@ -194,7 +213,7 @@ body.modal-open{overflow:hidden}
 .role-select{display:flex;gap:8px;align-items:center}.role-select select{padding:8px;border-radius:8px;border:1px solid #dce4ef}
 @media(max-width:950px){.side{width:74px;padding:18px 9px}.brand{padding:4px 8px 30px}.brand span,.side small,.nav button span,.side-footer{display:none}.nav button{justify-content:center}.main{margin-left:74px;width:calc(100% - 74px);padding:22px}.cards{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:650px){.main{padding:16px}.cards,.grid2,.grid3,.docgrid{grid-template-columns:1fr}.top h1{font-size:23px}.user div:not(.avatar){display:none}}
-@media print{.side,.top,.btn,.form-actions,.tabs,.no-print,.sd-ov,.sdrawer{display:none!important}.main{margin:0;width:100%;padding:0}.panel{box-shadow:none;border:0}.page{display:block!important}}
+@media print{.side,.top,.btn,.form-actions,.tabs,.no-print,.cmodal-ov,.cmodal{display:none!important}.main{margin:0;width:100%;padding:0}.panel{box-shadow:none;border:0}.page{display:block!important}}
 /* ==== Login screen ==== */
 #loginScreen{position:fixed;inset:0;background:linear-gradient(135deg,#0b1a33,#1c3866 60%,#0f4c5c);z-index:3000;display:grid;place-items:center;color:#dce7f8}
 #loginScreen .login-card{width:min(420px,calc(100vw - 32px));background:#ffffff;color:var(--ink);border-radius:18px;box-shadow:0 30px 60px #00000055;padding:30px 32px}
@@ -404,10 +423,10 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <button data-page="admin" data-modules="admin"><i>⚙</i><span>User Management</span></button>
 </div>
 </div>
-<!-- Analytics is not a standalone page: the only analytics surface is the
-     Chief Commander's Global Executive Dashboard (HQ / Command). Operational
-     registers stay clean — full-width tables, entry forms in slide-over
-     drawers. -->
+<!-- Analytics is not a standalone page: the only full analytics surface is
+     the Chief Commander's Global Executive Dashboard (HQ / Command). Operational
+     registers stay clean — a compact unit overview strip on top, full-width
+     tables with a search box, and centered entry modals for new records. -->
 </nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span></div></aside>
 <main class="main">
 <header class="top" id="topbar"><div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
@@ -468,17 +487,21 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- FINGERPRINT -->
 <section id="fingerprint" class="page">
+<div class="unit-stats" id="usFingerprint">
+  <div class="us-head"><span>Fingerprint Unit · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usFingerprintRow"></div>
+</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><button class="btn" onclick="openSlideDrawer('fpDrawer')">＋ New Clearance Application</button></div>
+<div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="fpSearch" placeholder="Search application, person, purpose or status…" oninput="renderFingerprintTable()"></div><button class="btn" onclick="openEntryModal('fpDrawer')">＋ New Clearance Application</button></div></div>
 <div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> a Fingerprint Officer can only approve once the 12-hour review period has elapsed; a System Administrator can approve immediately.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
 </section>
 <!-- New clearance application -->
-<div class="sd-ov" id="fpDrawerOv" onclick="closeSlideDrawer('fpDrawer')"></div>
-<aside class="sdrawer" id="fpDrawer" role="dialog" aria-modal="true" aria-labelledby="fpDrawerTitle">
-<div class="sd-head"><div><h3 id="fpDrawerTitle">New clearance application</h3><div class="sub">Fingerprint Unit · Hargeisa Branch</div></div><button class="iconbtn" onclick="closeSlideDrawer('fpDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="fpDrawerOv" onclick="closeEntryModal('fpDrawer')"></div>
+<div class="cmodal" id="fpDrawer" role="dialog" aria-modal="true" aria-labelledby="fpDrawerTitle">
+<div class="cm-head"><div><h3 id="fpDrawerTitle">New clearance application</h3><div class="sub">Fingerprint Unit · Hargeisa Branch</div></div><button class="iconbtn" onclick="closeEntryModal('fpDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="fpNotice" class="notice"></div>
 <div class="record-type">Unit-specific record: guardian, clearance reason and supporting legal documents are stored here — the applicant’s identity is matched/updated in the Central Person Registry.</div>
 <form class="form" id="fpForm" onsubmit="saveFingerprint(event)">
@@ -505,21 +528,25 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetFpForm()">Clear</button><button class="btn" type="submit">Save application</button></div>
 </form>
 </div>
-</aside>
+</div>
 
 
 <!-- AIRPORT -->
 <section id="airport" class="page">
+<div class="unit-stats" id="usAirport">
+  <div class="us-head"><span>Airport Unit · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usAirportRow"></div>
+</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Passenger records</h2><div class="sub">Airport unit register · Hargeisa Local Airport</div></div><button class="btn" onclick="openSlideDrawer('airDrawer')">＋ Register Airport Passenger</button></div>
+<div class="panel-head"><div><h2>Passenger records</h2><div class="sub">Airport unit register · Hargeisa Local Airport</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="airSearch" placeholder="Search passenger, flight, date or route…" oninput="renderAirportTable()"></div><button class="btn" onclick="openEntryModal('airDrawer')">＋ Register Airport Passenger</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register airport passenger -->
-<div class="sd-ov" id="airDrawerOv" onclick="closeSlideDrawer('airDrawer')"></div>
-<aside class="sdrawer" id="airDrawer" role="dialog" aria-modal="true" aria-labelledby="airDrawerTitle">
-<div class="sd-head"><div><h3 id="airDrawerTitle">Register airport passenger</h3><div class="sub">Hargeisa Local Airport · Passenger register</div></div><button class="iconbtn" onclick="closeSlideDrawer('airDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="airDrawerOv" onclick="closeEntryModal('airDrawer')"></div>
+<div class="cmodal" id="airDrawer" role="dialog" aria-modal="true" aria-labelledby="airDrawerTitle">
+<div class="cm-head"><div><h3 id="airDrawerTitle">Register airport passenger</h3><div class="sub">Hargeisa Local Airport · Passenger register</div></div><button class="iconbtn" onclick="closeEntryModal('airDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="airNotice" class="notice"></div>
 
 <form class="form" id="airForm" onsubmit="saveAirport(event)">
@@ -539,18 +566,22 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">Save passenger</button></div>
 </form>
 </div>
-</aside>
+</div>
 
 
 <!-- CID -->
 <section id="cid" class="page">
+<div class="unit-stats" id="usCid">
+  <div class="us-head"><span>Crime Department · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usCidRow"></div>
+</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><button class="btn" onclick="openCaseDrawer()">+ New case</button></div>
+<div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="caseSearch" placeholder="Search case, category, location or status…" oninput="renderCases()"></div><button class="btn" onclick="openCaseDrawer()">+ New case</button></div></div>
 <div class="hint" style="margin-bottom:14px">Open a case to access its three workspace tabs: <b>Details &amp; incident summary</b>, <b>Participants &amp; suspect linkage</b>, and <b>Evidence &amp; media</b>.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th><th>Actions</th></tr></thead><tbody id="caseTable"></tbody></table></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><button class="btn" onclick="openAddSuspect()">＋ Add suspect</button></div>
+<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="suspectSearch" placeholder="Search person, case, role or alert…" oninput="renderSuspectTable()"></div><button class="btn" onclick="openAddSuspect()">＋ Add suspect</button></div></div>
 <div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes. Suspects listed without a case are recorded with a <b>Direct Intelligence Listing</b> or <b>Manual Entry</b> origin.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th><th>Actions</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
 </div>
@@ -618,8 +649,12 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- CHECKPOINTS -->
 <section id="checkpoints" class="page">
+<div class="unit-stats" id="usCheckpoints">
+  <div class="us-head"><span>Checkpoint Unit · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usCheckpointsRow"></div>
+</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div>
+<div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="cpSearch" placeholder="Search traveler, person ID, guardian, location or outcome…" oninput="renderCheckpointPage()"></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div></div>
 <div class="panel-head" style="margin-bottom:14px">
   <div>
     <h3 style="margin:0;font-size:14px">Active location</h3>
@@ -670,19 +705,23 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- POLICE STATIONS REGISTRATION -->
 <section id="stations" class="page">
+<div class="unit-stats" id="usStations">
+  <div class="us-head"><span>Station registry · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usStationsRow"></div>
+</div>
 <div class="da-note admin-write-note" style="margin-bottom:12px">Creating or editing a police station is a SystemAdmin action — this register is read-only for your role (the station list below still feeds officer postings and the deployment matrix).</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="stCount" style="display:none">0</span><button class="btn admin-write" onclick="openSlideDrawer('stDrawer')">＋ Register Station</button></div></div>
+<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="stCount" style="display:none">0</span><button class="btn admin-write" onclick="openEntryModal('stDrawer')">＋ Register Station</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="stSearch" placeholder="Central Station Search — name, code, region, district or village…" oninput="renderStationsTable()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register police station (SystemAdmin / stations:manage only) -->
 <div class="admin-write">
-<div class="sd-ov" id="stDrawerOv" onclick="closeSlideDrawer('stDrawer')"></div>
-<aside class="sdrawer" id="stDrawer" role="dialog" aria-modal="true" aria-labelledby="stDrawerTitle">
-<div class="sd-head"><div><h3 id="stDrawerTitle">Register police station</h3><div class="sub">Station name, code and location</div></div><button class="iconbtn" onclick="closeSlideDrawer('stDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="stDrawerOv" onclick="closeEntryModal('stDrawer')"></div>
+<div class="cmodal" id="stDrawer" role="dialog" aria-modal="true" aria-labelledby="stDrawerTitle">
+<div class="cm-head"><div><h3 id="stDrawerTitle">Register police station</h3><div class="sub">Station name, code and location</div></div><button class="iconbtn" onclick="closeEntryModal('stDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="stNotice" class="notice"></div>
 
 <form class="form" id="stForm" onsubmit="saveStation(event)">
@@ -702,12 +741,16 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" type="submit">Register station</button></div>
 </form>
 </div>
-</aside>
+</div>
 </div>
 
 
 <!-- POLICE OFFICERS REGISTRATION -->
 <section id="officers" class="page">
+<div class="unit-stats" id="usOfficers">
+  <div class="us-head"><span>HR Directorate · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usOfficersRow"></div>
+</div>
 <div class="hr-tabs" id="hrTabs">
 <button type="button" class="hr-tab active" data-hrtab="register" onclick="hrTab('register')"><i>▤</i><span>Officer Registration</span></button>
 <button type="button" class="hr-tab green" data-hrtab="promotions" onclick="hrTab('promotions')"><i>★</i><span>Promotions &amp; Commendations</span><span class="hr-badge" id="hrPromoBadge">0</span></button>
@@ -716,7 +759,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <div class="hr-pane active" id="hrPane-register">
 <div class="panel">
-<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" onclick="openSlideDrawer('offDrawer')">＋ Register Officer</button></div></div>
+<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" onclick="openEntryModal('offDrawer')">＋ Register Officer</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="offSearch" placeholder="Central Officer Search — name, service ID, rank, unit or station…" oninput="renderOfficersTable()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
@@ -725,7 +768,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <!-- TAB 2 · Promotions & Commendations (green badge) -->
 <div class="hr-pane" id="hrPane-promotions">
 <div class="panel hr-green">
-<div class="panel-head"><div><h2>Awaiting commander verification</h2><div class="sub">FIFO — the longest-waiting nomination is worked first</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge green" id="prmAwaitCount">0</span><button class="btn hr-green" onclick="openSlideDrawer('prmDrawer')">＋ Nominate for Promotion</button></div></div>
+<div class="panel-head"><div><h2>Awaiting commander verification</h2><div class="sub">FIFO — the longest-waiting nomination is worked first</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="prmSearch" placeholder="Search nomination, officer, rank or reason…" oninput="renderHrPanels()"></div><span class="badge green" id="prmAwaitCount">0</span><button class="btn hr-green" onclick="openEntryModal('prmDrawer')">＋ Nominate for Promotion</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>Rank change</th><th>Reason</th><th>Action</th></tr></thead><tbody id="prmAwaitTable"></tbody></table></div>
 </div>
 <div class="panel hr-green" style="margin-top:14px">
@@ -737,7 +780,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <!-- TAB 3 · Disciplinary & Misconduct (red badge) -->
 <div class="hr-pane" id="hrPane-discipline">
 <div class="panel hr-red">
-<div class="panel-head"><div><h2>Open disciplinary actions</h2><div class="sub">Pending · In Review · Appealed — confirm to apply suspensions and demotions</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge red" id="dscOpenCount">0</span><button class="btn hr-red" onclick="openSlideDrawer('dscDrawer')">＋ Record Disciplinary Action</button></div></div>
+<div class="panel-head"><div><h2>Open disciplinary actions</h2><div class="sub">Pending · In Review · Appealed — confirm to apply suspensions and demotions</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="dscSearch" placeholder="Search action, officer, type, severity or status…" oninput="renderHrPanels()"></div><span class="badge red" id="dscOpenCount">0</span><button class="btn hr-red" onclick="openEntryModal('dscDrawer')">＋ Record Disciplinary Action</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead><tbody id="dscOpenTable"></tbody></table></div>
 </div>
 <div class="panel hr-red" style="margin-top:14px">
@@ -747,10 +790,10 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 </div>
 </section>
 <!-- Register police officer -->
-<div class="sd-ov" id="offDrawerOv" onclick="closeSlideDrawer('offDrawer')"></div>
-<aside class="sdrawer" id="offDrawer" role="dialog" aria-modal="true" aria-labelledby="offDrawerTitle">
-<div class="sd-head"><div><h3 id="offDrawerTitle">Register police officer</h3><div class="sub">Five-part record — identifiers, personal details, origin, guarantor and supporting documents</div></div><button class="iconbtn" onclick="closeSlideDrawer('offDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="offDrawerOv" onclick="closeEntryModal('offDrawer')"></div>
+<div class="cmodal" id="offDrawer" role="dialog" aria-modal="true" aria-labelledby="offDrawerTitle">
+<div class="cm-head"><div><h3 id="offDrawerTitle">Register police officer</h3><div class="sub">Five-part record — identifiers, personal details, origin, guarantor and supporting documents</div></div><button class="iconbtn" onclick="closeEntryModal('offDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="offNotice" class="notice"></div>
 
 <form class="form" id="offForm" onsubmit="saveOfficer(event)">
@@ -831,12 +874,12 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 </div>
 </form>
 </div>
-</aside>
+</div>
 <!-- Nominate for promotion / commendation -->
-<div class="sd-ov" id="prmDrawerOv" onclick="closeSlideDrawer('prmDrawer')"></div>
-<aside class="sdrawer" id="prmDrawer" role="dialog" aria-modal="true" aria-labelledby="prmDrawerTitle">
-<div class="sd-head"><div><h3 id="prmDrawerTitle">Nominate for promotion / commendation</h3><div class="sub">Green badge · nominations awaiting commander verification</div></div><button class="iconbtn" onclick="closeSlideDrawer('prmDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="prmDrawerOv" onclick="closeEntryModal('prmDrawer')"></div>
+<div class="cmodal" id="prmDrawer" role="dialog" aria-modal="true" aria-labelledby="prmDrawerTitle">
+<div class="cm-head"><div><h3 id="prmDrawerTitle">Nominate for promotion / commendation</h3><div class="sub">Green badge · nominations awaiting commander verification</div></div><button class="iconbtn" onclick="closeEntryModal('prmDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="prmNotice" class="notice"></div>
 
 <form class="form" id="prmForm" onsubmit="savePromotionNomination(event)">
@@ -850,12 +893,12 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="form-actions"><button class="btn ghost" type="reset" onclick="resetPromotionForm()">Clear</button><button class="btn hr-green" type="submit">Submit nomination</button></div>
 </form>
 </div>
-</aside>
+</div>
 <!-- Record disciplinary action -->
-<div class="sd-ov" id="dscDrawerOv" onclick="closeSlideDrawer('dscDrawer')"></div>
-<aside class="sdrawer" id="dscDrawer" role="dialog" aria-modal="true" aria-labelledby="dscDrawerTitle">
-<div class="sd-head"><div><h3 id="dscDrawerTitle">Record disciplinary action</h3><div class="sub">Red badge · misconduct, pending suspensions and rank demotions</div></div><button class="iconbtn" onclick="closeSlideDrawer('dscDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="dscDrawerOv" onclick="closeEntryModal('dscDrawer')"></div>
+<div class="cmodal" id="dscDrawer" role="dialog" aria-modal="true" aria-labelledby="dscDrawerTitle">
+<div class="cm-head"><div><h3 id="dscDrawerTitle">Record disciplinary action</h3><div class="sub">Red badge · misconduct, pending suspensions and rank demotions</div></div><button class="iconbtn" onclick="closeEntryModal('dscDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="dscNotice" class="notice"></div>
 
 <form class="form" id="dscForm" onsubmit="saveDisciplineAction(event)">
@@ -873,7 +916,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="form-actions"><button class="btn ghost" type="reset" onclick="resetDisciplineForm()">Clear</button><button class="btn hr-red" type="submit">Record action</button></div>
 </form>
 </div>
-</aside>
+</div>
 
 
 <!-- OFFICER CONDUCT, PROMOTIONS & DISCIPLINARY MANAGEMENT (HR DIRECTORATE) -->
@@ -945,16 +988,20 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- CRIME / VICTIM INTAKE -->
 <section id="crimes" class="page">
+<div class="unit-stats" id="usCrimes">
+  <div class="us-head"><span>Crime intake · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usCrimesRow"></div>
+</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer</div></div><button class="btn" onclick="openSlideDrawer('crmDrawer')">＋ Register Crime / Victim Intake</button></div>
+<div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="crmSearch" placeholder="Search file number, category, station, officer or status…" oninput="renderCrimesTable()"></div><button class="btn" onclick="openEntryModal('crmDrawer')">＋ Register Crime / Victim Intake</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Category</th><th>Station</th><th>Officer</th><th>Status</th></tr></thead><tbody id="crimesTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register crime / victim intake -->
-<div class="sd-ov" id="crmDrawerOv" onclick="closeSlideDrawer('crmDrawer')"></div>
-<aside class="sdrawer" id="crmDrawer" role="dialog" aria-modal="true" aria-labelledby="crmDrawerTitle">
-<div class="sd-head"><div><h3 id="crmDrawerTitle">Register crime / victim intake</h3><div class="sub">File number is issued automatically · CRM-YYYY-STN-XXXX</div></div><button class="iconbtn" onclick="closeSlideDrawer('crmDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="crmDrawerOv" onclick="closeEntryModal('crmDrawer')"></div>
+<div class="cmodal" id="crmDrawer" role="dialog" aria-modal="true" aria-labelledby="crmDrawerTitle">
+<div class="cm-head"><div><h3 id="crmDrawerTitle">Register crime / victim intake</h3><div class="sub">File number is issued automatically · CRM-YYYY-STN-XXXX</div></div><button class="iconbtn" onclick="closeEntryModal('crmDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="crmNotice" class="notice"></div>
 
 <form class="form" id="crmForm" onsubmit="saveCrime(event)">
@@ -994,22 +1041,26 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">File incident</button></div>
 </form>
 </div>
-</aside>
+</div>
 
 
 <!-- POLICE CARS REGISTRATION -->
 <section id="cars" class="page">
+<div class="unit-stats" id="usCars">
+  <div class="us-head"><span>Vehicle registry · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usCarsRow"></div>
+</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Security badge shown on every record</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="carCount" style="display:none">0</span><button class="btn" onclick="openSlideDrawer('carDrawer')">＋ Register Vehicle</button></div></div>
+<div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Security badge shown on every record</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="carCount" style="display:none">0</span><button class="btn" onclick="openEntryModal('carDrawer')">＋ Register Vehicle</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="carSearch" placeholder="Central Vehicle Search — plate, VIN, make, owner, station or alert…" oninput="renderCarsTable()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>ID / Plate</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Alert</th></tr></thead><tbody id="carsTable"></tbody></table></div>
 </div>
 </section>
 <!-- Vehicle registry -->
-<div class="sd-ov" id="carDrawerOv" onclick="closeSlideDrawer('carDrawer')"></div>
-<aside class="sdrawer" id="carDrawer" role="dialog" aria-modal="true" aria-labelledby="carDrawerTitle">
-<div class="sd-head"><div><h3 id="carDrawerTitle">Vehicle registry</h3><div class="sub">Police fleet and civilian / commercial vehicles — Sool, Sanaag, East Togdheer</div></div><button class="iconbtn" onclick="closeSlideDrawer('carDrawer')" aria-label="Close">✕</button></div>
-<div class="sd-body">
+<div class="cmodal-ov" id="carDrawerOv" onclick="closeEntryModal('carDrawer')"></div>
+<div class="cmodal" id="carDrawer" role="dialog" aria-modal="true" aria-labelledby="carDrawerTitle">
+<div class="cm-head"><div><h3 id="carDrawerTitle">Vehicle registry</h3><div class="sub">Police fleet and civilian / commercial vehicles — Sool, Sanaag, East Togdheer</div></div><button class="iconbtn" onclick="closeEntryModal('carDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-body">
 <div id="carNotice" class="notice"></div>
 
 <form class="form" id="carForm" onsubmit="saveCar(event)">
@@ -1049,7 +1100,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register vehicle</button></div>
 </form>
 </div>
-</aside>
+</div>
 
 
 <!-- USER MANAGEMENT (admin only) -->
@@ -1135,6 +1186,10 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- TRANSPORT · VEHICLE STATUS & TRACKING -->
 <section id="vehiclestatus" class="page">
+<div class="unit-stats" id="usVehicleStatus">
+  <div class="us-head"><span>Fleet status · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-row" id="usVehicleStatusRow"></div>
+</div>
 <div class="panel">
   <div class="panel-head"><div><h2>Fleet status board</h2><div class="sub">Live operational status and security flag for every registered vehicle</div></div>
     <div class="da-tools"><select id="vsStatusFilter" onchange="renderVehicleStatusTable()"><option value="">All statuses</option><option>In Service</option><option>Maintenance</option><option>Out of Service</option><option>Decommissioned</option></select>
@@ -1943,34 +1998,41 @@ async function ensureLocalIdentity(d){
 function openDrawer(title,bodyHtml,footHtml){document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';clearInvalid();hideModalAlert();document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on');document.body.classList.add('modal-open')}
 function closeDrawer(){document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on');document.body.classList.remove('modal-open');hideModalAlert();clearInvalid()}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('drawer').classList.contains('on'))closeDrawer()});
-// ---- Slide-over drawers (unit registration forms) ---------------------------
+// ---- Centered entry modals (unit registration forms) ----------------------
 // Operational pages (Fingerprint · Airport · Stations · Officers · Crimes ·
-// Cars) keep their registers full-width; each entry form lives in a
-// right-hand slide-over drawer opened by the page's primary action button.
-// The form markup stays in the document (parked off-canvas, hidden with
-// visibility), so every field id, event wire and validator behaves exactly
-// as it did when the form was inline on the page.
-function openSlideDrawer(id){
+// Cars) keep their registers full-width; each entry form lives in a centered
+// popup modal (dark blurred backdrop, smooth fade/scale-in) opened by the
+// page's primary action button. The form markup stays in the document
+// (hidden until opened), so every field id, event wire and validator behaves
+// exactly as it did when the form was inline on the page.
+function openEntryModal(id){
   const d=document.getElementById(id);if(!d)return;
   const ov=document.getElementById(id+'Ov');
+  clearTimeout(d._closeT);
+  d.classList.remove('closing');
   if(ov)ov.classList.add('on');
   d.classList.add('open');
   document.body.classList.add('modal-open');
-  const body=d.querySelector('.sd-body');
+  const body=d.querySelector('.cm-body');
   if(body)body.scrollTop=0;
   const first=d.querySelector('input:not([readonly]):not([disabled]),select,textarea');
-  if(first)setTimeout(()=>{try{first.focus()}catch(_){}},380);
+  if(first)setTimeout(()=>{try{first.focus()}catch(_){}},240);
 }
-function closeSlideDrawer(id){
+function closeEntryModal(id){
   const d=document.getElementById(id);if(!d)return;
+  if(!d.classList.contains('open'))return;
   const ov=document.getElementById(id+'Ov');
   if(ov)ov.classList.remove('on');
-  d.classList.remove('open');
-  const modal=document.getElementById('drawer');
-  if(!modal||!modal.classList.contains('on'))document.body.classList.remove('modal-open');
+  d.classList.add('closing');
+  clearTimeout(d._closeT);
+  d._closeT=setTimeout(()=>{
+    d.classList.remove('open','closing');
+    const modal=document.getElementById('drawer');
+    if(!modal||!modal.classList.contains('on'))document.body.classList.remove('modal-open');
+  },220);
 }
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
-  document.querySelectorAll('.sdrawer.open').forEach(d=>closeSlideDrawer(d.id));
+  document.querySelectorAll('.cmodal.open').forEach(m=>closeEntryModal(m.id));
 });
 function val(id){return document.getElementById(id).value.trim()}
 
@@ -2148,11 +2210,11 @@ function renderPeople(){
 // The same payload is also used by renderDashboardLocal() so the offline /
 // localStorage fallback mode shows the same scoped view.
 // Dashboard quick-registration buttons: navigate to the unit page and open
-// its entry drawer (slide-over for Airport / Fingerprint, the existing modal
+// its entry modal (centered popup for Airport / Fingerprint, the existing modal
 // for new CID cases and checkpoint stops) so the officer lands on the form.
 const QUICK_ACTION_DRAWERS={
-  airport:()=>openSlideDrawer('airDrawer'),
-  fingerprint:()=>openSlideDrawer('fpDrawer'),
+  airport:()=>openEntryModal('airDrawer'),
+  fingerprint:()=>openEntryModal('fpDrawer'),
   cid:()=>openCaseDrawer(),
   checkpoints:()=>openCheckpointDrawer()
 };
@@ -2572,12 +2634,20 @@ function renderCheckpointTable(){
       console.log('[cp] active cpLocationFilter =', JSON.stringify(cpLocationFilter));
     }
   }catch(_){}
+  // Text search: narrows the scope-filtered rows by traveler / guardian /
+  // location / screening outcome. The location chip badges stay scope-accurate.
+  const cpq = normTxt((document.getElementById('cpSearch') || {}).value || '');
+  const searchedCheckpoints = cpq ? visibleCheckpoints.filter(x => {
+    const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
+    const p = person(x.person);
+    return [x.time, locLabel, p && p.name, x.person, x.guardianName, x.guardianRelationship, x.screen, x.action, x.notes].some(v => normTxt(v).includes(cpq));
+  }) : visibleCheckpoints;
   const empty = document.getElementById('cpEmpty');
   const count = document.getElementById('cpTableCount');
   const filterLabel = document.getElementById('cpFilterLabel');
   if(count){
-    // Spec step 2.3: chip count badge must reflect visibleCheckpoints.length.
-    count.textContent = visibleCheckpoints.length;
+    // Table count reflects the rows currently visible (scope + text search).
+    count.textContent = searchedCheckpoints.length;
     // Also surface the count in the per-chip badge via the
     // paintCheckpointChips() re-render below.
   }
@@ -2588,9 +2658,11 @@ function renderCheckpointTable(){
       filterLabel.textContent = `Showing all ${db.checkpoints.length} screening event(s)`;
     }
   }
-  if(!visibleCheckpoints.length){
+  if(!searchedCheckpoints.length){
     if(empty){
-      if(isCheckpointRole(userRole) && userScope){
+      if(cpq){
+        empty.textContent = 'No stops match that search';
+      } else if(isCheckpointRole(userRole) && userScope){
         empty.innerHTML = `No stops recorded at <b>${esc(userScope)} Checkpoint</b> yet. Click <b>+ Record stop</b> to log a screening.`;
       } else {
         empty.textContent = 'No stops recorded';
@@ -2601,7 +2673,7 @@ function renderCheckpointTable(){
     return;
   }
   if(empty) empty.style.display = 'none';
-  tbody.innerHTML = visibleCheckpoints.map(x => {
+  tbody.innerHTML = searchedCheckpoints.map(x => {
     const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
     return `<tr data-event-id="${esc(x.event_id||x.id||'')}" data-loc="${esc(x.location_code||'')}">
       <td>${esc(x.time)}</td><td>${esc(locLabel||'—')}</td>
@@ -2909,7 +2981,123 @@ function renderRegisterRow(item,currentUser){
   return actionHtml;
 }
 
+// ============================ compact unit overview =========================
+// A small KPI row at the top of every operational page. Computed from the
+// same local register cache the tables below render, so the counters always
+// agree with the visible rows (no extra server round-trip). Re-painted by
+// renderUnitStats() on every navigation, save and sync (via renderAll()).
+function usTile(v,l,i,t){return `<div class="us-tile ${t||'blue'}"><div class="us-ico">${i}</div><div><b>${num(v)}</b><small>${esc(l)}</small></div></div>`}
+const UNIT_STATS={
+  fingerprint:()=>{
+    const rows=db.fingerprint||[];
+    const st=s=>rows.filter(x=>String(x.status||'').trim()===s).length;
+    return [
+      usTile(rows.length,'Applications','⌁','blue'),
+      usTile(st('Pending Review'),'Pending review','⧗','amber'),
+      usTile(st('Approved'),'Approved','✓','green'),
+      usTile(st('Rejected'),'Rejected','✕','red')
+    ].join('');
+  },
+  airport:()=>{
+    const rows=db.airport||[];
+    const today=new Date().toISOString().slice(0,10);
+    const susIds=new Set((db.suspects||[]).filter(s=>/active/i.test(String(s.alert||''))).map(s=>s.person));
+    return [
+      usTile(rows.length,'Movements','✈','blue'),
+      usTile(rows.filter(x=>String(x.move||'').toLowerCase()==='arrival').length,'Arrivals','↓','green'),
+      usTile(rows.filter(x=>String(x.move||'').toLowerCase()==='departure').length,'Departures','↑','purple'),
+      usTile(rows.filter(x=>String(x.date||'').slice(0,10)===today).length,'Today','◉','amber'),
+      usTile(rows.filter(x=>susIds.has(x.person)).length,'Suspect-linked','!','red')
+    ].join('');
+  },
+  cid:()=>{
+    const rows=db.cases||[];
+    const closed=rows.filter(c=>String(c.status||'').trim().toLowerCase()==='closed').length;
+    const suspects=(db.suspects||[]).filter(s=>/active/i.test(String(s.alert||''))).length;
+    return [
+      usTile(rows.length,'Crime cases','⚖','blue'),
+      usTile(rows.length-closed,'Open cases','◔','amber'),
+      usTile(closed,'Closed cases','✓','green'),
+      usTile(suspects,'Active suspect alerts','!','red')
+    ].join('');
+  },
+  checkpoints:()=>{
+    const role=(sessionUser&&sessionUser.role)||'';
+    const userScope=(sessionUser&&sessionUser.location_scope)||'';
+    const scope=(cpLocationFilter||(isCheckpointRole(role)?(userScope||scopeFromRole(role)):''))||'';
+    const rows=(db.checkpoints||[]).filter(x=>!scope||cpMatchesLocation(x,scope));
+    const flagged=rows.filter(x=>String(x.screen||'').toLowerCase()==='flagged match').length;
+    return [
+      usTile(rows.length,'Screenings','⊙','blue'),
+      usTile(flagged,'Flagged hits','!','red'),
+      usTile(rows.length-flagged,'Cleared','✓','green'),
+      usTile(new Set(rows.map(r=>r.person).filter(Boolean)).size,'Distinct travelers','◉','purple')
+    ].join('');
+  },
+  stations:()=>{
+    const rows=db.stations||[];
+    return [
+      usTile(rows.length,'Stations','🏛','blue'),
+      usTile(rows.filter(s=>String(s.operational_status||'Active')==='Active').length,'Active','✓','green'),
+      usTile((db.officers||[]).length,'Officers deployed','👤','purple'),
+      usTile((db.cars||[]).length,'Vehicles','🚓','amber')
+    ].join('');
+  },
+  officers:()=>{
+    const rows=db.officers||[];
+    const duty=s=>rows.filter(o=>String(o.duty_status||'')===s).length;
+    return [
+      usTile(rows.length,'Officers registered','▤','blue'),
+      usTile(duty('Active'),'Active force','✓','green'),
+      usTile(duty('Suspended'),'Suspended','⧗','amber'),
+      usTile(hrAwaitingList().length,'Promotions awaiting','▲','green'),
+      usTile(hrOpenDisciplineList().length,'Open disciplinary','▼','red')
+    ].join('');
+  },
+  crimes:()=>{
+    const rows=db.crimes||[];
+    const closed=rows.filter(c=>String(c.case_status||'').toLowerCase().includes('closed')).length;
+    return [
+      usTile(rows.length,'Crime files','⚖','blue'),
+      usTile(rows.length-closed,'Open','◔','amber'),
+      usTile(closed,'Closed','✓','green')
+    ].join('');
+  },
+  cars:()=>{
+    const rows=db.cars||[];
+    const st=s=>rows.filter(v=>String(v.operational_status||'').trim()===s).length;
+    return [
+      usTile(rows.length,'Vehicles registered','🚓','blue'),
+      usTile(st('In Service'),'In service','✓','green'),
+      usTile(st('Maintenance')+st('Out of Service'),'Maintenance / out','⚒','amber'),
+      usTile(rows.filter(v=>String(v.security_alert||'Clean / Normal')!=='Clean / Normal').length,'Security alerts','!','red')
+    ].join('');
+  },
+  vehiclestatus:()=>{
+    const rows=db.cars||[];
+    const st=s=>rows.filter(v=>String(v.operational_status||'').trim()===s).length;
+    const alerted=rows.filter(v=>['Stolen','Wanted in Crime','Impounded','Unregistered / Suspicious'].includes(String(v.security_alert||''))).length;
+    return [
+      usTile(rows.length,'Vehicles tracked','🚓','blue'),
+      usTile(st('In Service'),'In service','✓','green'),
+      usTile(st('Maintenance'),'Maintenance','⚒','amber'),
+      usTile(st('Out of Service'),'Out of service','⊘','red'),
+      usTile(alerted,'Security alerts','!','red')
+    ].join('');
+  }
+};
+function renderUnitStats(){
+  const mounts={fingerprint:'usFingerprintRow',airport:'usAirportRow',cid:'usCidRow',
+    checkpoints:'usCheckpointsRow',stations:'usStationsRow',officers:'usOfficersRow',
+    crimes:'usCrimesRow',cars:'usCarsRow',vehiclestatus:'usVehicleStatusRow'};
+  Object.keys(mounts).forEach(page=>{
+    const el=document.getElementById(mounts[page]);
+    if(el)el.innerHTML=UNIT_STATS[page]();
+  });
+}
+
 function renderAll(){
+  renderUnitStats();
   // The dashboard now pulls its metrics from /api/dashboard via
   // renderDashboard(); the legacy static KPI tiles have been removed
   // from the DOM. renderDashboard() is invoked from go('dashboard') and
@@ -2919,16 +3107,10 @@ function renderAll(){
     renderDashboard();
   }
   renderPeople();
-  fpTable.innerHTML=db.fingerprint.map(x=>{const p=person(x.person);
-   return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
-   <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
-   <td class="actions">
-     <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
-     ${renderRegisterRow(x,currentUser)}
-   </td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No applications yet</td></tr>';
-  airTable.innerHTML=db.airport.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="5" class="empty">No passenger records</td></tr>';
+  renderFingerprintTable();
+  renderAirportTable();
   renderCases();
-  suspectTable.innerHTML=db.suspects.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No active alerts</td></tr>';
+  renderSuspectTable();
   // Regional registration modules + Central Police Search keep their tables
   // current on every full re-render (saves, syncs, logins).
   renderStationsTable();
@@ -2959,11 +3141,48 @@ function renderAll(){
     paintActivity();
   }
 }
+// ---- Register table painters (each honours its header search box) ---------
+function renderFingerprintTable(){
+  const q=normTxt((document.getElementById('fpSearch')||{}).value||'');
+  const list=(db.fingerprint||[]).filter(x=>{
+    if(!q)return true;
+    const p=person(x.person);
+    return [x.id,x.purpose,x.status,x.certificate,p&&p.name,x.person].some(v=>normTxt(v).includes(q));
+  });
+  fpTable.innerHTML=list.map(x=>{const p=person(x.person);
+   return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
+   <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
+   <td class="actions">
+     <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
+     ${renderRegisterRow(x,currentUser)}
+   </td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
+}
+function renderAirportTable(){
+  const q=normTxt((document.getElementById('airSearch')||{}).value||'');
+  const list=(db.airport||[]).filter(x=>{
+    if(!q)return true;
+    const p=person(x.person);
+    const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));
+    return [p&&p.name,x.person,x.move,x.date,x.flight,x.airline,route].some(v=>normTxt(v).includes(q));
+  });
+  airTable.innerHTML=list.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No passengers match that search':'No passenger records'}</td></tr>`;
+}
+function renderSuspectTable(){
+  const q=normTxt((document.getElementById('suspectSearch')||{}).value||'');
+  const list=(db.suspects||[]).filter(x=>{
+    if(!q)return true;
+    const p=person(x.person);
+    return [p&&p.name,x.person,x.case,x.role,x.alert,x.origin].some(v=>normTxt(v).includes(q));
+  });
+  suspectTable.innerHTML=list.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||`<tr><td colspan="5" class="empty">${q?'No suspects match that search':'No active alerts'}</td></tr>`;
+}
 function renderCases(){
   if(!window.caseTable)return;
-  caseTable.innerHTML=db.cases.map(c=>{
+  const q=normTxt((document.getElementById('caseSearch')||{}).value||'');
+  const list=(db.cases||[]).filter(c=>!q||[c.id,c.category,c.location,c.status,c.summary].some(v=>normTxt(v).includes(q)));
+  caseTable.innerHTML=list.map(c=>{
     const parts=c.participants?c.participants.length:(db.suspects.filter(s=>s.case===c.id).length);
-    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td><td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openCase('${esc(c.id)}')">View</button></td></tr>`}).join('')||'<tr><td colspan="6" class="empty">No cases yet</td></tr>';
+    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td><td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openCase('${esc(c.id)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No cases match that search':'No cases yet'}</td></tr>`;
 }
 
 // ============================ fingerprint ============================
@@ -3714,7 +3933,8 @@ async function initApp(){
 // Every button carries the module it belongs to (`data-modules`), so one pass
 // over the server-issued module list decides the whole menu: a unit officer
 // sees only their own directorate — each register renders as a clean,
-// full-width table with its entry form in a slide-over drawer.
+// full-width table (with a search box) and a compact unit overview strip; the
+// entry form opens in a centered modal from the page's primary action button.
 function applyNavForRole(){
   const mods = (sessionUser && sessionUser.modules) || ['dashboard'];
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
@@ -3886,12 +4106,12 @@ function drawGroupedBarChart(canvasId, groups, series, colors){
 
 // ======================= shared metric / chart helpers =====================
 // Per-unit "departmental analytics" strips are gone from the operational
-// pages: every register now renders full-width with its entry form in a
-// slide-over drawer (see the .sdrawer panels and openSlideDrawer()). The only
-// remaining analytics surface is the Chief Commander's Global Executive
-// Dashboard (HQ / Command), which uses the helpers below — number formatting,
-// KPI tiles, ratio legends and the ratio-bar painter (the bar and grouped-bar
-// painters live in "chart primitives" above).
+// pages: every register renders full-width with its entry form in a centered
+// modal (see the .cmodal panels and openEntryModal()). The only full analytics
+// surface is the Chief Commander's Global Executive Dashboard (HQ / Command),
+// which uses the helpers below — number formatting, KPI tiles, ratio legends
+// and the ratio-bar painter (the bar and grouped-bar painters live in "chart
+// primitives" above).
 function num(v){const n=Number(v);return Number.isFinite(n)?n:0}
 function pctOf(part,total){const t=num(total);if(!t)return 0;return Math.round((num(part)/t)*1000)/10}
 function kpiTileHTML(k){
@@ -4453,9 +4673,17 @@ function renderHrPanels(){
   setTxt('hrDiscBadge', open.length);
   setTxt('dscOpenCount', open.length);
 
+  // Pane search boxes: #prmSearch filters both promotion tables, #dscSearch
+  // both discipline tables (name / id / rank / type / status / reason).
+  const prmQ = normTxt((document.getElementById('prmSearch') || {}).value || '');
+  const prmMatch = p => !prmQ || [p.nomination_id, p.full_name, p.service_id, p.station_name,
+    p.current_rank, p.officer_rank, p.proposed_rank, p.reason, p.nominated_by,
+    p.verified_by, p.verification_status].some(v => normTxt(v).includes(prmQ));
+  const awaitingShown = awaiting.filter(prmMatch);
+
   // ---- GREEN · promotions awaiting commander verification ----------------
   const at = document.getElementById('prmAwaitTable');
-  if(at) at.innerHTML = awaiting.map(p => `<tr>
+  if(at) at.innerHTML = awaitingShown.map(p => `<tr>
       <td><b>${esc(p.nomination_id)}</b><br><small class="muted">${esc(String(p.created_at || '').slice(0, 10))}</small></td>
       <td><b>${esc(p.full_name || '—')}</b><br><small class="muted">${esc(p.service_id || '')} · ${esc(p.station_name || '')}</small></td>
       <td>${esc(p.current_rank || p.officer_rank || '')} → <b class="st-green">${esc(p.proposed_rank || '')}</b></td>
@@ -4464,21 +4692,27 @@ function renderHrPanels(){
         <button class="btn small hr-green" type="button" onclick="verifyPromotionNomination('${esc(p.nomination_id)}','Verified')">Verify</button>
         <button class="btn small ghost" type="button" onclick="verifyPromotionNomination('${esc(p.nomination_id)}','Rejected')">Reject</button>
       </td></tr>`).join('')
-    || '<tr><td colspan="5" class="empty">No nominations awaiting verification</td></tr>';
+    || `<tr><td colspan="5" class="empty">${prmQ ? 'No nominations match that search' : 'No nominations awaiting verification'}</td></tr>`;
 
   const ph = document.getElementById('prmHistoryTable');
-  if(ph) ph.innerHTML = (db.promotions || []).filter(p => !awaitingIds.has(p.nomination_id)).map(p => `<tr>
+  if(ph) ph.innerHTML = (db.promotions || []).filter(p => !awaitingIds.has(p.nomination_id) && prmMatch(p)).map(p => `<tr>
       <td><b>${esc(p.nomination_id)}</b></td>
       <td>${esc(p.full_name || '—')}<br><small class="muted">${esc(p.service_id || '')}</small></td>
       <td>${esc(p.current_rank || p.officer_rank || '')} → ${esc(p.proposed_rank || '')}</td>
       <td>${esc(p.nominated_by || '—')}</td>
       <td>${esc(p.verified_by || '—')}<br><small class="muted">${esc(String(p.verified_at || '').slice(0, 16))}</small></td>
       <td><span class="badge ${p.verification_status === 'Verified' ? 'green' : (p.verification_status === 'Rejected' ? 'red' : 'gray')}">${esc(p.verification_status || '')}</span></td>
-    </tr>`).join('') || '<tr><td colspan="6" class="empty">No verified or rejected nominations yet</td></tr>';
+    </tr>`).join('') || `<tr><td colspan="6" class="empty">${prmQ ? 'No nominations match that search' : 'No verified or rejected nominations yet'}</td></tr>`;
+
+  const dscQ = normTxt((document.getElementById('dscSearch') || {}).value || '');
+  const dscMatch = d => !dscQ || [d.action_id, d.full_name, d.service_id, d.station_name,
+    d.action_type, d.severity, d.status, d.incident_summary, d.reported_by,
+    d.from_rank, d.to_rank].some(v => normTxt(v).includes(dscQ));
+  const openShown = open.filter(dscMatch);
 
   // ---- RED · open disciplinary actions ----------------------------------
   const ot = document.getElementById('dscOpenTable');
-  if(ot) ot.innerHTML = open.map(d => `<tr>
+  if(ot) ot.innerHTML = openShown.map(d => `<tr>
       <td><b>${esc(d.action_id)}</b><br><small class="muted">${esc(String(d.created_at || '').slice(0, 10))}</small></td>
       <td><b>${esc(d.full_name || '—')}</b><br><small class="muted">${esc(d.service_id || '')} · ${esc(d.station_name || '')}</small></td>
       <td><span class="badge red">${esc(d.action_type || '')}</span>${d.action_type === 'Demotion' && d.to_rank ? `<br><small class="muted">${esc(d.from_rank || d.officer_rank || '')} → ${esc(d.to_rank)}</small>` : ''}${d.action_type === 'Suspension' && d.suspension_end ? `<br><small class="muted">until ${esc(String(d.suspension_end).slice(0, 10))}</small>` : ''}</td>
@@ -4488,17 +4722,17 @@ function renderHrPanels(){
         ${d.status === 'Confirmed' ? '' : `<button class="btn small hr-red" type="button" onclick="setDisciplineStatus('${esc(d.action_id)}','Confirmed')">Confirm</button>`}
         <button class="btn small ghost" type="button" onclick="setDisciplineStatus('${esc(d.action_id)}','Closed')">Close</button>
       </td></tr>`).join('')
-    || '<tr><td colspan="6" class="empty">No open disciplinary actions</td></tr>';
+    || `<tr><td colspan="6" class="empty">${dscQ ? 'No actions match that search' : 'No open disciplinary actions'}</td></tr>`;
 
   const dh = document.getElementById('dscHistoryTable');
-  if(dh) dh.innerHTML = (db.discipline || []).filter(d => !openIds.has(d.action_id)).map(d => `<tr>
+  if(dh) dh.innerHTML = (db.discipline || []).filter(d => !openIds.has(d.action_id) && dscMatch(d)).map(d => `<tr>
       <td><b>${esc(d.action_id)}</b></td>
       <td>${esc(d.full_name || '—')}<br><small class="muted">${esc(d.service_id || '')} · ${esc(d.duty_status || '')}</small></td>
       <td>${esc(d.action_type || '')}${d.action_type === 'Demotion' && d.to_rank ? `<br><small class="muted">${esc(d.from_rank || d.officer_rank || '')} → ${esc(d.to_rank)}</small>` : ''}</td>
       <td>${esc(d.incident_summary || '—')}</td>
       <td>${esc(d.reported_by || '—')}</td>
       <td><span class="badge ${d.status === 'Confirmed' ? 'red' : 'gray'}">${esc(d.status || '')}</span></td>
-    </tr>`).join('') || '<tr><td colspan="6" class="empty">No confirmed or closed actions yet</td></tr>';
+    </tr>`).join('') || `<tr><td colspan="6" class="empty">${dscQ ? 'No actions match that search' : 'No confirmed or closed actions yet'}</td></tr>`;
 }
 function resetPromotionForm(){
   const f = document.getElementById('prmForm');
@@ -4847,10 +5081,13 @@ function fillCrimeSelects(){
 }
 function renderCrimesTable(){
   const tb=document.getElementById('crimesTable'); if(!tb) return;
-  const rows=(db.crimes||[]).map(x=>`<tr><td><b>${esc(x.file_number)}</b></td><td>${esc(x.category)}</td>
+  const q=normTxt((document.getElementById('crmSearch')||{}).value||'');
+  const list=(db.crimes||[]).filter(x=>!q||[x.file_number,x.category,x.station_code,
+    x.officer_name,x.officer_service_id,x.case_status].some(v=>normTxt(v).includes(q)));
+  const rows=list.map(x=>`<tr><td><b>${esc(x.file_number)}</b></td><td>${esc(x.category)}</td>
     <td>${esc(x.station_code||'')}</td><td>${esc(x.officer_name||x.officer_service_id||'')}</td>
     <td>${esc(x.case_status||'')}</td></tr>`).join('');
-  tb.innerHTML=rows||'<tr><td colspan="5" class="empty">No crime files yet</td></tr>';
+  tb.innerHTML=rows||`<tr><td colspan="5" class="empty">${q?'No crime files match that search':'No crime files yet'}</td></tr>`;
 }
 async function saveCrime(e){
   e.preventDefault(); clearInvalid();

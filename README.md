@@ -113,7 +113,7 @@ The flat module list is organised into **departmental collapsible sidebar sectio
 | **REGISTERS** | *Police Stations* (`stations`), *Register Crime* (`crimes`) |
 | **ADMINISTRATION** | *User Management* (`admin`, System Admin only) |
 
-The departmental regrouping is labelling only for the existing pages — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Unit entry. The standalone **Analytics** entry is gone: analytics now live inside each register (see **Departmental analytics** below), and the cross-department executive view is the Chief Commander's **Global Executive Dashboard**.
+The departmental regrouping is labelling only for the existing pages — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Unit entry. The standalone **Analytics** entry is gone: the only full analytics surface is the Chief Commander's **Global Executive Dashboard** (see **Departmental analytics (executive dashboard only)** below); each operational page keeps only a compact overview strip of live counters on top of its register.
 
 Visibility is driven by the `modules` array from `GET /api/me` in `applyNavForRole()`: each button is gated on its own module, the Administration section on the `is_admin` flag, and a whole section disappears when every item inside it is hidden for the signed-in role (e.g. a Checkpoint officer sees only *CID → Checkpoint Unit*, the HR Directorate sees *Central Search* + *Police Stations*/*Police Officers*).
 
@@ -135,14 +135,15 @@ The three levels are entered as **Dropdown (Region) → Dropdown (District) → 
 
 The **Police Officers** page carries three tabs, all of them available to **both** the System
 Admin and the **HR Directorate** role (`hr_officer`). The registration entry forms live in
-slide-over drawers behind each tab's primary action button (＋ Register Officer · ＋ Nominate
-for Promotion · ＋ Record Disciplinary Action); the tabs themselves hold the full-width tables:
+centered entry modals behind each tab's primary action button (＋ Register Officer · ＋ Nominate
+for Promotion · ＋ Record Disciplinary Action); the tabs themselves hold the full-width tables
+(each with its own search box over both the queue and the history):
 
 | Tab | Colour | Contents |
 |-----|--------|----------|
-| **Officer Registration** | — | the *Central Officer Search* register table; the five-step registration wizard opens in a slide-over drawer (`POST /api/officers`) |
-| **Promotions & Commendations** | green `#2e7d32` | the **awaiting commander verification** queue (FIFO, oldest nomination first) with **Verify** / **Reject** actions, the verified/rejected history with the verifying commander, and the nomination form in a slide-over drawer (`POST /api/officers/promotions`) |
-| **Disciplinary & Misconduct** | red `#c62828` | the **open actions** queue with **Confirm** / **Close** actions, the confirmed/closed history, and the action form in a slide-over drawer (`POST /api/officers/discipline` — misconduct, suspension, demotion, warning, investigation) |
+| **Officer Registration** | — | the *Central Officer Search* register table; the five-step registration wizard opens in a centered modal (`POST /api/officers`) |
+| **Promotions & Commendations** | green `#2e7d32` | the **awaiting commander verification** queue (FIFO, oldest nomination first) with **Verify** / **Reject** actions, the verified/rejected history with the verifying commander, and the nomination form in a centered modal (`POST /api/officers/promotions`) |
+| **Disciplinary & Misconduct** | red `#c62828` | the **open actions** queue with **Confirm** / **Close** actions, the confirmed/closed history, and the action form in a centered modal (`POST /api/officers/discipline` — misconduct, suspension, demotion, warning, investigation) |
 
 The two badge tabs are operational views over exactly the rows the register queues count, and
 the tab labels carry live counters (`hrPromoBadge` / `hrDiscBadge`). Confirming an action applies
@@ -161,26 +162,44 @@ The **Police Officers** register itself is a five-step wizard (multi-tab `offSte
 
 Server-side validation (`register_officer()`) enforces every mandatory field, the fixed dropdown option lists, the station foreign key, the upload extension/size policy (5 MB), and the coherent Slot 2 pairing — identical rules to the client, so a request that passes the form cannot be rejected by the API (and vice-versa). Uploads are persisted under `backend/uploads/` via `save_upload_validated()`.
 
-### Operational page layout — full-width registers + slide-over drawers
+### Operational page layout — unit overview strip + search boxes + centered entry modals
 
-The operational unit pages (Fingerprint · Airport · Stations · Officers · Crimes · Cars) were
-overhauled into a clean workspace layout:
+The operational unit pages (Fingerprint · Airport · Stations · Officers · Crimes · Cars) are
+laid out as a clean workspace:
 
+- **Compact unit overview strip.** Every operational page opens with a slim KPI strip
+  (`renderUnitStats()`) of live counters computed from the same local register cache the table
+  below renders, so the numbers always agree with the visible rows — unit stats at a glance
+  without returning to the dashboard. E.g. Fingerprint → Applications · Pending review ·
+  Approved · Rejected; Airport → Movements · Arrivals · Departures · Today · Suspect-linked;
+  Checkpoints → Screenings · Flagged hits · Cleared · Distinct travelers (scoped to the active
+  location filter, like the table); HR → Officers registered · Active force · Suspended ·
+  Promotions awaiting · Open disciplinary. Charts, ratios and roll-ups stay exclusive to the
+  Global Executive Dashboard.
+- **Search box on every table.** Each register table's header toolbar carries a responsive
+  search/filter input for instant, case-insensitive record filtering — Fingerprint
+  (`fpSearch`), Airport (`airSearch`), CID cases (`caseSearch`) and suspects (`suspectSearch`),
+  Checkpoints (`cpSearch`), Crime intake (`crmSearch`), both HR pane pairs (`prmSearch` /
+  `dscSearch`, each covering its queue + history), plus the pre-existing Central Station /
+  Officer / Vehicle / person searches.
 - **No inline forms.** The permanent registration form boxes are gone from the page; nothing
   form-shaped is visible on the main view.
-- **Primary action buttons + drawers.** Each unit page carries one clean primary action button
-  (e.g. **＋ Register Airport Passenger**, **＋ New Clearance Application**, **＋ Register
-  Officer**). Clicking it opens a smooth right-hand **slide-over drawer** (`.sdrawer` +
-  `openSlideDrawer()` / `closeSlideDrawer()`) containing the full entry form, its identity
-  matching, document slots and validation — the form markup stays in the document (parked
-  off-canvas), so every field id and wiring behaves exactly as before. The Station drawer is
-  gated to SystemAdmin / `stations:manage` (`.admin-write`).
+- **Primary action buttons + centered modals.** Each unit page carries one clean primary action
+  button (e.g. **＋ Register Airport Passenger**, **＋ New Clearance Application**, **＋
+  Register Officer**). Clicking it opens a **centered popup modal** (`.cmodal` +
+  `openEntryModal()` / `closeEntryModal()`) over a dark blurred backdrop with a smooth
+  fade/scale-in animation, containing the full entry form, its identity matching, document
+  slots and validation — the form markup stays in the document (hidden until opened), so every
+  field id and wiring behaves exactly as before. Escape or clicking the backdrop closes it with
+  a matching scale-out. The Station modal is gated to SystemAdmin / `stations:manage`
+  (`.admin-write`).
 - **Full-width tables.** With the form out of the way, every register table spans 100% of the
   page — no horizontal scrolling on a clean workspace.
 - **No per-page analytics.** The per-unit analytics strips were removed from the operational
-  pages entirely.
+  pages entirely (the compact overview strip above is plain counters only — no charts, no
+  ratios, no extra API calls).
 - The **Operations dashboard** quick-registration buttons navigate to the unit page *and* open
-  its entry drawer in one click (`quickAction()`).
+  its entry modal in one click (`quickAction()`).
 
 ### Departmental analytics (executive dashboard only)
 
@@ -188,7 +207,9 @@ Analytics is no longer rendered on the operational registers — the **only anal
 the Chief Commander's Global Executive Dashboard** (HQ / Command: KPI tiles, department
 overviews, region charts and the regional stations table, backed by
 `GET /api/analytics/global`), with the **Stations Oversight** page providing the regional
-roll-up for the same role. The per-register analytics endpoints remain available server-side
+roll-up for the same role. (The compact unit overview strip on the operational pages is not an
+analytics bundle — just plain counters computed from the local register cache, no charts, no
+ratios, no extra API calls.) The per-register analytics endpoints remain available server-side
 for the executive/admin surfaces and programmatic consumers (every number is still computed
 server-side — `kpis` summary cards, `charts` zero-padded `[{label,count}]` series and `lists`
 badge rows):
