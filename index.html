@@ -171,6 +171,29 @@ body.modal-open{overflow:hidden}
 .cm-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none;background:#fff}
 .cm-head h3{margin:0;font-size:17px}
 .cm-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
+/* ==== Identity profile popup (shared template — Fingerprint · Airport · Checkpoint) ==== */
+/* Read-only centered popup opened from every unit register's "View" action.
+   Narrower than the entry forms; header card puts the person's photo (or an
+   initials avatar when no photo is on file) top-left, followed by a labeled
+   data grid of the full identity profile. */
+.cmodal.profile{width:min(640px,calc(100vw - 32px))}
+.pv-headcard{display:flex;align-items:center;gap:16px;padding:16px 18px;border:1px solid #d9e4f6;border-radius:14px;background:linear-gradient(135deg,#f6f9ff,#ecf3fe);margin-bottom:16px}
+.pv-photo{width:76px;height:76px;border-radius:14px;background:linear-gradient(135deg,var(--blue),var(--cyan));color:#fff;display:grid;place-items:center;font-size:23px;font-weight:800;overflow:hidden;flex:none;box-shadow:0 6px 16px #1020402e;letter-spacing:.5px}
+.pv-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.pv-id{min-width:0}
+.pv-id b{font-size:17px;display:block;line-height:1.3}
+.pv-id .muted{margin-top:2px}
+.pv-personid{display:inline-flex;align-items:center;gap:5px;margin-top:7px;background:#fff;border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:800;color:var(--blue)}
+.pv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pv-field{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fbfcff;min-width:0}
+.pv-field small{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px}
+.pv-field b{font-size:13px;font-weight:700;word-break:break-word;display:block;line-height:1.45}
+.pv-field.full{grid-column:1/-1}
+.pv-units{margin-top:16px;border-top:1px dashed var(--line);padding-top:12px}
+.pv-units>small{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px}
+.pv-units .badge{margin:0 5px 5px 0}
+.pv-foot{display:flex;justify-content:flex-end;gap:8px;padding-top:16px;border-top:1px solid var(--line);margin-top:16px;flex-wrap:wrap}
+@media(max-width:650px){.pv-grid{grid-template-columns:1fr}}
 /* file slots */
 .fileslot{border:1.5px dashed #c4d0e3;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;background:#fafcff}
 .fileslot input{font-size:12px}.fileslot .req{color:var(--red);font-weight:800}
@@ -1206,6 +1229,12 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
 <div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
+<!-- Identity profile · shared centered popup (Fingerprint · Airport · Checkpoint "View" actions) -->
+<div class="cmodal-ov" id="pvModalOv" onclick="closeEntryModal('pvModal')"></div>
+<div class="cmodal profile" id="pvModal" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
+  <div class="cm-head"><div><h3 id="pvModalTitle">Identity profile</h3><div class="sub">Central Person Registry</div></div><button class="iconbtn" onclick="closeEntryModal('pvModal')" aria-label="Close">✕</button></div>
+  <div class="cm-body" id="pvModalBody"></div>
+</div>
 
 <script>
 // ============================ state ============================
@@ -2068,7 +2097,9 @@ async function submitPersonDrawer(existingId){
 }
 window._viewingPerson=null;
 function openPersonView(id){
-  const p=person(id);if(!p)return;window._viewingPerson=p;
+  const p=person(id);
+  if(!p){toast('Person not found','No central registry record matches '+id);return}
+  window._viewingPerson=p;
   // Per the spec, replace the generic 'Checkpoint' pill with explicit
   // 'Checkpoint (South)' / 'Checkpoint (East)' / 'Checkpoint (West)' labels
   // derived from the linked events' actual location. We dedupe while
@@ -2106,17 +2137,35 @@ function openPersonView(id){
     return fallback.map(u => `<span class="badge blue">${esc(u)}</span>`).join(' ');
   })();
   const units = unitsHtml;
-  openDrawer('Identity profile · '+p.id,`
-   <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
-     <span class="mini" style="width:54px;height:54px;font-size:17px">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`:esc(initials(p.name))}</span>
-     <div><b style="font-size:16px">${esc(p.name)}</b><div class="muted">${esc(p.nationalId||p.passportId||'—')}${p.passportId?' · Passport '+esc(p.passportId):''}</div></div></div>
-   <div class="grid2" style="font-size:13px;line-height:1.9">
-     <div><b>Mother:</b> ${esc(p.motherName||'—')}</div><div><b>DOB:</b> ${esc(p.dob||'—')}</div>
-     <div><b>POB:</b> ${esc(p.pob||'—')}</div><div><b>Phone:</b> ${esc(p.phone||'—')}</div>
-     <div><b>Address:</b> ${esc(p.residence||'—')}</div><div><b>Occupation:</b> ${esc(p.occupation||'—')}</div>
-   </div>
-   <div style="margin:14px 0"><b>Linked unit records:</b><div style="margin-top:6px">${units||'<span class="muted">Central only</span>'}</div></div>`,
-   `<button class="btn ghost" onclick="closeDrawer()">Close</button><button class="btn secondary" onclick="closeDrawer();openPersonDrawer(window._viewingPerson)">Edit / append details</button>`);
+  // Header card — photo (or initials avatar) prominently at the top left.
+  const photoSrc=p.photoPath||p.photoUrl||'';
+  const head=`
+   <div class="pv-headcard">
+     <span class="pv-photo" aria-hidden="true">${photoSrc?`<img src="${esc(photoSrc)}" alt="Photo of ${esc(p.name)}">`:esc(initials(p.name))}</span>
+     <div class="pv-id">
+       <b>${esc(p.name||'Unnamed person')}</b>
+       <div class="muted">${esc(p.nationalId||p.passportId||'No ID / passport on file')}${p.passportId&&p.nationalId?' · Passport '+esc(p.passportId):''}</div>
+       <span class="pv-personid">🆔 Person ID · ${esc(p.id)}</span>
+     </div>
+   </div>`;
+  // Expanded data grid — the complete identity profile.
+  const idLine=[p.nationalId?'National ID '+p.nationalId:'',p.passportId?'Passport '+p.passportId:''].filter(Boolean).join(' · ');
+  const fields=[
+    ['Full Name',p.name,'full'],
+    ['ID / Passport',idLine],
+    ["Mother's Name",p.motherName],
+    ['Date of Birth (DOB)',p.dob],
+    ['Place of Birth (POB)',p.pob],
+    ['Phone Number',p.phone],
+    ['Address (Residence)',p.residence],
+    ['Occupation',p.occupation]
+  ];
+  const grid=`<div class="pv-grid">${fields.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${esc(v||'—')}</b></div>`).join('')}</div>`;
+  const unitsBlock=`<div class="pv-units"><small>Linked unit records</small><div>${units||'<span class="muted">Central only — no unit registers linked yet</span>'}</div></div>`;
+  const foot=`<div class="pv-foot"><button class="btn ghost" onclick="closeEntryModal('pvModal')">Close</button><button class="btn secondary" onclick="closeEntryModal('pvModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button></div>`;
+  document.getElementById('pvModalTitle').textContent='Identity profile · '+p.id;
+  document.getElementById('pvModalBody').innerHTML=head+grid+unitsBlock+foot;
+  openEntryModal('pvModal');
 }
 
 // ---- add suspect (optional linked case) ----
@@ -3155,6 +3204,7 @@ function renderFingerprintTable(){
    return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
    <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td class="actions">
+     <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
      <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
