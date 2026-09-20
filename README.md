@@ -15,7 +15,8 @@ A working browser-based prototype for a central police management platform. It i
 - Police Stations / Officers / Cars registration (regional modules)
 - Officer Conduct, Promotions & Disciplinary Management (Police Officer Registration Office / HR Directorate)
 - Dashboard and cross-unit activity feed
-- Departmental analytics embedded in each register (CID units, Officers, Cars, Stations)
+- Clean operational registers — full-width tables with slide-over drawers for new entries (no inline forms, no per-page analytics)
+- Departmental analytics exclusive to the Chief Commander's Global Executive Dashboard (HQ / Command)
 
 ## Central-person linking model
 
@@ -133,16 +134,17 @@ The three levels are entered as **Dropdown (Region) → Dropdown (District) → 
 ### Police Officers — HR Directorate register (System Admin + `hr_officer`)
 
 The **Police Officers** page carries three tabs, all of them available to **both** the System
-Admin and the **HR Directorate** role (`hr_officer`), with the embedded HR analytics strip
-(roster KPIs + rank/duty/region charts + the two badge lists) sitting above the tab bar:
+Admin and the **HR Directorate** role (`hr_officer`). The registration entry forms live in
+slide-over drawers behind each tab's primary action button (＋ Register Officer · ＋ Nominate
+for Promotion · ＋ Record Disciplinary Action); the tabs themselves hold the full-width tables:
 
 | Tab | Colour | Contents |
 |-----|--------|----------|
-| **Officer Registration** | — | the five-step registration wizard and the *Central Officer Search* register table |
-| **Promotions & Commendations** | green `#2e7d32` | nomination form (`POST /api/officers/promotions`), the **awaiting commander verification** queue (FIFO, oldest nomination first) with **Verify** / **Reject** actions, and the verified/rejected history with the verifying commander |
-| **Disciplinary & Misconduct** | red `#c62828` | action form (`POST /api/officers/discipline` — misconduct, suspension, demotion, warning, investigation), the **open actions** queue with **Confirm** / **Close** actions, and the confirmed/closed history |
+| **Officer Registration** | — | the *Central Officer Search* register table; the five-step registration wizard opens in a slide-over drawer (`POST /api/officers`) |
+| **Promotions & Commendations** | green `#2e7d32` | the **awaiting commander verification** queue (FIFO, oldest nomination first) with **Verify** / **Reject** actions, the verified/rejected history with the verifying commander, and the nomination form in a slide-over drawer (`POST /api/officers/promotions`) |
+| **Disciplinary & Misconduct** | red `#c62828` | the **open actions** queue with **Confirm** / **Close** actions, the confirmed/closed history, and the action form in a slide-over drawer (`POST /api/officers/discipline` — misconduct, suspension, demotion, warning, investigation) |
 
-The two badge tabs are operational views over exactly the rows the analytics strip counts, and
+The two badge tabs are operational views over exactly the rows the register queues count, and
 the tab labels carry live counters (`hrPromoBadge` / `hrDiscBadge`). Confirming an action applies
 its side effect to the officer record — a confirmed **Suspension** sets duty status to *Suspended*
 (leaving the active force), a confirmed **Demotion** rewrites the rank, and **closing** the last
@@ -159,24 +161,47 @@ The **Police Officers** register itself is a five-step wizard (multi-tab `offSte
 
 Server-side validation (`register_officer()`) enforces every mandatory field, the fixed dropdown option lists, the station foreign key, the upload extension/size policy (5 MB), and the coherent Slot 2 pairing — identical rules to the client, so a request that passes the form cannot be rejected by the API (and vice-versa). Uploads are persisted under `backend/uploads/` via `save_upload_validated()`.
 
-### Departmental analytics (embedded in every register)
+### Operational page layout — full-width registers + slide-over drawers
 
-The single monolithic **Analytics** page was retired. Each sidebar section now embeds its
-**own departmental analytics strip** directly above its register table/form: tab-specific KPI
-summary cards, lightweight canvas charts (no external chart library) and the badge lists that
-belong to that department. Every number is computed server-side; the frontend only renders the
-`kpis` / `charts` / `lists` arrays it receives, and falls back to the same shapes recomputed
-from the local cache when the API is unreachable (the strip is then labelled **Offline cache**).
+The operational unit pages (Fingerprint · Airport · Stations · Officers · Crimes · Cars) were
+overhauled into a clean workspace layout:
 
-| Register (sidebar section) | Endpoint | Widgets |
+- **No inline forms.** The permanent registration form boxes are gone from the page; nothing
+  form-shaped is visible on the main view.
+- **Primary action buttons + drawers.** Each unit page carries one clean primary action button
+  (e.g. **＋ Register Airport Passenger**, **＋ New Clearance Application**, **＋ Register
+  Officer**). Clicking it opens a smooth right-hand **slide-over drawer** (`.sdrawer` +
+  `openSlideDrawer()` / `closeSlideDrawer()`) containing the full entry form, its identity
+  matching, document slots and validation — the form markup stays in the document (parked
+  off-canvas), so every field id and wiring behaves exactly as before. The Station drawer is
+  gated to SystemAdmin / `stations:manage` (`.admin-write`).
+- **Full-width tables.** With the form out of the way, every register table spans 100% of the
+  page — no horizontal scrolling on a clean workspace.
+- **No per-page analytics.** The per-unit analytics strips were removed from the operational
+  pages entirely.
+- The **Operations dashboard** quick-registration buttons navigate to the unit page *and* open
+  its entry drawer in one click (`quickAction()`).
+
+### Departmental analytics (executive dashboard only)
+
+Analytics is no longer rendered on the operational registers — the **only analytics surface is
+the Chief Commander's Global Executive Dashboard** (HQ / Command: KPI tiles, department
+overviews, region charts and the regional stations table, backed by
+`GET /api/analytics/global`), with the **Stations Oversight** page providing the regional
+roll-up for the same role. The per-register analytics endpoints remain available server-side
+for the executive/admin surfaces and programmatic consumers (every number is still computed
+server-side — `kpis` summary cards, `charts` zero-padded `[{label,count}]` series and `lists`
+badge rows):
+
+| Bundle | Endpoint | Contents |
 | --- | --- | --- |
-| CID → **Fingerprint Unit** | `GET /api/cid/analytics` → `fingerprint` | Total biometrics logged, identity match rate, suspect hits + hit rate, pending/approved clearances, status & clearance-reason charts · *Central Person Search* shortcut |
-| CID → **Crime Department** | `GET /api/cid/analytics` → `crime` | Case volume by location, time-of-day buckets (06-12 / 12-18 / 18-24 / 00-06), crime categories (Theft, Assault, Homicide, Fraud, …), open vs. closed ratio + closure rate, active suspects · *Central Person Search* shortcut |
-| CID → **Checkpoint Unit** | `GET /api/cid/analytics` → `checkpoint` | Traveler screening volume, distinct travelers, flagged suspect hits **per checkpoint** (South / East / West), flag rate, screening-result ratio · *Central Person Search* shortcut |
-| CID → **Airport Unit** | `GET /api/cid/analytics` → `airport` | Inbound/outbound movement counts and shares, top routes, **active suspect movement alerts** list · *Central Person Search* shortcut |
-| **Police Officers** (HR Directorate) | `GET /api/officers/analytics` | Roster metrics (total active force, rank distribution, duty status, officers per region, average service years), **Promotion list (green badge)** — active-officer nominations awaiting commander verification, **Disciplinary list (red badge)** — misconduct, pending suspensions and rank demotions · *Central Officer Search* above the register |
-| **Police Cars** | `GET /api/vehicles/analytics` | Fleet operational status (In Service vs. Maintenance / Out of Service / Decommissioned + serviceable ratio), security alert breakdown (Stolen / Wanted vs. clean civilian registrations), fleet by region, flagged-vehicle list · *Central Vehicle Search* above the register |
-| **Police Stations** | `GET /api/stations/analytics` | Operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), cell capacity, **deployment matrix** — officers deployed per station across Sool, Sanaag and East Togdheer, unstaffed-station list · *Central Station Search* above the register |
+| CID → **Fingerprint Unit** | `GET /api/cid/analytics` → `fingerprint` | Total biometrics logged, identity match rate, suspect hits + hit rate, pending/approved clearances, status & clearance-reason charts |
+| CID → **Crime Department** | `GET /api/cid/analytics` → `crime` | Case volume by location, time-of-day buckets (06-12 / 12-18 / 18-24 / 00-06), crime categories, open vs. closed ratio + closure rate, active suspects |
+| CID → **Checkpoint Unit** | `GET /api/cid/analytics` → `checkpoint` | Traveler screening volume, distinct travelers, flagged suspect hits **per checkpoint** (South / East / West), flag rate, screening-result ratio |
+| CID → **Airport Unit** | `GET /api/cid/analytics` → `airport` | Inbound/outbound movement counts and shares, top routes, **active suspect movement alerts** list |
+| **Police Officers** (HR Directorate) | `GET /api/officers/analytics` | Roster metrics (active force, rank distribution, duty status, officers per region, average service years), **Promotion list (green badge)**, **Disciplinary list (red badge)** |
+| **Police Cars** | `GET /api/vehicles/analytics` | Fleet operational status + serviceable ratio, security alert breakdown, fleet by region, flagged-vehicle list |
+| **Police Stations** | `GET /api/stations/analytics` | Operational capacity by tier, cell capacity, **deployment matrix** across Sool, Sanaag and East Togdheer, unstaffed-station list |
 
 `GET /api/analytics?module=cid|officers|vehicles|stations|all` is the unified alias for the same
 builders (`hr` / `cars` / `station` are accepted aliases; an unknown module returns **400**, never a
@@ -382,7 +407,7 @@ data.** It currently uses:
   connection defaults and no TLS/credential-management hardening yet
 - **Development authentication** — a single hard-coded demo login (`admin` / `ChangeMe123!`), in-memory session tokens, and unsalted SHA-256 password hashing
 - **No HTTPS** — traffic is plain HTTP
-- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and departmental analytics embedded in each register surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
+- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and the departmental analytics endpoints (`/api/cid/analytics`, `/api/officers/analytics`, `/api/vehicles/analytics`, `/api/stations/analytics`) still surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix for the executive dashboard and programmatic consumers (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
 - **No production deployment** configuration
 - **No evidence file security** or chain-of-custody storage
 - **No backup service** or disaster-recovery process

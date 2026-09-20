@@ -231,10 +231,12 @@ identically:
 
   Station and vehicle **writes** (`POST /api/stations`, `POST /api/vehicles`, `POST /api/vehicles/{id}/status`) require the `admin` module — the HR Directorate and CID read those registers but cannot create in them.
 
-### Departmental analytics (embedded per register)
+### Departmental analytics (server-side bundles; executive dashboard renders them)
 
-Analytics are no longer a single admin-only page: every register embeds its own bundle,
-rendered as KPI cards + lightweight canvas charts above its table/form. Each payload carries
+Per-unit analytics strips are no longer rendered on the operational registers — the only
+analytics surface in the UI is the Chief Commander's **Global Executive Dashboard** (see the
+`executive` section of `index.html`). The per-register bundles below remain available
+server-side for the executive/admin surfaces and programmatic consumers. Each payload carries
 `kpis` (summary cards), `charts` (zero-padded `[{label,count}]` series) and `lists` (badge rows),
 so the server owns all the arithmetic.
 
@@ -322,10 +324,12 @@ API sync, never signs the officer out on non-fatal errors, and never
 wipes `db.checkpoints` with an empty sync. Its last case asserts the
 **shell contract** statically: the four sidebar sections (Central Search ·
 CID · Police Registrations & Management · Administration) with their exact
-labels and items, one embedded `dept-analytics` strip as the first block of
-all seven registers, and the three Police Officers tabs
-(Officer Registration · Promotions & Commendations `#2e7d32` ·
-Disciplinary & Misconduct `#c62828`) with their panes and handlers.
+labels and items, **no per-unit `dept-analytics` strip on any operational
+page**, every registration form parked in a slide-over drawer behind its
+primary action button (not rendered inline in any page section), and the
+three Police Officers tabs (Officer Registration · Promotions &
+Commendations `#2e7d32` · Disciplinary & Misconduct `#c62828`) with their
+panes and handlers.
 
 The conduct frontend test drives the Officers Registration Office
 journey through the real `index.html` script: sign in as `hr.officer`,

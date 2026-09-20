@@ -212,7 +212,8 @@ function loadApp(sandbox) {
 }
 
 // --------------------------------------------------------------------------
-// Static markup contract: sidebar sections · embedded analytics · HR tabs.
+// Static markup contract: sidebar sections · clean registers (slide-over
+// drawers, no per-unit analytics strips) · HR tabs.
 // --------------------------------------------------------------------------
 const NAV_SECTIONS = [
   { group: 'search', label: 'Central Search',
@@ -232,10 +233,14 @@ const NAV_SECTIONS = [
     pages: [['stations', 'stations', 'Police Stations'], ['crimes', 'crimes', 'Register Crime']] },
   { group: 'admin', label: 'Administration', pages: [['admin', 'admin', 'User Management']] },
 ];
-// page id -> the analytics mount that must be the FIRST block inside it
-const DEPT_STRIPS = {
-  fingerprint: 'anFingerprint', cid: 'anCrime', checkpoints: 'anCheckpoint',
-  airport: 'anAirport', stations: 'anStations', officers: 'anOfficers', cars: 'anCars',
+// Operational pages are clean: no per-unit analytics strips anywhere (the
+// only analytics surface is the Global Executive Dashboard), and every
+// registration form lives in a right-hand slide-over drawer opened by the
+// page's primary action button — never rendered inline on the page.
+const DRAWER_FORMS = {
+  fpDrawer: 'fpForm', airDrawer: 'airForm', stDrawer: 'stForm',
+  offDrawer: 'offForm', prmDrawer: 'prmForm', dscDrawer: 'dscForm',
+  crmDrawer: 'crmForm', carDrawer: 'carForm',
 };
 const HR_TABS = [
   ['register', 'Officer Registration', ''],
@@ -278,13 +283,30 @@ function assertShellContract() {
       throw new Error(`section ${spec.group} holds ${JSON.stringify(items)} — expected ${JSON.stringify(spec.pages)}`);
   });
 
-  // (b) every register embeds its analytics strip as the FIRST block
-  Object.entries(DEPT_STRIPS).forEach(([page, mount]) => {
-    const sec = html.match(new RegExp(`<section id="${page}" class="page">([\\s\\S]*?)\\n</section>`));
-    if (!sec) throw new Error(`register section #${page} not found`);
-    const body = sec[1].replace(/<!--[\s\S]*?-->/g, '').trim();
-    if (!body.startsWith(`<div class="dept-analytics" id="${mount}">`))
-      throw new Error(`#${page} must open with the embedded analytics strip #${mount}, got: ${body.slice(0, 90)}`);
+  // (b) operational pages are clean: no per-unit analytics strips, and the
+  //     registration forms live in slide-over drawers (not inline).
+  if (html.includes('dept-analytics'))
+    throw new Error('per-unit dept-analytics strips came back on an operational page');
+  Object.entries(DRAWER_FORMS).forEach(([drawer, form]) => {
+    const m = html.match(new RegExp(`<aside class="sdrawer" id="${drawer}"[\\s\\S]*?</aside>`));
+    if (!m) throw new Error(`slide-over drawer #${drawer} not found`);
+    if (!m[0].includes(`id="${form}"`))
+      throw new Error(`drawer #${drawer} must contain the ${form} registration form`);
+    if (!html.includes(`openSlideDrawer('${drawer}')`))
+      throw new Error(`no primary action button opens #${drawer}`);
+  });
+  // the inline forms must be gone from every page section (sections do not
+  // nest, so a section's body is its own text up to the first </section>)
+  const PAGES = ['people','policesearch','fingerprint','cid','caseworkspace','checkpoints',
+                 'stations','officers','conduct','crimes','cars','admin','executive',
+                 'oversight','vehiclestatus'];
+  PAGES.forEach((page) => {
+    const sec = html.match(new RegExp(`<section id="${page}" class="page">[\\s\\S]*?</section>`));
+    if (!sec) throw new Error(`section #${page} not found`);
+    Object.values(DRAWER_FORMS).forEach((form) => {
+      if (sec[0].includes(`id="${form}"`))
+        throw new Error(`${form} must not render inline inside the #${page} section`);
+    });
   });
 
   // (c) Police Officers: the three HR tabs + their panes, green/red coded
@@ -300,8 +322,8 @@ function assertShellContract() {
   HR_TABS.forEach(([name]) => {
     if (!officers[1].includes(`id="hrPane-${name}"`)) throw new Error(`missing HR pane #hrPane-${name}`);
   });
-  if (!/id="hrPane-register"[\s\S]*id="offForm"/.test(officers[1]))
-    throw new Error('the officer registration form must live inside the registration tab');
+  if (!/id="hrPane-register"[\s\S]*openSlideDrawer\('offDrawer'\)/.test(officers[1]))
+    throw new Error('the registration tab must open the officer form slide-over drawer');
   if (!/id="hrPane-promotions"[\s\S]*id="prmAwaitTable"[\s\S]*id="hrPane-discipline"[\s\S]*id="dscOpenTable"/.test(officers[1]))
     throw new Error('the green/red badge queues must live inside their own tabs');
   // exact badge colours from the spec
@@ -614,14 +636,16 @@ async function main() {
       throw new Error('backendBuildOk() must recover once the correct build answers');
     console.log('ok 10: correct /api/health build restores normal (lock-aware) rendering');
 
-    // ---- 11) Sidebar structure + embedded analytics + HR tabs -------------
+    // ---- 11) Sidebar structure + clean registers + HR tabs ----------------
     // Static contract over the real index.html markup: the four fixed sidebar
-    // sections, one embedded `dept-analytics` strip at the TOP of every
-    // register, and the three Police Officers tabs (registration · green
+    // sections, NO per-unit `dept-analytics` strip on any operational page
+    // (analytics is exclusive to the Global Executive Dashboard), every
+    // registration form parked in a slide-over drawer behind a primary action
+    // button, and the three Police Officers tabs (registration · green
     // promotions · red discipline). Guards the reorganisation against
     // regressions without needing a browser.
     assertShellContract();
-    console.log('ok 11: sidebar sections, embedded departmental analytics and HR tabs contract');
+    console.log('ok 11: sidebar sections, drawer forms (no per-unit analytics) and HR tabs contract');
 
 
     console.log('ALL FRONTEND SESSION TESTS PASSED');
