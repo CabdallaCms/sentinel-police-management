@@ -15,7 +15,7 @@ A working browser-based prototype for a central police management platform. It i
 - Police Stations / Officers / Cars registration (regional modules)
 - Officer Conduct, Promotions & Disciplinary Management (Police Officer Registration Office / HR Directorate)
 - Dashboard and cross-unit activity feed
-- Departmental analytics embedded in each register (CID units, Officers, Cars, Stations)
+- Departmental analytics on the executive dashboard (tabbed: Fingerprint · Crime · Checkpoints · Airport · Personnel · Fleet · Stations)
 
 ## Central-person linking model
 
@@ -49,14 +49,46 @@ The same fill-only enrichment applies to the identity-merge path (`/api/persons/
 
 When a matched profile is incomplete, an **info tag** appears under the match banner: *"ℹ️ Matched Profile: P-XXXX. Some details (e.g. Mother's Name) are incomplete — fill them in to enrich this central record."*
 
-### No popups — pages and centered modals
+### UI conventions — full-width workspaces, slide-over drawers, centered modals
 
-The interface uses **no native browser dialogs**. All create/edit actions happen in **dedicated full-page workspaces** (e.g. the CID case workspace) or **centered modal dialogs** (new person, new case, checkpoint stop, identity review) that open dead-center over a blurred dark backdrop with a fixed header, an internally scrolling body and a sticky footer.
+The interface follows a single enterprise / government layout standard (dark-navy sidebar,
+slate neutrals, institutional-blue primary actions, one typographic scale):
 
-### In-modal errors and the global toast
+- **Every operational register is a distraction-free, full-width workspace.** A page is a
+  panel header (title, record-count pill, one primary **“+ …”** action), a toolbar (search
+  box + status/category filters) and the data table stretched across the whole content
+  width — Fingerprint, Airport, Crime cases / suspect list, Checkpoint log, Police Stations,
+  Police Officers, Crime files, Vehicle Registry, Vehicle Status, Central Person / Police
+  Search, User Management. The old side-by-side “form beside a cramped table” (`grid2`)
+  layout is gone from every register.
+- **Registration forms open in slide-over drawers.** Clicking the action button
+  (`+ New clearance application`, `+ Register passenger`, `+ Register station`,
+  `+ Register officer`, `+ Nominate officer`, `+ Record disciplinary action`,
+  `+ File incident`, `+ Register vehicle`, `+ Link participant`, `+ Upload evidence`) slides
+  a right-hand `<aside class="slideover">` over a dimmed backdrop. Each drawer has a fixed
+  header (eyebrow · title · close), an internally scrolling body and a sticky action bar
+  (**Clear · Cancel · primary submit**). The drawers are static markup — every form control
+  keeps its permanent id — and are driven by `openSlideover(id)` / `closeSlideover()`;
+  `Escape`, the backdrop and navigating to another page all close them.
+- **Centered modals stay for short, transactional dialogs** (new person, new crime case,
+  add suspect, checkpoint stop, identity-match review, HR conduct action, user accounts).
+  A modal can stack on top of a drawer (e.g. the person-match picker while a fingerprint
+  application is being typed); `Escape` closes the topmost layer first.
+- The interface still uses **no native browser dialogs**.
 
-- Form submission errors, validation warnings and backend API errors are **never** shown as floating toasts. Inside a modal they render as an **inline red alert banner** directly under the modal title (icon + action instructions); the modal body auto-scrolls to the top and any invalid fields get a red border. On the inline page forms they render in the form's own notice area (red variant) — and any other page-level failure shows a transient top-of-page alert.
-- The **bottom-right global toast** is reserved exclusively for **success/system notifications** (e.g. "Record saved successfully"). It is redesigned with a check icon, drop shadow, proper padding, crisp typography and an auto-dismiss animation after 4 seconds.
+### Inline errors, page notices and the global toast
+
+- Form submission errors, validation warnings and backend API errors are **never** shown as
+  floating toasts. Inside a modal they render as an **inline red alert banner** directly under
+  the modal title; inside a slide-over drawer they render in the drawer's own banner at the top
+  of the form (`.so-alert`) — the body auto-scrolls to the top and every invalid field gets a
+  red border. Any other page-level failure shows a transient top-of-page alert
+  (`showFormError()` picks the right surface automatically: modal → open drawer → page
+  notice → page alert).
+- A **successful save** closes the drawer, shows a green **page notice above the table** it
+  just changed (auto-hides) and fires the global toast (`finishSlideoverSave()`).
+- The **global toast** (bottom-left, clear of the drawer action bar) is reserved exclusively
+  for **success/system notifications** and auto-dismisses after 4 seconds.
 
 ### Fingerprint application, review and certificate
 
@@ -133,8 +165,11 @@ The three levels are entered as **Dropdown (Region) → Dropdown (District) → 
 ### Police Officers — HR Directorate register (System Admin + `hr_officer`)
 
 The **Police Officers** page carries three tabs, all of them available to **both** the System
-Admin and the **HR Directorate** role (`hr_officer`), with the embedded HR analytics strip
-(roster KPIs + rank/duty/region charts + the two badge lists) sitting above the tab bar:
+Admin and the **HR Directorate** role (`hr_officer`); the HR analytics (roster KPIs +
+rank/duty/region charts + the two badge lists) live on the dashboard's **Personnel** analytics
+tab, so the register itself stays a clean full-width workspace. The officer registration
+wizard, the promotion nomination form and the disciplinary action form each open in their own
+slide-over drawer from the tab's action button:
 
 | Tab | Colour | Contents |
 |-----|--------|----------|
@@ -159,24 +194,33 @@ The **Police Officers** register itself is a five-step wizard (multi-tab `offSte
 
 Server-side validation (`register_officer()`) enforces every mandatory field, the fixed dropdown option lists, the station foreign key, the upload extension/size policy (5 MB), and the coherent Slot 2 pairing — identical rules to the client, so a request that passes the form cannot be rejected by the API (and vice-versa). Uploads are persisted under `backend/uploads/` via `save_upload_validated()`.
 
-### Departmental analytics (embedded in every register)
+### Departmental analytics (Operations dashboard)
 
-The single monolithic **Analytics** page was retired. Each sidebar section now embeds its
-**own departmental analytics strip** directly above its register table/form: tab-specific KPI
-summary cards, lightweight canvas charts (no external chart library) and the badge lists that
-belong to that department. Every number is computed server-side; the frontend only renders the
-`kpis` / `charts` / `lists` arrays it receives, and falls back to the same shapes recomputed
-from the local cache when the API is unreachable (the strip is then labelled **Offline cache**).
+The single monolithic **Analytics** page was retired, and the per-register analytics strips
+were consolidated as well: analytics now live **only on the executive Operations dashboard**,
+in a tabbed **Departmental analytics** panel (Fingerprint · Crime · Checkpoints · Airport ·
+Personnel · Fleet · Stations — a role only sees the tabs of the registers it holds). Each tab
+paints tab-specific KPI summary cards, lightweight canvas charts (no external chart library)
+and the badge lists that belong to that department, plus an **Open register →** shortcut.
+The operational registers themselves are distraction-free workspaces (full-width table +
+search filters) and never render analytics. Every number is computed server-side; the
+frontend only renders the `kpis` / `charts` / `lists` arrays it receives, and falls back to
+the same shapes recomputed from the local cache when the API is unreachable (the strip is then
+labelled **Offline cache**). Saving a record in any register queues a debounced refresh of the
+tab that is currently visible.
 
-| Register (sidebar section) | Endpoint | Widgets |
+| Dashboard tab (register) | Endpoint | Widgets |
 | --- | --- | --- |
-| CID → **Fingerprint Unit** | `GET /api/cid/analytics` → `fingerprint` | Total biometrics logged, identity match rate, suspect hits + hit rate, pending/approved clearances, status & clearance-reason charts · *Central Person Search* shortcut |
-| CID → **Crime Department** | `GET /api/cid/analytics` → `crime` | Case volume by location, time-of-day buckets (06-12 / 12-18 / 18-24 / 00-06), crime categories (Theft, Assault, Homicide, Fraud, …), open vs. closed ratio + closure rate, active suspects · *Central Person Search* shortcut |
-| CID → **Checkpoint Unit** | `GET /api/cid/analytics` → `checkpoint` | Traveler screening volume, distinct travelers, flagged suspect hits **per checkpoint** (South / East / West), flag rate, screening-result ratio · *Central Person Search* shortcut |
-| CID → **Airport Unit** | `GET /api/cid/analytics` → `airport` | Inbound/outbound movement counts and shares, top routes, **active suspect movement alerts** list · *Central Person Search* shortcut |
-| **Police Officers** (HR Directorate) | `GET /api/officers/analytics` | Roster metrics (total active force, rank distribution, duty status, officers per region, average service years), **Promotion list (green badge)** — active-officer nominations awaiting commander verification, **Disciplinary list (red badge)** — misconduct, pending suspensions and rank demotions · *Central Officer Search* above the register |
-| **Police Cars** | `GET /api/vehicles/analytics` | Fleet operational status (In Service vs. Maintenance / Out of Service / Decommissioned + serviceable ratio), security alert breakdown (Stolen / Wanted vs. clean civilian registrations), fleet by region, flagged-vehicle list · *Central Vehicle Search* above the register |
-| **Police Stations** | `GET /api/stations/analytics` | Operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), cell capacity, **deployment matrix** — officers deployed per station across Sool, Sanaag and East Togdheer, unstaffed-station list · *Central Station Search* above the register |
+| **Fingerprint** (Fingerprint Unit) | `GET /api/cid/analytics` → `fingerprint` | Total biometrics logged, identity match rate, suspect hits + hit rate, pending/approved clearances, status & clearance-reason charts |
+| **Crime** (Crime Unit) | `GET /api/cid/analytics` → `crime` | Case volume by location, time-of-day buckets (06-12 / 12-18 / 18-24 / 00-06), crime categories (Theft, Assault, Homicide, Fraud, …), open vs. closed ratio + closure rate, active suspects |
+| **Checkpoints** (Checkpoint Unit) | `GET /api/cid/analytics` → `checkpoint` | Traveler screening volume, distinct travelers, flagged suspect hits **per checkpoint** (South / East / West), flag rate, screening-result ratio |
+| **Airport** (Airport Unit) | `GET /api/cid/analytics` → `airport` | Inbound/outbound movement counts and shares, top routes, **active suspect movement alerts** list |
+| **Personnel** (Police Officers / HR Directorate) | `GET /api/officers/analytics` | Roster metrics (total active force, rank distribution, duty status, officers per region, average service years), **Promotion list (green badge)** — active-officer nominations awaiting commander verification, **Disciplinary list (red badge)** — misconduct, pending suspensions and rank demotions |
+| **Fleet** (Vehicle Registry) | `GET /api/vehicles/analytics` | Fleet operational status (In Service vs. Maintenance / Out of Service / Decommissioned + serviceable ratio), security alert breakdown (Stolen / Wanted vs. clean civilian registrations), fleet by region, flagged-vehicle list |
+| **Stations** (Police Stations) | `GET /api/stations/analytics` | Operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), cell capacity, **deployment matrix** — officers deployed per station across Sool, Sanaag and East Togdheer, unstaffed-station list |
+
+The *Central Officer / Vehicle / Station Search* boxes sit in each register's toolbar; the
+Central Person Search is its own page under **Central Search**.
 
 `GET /api/analytics?module=cid|officers|vehicles|stations|all` is the unified alias for the same
 builders (`hr` / `cars` / `station` are accepted aliases; an unknown module returns **400**, never a
@@ -382,7 +426,7 @@ data.** It currently uses:
   connection defaults and no TLS/credential-management hardening yet
 - **Development authentication** — a single hard-coded demo login (`admin` / `ChangeMe123!`), in-memory session tokens, and unsalted SHA-256 password hashing
 - **No HTTPS** — traffic is plain HTTP
-- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and departmental analytics embedded in each register surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
+- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and the dashboard's departmental analytics tabs surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
 - **No production deployment** configuration
 - **No evidence file security** or chain-of-custody storage
 - **No backup service** or disaster-recovery process

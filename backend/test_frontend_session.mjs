@@ -212,7 +212,7 @@ function loadApp(sandbox) {
 }
 
 // --------------------------------------------------------------------------
-// Static markup contract: sidebar sections · embedded analytics · HR tabs.
+// Static markup contract: sidebar sections · dashboard analytics · HR tabs.
 // --------------------------------------------------------------------------
 const NAV_SECTIONS = [
   { group: 'search', label: 'Central Search',
@@ -232,10 +232,18 @@ const NAV_SECTIONS = [
     pages: [['stations', 'stations', 'Police Stations'], ['crimes', 'crimes', 'Register Crime']] },
   { group: 'admin', label: 'Administration', pages: [['admin', 'admin', 'User Management']] },
 ];
-// page id -> the analytics mount that must be the FIRST block inside it
+// register page id -> its departmental analytics mount. Every mount lives in
+// the "Departmental analytics" tab panel of the Operations dashboard; the
+// registers themselves are distraction-free workspaces (toolbar + table).
 const DEPT_STRIPS = {
   fingerprint: 'anFingerprint', cid: 'anCrime', checkpoints: 'anCheckpoint',
   airport: 'anAirport', stations: 'anStations', officers: 'anOfficers', cars: 'anCars',
+};
+// register page id -> the slide-over drawer that owns its registration form
+const REGISTER_DRAWERS = {
+  fingerprint: ['so-fingerprint', 'fpForm'], airport: ['so-airport', 'airForm'],
+  stations: ['so-station', 'stForm'], officers: ['so-officer', 'offForm'],
+  crimes: ['so-crime', 'crmForm'], cars: ['so-vehicle', 'carForm'],
 };
 const HR_TABS = [
   ['register', 'Officer Registration', ''],
@@ -278,13 +286,46 @@ function assertShellContract() {
       throw new Error(`section ${spec.group} holds ${JSON.stringify(items)} — expected ${JSON.stringify(spec.pages)}`);
   });
 
-  // (b) every register embeds its analytics strip as the FIRST block
-  Object.entries(DEPT_STRIPS).forEach(([page, mount]) => {
+  // (b) analytics live on the dashboard only: every departmental mount sits
+  //     inside the dashboard's analytics panel and NOT inside its register,
+  //     which is a distraction-free workspace (full-width table, no inline
+  //     form — the registration form lives in a slide-over drawer).
+  const dash = html.match(/<section id="dashboard" class="page">([\s\S]*?)\n<\/section>/);
+  if (!dash) throw new Error('dashboard section not found');
+  if (!/<div class="panel" id="dashAnalyticsPanel">/.test(dash[1]))
+    throw new Error('the dashboard must carry the Departmental analytics panel (#dashAnalyticsPanel)');
+  if (!/<div class="seg" id="dashAnTabs">/.test(dash[1]))
+    throw new Error('the dashboard analytics panel must carry its tab strip (#dashAnTabs)');
+  const sectionOf = (page) => {
     const sec = html.match(new RegExp(`<section id="${page}" class="page">([\\s\\S]*?)\\n</section>`));
     if (!sec) throw new Error(`register section #${page} not found`);
-    const body = sec[1].replace(/<!--[\s\S]*?-->/g, '').trim();
-    if (!body.startsWith(`<div class="dept-analytics" id="${mount}">`))
-      throw new Error(`#${page} must open with the embedded analytics strip #${mount}, got: ${body.slice(0, 90)}`);
+    return sec[1];
+  };
+  Object.entries(DEPT_STRIPS).forEach(([page, mount]) => {
+    if (!dash[1].includes(`<div class="dept-analytics" id="${mount}"`))
+      throw new Error(`analytics mount #${mount} must live inside the dashboard analytics panel`);
+    if (sectionOf(page).includes(`id="${mount}"`))
+      throw new Error(`#${page} must not embed the analytics strip #${mount} — registers are distraction-free`);
+  });
+  if (!html.includes('function dashAnalyticsInit(') || !html.includes('function dashAnalyticsTab('))
+    throw new Error('index.html is missing the dashboard analytics tab wiring');
+  // the registers open their forms from a drawer trigger; no inline `grid2`
+  // form + table split remains on any register page.
+  Object.entries(REGISTER_DRAWERS).forEach(([page, [drawer, form]]) => {
+    const body = sectionOf(page);
+    if (!new RegExp(`<aside class="slideover[^"]*" id="${drawer}"`).test(body))
+      throw new Error(`#${page} must carry its registration drawer <aside id="${drawer}">`);
+    const drawerBody = body.match(new RegExp(`<aside class="slideover[^"]*" id="${drawer}"[\\s\\S]*?</aside>`))[0];
+    if (!drawerBody.includes(`id="${form}"`))
+      throw new Error(`the ${page} registration form #${form} must live inside its drawer #${drawer}`);
+    if (!body.includes(`openSlideover('${drawer}')`))
+      throw new Error(`#${page} must expose an action button that opens #${drawer}`);
+    const outside = body.replace(new RegExp(`<aside class="slideover[^"]*" id="${drawer}"[\\s\\S]*?</aside>`), '');
+    if (/<div class="grid2">\s*<div class="panel/.test(outside))
+      throw new Error(`#${page} still renders the cramped side-by-side form + table (grid2) layout`);
+  });
+  ['function openSlideover(', 'function closeSlideover(', 'function finishSlideoverSave('].forEach((needle) => {
+    if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
   });
 
   // (c) Police Officers: the three HR tabs + their panes, green/red coded
@@ -614,14 +655,16 @@ async function main() {
       throw new Error('backendBuildOk() must recover once the correct build answers');
     console.log('ok 10: correct /api/health build restores normal (lock-aware) rendering');
 
-    // ---- 11) Sidebar structure + embedded analytics + HR tabs -------------
-    // Static contract over the real index.html markup: the four fixed sidebar
-    // sections, one embedded `dept-analytics` strip at the TOP of every
-    // register, and the three Police Officers tabs (registration · green
-    // promotions · red discipline). Guards the reorganisation against
-    // regressions without needing a browser.
+    // ---- 11) Sidebar structure + dashboard analytics + drawers + HR tabs ---
+    // Static contract over the real index.html markup: the fixed sidebar
+    // sections, every `dept-analytics` mount inside the dashboard's
+    // "Departmental analytics" panel (registers stay distraction-free,
+    // full-width workspaces whose forms live in slide-over drawers), and the
+    // three Police Officers tabs (registration · green promotions · red
+    // discipline). Guards the reorganisation against regressions without
+    // needing a browser.
     assertShellContract();
-    console.log('ok 11: sidebar sections, embedded departmental analytics and HR tabs contract');
+    console.log('ok 11: sidebar sections, dashboard departmental analytics, register drawers and HR tabs contract');
 
 
     console.log('ALL FRONTEND SESSION TESTS PASSED');
