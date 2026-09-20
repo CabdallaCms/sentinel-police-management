@@ -156,19 +156,21 @@ body.modal-open{overflow:hidden}
 .us-tile.purple .us-ico{background:#f0e9ff;color:#6c3fd4}
 /* ==== Centered entry modals (unit registration forms) ==== */
 /* Each operational page keeps its register full-width; the entry form lives
-   in a centered popup modal opened by the page's primary action button.
+   in a TRUE centered popup modal opened by the page's primary action button.
+   Centering is transform-proof: the box is pinned to the viewport with
+   inset:0 + margin:auto (dead-centre on both axes) and constrained with
+   max-width / max-height — never anchored to the right edge, never sliding.
    Dark blurred backdrop + smooth fade/scale-in (and scale-out) animation.
    The form stays in the document (hidden until opened), so every field id,
    event wire and validator keeps working. */
 .cmodal-ov{position:fixed;inset:0;background:#0d1b31b3;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:1150;opacity:0;pointer-events:none;transition:opacity .2s ease}
 .cmodal-ov.on{opacity:1;pointer-events:auto}
-.cmodal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.955);width:min(720px,calc(100vw - 40px));max-height:calc(100vh - 48px);background:#fff;z-index:1160;border-radius:16px;box-shadow:0 30px 70px #10204059;display:flex;flex-direction:column;overflow:hidden;opacity:0;visibility:hidden;transition:opacity .22s ease,transform .22s cubic-bezier(.32,.72,.35,1),visibility 0s linear .22s}
-.cmodal.open{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1);transition:opacity .22s ease,transform .22s cubic-bezier(.32,.72,.35,1)}
-.cmodal.closing{opacity:0;transform:translate(-50%,-50%) scale(.97)}
+.cmodal{position:fixed;inset:0;margin:auto;width:min(720px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100vh - 48px);background:#fff;z-index:1160;border-radius:16px;box-shadow:0 30px 70px #10204059;display:flex;flex-direction:column;overflow:hidden;opacity:0;visibility:hidden;transform:scale(.96);transition:opacity .22s ease,transform .22s cubic-bezier(.32,.72,.35,1),visibility 0s linear .22s}
+.cmodal.open{opacity:1;visibility:visible;transform:scale(1);transition:opacity .22s ease,transform .22s cubic-bezier(.32,.72,.35,1)}
+.cmodal.closing{opacity:0;transform:scale(.97)}
 .cm-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none;background:#fff}
 .cm-head h3{margin:0;font-size:17px}
 .cm-body{padding:20px 22px;overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
-@media(max-width:650px){.cmodal{width:calc(100vw - 24px);max-width:calc(100vw - 24px)}}
 /* file slots */
 .fileslot{border:1.5px dashed #c4d0e3;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;background:#fafcff}
 .fileslot input{font-size:12px}.fileslot .req{color:var(--red);font-weight:800}
