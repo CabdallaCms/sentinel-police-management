@@ -663,11 +663,22 @@ ROLE_REGISTRATION = ROLE_HR
 ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
 ROLE_CHECKPOINT_EAST = 'CheckpointEast'
 ROLE_CHECKPOINT_WEST = 'CheckpointWest'
-# Chief Commander of Police Office (HQ / Command). A GLOBAL, cross-department
-# oversight role: it reads every directorate (CID, Personnel, Transport),
-# owns the executive analytics surface and manages the station registry —
-# but it is NOT a SystemAdmin (no user management, no unit-record writes).
+# Chief Commander of Police Office (HQ / Command) — the COMMAND / "Commander"
+# role. A GLOBAL, cross-department MONITORING role: it READS every directorate
+# (CID, Personnel, Transport, Stations, Registers, executive analytics) and is
+# STRICTLY READ-ONLY. Every mutation route (POST / PATCH / DELETE) answers
+# HTTP 403 for this role — see `enforce_read_only()` — and the frontend hides
+# every write control so each register renders in view-only mode. It is NOT a
+# SystemAdmin (no user management).
 ROLE_CHIEF = 'chief_commander'
+# Accepted spellings of the command role ('Commander', 'High Command', …).
+# A deployment that stores any of them gets the identical global read-only
+# authority because `canonical_unit_role()` resolves them all to ROLE_CHIEF.
+COMMANDER_ROLE_ALIASES = ('chief_commander', 'chiefcommander', 'chief.commander',
+                          'ChiefCommander', 'commander', 'Commander',
+                          'commander_hq', 'hq_command', 'command_hq',
+                          'police_hq', 'high_command', 'highcommand',
+                          'HighCommand')
 
 # Fine-grained permission strings. Modules (below) gate which PAGES a role
 # can open; permissions gate cross-cutting CAPABILITIES that do not map onto
@@ -678,8 +689,17 @@ PERM_STATIONS_MANAGE = 'stations:manage'
 PERM_CID_VIEW = 'cid:view'
 PERM_PERSONNEL_VIEW = 'personnel:view'
 PERM_TRANSPORT_VIEW = 'transport:view'
+# Marker permission: the holder may READ everything but may never MUTATE
+# anything (the global read-only command role).
+PERM_READ_ONLY_GLOBAL = 'readonly:global'
 CHIEF_PERMISSIONS = frozenset({PERM_ANALYTICS_GLOBAL, PERM_STATIONS_MANAGE,
                                PERM_CID_VIEW, PERM_PERSONNEL_VIEW, PERM_TRANSPORT_VIEW})
+# The command role's authority: every read capability, zero write capability.
+# `stations:manage` is deliberately ABSENT — the Commander monitors the
+# station registry, it does not create or edit stations.
+COMMANDER_PERMISSIONS = frozenset({PERM_ANALYTICS_GLOBAL, PERM_CID_VIEW,
+                                   PERM_PERSONNEL_VIEW, PERM_TRANSPORT_VIEW,
+                                   PERM_READ_ONLY_GLOBAL})
 
 # Canonical normalized alias for any Checkpoint officer regardless of
 # location. The spec mandates that role-checking logic accept BOTH the
@@ -847,15 +867,23 @@ UNIT_ROLE_ALIASES = {
     'human_resources': ROLE_HR,
     'humanresources': ROLE_HR,
     'personnel_officer': ROLE_HR,
-    # Chief Commander of Police Office (HQ / Command) aliases.
+    # Chief Commander of Police Office (HQ / Command) aliases — every
+    # "Commander" / "High Command" spelling resolves to the same canonical
+    # global READ-ONLY role.
     ROLE_CHIEF: ROLE_CHIEF,
     'chief_commander': ROLE_CHIEF,
     'chiefcommander': ROLE_CHIEF,
     'chief.commander': ROLE_CHIEF,
     'ChiefCommander': ROLE_CHIEF,
+    'commander': ROLE_CHIEF,
+    'Commander': ROLE_CHIEF,
     'commander_hq': ROLE_CHIEF,
+    'command_hq': ROLE_CHIEF,
     'hq_command': ROLE_CHIEF,
     'police_hq': ROLE_CHIEF,
+    'high_command': ROLE_CHIEF,
+    'highcommand': ROLE_CHIEF,
+    'HighCommand': ROLE_CHIEF,
 }
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
@@ -1028,16 +1056,23 @@ ROLE_LABELS = {
 #
 # Regional registration modules (frontend-only registers for now):
 #   * 'policesearch' — Central Police Search (officers/stations/cars filter
-#     by Region → District → Village); granted to the same roles that can
-#     see the Central Person Search ('people').
+#     by Region → District → Village); granted ONLY to the roles whose remit
+#     is the central police registers (SystemAdmin, the HR Directorate — who
+#     own the officers / stations registers — and the Commander's HQ
+#     monitoring surface). The Airport Control and CID Criminal Unit roles
+#     deliberately do NOT hold it: those units see their own unit scope plus
+#     the personal Central Person Search ('people') and nothing else.
 #   * 'stations' / 'officers' / 'cars' — Police Registrations & Management;
 #     administrative operations, granted to SystemAdmin only.
 ROLE_MODULES = {
     ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
                  'policesearch', 'stations', 'officers', 'cars', 'crimes', 'conduct'},
     ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
-    ROLE_AIRPORT: {'dashboard', 'people', 'airport', 'policesearch'},
-    ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch', 'crimes'},
+    # Airport Control: the Airport module + Central Person Search only.
+    ROLE_AIRPORT: {'dashboard', 'people', 'airport'},
+    # CID Criminal Unit: the Crime Unit (+ crime intake) + Central Person
+    # Search only.
+    ROLE_CID: {'dashboard', 'people', 'cid', 'crimes'},
     # HR Directorate: the full Police Officers register (roster + promotions +
     # discipline, and their analytics bundle) plus the station register it
     # posts officers against and the central registries it searches. The
@@ -1050,11 +1085,13 @@ ROLE_MODULES = {
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
-    # Chief Commander (HQ / Command): the executive dashboard + station
-    # oversight pages, plus READ access to every departmental register
-    # (CID units, Personnel, Transport). Deliberately no 'admin' (user
-    # management) and no 'analytics' (the legacy SystemAdmin flag) — the
-    # global analytics surface is its own module, gated by
+    # Chief Commander / Commander (HQ / Command): the executive dashboard +
+    # station oversight pages, plus READ access to every departmental
+    # register (CID units, Personnel, Transport). This is the GLOBAL
+    # READ-ONLY role: the full monitoring surface with zero write capability
+    # (every POST / PATCH / DELETE answers 403). Deliberately no 'admin'
+    # (user management) and no 'analytics' (the legacy SystemAdmin flag) —
+    # the global analytics surface is its own module, gated by
     # `analytics:global`.
     ROLE_CHIEF: {'dashboard', 'executive', 'oversight', 'people', 'policesearch',
                  'fingerprint', 'airport', 'cid', 'checkpoints', 'crimes',
@@ -1093,12 +1130,13 @@ for _alias, _canonical in UNIT_ROLE_ALIASES.items():
     ROLE_LABELS.setdefault(_alias, ROLE_LABELS[_canonical])
 
 # Capability permissions per canonical role. SystemAdmin keeps every
-# permission (it already sees everything); the Chief Commander holds the
-# global HQ set; unit roles carry only the view permission of their own
+# permission (it already sees everything); the Commander / High Command holds
+# the global HQ READ set plus the `readonly:global` marker — never a write
+# capability; unit roles carry only the view permission of their own
 # department so `has_permission()` answers consistently for every role.
 ROLE_PERMISSIONS = {
     ROLE_ADMIN: set(CHIEF_PERMISSIONS),
-    ROLE_CHIEF: set(CHIEF_PERMISSIONS),
+    ROLE_CHIEF: set(COMMANDER_PERMISSIONS),
     ROLE_FINGERPRINT: {PERM_CID_VIEW},
     ROLE_AIRPORT: {PERM_CID_VIEW},
     ROLE_CID: {PERM_CID_VIEW},
@@ -1138,6 +1176,76 @@ def require_permission(user, permission):
 
 def is_chief_commander(user):
     return bool(user) and canonical_unit_role(user.get('role') or '') == ROLE_CHIEF
+
+
+# ---- global read-only command authority -------------------------------------
+# The Commander / High Command role is a MONITORING role: it can read every
+# dashboard, register, log and search result in the system, but it can never
+# alter data. The rule is enforced centrally (not per route) so a future
+# endpoint can never forget it:
+#
+#   * `enforce_read_only()` runs at the top of every mutating HTTP handler
+#     (do_POST / do_PATCH / do_DELETE) and raises `ReadOnlyRoleError`, which
+#     the handlers translate into an HTTP 403 Forbidden response.
+#   * Reads are untouched: GET / HEAD / OPTIONS always pass, and the sign-in /
+#     sign-out plumbing (/api/login, /api/logout) stays available so a
+#     Commander can actually open and close a session.
+READ_ONLY_ROLES = frozenset({ROLE_CHIEF})
+READ_ONLY_SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+READ_ONLY_EXEMPT_PATHS = frozenset({'/api/login', '/api/logout'})
+
+
+class ReadOnlyRoleError(PermissionError):
+    """A read-only role (Commander / High Command) attempted a write.
+
+    Carries its own HTTP status so the request handlers answer **403
+    Forbidden** instead of the 401 used for ordinary permission failures.
+    """
+
+    status_code = 403
+    http_status = 403
+
+
+def is_read_only_role(role):
+    """True when `role` is a global read-only (view-only) role."""
+    if not role:
+        return False
+    return canonical_unit_role(str(role).strip()) in READ_ONLY_ROLES
+
+
+def is_read_only_user(user):
+    """True when the session user holds the global read-only authority."""
+    if not user:
+        return False
+    # Alias spellings ('commander', 'high_command', ...) all resolve to
+    # ROLE_CHIEF, so both stored and normalized role strings work.
+    if is_read_only_role(user.get('role') or ''):
+        return True
+    return is_read_only_role(normalize_role(user.get('role') or ''))
+
+
+def enforce_read_only(user, method, path=None):
+    """Global write firewall for read-only roles.
+
+    Called by do_POST / do_PATCH / do_DELETE BEFORE any route-specific logic,
+    so the Commander role is refused by the whole API surface rather than by
+    whichever routes happen to remember the check. Raises `ReadOnlyRoleError`
+    (HTTP 403) if a read-only role attempts a mutation.
+    """
+    if not is_read_only_user(user):
+        return
+    verb = str(method or '').upper()
+    if verb in READ_ONLY_SAFE_METHODS:
+        return
+    p = str(path or '').split('?')[0].rstrip('/') or '/'
+    if p in READ_ONLY_EXEMPT_PATHS:
+        return
+    role = (user or {}).get('role') or ''
+    label = ROLE_LABELS.get(canonical_unit_role(role), 'Commander')
+    raise ReadOnlyRoleError(
+        f'{label} holds global read-only (view-only) access — '
+        f'{verb} {p or "/"} is not permitted. The Commander role can view '
+        'every dashboard, register and search but never alter data.')
 
 
 def canonical_location_scope(scope):
@@ -1243,6 +1351,10 @@ def user_view(user):
         'location': location,
         'modules': sorted(modules),
         'permissions': sorted(user_permissions(user)),
+        # Global read-only contract (Commander / High Command): the frontend
+        # renders every module in strict view-only mode when this is true.
+        'read_only': is_read_only_role(raw_role),
+        'can_write': not is_read_only_role(raw_role),
         'active': bool(user.get('active', 1)),
     }
 
@@ -1349,13 +1461,22 @@ def filter_visibility(user):
     # canonical SystemAdmin row.
     is_admin = canonical_unit_role(role) == ROLE_ADMIN
     chief = canonical_unit_role(role) == ROLE_CHIEF
+    read_only = is_read_only_role(role)
     return {
         'is_admin': is_admin,
         'is_chief_commander': chief,
         'can_manage_users': is_admin,
         'can_view_analytics': is_admin,
         'can_view_global_analytics': has_permission(user, PERM_ANALYTICS_GLOBAL),
+        # The Commander monitors the station registry read-only, so the
+        # station write form stays hidden for it (SystemAdmin only).
         'can_manage_stations': is_admin or has_permission(user, PERM_STATIONS_MANAGE),
+        # ---- global read-only contract (Commander / High Command) ----------
+        # `read_only` is the single switch the frontend keys every write
+        # control off; `can_write` is its inverse for readability.
+        'read_only': read_only,
+        'is_read_only': read_only,
+        'can_write': not read_only,
         'checkpoint_scope': checkpoint_scope(user),
     }
 
@@ -4032,17 +4153,22 @@ def build_dashboard(c, user):
         cards = []
 
     # ---- Quick-registration buttons ----------------------------------------
+    # The Commander / High Command holds a global READ-ONLY mandate, so it
+    # never receives a quick-registration action: the dashboard renders as a
+    # monitoring surface with a view-only notice instead of write buttons.
     quick = []
-    if is_admin or role == ROLE_AIRPORT or role_alias == ROLE_AIRPORT:
-        quick.append({'id':'add_airport','label':'+ Airport passenger','kind':'primary','page':'airport','module':'airport'})
-    if is_admin or role == ROLE_FINGERPRINT or role_alias == ROLE_FINGERPRINT:
-        quick.append({'id':'add_clearance','label':'+ Clearance application','kind':'secondary','page':'fingerprint','module':'fingerprint'})
-    if is_admin or role == ROLE_CID or role_alias == ROLE_CID:
-        quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
-    if is_admin or is_checkpoint:
-        quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
-    if is_admin or role == ROLE_REGISTRATION or role_alias == ROLE_REGISTRATION:
-        quick.append({'id':'add_conduct','label':'+ New conduct action','kind':'primary','page':'conduct','module':'conduct'})
+    read_only = is_read_only_user(user)
+    if not read_only:
+        if is_admin or role == ROLE_AIRPORT or role_alias == ROLE_AIRPORT:
+            quick.append({'id':'add_airport','label':'+ Airport passenger','kind':'primary','page':'airport','module':'airport'})
+        if is_admin or role == ROLE_FINGERPRINT or role_alias == ROLE_FINGERPRINT:
+            quick.append({'id':'add_clearance','label':'+ Clearance application','kind':'secondary','page':'fingerprint','module':'fingerprint'})
+        if is_admin or role == ROLE_CID or role_alias == ROLE_CID:
+            quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
+        if is_admin or is_checkpoint:
+            quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
+        if is_admin or role == ROLE_REGISTRATION or role_alias == ROLE_REGISTRATION:
+            quick.append({'id':'add_conduct','label':'+ New conduct action','kind':'primary','page':'conduct','module':'conduct'})
 
     # ---- Real-time activity stream (filtered to the user's scope) ---------
     events = _build_activity_feed(c, role, is_admin or is_chief, scope, is_checkpoint, now_ts, cp_scope_sql)
@@ -4093,9 +4219,12 @@ def build_dashboard(c, user):
         'peak_travel_hour': peak_travel_hour,
         'activity_feed': events,
         'is_chief_commander': is_chief,
+        # Global read-only contract: true for the Commander / High Command.
+        'read_only': read_only,
+        'can_write': not read_only,
         'subhead': (
             'System overview · all units' if is_admin else
-            'HQ / Command · global overview' if is_chief else
+            'HQ / Command · global overview · view-only' if is_chief else
             (f'{scope} Checkpoint operations · live' if is_checkpoint else
              f'{ROLE_LABELS.get(role, role)} · live operations feed')
         ),
@@ -4468,7 +4597,7 @@ class API(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(out)))
         self.send_header('Access-Control-Allow-Origin','*')
         self.send_header('Access-Control-Allow-Headers','Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Methods','GET, POST, PATCH, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods','GET, POST, PATCH, DELETE, OPTIONS')
         for name, value in (extra_headers or []):
             self.send_header(name, value)
         self.end_headers(); self.wfile.write(out)
@@ -4491,6 +4620,16 @@ class API(BaseHTTPRequestHandler):
         return True
 
     def do_OPTIONS(self): self.send_json(204, {})
+
+    def read_only_403(self, exc, path=None):
+        """Answer an HTTP 403 Forbidden for a read-only-role write attempt.
+
+        The Commander / High Command role is refused by the whole mutation
+        surface (POST / PATCH / DELETE), so this is the single response shape
+        every write route returns for it.
+        """
+        self.send_json(403, {'error': str(exc), 'code': 'read_only_role',
+                             'read_only': True, 'path': path or self.path})
 
     # ---- static pages & uploads --------------------------------------------
     def serve_static(self, path):
@@ -4753,6 +4892,8 @@ class API(BaseHTTPRequestHandler):
                         'total_travelers': 0,
                         'peak_travel_hour': '—',
                         'activity_feed': [],
+                        'read_only': is_read_only_user(user),
+                        'can_write': not is_read_only_user(user),
                         'subhead': 'Dashboard temporarily unavailable',
                         'degraded': True,
                         'degraded_reason': str(e),
@@ -4943,7 +5084,14 @@ class API(BaseHTTPRequestHandler):
                                extra_headers=[('Set-Cookie',
                                                'sentinel_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax')])
                 return
-            user = require_auth(self); c = get_db_connection()
+            user = require_auth(self)
+            # ---- GLOBAL READ-ONLY FIREWALL ----------------------------------
+            # The Commander / High Command role may read everything and write
+            # nothing: every mutation route answers 403 before any
+            # route-specific logic (login / logout above stay exempt so the
+            # role can still open and close a session).
+            enforce_read_only(user, 'POST', p.path)
+            c = get_db_connection()
             # RBAC: same module gate for the POST/PATCH handlers.
             # Writes follow the documented ownership of each register: the
             # station and vehicle registries are SystemAdmin-write (the HR
@@ -5461,6 +5609,10 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)
+        except ReadOnlyRoleError as e:
+            # Read-only role (Commander / High Command) attempted a write.
+            if c: c.close()
+            self.read_only_403(e)
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
@@ -5482,7 +5634,12 @@ class API(BaseHTTPRequestHandler):
         c = None
         try:
             p = urlparse(self.path)
-            user = require_auth(self); data = body_json(self); c = get_db_connection()
+            user = require_auth(self)
+            # ---- GLOBAL READ-ONLY FIREWALL ----------------------------------
+            # Identical gate to do_POST: the Commander / High Command can read
+            # every record but may never alter one (403 Forbidden).
+            enforce_read_only(user, 'PATCH', p.path)
+            data = body_json(self); c = get_db_connection()
             # RBAC: only admins can edit user records; CID module updates CID cases.
             if p.path.startswith('/api/admin/users'):
                 require_module(user, 'admin')
@@ -5598,6 +5755,10 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
+        except ReadOnlyRoleError as e:
+            # Read-only role (Commander / High Command) attempted a write.
+            if c: c.close()
+            self.read_only_403(e)
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
@@ -5610,6 +5771,31 @@ class API(BaseHTTPRequestHandler):
         except Exception as e:
             if c: c.close()
             self.send_json(500,{'error':str(e)})
+
+    # ---- DELETE -------------------------------------------------------------
+    def do_DELETE(self):
+        """Deletion surface — read-only roles are refused with 403.
+
+        The API exposes no DELETE routes today (every destructive operation is
+        an explicit POST action, e.g. /api/logout), but the global read-only
+        contract covers DELETE too: a Commander / High Command caller always
+        receives **403 Forbidden**, while every other role receives an explicit
+        405 telling it the method is not exposed. Nothing can therefore
+        silently fall through to the stdlib's 501.
+        """
+        try:
+            p = urlparse(self.path)
+            user = require_auth(self)
+            enforce_read_only(user, 'DELETE', p.path)
+            self.send_json(405, {'error': 'Method DELETE is not supported by this API',
+                                 'method': 'DELETE', 'path': p.path},
+                           extra_headers=[('Allow', 'GET, POST, PATCH, OPTIONS')])
+        except ReadOnlyRoleError as e:
+            self.read_only_403(e)
+        except PermissionError as e:
+            self.send_json(401, {'error': str(e)})
+        except Exception as e:
+            self.send_json(500, {'error': str(e)})
 
 def _pids_listening_on(port):
     """Best-effort, cross-platform list of PIDs listening on TCP `port`."""

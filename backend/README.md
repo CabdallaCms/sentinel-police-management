@@ -250,6 +250,8 @@ so the server owns all the arithmetic.
 - `GET /api/stations/analytics` (`stations` / `crimes`) — operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), status counts, cell capacity totals/averages, and the **deployment matrix** (stations, officers, *active* officers and vehicles per region and per station across Sool · Sanaag · East Togdheer) with the unstaffed-station list.
 - `GET /api/analytics?module=cid|officers|vehicles|stations|all` — unified alias for the same builders (`hr` / `cars` / `station` are accepted aliases; an unknown module answers **400**). `module=all` returns every bundle the caller may see and omits the rest.
 - `GET /api/officers/promotions` / `GET /api/officers/discipline` (`officers` module) — the raw HR lists behind the badges.
+- **Global read-only firewall** — `enforce_read_only()` runs in `do_POST` / `do_PATCH` / `do_DELETE` directly after authentication, so the read-only command role (`chief_commander`, alias `Commander` / `high_command` / `HighCommand` / `command_hq` / `hq_command` / `police_hq`) is refused with **403 Forbidden** on every mutation route (`code: read_only_role`). Reads, `GET`/`HEAD`/`OPTIONS` and `POST /api/login` + `POST /api/logout` are unaffected; `user_view()` / `filter_visibility()` expose `read_only` / `can_write` so clients render the same rule.
+- **Unit module denylist** — `policesearch` is part of the System Admin, Fingerprint Unit, HR Directorate and Chief Commander module sets, and is deliberately absent from `ROLE_MODULES['AirportControl']` and `ROLE_MODULES['CIDUnit']` (those units hold only their own module plus `people`).
 - `POST /api/officers/promotions` (`officers` module) — nominate an officer for promotion (`PRM-YYYY-XXXX`); validates the officer exists and the proposed rank is a different, valid `OFFICER_RANKS` value; defaults to `Awaiting Verification`.
 - `PATCH /api/officers/promotions/{nomination_id}` (`officers` module) — commander verification (`Verified` / `Rejected` / `Awaiting Verification`); stamps `verified_by` + `verified_at`.
 - `POST /api/officers/discipline` (`officers` module) — record a disciplinary action (`DSC-YYYY-XXXX`); a `Demotion` must name a strictly junior `to_rank`.
@@ -263,10 +265,17 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 ```bash
 python3 backend/test_server.py        # API suite (Python stdlib only)
 python3 backend/test_review_gate.py   # 12h review gate + admin bypass (API)
+python3 backend/test_read_only_rbac.py # unit-module denylist + global read-only Commander (PostgreSQL)
 node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18)
 node backend/test_approval_flow.mjs   # approve/print button journey (Node >= 18)
 node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node >= 18)
 ```
+
+The backend serves **PostgreSQL only** (`SENTINEL_DB_NAME` / `_USER` / `_PASSWORD` / `_HOST` /
+`_PORT`). `test_read_only_rbac.py` and `test_frontend_session.mjs` therefore boot the API against a
+PostgreSQL database: they use an already-configured server when `SENTINEL_DB_HOST` /
+`SENTINEL_DB_NAME` are set, otherwise a throwaway cluster via the `pgserver` pip package
+(`pip install pgserver`), and print `SKIP` when neither is available.
 
 The backend suite starts the server against a temporary database and
 verifies the **departmental analytics arithmetic** (a second, isolated

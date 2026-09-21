@@ -100,7 +100,28 @@ An approval cannot be issued unless **all** of these agree:
    `🔒 Stale backend — locked`, and `approveFP()` refuses to issue the
    request.
 
-## 5. Still stuck?
+## 5. Expected behaviour: what the read-only command role cannot do
+
+`chief_commander` (the *Commander / High Command* account, e.g. the seeded `chief` user) is a
+**global read-only monitoring role**. Seeing no *Register Officer*, *Add*, *Edit*, *Approve
+Clearance* or *Open Case* button anywhere in the app is correct — the whole UI is in view-only mode
+and a **View-only** badge sits in the top bar. Likewise, a `403 Forbidden` with
+
+```json
+{"error": "…", "code": "read_only_role", "read_only": true, "path": "/api/persons"}
+```
+
+from `POST`, `PATCH` or `DELETE` is the firewall working as designed, not an authentication bug: the
+command token is valid, the write is simply not permitted. Sign in as `admin` (or the unit officer
+who owns the record) to make the change. Read-only mode never blocks `GET` requests, so dashboards,
+registers, logs and searches keep working.
+
+Similarly, the **Airport Control** and **CID Criminal Unit** accounts intentionally do not show
+*Central Police Search* in the sidebar (they keep *Central Person Search* and their own unit scope).
+If a stale browser session still shows the entry, sign out and back in: the module list is
+re-sanitised on every session load.
+
+## 6. Still stuck?
 
 - Hard-reload the browser (`Ctrl+Shift+R`) — HTML may be cached.
 - Delete `backend/sentinel.db*` and restart: a database written by an older

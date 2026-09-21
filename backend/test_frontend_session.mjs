@@ -18,7 +18,7 @@
  *
  * Usage:  node backend/test_frontend_session.mjs
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,60 @@ import vm from 'node:vm';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.dirname(ROOT);
+
+// ---------------------------------------------------------------------------
+// PostgreSQL test database.
+//
+// The backend serves PostgreSQL only. The suite therefore runs against either
+//   (a) an explicitly configured server  — SENTINEL_DB_HOST / _NAME / _USER /
+//       _PASSWORD / _PORT in the environment, or
+//   (b) a throwaway cluster booted with the `pgserver` pip package
+//       (`pip install pgserver`) inside a per-run temporary directory.
+// When neither is available the suite prints SKIP and exits 0 rather than
+// failing on an unrelated infrastructure prerequisite.
+// ---------------------------------------------------------------------------
+const PG_SERVE = `
+import pathlib, sys, time, pgserver
+d = pathlib.Path(sys.argv[1]); d.mkdir(parents=True, exist_ok=True)
+srv = pgserver.get_server(str(d))
+print(d, flush=True)          # unix-socket directory
+sys.stdin.read()              # stay alive until the parent closes stdin
+`;
+
+function provisionDatabase(tmp) {
+  if (process.env.SENTINEL_DB_HOST || process.env.SENTINEL_DB_NAME) {
+    return {
+      env: {
+        SENTINEL_DB_HOST: process.env.SENTINEL_DB_HOST || 'localhost',
+        SENTINEL_DB_NAME: process.env.SENTINEL_DB_NAME || 'sentinel_police',
+        SENTINEL_DB_USER: process.env.SENTINEL_DB_USER || 'postgres',
+        SENTINEL_DB_PASSWORD: process.env.SENTINEL_DB_PASSWORD || '',
+        SENTINEL_DB_PORT: process.env.SENTINEL_DB_PORT || '5432',
+      },
+      stop: () => {},
+      label: 'configured PostgreSQL (' + (process.env.SENTINEL_DB_NAME || 'sentinel_police') + ')',
+    };
+  }
+  const probe = spawnSync('python3', ['-c', 'import pgserver'], { stdio: 'ignore' });
+  if (probe.status !== 0) return null;
+  const child = spawn('python3', ['-c', PG_SERVE, path.join(tmp, 'pgdata')],
+                      { stdio: ['pipe', 'pipe', 'inherit'] });
+  let socketDir = '';
+  const deadline = Date.now() + 90000;
+  const buf = [];
+  return new Promise((resolve) => {
+    const onData = (chunk) => {
+      buf.push(String(chunk));
+      const m = buf.join('').match(/^(\/\S+)$/m);
+      if (m) { socketDir = m[1]; resolve({ env: { SENTINEL_DB_HOST: socketDir, SENTINEL_DB_NAME: 'postgres', SENTINEL_DB_USER: 'postgres', SENTINEL_DB_PASSWORD: '' }, stop: () => child.kill('SIGKILL'), label: 'throwaway pgserver cluster at ' + socketDir }); }
+    };
+    child.stdout.on('data', onData);
+    child.on('exit', () => { if (!socketDir) resolve(null); });
+    const tick = setInterval(() => {
+      if (Date.now() > deadline || socketDir) { clearInterval(tick); if (!socketDir) resolve(null); }
+    }, 250);
+  });
+}
 
 function freePort() {
   return new Promise((resolve) => {
@@ -377,12 +431,67 @@ function assertShellContract() {
   ['function hrTab(', 'async function loadHrRecords(', 'function renderHrPanels(',
    'async function savePromotionNomination(', 'async function verifyPromotionNomination(',
    'async function saveDisciplineAction(', 'async function setDisciplineStatus(',
-   "hrTabs.style.display = mods.includes('officers')"].forEach((needle) => {
+   "hrTabs.style.display = (mods.indexOf('officers')!==-1) ? '' : 'none';"].forEach((needle) => {
     if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
   });
   // the Administration section is gated on the admin flag, not on a module list
-  if (!/(m === 'admin' \? isAdmin : mods\.includes\(m\))/.test(html))
+  if (!/\(m === 'admin' \? isAdmin : mods\.indexOf\(m\)!==-1\)/.test(html))
     throw new Error('applyNavForRole() must gate the admin entry on the admin flag');
+
+  // (e) UNIT MODULE DENYLIST — Airport Control and the CID Criminal Unit must
+  //     never see Central Police Search ('policesearch'), whatever a stale or
+  //     cached session payload claims. The server strips the module in
+  //     ROLE_MODULES; the client mirrors the rule and every nav / fetch / RBAC
+  //     check reads the sanitised list through effectiveModules()/hasModule().
+  ['const UNIT_MODULE_DENY={',
+   "airport:['policesearch']",
+   "cid:['policesearch']",
+   'function unitFamily(role){',
+   'function sanitizeModules(role,mods){',
+   'function effectiveModules(){',
+   'function hasModule(m){'].forEach((needle) => {
+    if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
+  });
+  if (!/const mods = effectiveModules\(\);\s*\n\s*const isAdmin/.test(html))
+    throw new Error('applyNavForRole() must build the menu from effectiveModules()');
+  if (!/const mods = effectiveModules\(\);          \/\/ unit denylist applied/.test(html))
+    throw new Error('go() must gate page access on effectiveModules()');
+  if (/sessionUser\.modules\.includes\(/.test(html))
+    throw new Error('every module check must go through hasModule()/effectiveModules()');
+
+  // (f) GLOBAL READ-ONLY ROLE (Commander / High Command) — the view-only UI.
+  //     `body.readonly-mode` removes every marked write control, the badge and
+  //     banner explain it, and the api() firewall refuses non-GET calls.
+  ['function isReadOnlyRole(', 'function isReadOnlyUser(){', 'function canWrite(){',
+   'function guardReadOnly(action){', 'function applyReadOnlyMode(){',
+   'const READ_ONLY_VIEW_MODALS=new Set([\'pvModal\']);'].forEach((needle) => {
+    if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
+  });
+  if (!/id="roBadge"/.test(html) || !/id="roBanner"/.test(html))
+    throw new Error('the read-only badge (#roBadge) and banner (#roBanner) are missing');
+  if (!/body\.readonly-mode \[data-write\]/.test(html))
+    throw new Error('CSS must hide [data-write] controls in read-only mode');
+  if (!/body\.readonly-mode \.write-action/.test(html))
+    throw new Error('CSS must hide .write-action controls in read-only mode');
+  // every static write control carries the marker (Register officer, Approve,
+  // Open case, Edit, Add, …)
+  const marked = (html.match(/data-write="1"/g) || []).length;
+  if (marked < 25)
+    throw new Error(`only ${marked} static write controls carry data-write — expected the full set`);
+  const guardCalls = (html.match(/guardReadOnly\(/g) || []).length;
+  if (guardCalls < 20)
+    throw new Error(`only ${guardCalls} read-only guards in the write entry points`);
+  ['async function approveFP(', 'async function conductReviewDecision(',
+   'async function verifyPromotionNomination(', 'async function setDisciplineStatus(',
+   'async function toggleUserActive(', 'function openConductReview('].forEach((fn) => {
+    const i = html.indexOf(fn);
+    if (i < 0) throw new Error('missing write entry point ' + fn);
+    const head = html.slice(i, i + 320);
+    if (!/guardReadOnly\(/.test(head))
+      throw new Error(`${fn} must guard against a read-only session`);
+  });
+  if (!/readOnly\s*\?\s*\[\]\s*:\s*\(d\.quick_actions \|\| \[\]\)/.test(html))
+    throw new Error('paintDashboard() must drop quick-registration actions for a read-only role');
 }
 const probe = (sandbox, expr) => vm.runInContext(expr, sandbox);
 
@@ -391,10 +500,18 @@ async function main() {
   const port = await freePort();
   const tmp = `/tmp/sentinel-fe-test-${Date.now()}`;
   mkdirSync(tmp, { recursive: true });
+  const pg = await provisionDatabase(tmp);
+  if (!pg) {
+    console.log('SKIP: no PostgreSQL test database available.');
+    console.log('      Set SENTINEL_DB_HOST / SENTINEL_DB_NAME (and _USER / _PASSWORD / _PORT)');
+    console.log('      or install the bundled engine with:  pip install pgserver');
+    return 0;
+  }
+  console.log('using ' + pg.label);
   const proc = spawn('python3', [path.join(ROOT, 'server.py')], {
     env: {
       ...process.env,
-      SENTINEL_DB: `${tmp}/db.sqlite`,
+      ...pg.env,
       SENTINEL_UPLOADS: `${tmp}/uploads`,
       PORT: String(port),
     },
@@ -692,11 +809,119 @@ async function main() {
     assertShellContract();
     console.log('ok 11: sidebar sections, centered entry modals, unit overview strips, table searches and HR tabs contract');
 
+    // ---- 12) UNIT MODULE DENYLIST — no Central Police Search for Airport/CID
+    // The server already strips the module in ROLE_MODULES; the client mirrors
+    // the rule so a stale/cached session payload cannot resurrect the entry.
+    const sb12 = s1.sandbox;
+    const modsFor = (role, mods) =>
+      JSON.stringify(probe(sb12, `sanitizeModules(${JSON.stringify(role)},${JSON.stringify(mods)})`));
+    if (modsFor('AirportControl', ['dashboard', 'people', 'airport', 'policesearch'])
+        !== JSON.stringify(['dashboard', 'people', 'airport']))
+      throw new Error('AirportControl must never hold policesearch');
+    if (modsFor('CIDUnit', ['dashboard', 'people', 'cid', 'crimes', 'policesearch'])
+        !== JSON.stringify(['dashboard', 'people', 'cid', 'crimes']))
+      throw new Error('CIDUnit must never hold policesearch');
+    // Every accepted spelling of both units is covered, and other roles keep it.
+    ['airport_officer', 'ap.officer', 'Airport Control'].forEach((spelling) => {
+      if (modsFor(spelling, ['airport', 'policesearch']).includes('policesearch'))
+        throw new Error(`Airport spelling ${spelling} must be denied policesearch`);
+    });
+    ['CIDUnit', 'cid.officer', 'criminal_investigation'].forEach((spelling) => {
+      if (modsFor(spelling, ['cid', 'policesearch', 'crimes']).includes('policesearch'))
+        throw new Error(`CID spelling ${spelling} must be denied policesearch`);
+    });
+    if (probe(sb12, `sanitizeModules('FingerprintUnit',['fingerprint','policesearch']).includes('policesearch')`) !== true)
+      throw new Error('the Fingerprint Unit keeps Central Police Search (only Airport + CID are stripped)');
+    if (probe(sb12, `sanitizeModules('hr_officer',['people','policesearch','officers']).includes('policesearch')`) !== true)
+      throw new Error('the HR Directorate keeps Central Police Search');
+    // hasModule()/go() read the sanitised list, so the page is unreachable too.
+    probe(sb12, "sessionUser={role:'AirportControl',modules:['dashboard','people','airport','policesearch']};"
+                + "currentUser=sessionUser;");
+    if (probe(sb12, "hasModule('policesearch')") !== false)
+      throw new Error('hasModule(policesearch) must be false for the Airport Unit');
+    if (probe(sb12, "effectiveModules().join(',')") !== 'dashboard,people,airport')
+      throw new Error('effectiveModules() must drop policesearch for the Airport Unit');
+    probe(sb12, "sessionUser={role:'CIDUnit',modules:['dashboard','people','cid','crimes','policesearch']};currentUser=sessionUser;");
+    if (probe(sb12, "hasModule('policesearch')") !== false)
+      throw new Error('hasModule(policesearch) must be false for the CID Criminal Unit');
+    console.log('ok 12: Central Police Search stripped from Airport Control and CID (client-side mirror)');
+
+    // ---- 13) GLOBAL READ-ONLY COMMANDER ROLE ------------------------------
+    // The role reads everything and writes nothing: the UI drops every write
+    // control, refuses the write entry points and blocks non-GET calls before
+    // they leave the browser (the server answers 403 for the same attempts).
+    const sb13 = s1.sandbox;
+    const readOnlyFor = (role, extra = '') =>
+      probe(sb13, `sessionUser={role:${JSON.stringify(role)}${extra}}; currentUser=sessionUser; isReadOnlyUser()`);
+    ['chief_commander', 'ChiefCommander', 'commander', 'Commander', 'high_command',
+     'HighCommand', 'command_hq', 'commander_hq', 'hq_command', 'police_hq'].forEach((role) => {
+      if (readOnlyFor(role) !== true) throw new Error(`${role} must be treated as read-only`);
+    });
+    ['SystemAdmin', 'AirportControl', 'CIDUnit', 'FingerprintUnit', 'hr_officer', 'CheckpointSouth'].forEach((role) => {
+      if (readOnlyFor(role) !== false) throw new Error(`${role} must stay write-capable`);
+    });
+    // The server-declared flags win even for an unknown role spelling.
+    if (readOnlyFor('future_command_role', ", read_only:true, can_write:false") !== true)
+      throw new Error('the server-declared read_only flag must be honoured');
+    probe(sb13, "sessionUser={role:'chief_commander',read_only:true,can_write:false,"
+                + "modules:['dashboard','executive','oversight','people','policesearch','fingerprint',"
+                + "'airport','cid','checkpoints','crimes','stations','officers','conduct','cars']};"
+                + "currentUser=sessionUser; applyNavForRole();");
+    if (probe(sb13, "canWrite()") !== false) throw new Error('canWrite() must be false for the Commander');
+    if (probe(sb13, "document.body.classList.contains('readonly-mode')") !== true)
+      throw new Error('body.readonly-mode must be applied for the Commander');
+    if (probe(sb13, "document.getElementById('roBadge').style.display") !== '')
+      throw new Error('the View-only badge must be visible for the Commander');
+    if (probe(sb13, "document.getElementById('roBanner').style.display") !== 'flex')
+      throw new Error('the read-only banner must be visible for the Commander');
+    // Write entry points are refused …
+    if (probe(sb13, "guardReadOnly('x')") !== true)
+      throw new Error('guardReadOnly() must block write entry points');
+    [["openCaseDrawer()", 'drawer'],
+     ["openEntryModal('fpDrawer')", 'fpDrawer'],
+     ["openEntryModal('offDrawer')", 'offDrawer'],
+     ["openEntryModal('carDrawer')", 'carDrawer']].forEach(([call, id]) => {
+      const opened = probe(sb13, `(function(){ try{ ${call}; }catch(e){} return document.getElementById(${JSON.stringify(id)}).classList.contains('open'); })()`);
+      if (opened !== false) throw new Error(`${call} must not open a write form for the Commander`);
+    });
+    // … while the read-only surfaces still work.
+    if (probe(sb13, "document.getElementById('roBadge').style.display") !== '')
+      throw new Error('the View-only badge must stay visible for the Commander');
+    const viewRow = probe(sb13, "renderRegisterRow({id:'FP-RO',status:'Pending Review',created_at:'2020-01-01 00:00:00'}, null)");
+    if (!/View only/.test(viewRow) || /approveFP\(/.test(viewRow))
+      throw new Error('the fingerprint register must render view-only for the Commander: ' + viewRow);
+    const approvedRow = probe(sb13, "renderRegisterRow({id:'FP-RO2',status:'Approved',created_at:'2020-01-01 00:00:00'}, null)");
+    if (!/certificate\.html/.test(approvedRow))
+      throw new Error('an approved clearance must keep its Certificate link (read-only): ' + approvedRow);
+    // The API firewall refuses every mutation before it leaves the browser.
+    const refused = await probe(sb13,
+      "(async()=>{try{await api('/api/persons',{method:'POST',body:'{}'});return 'no-throw';}"
+      + "catch(e){return 'status='+e.status+' readOnly='+e.readOnly;}})()");
+    if (refused !== 'status=403 readOnly=true')
+      throw new Error('api() must refuse a Commander POST locally, got ' + refused);
+    const patchRefused = await probe(sb13,
+      "(async()=>{try{await api('/api/crime-cases/CC-1',{method:'PATCH',body:'{}'});return 'no-throw';}"
+      + "catch(e){return 'status='+e.status;}})()");
+    if (patchRefused !== 'status=403') throw new Error('api() must refuse a Commander PATCH locally');
+    const deleteRefused = await probe(sb13,
+      "(async()=>{try{await api('/api/persons/P-1',{method:'DELETE'});return 'no-throw';}"
+      + "catch(e){return 'status='+e.status;}})()");
+    if (deleteRefused !== 'status=403') throw new Error('api() must refuse a Commander DELETE locally');
+    // Reads are untouched (session plumbing included).
+    const stillReads = await probe(sb13, "api('/api/me').then(r=>typeof r.role).catch(e=>'err'+e.status)");
+    if (stillReads !== 'string')
+      throw new Error('a Commander must still be able to READ /api/me, got ' + stillReads);
+    // Signing out leaves view-only mode behind for the next session.
+    probe(sb13, 'resetSessionState()');
+    if (probe(sb13, "document.body.classList.contains('readonly-mode')") !== false)
+      throw new Error('read-only mode must be cleared with the session');
+    console.log('ok 13: Commander role renders view-only (no write controls, entry points and api() refuse writes)');
 
     console.log('ALL FRONTEND SESSION TESTS PASSED');
     return 0;
   } finally {
     proc.kill('SIGTERM');
+    pg.stop();
   }
 }
 
