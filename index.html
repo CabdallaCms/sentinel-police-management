@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<!-- UI build stamp. Lets an operator prove which frontend a browser is
+     running (the RBAC read-only / unit-denylist hardening ships in this
+     build) — see the sidebar footer and window.SENTINEL_UI_BUILD. -->
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-3" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -474,7 +478,7 @@ body.readonly-mode .ro-banner{display:flex}
      the Chief Commander's Global Executive Dashboard (HQ / Command). Operational
      registers stay clean — a compact unit overview strip on top, full-width
      tables with a search box, and centered entry modals for new records. -->
-</nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span></div></aside>
+</nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span><br><span id="uiBuild" class="muted" style="opacity:.7;font-size:10.5px"></span></div></aside>
 <main class="main">
 <header class="top" id="topbar"><div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
 <span class="ro-badge" id="roBadge" title="This role holds global read-only (view-only) access — every register is monitoring-only.">🔒 View-only · Commander</span>
@@ -1473,6 +1477,9 @@ function go(page){
   }
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById(page).classList.add('active');
+  // Every page switch re-asserts the read-only contract for the page being
+  // opened (a Commander sees no action button on ANY department page).
+  hardenReadOnlyDom(document.getElementById(page)||document);
   // The case workspace is a sub-page of the Crime Department — highlight
   // its nav entry (and keep its CID group expanded) while inside a case.
   const navPage = page==='caseworkspace' ? 'cid' : page;
@@ -2540,8 +2547,16 @@ function isCheckpointRole(role){
 // its accepted spellings ('ChiefCommander', 'chief.commander', ...).
 function isChiefRole(role){
   const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
+  if(!l) return false;
+  // Every spelling the server resolves to `chief_commander` (see
+  // UNIT_ROLE_ALIASES / COMMANDER_ROLE_ALIASES in backend/server.py) plus the
+  // human label 'Chief Commander of Police Office (HQ / Command)'. The
+  // authoritative switch is still the server-declared `read_only` flag —
+  // this list only covers the pre-/api/me (offline / cached) case.
   return l==='chiefcommander'||l==='commanderhq'||l==='hqcommand'||l==='policehq'
-    ||l==='commander'||l==='highcommand'||l==='commandhq';
+    ||l==='commander'||l==='highcommand'||l==='commandhq'
+    ||l.indexOf('chiefcommander')===0||l.indexOf('highcommand')===0
+    ||l.indexOf('commanderhq')===0||l.indexOf('hqcommander')===0;
 }
 // Normalized admin check ('SystemAdmin', 'system_admin', 'Admin', ...).
 function isAdminRole(role){
@@ -2586,6 +2601,56 @@ function guardReadOnly(action){
   if(canWrite()) return false;
   toast('Read-only access', (action||'This action')+' is disabled for the Commander (HQ / Command) role.');
   return true;
+}
+
+// ---- DOM-level hardener (belt & braces) -------------------------------------
+// `body.readonly-mode` hides everything marked `data-write` / `.write-action`.
+// This sweep is the safety net for the write controls that are painted
+// dynamically (table rows, modal footers, drawers) or that carry no marker at
+// all: for a read-only (Commander / High Command) session it hides ANY element
+// whose inline handler is one of the mutation entry points, and it restores
+// them when a write-capable officer signs in on the same tab. A MutationObserver
+// re-runs it after every repaint, so a newly rendered button can never slip
+// through — on any department page.
+const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal")|openPersonDrawer|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
+function isWriteControl(el){
+  if(!el || el.nodeType!==1) return false;
+  if(el.closest('[data-view="1"], #roBanner, #loginScreen')) return false;   // explicit read surfaces
+  if(el.hasAttribute('data-write') || el.classList.contains('write-action')
+     || el.classList.contains('admin-write')) return true;
+  const oc=(el.getAttribute('onclick')||'').replace(/\s+/g,'');
+  return oc?WRITE_CONTROL_RE.test(oc):false;
+}
+function hardenReadOnlyDom(root){
+  const scope=root||document;
+  if(!scope.querySelectorAll) return 0;
+  const ro=isReadOnlyUser();
+  let changed=0;
+  scope.querySelectorAll('[data-write], .write-action, .admin-write, button, a, [onclick]').forEach(el=>{
+    if(ro && isWriteControl(el)){
+      if(el.style.display!=='none'){el.style.display='none';changed++}
+      el.setAttribute('data-ro-hidden','1');
+      el.setAttribute('aria-hidden','true');
+      el.setAttribute('tabindex','-1');
+    } else if(!ro && el.hasAttribute('data-ro-hidden')){
+      // Role switch / sign-out in the same tab: put the control back exactly
+      // as it was (only the attributes this sweep owns are cleared).
+      el.removeAttribute('data-ro-hidden'); el.removeAttribute('aria-hidden'); el.removeAttribute('tabindex');
+      el.style.display=''; changed++;
+    }
+  });
+  return changed;
+}
+let _roSweepQueued=false, _roObserver=null;
+function queueReadOnlySweep(){
+  if(_roSweepQueued) return;
+  _roSweepQueued=true;
+  setTimeout(()=>{ _roSweepQueued=false; try{hardenReadOnlyDom(document)}catch(_){} },0);
+}
+function watchReadOnlyDom(){
+  if(_roObserver || typeof MutationObserver==='undefined' || !document.body) return;
+  _roObserver=new MutationObserver(()=>{ if(isReadOnlyUser()) queueReadOnlySweep() });
+  _roObserver.observe(document.body,{childList:true,subtree:true});
 }
 
 // ============================ unit module denylist ============================
@@ -3348,6 +3413,8 @@ function renderAll(){
   if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
     paintActivity();
   }
+  // Re-assert view-only mode after a full repaint (rows, drawers, tables).
+  hardenReadOnlyDom(document);
 }
 // ---- Register table painters (each honours its header search box) ---------
 function renderFingerprintTable(){
@@ -3362,7 +3429,7 @@ function renderFingerprintTable(){
    <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td class="actions">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -4174,12 +4241,78 @@ async function initApp(){
 // sees only their own directorate — each register renders as a clean,
 // full-width table (with a search box) and a compact unit overview strip; the
 // entry form opens in a centered modal from the page's primary action button.
+// ---- pristine sidebar items -------------------------------------------------
+// Denied modules are REMOVED from the sidebar DOM (not merely hidden), so an
+// Airport Control / CID officer cannot see "Central Police Search" even if a
+// later CSS or JS change forgets the rule. The authored markup is snapshotted
+// once, which lets the item come back for a role that is allowed to have it
+// (e.g. signing in as the Commander or the HR Directorate in the same tab).
+const NAV_ITEM_ORDER=[];
+function snapshotNavItems(){
+  if(NAV_ITEM_ORDER.length) return;
+  const add=(node,group)=>{
+    if(!node||!node.dataset||!node.dataset.page) return;
+    NAV_ITEM_ORDER.push({page:node.dataset.page,group:group||null,
+                         modules:node.dataset.modules||'',html:node.outerHTML});
+  };
+  const nav=document.getElementById('nav');
+  if(!nav) return;
+  nav.querySelectorAll(':scope > button[data-page]').forEach(b=>add(b,null));
+  nav.querySelectorAll('.nav-group-body').forEach(body=>{
+    body.querySelectorAll('button[data-page]').forEach(b=>add(b,body.dataset.groupBody||null));
+  });
+}
+function navItemFor(page){return document.querySelector('#nav button[data-page="'+page+'"]')}
+function removeNavItem(page){const b=navItemFor(page);if(b)b.remove()}
+function ensureNavItem(page){
+  if(navItemFor(page)) return;
+  const spec=NAV_ITEM_ORDER.find(x=>x.page===page);
+  if(!spec) return;
+  const holder=document.createElement('div');
+  holder.innerHTML=spec.html;
+  const node=holder.firstElementChild;
+  if(!node) return;
+  let container, later=null;
+  if(spec.group){
+    container=document.querySelector('#nav .nav-group-body[data-group-body="'+spec.group+'"]');
+    if(container){
+      const idx=NAV_ITEM_ORDER.indexOf(spec);
+      for(const spec2 of NAV_ITEM_ORDER.slice(idx+1)){
+        if(spec2.group!==spec.group) continue;
+        const sib=navItemFor(spec2.page);
+        if(sib && sib.parentNode===container){later=sib;break}
+      }
+    }
+  } else {
+    container=document.getElementById('nav');
+    if(container) later=container.querySelector('.nav-group')||null;
+  }
+  if(!container) return;
+  container.insertBefore(node,later);
+  node.onclick=()=>go(node.dataset.page);
+}
+// Is `page` part of this session's menu? `admin` is gated on the admin flag;
+// every other item on its module — and the deny list always wins.
+function navItemAllowed(page,mods,isAdmin){
+  const spec=NAV_ITEM_ORDER.find(x=>x.page===page);
+  const mod=(spec&&spec.modules)||page;
+  if(mod==='admin' || page==='admin') return isAdmin;
+  if(deniedModulesForRole((sessionUser&&sessionUser.role)||'').indexOf(mod)!==-1) return false;
+  return mods.indexOf(mod)!==-1;
+}
 function applyNavForRole(){
   // `effectiveModules()` applies the client-side unit denylist on top of the
   // server-issued module list, so Central Police Search can never render for
   // Airport Control / CID, whatever a cached session object claims.
   const mods = effectiveModules();
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
+  snapshotNavItems();
+  NAV_ITEM_ORDER.forEach(spec=>{
+    // Hard removal for a denied module, restore when the role may have it.
+    if(!sessionUser){ removeNavItem(spec.page); return; }
+    if(navItemAllowed(spec.page,mods,isAdmin)) ensureNavItem(spec.page);
+    else removeNavItem(spec.page);
+  });
   document.querySelectorAll('#nav button[data-page]').forEach(b => {
     const m = b.dataset.modules;
     b.style.display = (m === 'admin' ? isAdmin : mods.indexOf(m)!==-1) ? '' : 'none';
@@ -4228,6 +4361,15 @@ function applyNavForRole(){
 //
 // Called from applyNavForRole() (every nav pass), syncServer() (after /api/me),
 // loadSession() and the sign-in / sign-out transitions.
+// Which frontend build this browser is running — the read-only / unit-denylist
+// hardening ships in 'sentinel-rbac-readonly-3'. Shown in the sidebar footer so
+// an operator can tell a stale cached page from a stale server.
+function applyUiBuildLabel(){
+  const meta=document.querySelector('meta[name="sentinel-ui-build"]');
+  window.SENTINEL_UI_BUILD=(meta&&meta.content)||'unknown';
+  const el=document.getElementById('uiBuild');
+  if(el) el.textContent='UI build '+window.SENTINEL_UI_BUILD;
+}
 function applyReadOnlyMode(){
   const ro = isReadOnlyUser();
   if(document.body && document.body.classList){
@@ -4238,6 +4380,12 @@ function applyReadOnlyMode(){
   if(badge) badge.style.display = ro ? '' : 'none';
   const banner = document.getElementById('roBanner');
   if(banner) banner.style.display = ro ? 'flex' : 'none';
+  applyUiBuildLabel();
+  // Hard enforcement: hide every write control *in the DOM* (not only through
+  // the CSS class) and keep watching for controls painted later by any
+  // renderer — a Commander must see no action button on any page.
+  hardenReadOnlyDom(document);
+  if(ro) watchReadOnlyDom();
   // The dashboard's "Quick registration" panel carries no write actions for
   // this role (the server returns `quick_actions: []`); paintDashboard() and
   // renderDashboardLocal() render the view-only explanation.
@@ -6116,6 +6264,7 @@ refreshStationSelects();
 wireStationLocationDefaults('carStation','car');
 initOriginDropdowns();
 offStep(1);
+applyUiBuildLabel();  // stamp the running frontend build in the sidebar
 applyNavForRole();   // hide admin pages until sign-in
 // Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
 // filter when investigating the 'South Checkpoint 0' bug). Toggle

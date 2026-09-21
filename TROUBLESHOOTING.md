@@ -116,10 +116,16 @@ command token is valid, the write is simply not permitted. Sign in as `admin` (o
 who owns the record) to make the change. Read-only mode never blocks `GET` requests, so dashboards,
 registers, logs and searches keep working.
 
-Similarly, the **Airport Control** and **CID Criminal Unit** accounts intentionally do not show
+Similarly, the **Airport Control** and **CID Criminal Unit** accounts intentionally have no
 *Central Police Search* in the sidebar (they keep *Central Person Search* and their own unit scope).
-If a stale browser session still shows the entry, sign out and back in: the module list is
-re-sanitised on every session load.
+The entry is **removed from the sidebar DOM** for those roles — not merely hidden — and the page is
+unreachable through `go()`, so it cannot be revealed by a cached stylesheet or a stray render.
+
+Still seeing the old menu or an action button after updating? That is a stale page, not a stale
+server (the backend prints its RBAC guarantees at start-up and answers 403 for every command-role
+write). Reload with a hard refresh — the sidebar footer shows *UI build sentinel-rbac-readonly-3*
+when you are on the current frontend; anything else is a cached tab under
+`Cache-Control: no-store`.
 
 ## 6. Still stuck?
 

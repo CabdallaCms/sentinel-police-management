@@ -101,22 +101,38 @@ The top bar shows the active officer and location, e.g. **Officer H. Xasan · So
 `chief_commander` is the only **read-only** role in the system, and the rule is enforced twice so the
 UI and the API can never disagree:
 
-- **Backend firewall.** `enforce_read_only()` runs inside `do_POST`, `do_PATCH` and `do_DELETE`
-  immediately after authentication and *before* any route-specific handling, so a command token is
-  refused with **`403 Forbidden`** (`{"error": …, "code": "read_only_role", "read_only": true,
-  "path": …}`) on every mutation in the API — persons, airport records, clearance/fingerprint
-  applications, crime cases and evidence, suspect alerts, checkpoint events, stations, officers,
-  vehicles, crime files, conduct submissions and HR reviews, promotions, disciplinary actions and
-  user management. `GET` / `HEAD` / `OPTIONS` are untouched, and `POST /api/login` /
-  `POST /api/logout` stay available so the officer can still sign in and out. The role no longer
-  holds `stations:manage`, so the station-management bypass is closed as well.
+- **Backend firewall.** `enforce_read_only()` runs inside `do_POST`, `do_PUT`, `do_PATCH` and
+  `do_DELETE` immediately after authentication and *before* any route-specific handling, so a
+  command token is refused with **`403 Forbidden`** (`{"error": …, "code": "read_only_role",
+  "read_only": true, "path": …}`) on every mutation in the API — persons, airport records,
+  clearance/fingerprint applications, crime cases and evidence, suspect alerts, checkpoint events,
+  stations, officers, vehicles, crime files, conduct submissions and HR reviews, promotions,
+  disciplinary actions and user management. Because the check sits in front of the router it also
+  covers paths that do not exist (a Commander never distinguishes 403 from 404) and the verb the API
+  does not serve (`PUT` → 403 instead of 405). `GET` / `HEAD` / `OPTIONS` are untouched, and
+  `POST /api/login` / `POST /api/logout` stay available so the officer can still sign in and out.
+  The role no longer holds `stations:manage`, so the station-management bypass is closed as well.
 - **Frontend view-only mode.** The Commander session applies `body.readonly-mode`, which hides
   every control marked `data-write` / `.write-action` (Register Officer, Add, Edit, Approve
-  Clearance, Open Case, …), disables the dashboard's quick-registration panel, swaps every action
-  cell for a *View only* marker, and shows a **View-only** badge in the top bar. Every write entry
-  point (`openEntryModal`, the person/case/checkpoint/user drawers, approval and review handlers)
-  refuses to run, and the `api()` transport refuses any non-`GET` call locally with a `403` before
-  it leaves the browser — the same status the server returns.
+  Clearance, Open Case, the register's *Review/Print* link, …), drops the dashboard's
+  quick-registration panel for a lock notice, swaps every action cell for a *View only* marker, and
+  shows a **View-only** badge + banner in the top bar. On top of the CSS marker there is a
+  **DOM hardener**: `hardenReadOnlyDom()` hides *any* element whose handler is a mutation entry
+  point (even one that lost its `data-write` marker), restores the controls when a write-capable
+  officer signs in on the same tab, and a `MutationObserver` re-runs it after every repaint — so
+  every department page is clean, including rows painted dynamically. Every write entry point
+  (`openEntryModal`, the person/case/checkpoint/user drawers, approval and review handlers) refuses
+  to run, and the `api()` transport refuses any non-`GET` call locally with a `403` before it leaves
+  the browser — the same status the server returns. The printable review page
+  (`application.html`) carries the same rule: a read-only session gets no *Approve Application*
+  button, a view-only note instead, and `approve()` never issues the request.
+- **Confirming which build is live.** `index.html` stamps `<meta name="sentinel-ui-build"
+  content="sentinel-rbac-readonly-3">` and shows *UI build …* in the sidebar footer
+  (`window.SENTINEL_UI_BUILD`), while the backend prints its RBAC guarantees at start-up
+  (*Central Police Search is NOT granted to AirportControl, CIDUnit* / *global read-only roles
+  chief_commander — DELETE, PATCH, POST, PUT … answer 403 Forbidden*). If a browser still shows the
+  old menu or action buttons, it is a stale tab: hard-refresh it (the server sends
+  `Cache-Control: no-store`).
 
 **Session persistence (refresh-safe sign-in).** On sign-in the auth token and user object are stored in browser storage (`localStorage.setItem('sentinel_token', token)` and `localStorage.setItem('sentinel_user', JSON.stringify(user))`, plus the legacy `sentinelSession` object used by the printable pages). On every page load `initApp()` re-hydrates `currentUser` and `authToken` **before** the initial API sync (`syncServer` / `fetchCheckpoints`), and every request automatically carries `Authorization: Bearer ${token}`. A refresh therefore never signs the officer out: only an explicit HTTP **401** from the dedicated auth check (`GET /api/me`) clears the session — non-fatal startup errors (server still booting, transient 5xx, a 404) keep the officer signed in and retry in the background.
 
@@ -376,11 +392,21 @@ python3 backend/test_read_only_rbac.py
 Pins the two RBAC changes end to end: the Airport Control and CID Criminal Unit module sets
 (`ap.officer` → `{dashboard, people, airport}`, `cid.officer` → `{dashboard, people, cid, crimes}` —
 never `policesearch`), the Commander's global read set (21 dashboards/registers/logs/searches return
-`200`), the global write firewall (21 mutations across every route return `403` with
-`code: read_only_role` — including stations, which the role used to manage), the empty
+`200`), the global write firewall (**25** refused calls across every route and all four verbs
+`POST` / `PUT` / `PATCH` / `DELETE` return `403` with `code: read_only_role` — including stations,
+which the role used to manage, and unknown paths, which are refused before routing), the empty
 `quick_actions` payload, and that every `Commander` / `HighCommand` / `high_command` / `command_hq` /
 `hq_command` / `police_hq` / `chief.commander` spelling resolves to the same read-only role while
-SystemAdmin and the unit officers keep writing.
+SystemAdmin and the unit officers keep writing (a SystemAdmin `PUT` still gets the ordinary `405`).
+
+The frontend half of the same contract is pinned in `backend/test_frontend_session.mjs` (the
+sidebar-removal code path, no *Review/Print* link for a read-only session, `hardenReadOnlyDom()`
+returning the number of controls it changed, the entry points and the local `api()` firewall) and in
+`backend/test_print_fit.py` (the `application.html` read-only contract: marked control, view-only
+note, fail-closed session seed, `/api/me` flags, `applyReadOnlyUi()`, and `approve()` refusing
+locally). Sidebar removal/restore and the per-page control sweep are exercised behaviourally against
+the running server (jsdom), including a denied module coming back for an allowed role in the same
+tab.
 
 It also runs a dedicated **departmental analytics suite** (`departmental_analytics_suite()`), which
 boots a *second, isolated* server against a fresh database holding a fully deterministic fixture and

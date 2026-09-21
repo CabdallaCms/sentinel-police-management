@@ -1192,6 +1192,9 @@ def is_chief_commander(user):
 #     Commander can actually open and close a session.
 READ_ONLY_ROLES = frozenset({ROLE_CHIEF})
 READ_ONLY_SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+# Every mutating HTTP verb the firewall guards (enforced in do_POST / do_PUT /
+# do_PATCH / do_DELETE). Listed here so the contract is explicit and testable.
+READ_ONLY_BLOCKED_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
 READ_ONLY_EXEMPT_PATHS = frozenset({'/api/login', '/api/logout'})
 
 
@@ -1237,6 +1240,8 @@ def enforce_read_only(user, method, path=None):
     verb = str(method or '').upper()
     if verb in READ_ONLY_SAFE_METHODS:
         return
+    # POST / PUT / PATCH / DELETE — every mutation, on every path (a future
+    # route cannot forget the check because it lives here, in front of them).
     p = str(path or '').split('?')[0].rstrip('/') or '/'
     if p in READ_ONLY_EXEMPT_PATHS:
         return
@@ -4597,7 +4602,7 @@ class API(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(out)))
         self.send_header('Access-Control-Allow-Origin','*')
         self.send_header('Access-Control-Allow-Headers','Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Methods','GET, POST, PATCH, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods','GET, POST, PUT, PATCH, DELETE, OPTIONS')
         for name, value in (extra_headers or []):
             self.send_header(name, value)
         self.end_headers(); self.wfile.write(out)
@@ -5778,10 +5783,10 @@ class API(BaseHTTPRequestHandler):
 
         The API exposes no DELETE routes today (every destructive operation is
         an explicit POST action, e.g. /api/logout), but the global read-only
-        contract covers DELETE too: a Commander / High Command caller always
-        receives **403 Forbidden**, while every other role receives an explicit
-        405 telling it the method is not exposed. Nothing can therefore
-        silently fall through to the stdlib's 501.
+        contract covers DELETE too (and PUT, see do_PUT): a Commander / High
+        Command caller always receives **403 Forbidden**, while every other role
+        receives an explicit 405 telling it the method is not exposed. Nothing
+        can therefore silently fall through to the stdlib's 501.
         """
         try:
             p = urlparse(self.path)
@@ -5789,13 +5794,39 @@ class API(BaseHTTPRequestHandler):
             enforce_read_only(user, 'DELETE', p.path)
             self.send_json(405, {'error': 'Method DELETE is not supported by this API',
                                  'method': 'DELETE', 'path': p.path},
-                           extra_headers=[('Allow', 'GET, POST, PATCH, OPTIONS')])
+                           extra_headers=[('Allow', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')])
         except ReadOnlyRoleError as e:
             self.read_only_403(e)
         except PermissionError as e:
             self.send_json(401, {'error': str(e)})
         except Exception as e:
             self.send_json(500, {'error': str(e)})
+
+    # ---- PUT ----------------------------------------------------------------
+    def do_PUT(self):
+        """PUT surface — the global read-only firewall covers it too.
+
+        No route of this API is served over PUT (updates use PATCH), but a
+        Commander / High Command caller must never be able to probe the method
+        either: the firewall answers **403 Forbidden** (`code:
+        read_only_role`) before any routing. Every other role receives an
+        explicit 405 naming the verb, so nothing falls through to the stdlib's
+        opaque 501.
+        """
+        try:
+            p = urlparse(self.path)
+            user = require_auth(self)
+            enforce_read_only(user, 'PUT', p.path)
+            self.send_json(405, {'error': 'Method PUT is not supported by this API',
+                                 'method': 'PUT', 'path': p.path},
+                           extra_headers=[('Allow', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')])
+        except ReadOnlyRoleError as e:
+            self.read_only_403(e)
+        except PermissionError as e:
+            self.send_json(401, {'error': str(e)})
+        except Exception as e:
+            self.send_json(500, {'error': str(e)})
+
 
 def _pids_listening_on(port):
     """Best-effort, cross-platform list of PIDs listening on TCP `port`."""
@@ -5907,5 +5938,13 @@ if __name__ == '__main__':
           f'(admin/SystemAdmin bypasses, every other role is locked)')
     print(f'  {review_lock_self_test()}')
     print(f'  clearance reasons: {", ".join(CLEARANCE_REASONS)}')
+    # RBAC self-report: the two guarantees an operator most often needs to
+    # confirm against a running process (and the ones this build changed).
+    print('  RBAC: Central Police Search is NOT granted to '
+          f'{", ".join(sorted(r for r in (ROLE_AIRPORT, ROLE_CID)))}')
+    print('  RBAC: global read-only roles '
+          f'{", ".join(sorted(READ_ONLY_ROLES))} — '
+          f'{", ".join(sorted(READ_ONLY_BLOCKED_METHODS))} away from '
+          f'{", ".join(sorted(READ_ONLY_EXEMPT_PATHS))} answer 403 Forbidden')
     print(f'  pid {os.getpid()}  started {SERVER_STARTED_AT}')
     bind_server(port).serve_forever()

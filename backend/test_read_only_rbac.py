@@ -225,12 +225,23 @@ def commander_write_suite(base, token):
         ('PATCH', '/api/admin/users/2', {'active': False}),
         ('DELETE', '/api/persons/P-0001', None),
         ('DELETE', '/api/crime-cases/CC-0001', None),
+        # PUT is not a route this API serves, but the firewall covers the verb
+        # as well: the Commander never even gets the 405.
+        ('PUT', '/api/persons/P-0001', {'phone': 'x'}),
+        ('PUT', '/api/stations/ST-1', {'name': 'x'}),
+        # …and the interception happens BEFORE routing, so even paths that do
+        # not exist are refused with 403 rather than 404.
+        ('POST', '/api/does-not-exist', {}),
+        ('PUT', '/api/does-not-exist', {}),
+        ('PATCH', '/api/does-not-exist', {}),
+        ('DELETE', '/api/does-not-exist', None),
     ]
     for method, path, body in mutations:
         status, payload = request(base, method, path, token, body)
         code = payload.get('code') if isinstance(payload, dict) else None
-        check(status == 403 and code == 'read_only_role',
-              f'{method} {path} -> {status} ({code})')
+        echoed = payload.get('path') if isinstance(payload, dict) else None
+        check(status == 403 and code == 'read_only_role' and echoed == path,
+              f'{method} {path} -> {status} ({code}, path={echoed})')
 
 
 def commander_session_suite(base, token):
@@ -247,6 +258,16 @@ def commander_session_suite(base, token):
                   {'name': 'RBAC Test Outpost', 'station_tier': 'Outpost', 'region': 'Sool',
                    'district': 'Xudun', 'contact_phone': '0907000111'})[0] == 201,
           'SystemAdmin can still create a station (201)')
+    # Non-read-only roles are NOT caught by the firewall: an unused verb gets
+    # the explicit 405 and an unknown path the ordinary routing response.
+    status, payload = request(base, 'PUT', '/api/persons/P-0001', admin, {'phone': 'x'})
+    check(status == 405 and payload.get('method') == 'PUT',
+          f'PUT stays a 405 for SystemAdmin (not a read-only refusal): {status}')
+    check(request(base, 'POST', '/api/does-not-exist', admin, {})[0] in (400, 404),
+          'a write-capable role still reaches normal routing on an unknown path')
+    status, payload = request(base, 'PUT', '/api/persons/P-0001', token2, {'phone': 'x'})
+    check(status == 403 and payload.get('code') == 'read_only_role',
+          f'the PUT refusal carries the read_only_role contract ({status} {payload.get("code")})')
     _, adminme = request(base, 'GET', '/api/me', admin)
     check(adminme.get('read_only') is False and adminme.get('can_write') is True,
           'SystemAdmin is not read-only')

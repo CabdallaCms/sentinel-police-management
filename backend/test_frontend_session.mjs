@@ -492,6 +492,37 @@ function assertShellContract() {
   });
   if (!/readOnly\s*\?\s*\[\]\s*:\s*\(d\.quick_actions \|\| \[\]\)/.test(html))
     throw new Error('paintDashboard() must drop quick-registration actions for a read-only role');
+
+  // (g) DOM-level read-only hardener — the sweep, the observer and the
+  //     removal (not just hiding) of a denied nav module.
+  ['function isWriteControl(',
+   'function hardenReadOnlyDom(',
+   'function queueReadOnlySweep(',
+   'function watchReadOnlyDom(',
+   'const WRITE_CONTROL_RE='].forEach((needle) => {
+    if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
+  });
+  if (!/MutationObserver\(/.test(html))
+    throw new Error('the read-only hardener must observe later repaints');
+  if (!/hardenReadOnlyDom\(document\)/.test(html))
+    throw new Error('applyReadOnlyMode()/go()/renderAll() must run the read-only DOM sweep');
+  // denied modules are REMOVED from the sidebar, and restored for a role that
+  // may have them
+  ['function snapshotNavItems(', 'function removeNavItem(', 'function ensureNavItem(',
+   'function navItemAllowed('].forEach((needle) => {
+    if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
+  });
+  if (!/if\(navItemAllowed\(spec\.page,mods,isAdmin\)\) ensureNavItem\(spec\.page\);/.test(html)
+      || !/else removeNavItem\(spec\.page\);/.test(html))
+    throw new Error('applyNavForRole() must remove a denied module from the sidebar DOM');
+  // the fingerprint register's Review/Print link is a write-side action
+  if (!/\$\{canWrite\(\)\?`<a class="btn secondary small" data-write="1"[^`]*Review\/Print<\/a>`:''\}/.test(html))
+    throw new Error('the fingerprint Review/Print link must be gated on canWrite()');
+  // a build stamp so an operator can tell a stale cached page from a stale server
+  if (!/<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-3" \/>/.test(html))
+    throw new Error('the sentinel-ui-build meta stamp is missing');
+  if (!/window\.SENTINEL_UI_BUILD=/.test(html))
+    throw new Error('window.SENTINEL_UI_BUILD must expose the frontend build');
 }
 const probe = (sandbox, expr) => vm.runInContext(expr, sandbox);
 
@@ -893,6 +924,20 @@ async function main() {
     const approvedRow = probe(sb13, "renderRegisterRow({id:'FP-RO2',status:'Approved',created_at:'2020-01-01 00:00:00'}, null)");
     if (!/certificate\.html/.test(approvedRow))
       throw new Error('an approved clearance must keep its Certificate link (read-only): ' + approvedRow);
+    // The DOM hardener is callable and safe (it runs after every repaint).
+    if (probe(sb13, "typeof hardenReadOnlyDom==='function'") !== true)
+      throw new Error('hardenReadOnlyDom() must be available to every renderer');
+    if (typeof probe(sb13, "hardenReadOnlyDom(document)") !== 'number')
+      throw new Error('hardenReadOnlyDom() must report how many controls it changed');
+    // …and the fingerprint register hands the Commander no Review/Print link.
+    const fpRows = probe(sb13,
+      "(function(){ db.fingerprint=[{id:'FP-1',person:'P-1',purpose:'Travel',status:'Pending Review'," +
+      "created_at:'2020-01-01 00:00:00'}]; try{renderFingerprintTable()}catch(_){} " +
+      "return (document.getElementById('fpTable')||{}).innerHTML||'' })()");
+    if (/Review\/Print/.test(fpRows) || /application\.html/.test(fpRows))
+      throw new Error('a read-only session must not be offered the Review/Print link: ' + fpRows);
+    if (/approveFP\(/.test(fpRows))
+      throw new Error('a read-only session must not be offered an approve action: ' + fpRows);
     // The API firewall refuses every mutation before it leaves the browser.
     const refused = await probe(sb13,
       "(async()=>{try{await api('/api/persons',{method:'POST',body:'{}'});return 'no-throw';}"
@@ -911,6 +956,10 @@ async function main() {
     const stillReads = await probe(sb13, "api('/api/me').then(r=>typeof r.role).catch(e=>'err'+e.status)");
     if (stillReads !== 'string')
       throw new Error('a Commander must still be able to READ /api/me, got ' + stillReads);
+    // The sidebar removal itself is DOM work (the harness only stubs a minimal
+    // DOM): it is asserted through the shell contract below (snapshotNavItems /
+    // removeNavItem / ensureNavItem / navItemAllowed + the applyNavForRole
+    // ensure/remove pair) and behaviourally in the jsdom suite.
     // Signing out leaves view-only mode behind for the next session.
     probe(sb13, 'resetSessionState()');
     if (probe(sb13, "document.body.classList.contains('readonly-mode')") !== false)
