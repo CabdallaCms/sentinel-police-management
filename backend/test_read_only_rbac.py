@@ -46,6 +46,59 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SERVER = os.path.join(ROOT, 'server.py')
+sys.path.insert(0, ROOT)
+import importlib.util                                       # noqa: E402
+
+_spec = importlib.util.spec_from_file_location('sentinel_server', SERVER)
+srv = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(srv)
+
+
+def module_matrix_suite():
+    """Unit-level guard: every spelling of the restricted units resolves to its
+    own family and never to Central Police Search, and an unrecognised role is
+    handed the fail-closed minimum instead of another unit's module set.
+
+    This is the regression guard for the leak that made a deployment with a
+    label-spelled role ('CID Criminal Unit', 'Airport Control Officer') show
+    Central Police Search: the role fell through to the review-lock default and
+    inherited the Fingerprint module set.
+    """
+    print('== 0. Role spelling matrix (server module, no HTTP) ==')
+    airport_spellings = ['AirportControl', 'airportcontrol', 'airport_officer', 'ap.officer',
+                         'Airport Control', 'Airport Control Officer', 'airport_control_officer',
+                         'Airport Control Unit', 'Airport Control Office', 'airportcontrolunit']
+    cid_spellings = ['CIDUnit', 'cidunit', 'cid_officer', 'cid.officer', 'CID Criminal Unit',
+                     'cid_criminal_unit', 'cidcriminalunit', 'Criminal Unit', 'criminal_unit',
+                     'Crime Unit', 'crime_unit', 'criminal_investigation',
+                     'CID/Criminal Investigation']
+    for spelling in airport_spellings:
+        mods = srv.allowed_modules_for_role(spelling)
+        check(mods == {'dashboard', 'people', 'airport'},
+              f'{spelling!r} -> {sorted(mods)} (Airport family, no policesearch)')
+    for spelling in cid_spellings:
+        mods = srv.allowed_modules_for_role(spelling)
+        check(mods == {'dashboard', 'people', 'cid', 'crimes'},
+              f'{spelling!r} -> {sorted(mods)} (CID family, no policesearch)')
+    # Roles that legitimately keep Central Police Search are untouched.
+    for spelling in ('admin', 'SystemAdmin', 'fp.officer', 'FingerprintUnit', 'hr.officer',
+                     'HR Directorate', 'chief', 'chief_commander', 'commander', 'high_command',
+                     'HighCommand', 'command_hq', 'police_hq', 'Chief Commander',
+                     'Chief Commander of Police Office'):
+        check('policesearch' in srv.allowed_modules_for_role(spelling),
+              f'{spelling!r} keeps Central Police Search')
+    # Unknown / unrecognised roles are fail-closed: dashboard and nothing else.
+    for unknown in ('Some Unknown Role', 'x', 'Deputy Dog', '42'):
+        check(srv.allowed_modules_for_role(unknown) == {'dashboard'},
+              f'unknown role {unknown!r} -> {sorted(srv.allowed_modules_for_role(unknown))}')
+    # The boot-time self-test must be clean, and the command role read-only.
+    check(srv.rbac_self_test() == [], f'rbac_self_test() clean: {srv.rbac_self_test()}')
+    for spelling in ('chief', 'chief_commander', 'commander', 'high_command', 'HighCommand',
+                     'command_hq', 'police_hq', 'hq_command', 'Chief Commander',
+                     'Chief Commander of Police Office'):
+        check(srv.canonical_unit_role(spelling) == srv.ROLE_CHIEF
+              and srv.is_read_only_role(spelling),
+              f'{spelling!r} is the read-only command role')
 
 PASS, FAIL, SKIP = [], [], []
 
@@ -333,6 +386,7 @@ def main():
         else:
             raise RuntimeError('the backend did not start (is PostgreSQL reachable?)')
 
+        module_matrix_suite()
         unit_module_suite(base)
         token = commander_identity_suite(base)
         commander_read_suite(base, token)

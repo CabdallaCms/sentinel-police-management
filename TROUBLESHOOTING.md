@@ -121,6 +121,13 @@ Similarly, the **Airport Control** and **CID Criminal Unit** accounts intentiona
 The entry is **removed from the sidebar DOM** for those roles — not merely hidden — and the page is
 unreachable through `go()`, so it cannot be revealed by a cached stylesheet or a stray render.
 
+If the entry still appears for a unit account, check the **role string stored for that user**
+(`SELECT username, role FROM users;`). Every spelling is now resolved — including label-style values
+such as `Airport Control Officer`, `Airport Control Unit`, `CID Criminal Unit`, `Criminal Unit` or
+`Crime Unit` — but a running server started before this build must be restarted to pick the rule up:
+it prints `RBAC self-test: PASS — module denylist in force for AirportControl, CIDUnit` when it is
+serving the fixed code and refuses to start at all if the denylist is not in force.
+
 Still seeing the old menu or an action button after updating? That is a stale page, not a stale
 server (the backend prints its RBAC guarantees at start-up and answers 403 for every command-role
 write). Reload with a hard refresh — the sidebar footer shows *UI build sentinel-rbac-readonly-3*

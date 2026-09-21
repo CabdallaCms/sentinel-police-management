@@ -1265,7 +1265,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
 <!-- Identity profile · shared centered popup (Fingerprint · Airport · Checkpoint "View" actions) -->
 <div class="cmodal-ov" id="pvModalOv" onclick="closeEntryModal('pvModal')"></div>
-<div class="cmodal profile" id="pvModal" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
+<div class="cmodal profile" id="pvModal" data-view="1" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
   <div class="cm-head"><div><h3 id="pvModalTitle">Identity profile</h3><div class="sub">Central Person Registry</div></div><button class="iconbtn" onclick="closeEntryModal('pvModal')" aria-label="Close">✕</button></div>
   <div class="cm-body" id="pvModalBody"></div>
 </div>
@@ -2613,11 +2613,29 @@ function guardReadOnly(action){
 // re-runs it after every repaint, so a newly rendered button can never slip
 // through — on any department page.
 const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal")|openPersonDrawer|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
+// The visible label of a mutation action: "+ New case", "＋ Add suspect",
+// "Approve", "Edit", "Save", "Delete", "New", "Register …", "Nominate",
+// "Record …", "Upload", "Submit", "Verify", "Confirm", "Reject", "Enable" /
+// "Disable". Deliberately blunt — under read-only mode a control that *reads*
+// like a mutation is removed even when it carries no marker and no
+// recognisable handler.
+const RO_MUTATION_TEXT_RE=/^\s*[+＋✓✕×*]?\s*(new|approve|edit|save|delete|add|remove|register|nominate|record|upload|create|submit|verify|confirm|reject|enable|disable|open\s+case|link(\s|$))/i;
+// Surfaces that are pure navigation / read-only and must never be swept:
+// the sidebar (navigation), the top bar (identity + sign-out), the login
+// screen, the read-only badge/banner and the view-only identity modal.
+const RO_SWEEP_EXEMPT_SELECTOR='#nav, .side, #topbar, #loginScreen, #roBanner, [data-view="1"], [data-ro-keep]';
+function isMutationLabel(el){
+  if(!el || el.nodeType!==1) return false;
+  if(el.tagName!=='BUTTON' && el.tagName!=='A') return false;
+  if(el.closest(RO_SWEEP_EXEMPT_SELECTOR)) return false;
+  return RO_MUTATION_TEXT_RE.test(el.textContent||'');
+}
 function isWriteControl(el){
   if(!el || el.nodeType!==1) return false;
   if(el.closest('[data-view="1"], #roBanner, #loginScreen')) return false;   // explicit read surfaces
   if(el.hasAttribute('data-write') || el.classList.contains('write-action')
      || el.classList.contains('admin-write')) return true;
+  if(isMutationLabel(el)) return true;
   const oc=(el.getAttribute('onclick')||'').replace(/\s+/g,'');
   return oc?WRITE_CONTROL_RE.test(oc):false;
 }
@@ -2649,7 +2667,11 @@ function queueReadOnlySweep(){
 }
 function watchReadOnlyDom(){
   if(_roObserver || typeof MutationObserver==='undefined' || !document.body) return;
-  _roObserver=new MutationObserver(()=>{ if(isReadOnlyUser()) queueReadOnlySweep() });
+  _roObserver=new MutationObserver(()=>{
+    // A denied nav entry must not survive a repaint, whatever painted it.
+    try{ if(enforceSidebarDenylist()) {} }catch(_){}
+    if(isReadOnlyUser()) queueReadOnlySweep();
+  });
   _roObserver.observe(document.body,{childList:true,subtree:true});
 }
 
@@ -2672,11 +2694,15 @@ const UNIT_MODULE_DENY={
 function roleKey(role){return String(role||'').toLowerCase().replace(/[^a-z]/g,'')}
 // Resolve any accepted spelling of the two restricted units to its family
 // ('' for every other role, e.g. 'FingerprintUnit' / 'hr_officer').
+// Mirrors unit_role_family() in backend/server.py: the label spellings an
+// operator may have stored ('Airport Control Officer', 'CID Criminal Unit',
+// 'Crime Unit', ...) resolve to their family here as well.
 function unitFamily(role){
   const k=roleKey(role);
   if(!k) return '';
   if(k.startsWith('airport')||k==='apofficer') return 'airport';
-  if(k.startsWith('cid')||k==='criminalinvestigation') return 'cid';
+  if(k.startsWith('cid')||k.startsWith('criminalinvestigation')||k.startsWith('criminalunit')
+     ||k.startsWith('crimeunit')) return 'cid';
   return '';
 }
 function deniedModulesForRole(role){return UNIT_MODULE_DENY[unitFamily(role)]||[]}
@@ -2685,7 +2711,12 @@ function deniedModulesForRole(role){return UNIT_MODULE_DENY[unitFamily(role)]||[
 function sanitizeModules(role,mods){
   const deny=deniedModulesForRole(role);
   const list=Array.isArray(mods)?mods.slice():[];
-  return deny.length?list.filter(m=>deny.indexOf(m)===-1):list;
+  const out=deny.length?list.filter(m=>deny.indexOf(m)===-1):list;
+  // A session whose stored role names a restricted unit can never be handed
+  // Central Police Search, even if the cached user object (or an old server)
+  // listed it.
+  if(unitFamily(role)&&out.indexOf('people')===-1) out.push('people');
+  return out;
 }
 // The signed-in user's EFFECTIVE modules: the server-issued list with the
 // unit denylist applied. Every nav / fetch / RBAC check uses this.
@@ -4300,6 +4331,29 @@ function navItemAllowed(page,mods,isAdmin){
   if(deniedModulesForRole((sessionUser&&sessionUser.role)||'').indexOf(mod)!==-1) return false;
   return mods.indexOf(mod)!==-1;
 }
+// ---- HARD SIDEBAR DENYLIST ------------------------------------------------
+// Every nav item whose module this session may not use is DELETED from the DOM
+// (`element.remove()`), not hidden: an Airport Control / CID Criminal Unit
+// officer has no "Central Police Search" node at all, and a node injected or
+// re-rendered by any other code path is deleted again by the observer below.
+// The markup is snapshotted (see NAV_ITEM_ORDER / ensureNavItem) so a role
+// that IS allowed to have the entry gets it back on the next sign-in.
+function enforceSidebarDenylist(){
+  const nav=document.getElementById('nav');
+  if(!nav || !sessionUser) return 0;
+  const mods=effectiveModules();
+  const isAdmin=!!(sessionVisibility && sessionVisibility.is_admin);
+  let removed=0;
+  nav.querySelectorAll('button[data-page], a[data-page]').forEach(el=>{
+    const page=el.dataset.page;
+    if(!page) return;
+    const mod=el.dataset.modules||page;
+    const allowed=(mod==='admin'||page==='admin') ? isAdmin
+      : (deniedModulesForRole(sessionUser.role).indexOf(mod)===-1 && mods.indexOf(mod)!==-1);
+    if(!allowed){ el.remove(); removed++; }
+  });
+  return removed;
+}
 function applyNavForRole(){
   // `effectiveModules()` applies the client-side unit denylist on top of the
   // server-issued module list, so Central Police Search can never render for
@@ -4348,6 +4402,9 @@ function applyNavForRole(){
   // embedded HR analytics strip above them.
   const hrTabs = document.getElementById('hrTabs');
   if(hrTabs) hrTabs.style.display = (mods.indexOf('officers')!==-1) ? '' : 'none';
+  // Final pass: delete every nav node this session may not have (removes any
+  // item that was restored or injected outside the snapshot).
+  enforceSidebarDenylist();
 }
 
 // ============================ read-only mode (UI) ============================
@@ -4385,7 +4442,9 @@ function applyReadOnlyMode(){
   // the CSS class) and keep watching for controls painted later by any
   // renderer — a Commander must see no action button on any page.
   hardenReadOnlyDom(document);
-  if(ro) watchReadOnlyDom();
+  // The observer is armed for every session: it re-deletes a denied nav entry
+  // (Airport / CID) and re-sweeps the write controls (Commander).
+  watchReadOnlyDom();
   // The dashboard's "Quick registration" panel carries no write actions for
   // this role (the server returns `quick_actions: []`); paintDashboard() and
   // renderDashboardLocal() render the view-only explanation.

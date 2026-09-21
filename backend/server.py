@@ -774,6 +774,13 @@ def canonical_unit_role(role):
     for alias, canonical in UNIT_ROLE_ALIASES.items():
         if _role_key(alias) == key:
             return canonical
+    # Free-form family fallback: an operator spelling that still names the unit
+    # ('Airport Control Office', 'CID/Criminal Investigation', 'High Command')
+    # resolves to it, so the restricted units keep their own scope instead of
+    # falling through to a default module set.
+    family = unit_role_family(key)
+    if family:
+        return family
     return r
 
 
@@ -850,10 +857,34 @@ UNIT_ROLE_ALIASES = {
     'airport_officer': ROLE_AIRPORT,
     'airport_control': ROLE_AIRPORT,
     'ap_officer': ROLE_AIRPORT,
+    # Label spellings an operator may have typed into the users table
+    # ('Airport Control Officer', 'Airport Control Unit', ...). Without these
+    # the role fell through to the review-lock default module set and quietly
+    # inherited Central Police Search.
+    'Airport Control': ROLE_AIRPORT,
+    'airport control': ROLE_AIRPORT,
+    'Airport Control Officer': ROLE_AIRPORT,
+    'airport_control_officer': ROLE_AIRPORT,
+    'Airport Control Unit': ROLE_AIRPORT,
+    'airport_control_unit': ROLE_AIRPORT,
+    'airportcontrolunit': ROLE_AIRPORT,
     ROLE_CID: ROLE_CID,
     'cid_officer': ROLE_CID,
     'cidunit': ROLE_CID,
     'criminal_investigation': ROLE_CID,
+    # …and the same for the Criminal Investigation Unit labels.
+    'CID Criminal Unit': ROLE_CID,
+    'cid criminal unit': ROLE_CID,
+    'cid_criminal_unit': ROLE_CID,
+    'cidcriminalunit': ROLE_CID,
+    'CID Criminal Unit Officer': ROLE_CID,
+    'cid_criminal_unit_officer': ROLE_CID,
+    'Criminal Unit': ROLE_CID,
+    'criminal_unit': ROLE_CID,
+    'criminalunit': ROLE_CID,
+    'Crime Unit': ROLE_CID,
+    'crime_unit': ROLE_CID,
+    'crimeunit': ROLE_CID,
     # HR Directorate aliases — 'HROfficer', 'hr', 'Human Resources', … all
     # resolve to the canonical 'hr_officer' role so a token issued for any
     # spelling still carries the officers module set.
@@ -884,6 +915,18 @@ UNIT_ROLE_ALIASES = {
     'high_command': ROLE_CHIEF,
     'highcommand': ROLE_CHIEF,
     'HighCommand': ROLE_CHIEF,
+    # Label-derived spellings ('Chief Commander of Police Office (HQ /
+    # Command)') and the short form an operator may have stored instead.
+    'Chief Commander': ROLE_CHIEF,
+    'chief commander': ROLE_CHIEF,
+    'Chief Commander of Police Office': ROLE_CHIEF,
+    'chief_commander_of_police_office': ROLE_CHIEF,
+    'chiefcommanderofficepolice': ROLE_CHIEF,
+    'chief_of_police': ROLE_CHIEF,
+    'chiefofpolice': ROLE_CHIEF,
+    'chief': ROLE_CHIEF,
+    'HQ / Command': ROLE_CHIEF,
+    'hq_command': ROLE_CHIEF,
 }
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
@@ -1126,6 +1169,124 @@ ROLE_LOCATION_SCOPE = {
 # issued for 'admin') is never left with an empty module list.
 for _alias, _canonical in UNIT_ROLE_ALIASES.items():
     ROLE_MODULES.setdefault(_alias, ROLE_MODULES[_canonical])
+
+
+# ---- HARD UNIT-MODULE DENYLIST ---------------------------------------------
+# `ROLE_MODULES` above is the declaration, but the rule is re-applied EVERY time
+# a module list is produced or checked (login payload, /api/me, dashboard,
+# require_module, user_module_set, the degraded dashboard fallback). Central
+# Police Search therefore cannot reach an Airport Control or CID Criminal Unit
+# session even if a row in `users`, a cached payload, a stale process, a
+# future edit to ROLE_MODULES or an operator's local patch tried to grant it.
+UNIT_MODULE_DENY = {
+    ROLE_AIRPORT: frozenset({'policesearch'}),
+    ROLE_CID: frozenset({'policesearch'}),
+}
+
+
+# Roles this process understands. A role outside this set is an unknown
+# spelling: it must NOT inherit another unit's modules (the review-lock
+# `spec_role_for()` default used to hand such rows the Fingerprint set, which
+# includes Central Police Search).
+KNOWN_CANONICAL_ROLES = frozenset(ROLE_MODULES) | frozenset(UNIT_ROLE_ALIASES.values())
+
+
+def canonical_roles_for(role):
+    """Every canonical role key a stored role string may resolve to.
+
+    Only keys that name a role this build knows about are returned — the
+    snake-case spec alias is included *only* when the stored role resolved to a
+    real canonical role, so an unrecognised string cannot borrow a unit's
+    module set through the review-lock fallback.
+    """
+    if not role:
+        return set()
+    canonical = canonical_unit_role(role)
+    keys = {role, canonical}
+    normalised = normalize_role(role)
+    if normalised in KNOWN_CANONICAL_ROLES:
+        keys.add(normalised)
+    spec = spec_role_for(canonical)
+    if canonical in KNOWN_CANONICAL_ROLES and spec in ROLE_MODULES:
+        keys.add(spec)
+    return {k for k in keys if k}
+
+
+def denied_modules_for_role(role):
+    """Modules the given role must never hold, whatever ROLE_MODULES says."""
+    if not role:
+        return frozenset()
+    denied = set()
+    for key in canonical_roles_for(role):
+        denied |= set(UNIT_MODULE_DENY.get(key, ()))
+    return frozenset(denied)
+
+
+def allowed_modules_for_role(role):
+    """The module set a role may actually use: ROLE_MODULES minus the denylist.
+
+    The single source of truth for every module answer the server gives out.
+    An unrecognised role resolves to no unit at all and is handed the
+    fail-closed minimum (`dashboard`) rather than another unit's modules.
+    """
+    if not role:
+        return set()
+    mods = set()
+    for key in canonical_roles_for(role):
+        mods |= set(ROLE_MODULES.get(key, set()))
+    mods -= set(denied_modules_for_role(role))
+    if not mods:
+        # Unknown / unrecognised role: dashboard only. Never a unit's modules.
+        return {'dashboard'} if canonical_unit_role(role) not in KNOWN_CANONICAL_ROLES \
+            else set()
+    return mods
+
+
+def strip_denied_modules(role, modules):
+    """Apply the denylist to an already-resolved module list (login / me)."""
+    denied = denied_modules_for_role(role)
+    return {m for m in (modules or set()) if m not in denied}
+
+
+def rbac_self_test():
+    """Prove the RBAC invariants of this build hold *in this process*.
+
+    Returns a list of human-readable problems (empty when everything is in
+    force). Called at start-up, which refuses to serve when it is not empty —
+    a binary that lost the unit denylist or the command role must not answer
+    requests.
+    """
+    problems = []
+    for role in (ROLE_AIRPORT, ROLE_CID):
+        leaked = sorted(m for m in ('policesearch',)
+                        if m in allowed_modules_for_role(role))
+        if leaked:
+            problems.append(f'{role} must not hold {leaked}')
+    # …and the label spellings of those units must be denied too — an
+    # unrecognised string must never inherit another unit's module set (that
+    # is how Central Police Search used to leak into a unit session).
+    for alias in ('AirportControl', 'airport_officer', 'ap.officer', 'Airport Control',
+                  'Airport Control Officer', 'Airport Control Unit', 'CIDUnit',
+                  'cid_officer', 'cid.officer', 'CID Criminal Unit', 'cid_criminal_unit',
+                  'Criminal Unit', 'Crime Unit', 'criminal_investigation'):
+        if 'policesearch' in allowed_modules_for_role(alias):
+            problems.append(f'unit alias {alias!r} must not hold policesearch')
+    for unknown in ('Some Unknown Role', '', 'x', 'Deputy Dog'):
+        leaked = sorted(allowed_modules_for_role(unknown) - {'dashboard'})
+        if leaked:
+            problems.append(f'unknown role {unknown!r} must not inherit modules {leaked}')
+    for alias in tuple(COMMANDER_ROLE_ALIASES) + ('Chief Commander of Police Office',
+                                                  'Chief Commander', 'chief'):
+        if canonical_unit_role(alias) != ROLE_CHIEF:
+            problems.append(f'commander alias {alias!r} must resolve to {ROLE_CHIEF}')
+        if not is_read_only_user({'role': alias}):
+            problems.append(f'commander alias {alias!r} must be read-only')
+    if not is_read_only_user({'role': ROLE_CHIEF}):
+        problems.append('the command role must be read-only')
+    for verb in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        if verb in READ_ONLY_SAFE_METHODS:
+            problems.append(f'{verb} must never be a safe method')
+    return problems
     ROLE_LOCATION_SCOPE.setdefault(_alias, ROLE_LOCATION_SCOPE[_canonical])
     ROLE_LABELS.setdefault(_alias, ROLE_LABELS[_canonical])
 
@@ -1253,6 +1414,31 @@ def enforce_read_only(user, method, path=None):
         'every dashboard, register and search but never alter data.')
 
 
+def unit_role_family(role_key):
+    """Map a normalized role key onto one of the restricted unit families.
+
+    `role_key` is the alphanumeric-lowercase form of a role string
+    (`_role_key`). Returns the canonical role for a recognisable family, or ''
+    when the string names no known unit — which keeps this a *widening* of the
+    alias table rather than a guess: only the two restricted units and the
+    command role are matched, and each match is one of their canonical names.
+    """
+    k = str(role_key or '')
+    if not k:
+        return ''
+    if k.startswith('airport') or k in ('apofficer', 'ap'):
+        return ROLE_AIRPORT
+    if (k.startswith('cid') or k.startswith('criminalinvestigation')
+            or k.startswith('criminalunit') or k.startswith('crimeunit')):
+        return ROLE_CID
+    if k.startswith('chiefcommander') or k.startswith('highcommand'):
+        return ROLE_CHIEF
+    if k in ('commander', 'commanderhq', 'hqcommander', 'commandhq', 'hqcommand',
+             'policehq', 'chiefcommand', 'commanderinchief'):
+        return ROLE_CHIEF
+    return ''
+
+
 def canonical_location_scope(scope):
     """Map a location value ('south', 'South Checkpoint', ' SOUTH '...) to the
     canonical short code ('South' / 'East' / 'West'). Returns the trimmed
@@ -1339,6 +1525,9 @@ def user_view(user):
     modules = set(ROLE_MODULES.get(raw_role, set())) | \
         set(ROLE_MODULES.get(role_alias, set())) | \
         set(ROLE_MODULES.get(spec_role, set()))
+    # Hard denylist: Airport Control and the CID Criminal Unit never receive
+    # Central Police Search, whatever the three lookups above returned.
+    modules = strip_denied_modules(raw_role, modules)
     return {
         'id': user['id'],
         'username': user['username'],
@@ -1381,13 +1570,11 @@ def require_module(user, module):
     role = user.get('role') or ''
     # Try the raw role first, then the normalised alias — so the
     # module set is resolved for both spellings of the same logical
-    # role.
-    modules = ROLE_MODULES.get(role, set())
-    if module in modules:
+    # role. The hard unit denylist is applied to every lookup, so a denied
+    # module can never be authorised here even if ROLE_MODULES changed.
+    if module in allowed_modules_for_role(role):
         return
-    normalised = normalize_role(role)
-    modules = ROLE_MODULES.get(normalised, set())
-    if module in modules:
+    if module in strip_denied_modules(role, user.get('modules') or []):
         return
     raise PermissionError(
         f'Restricted to {ROLE_LABELS.get(role, role)}')
@@ -1402,11 +1589,11 @@ def user_module_set(user):
     """
     if not user:
         return set()
-    mods = set(user.get('modules') or [])
     role = user.get('role') or ''
-    mods |= set(ROLE_MODULES.get(role, set()))
-    mods |= set(ROLE_MODULES.get(normalize_role(role), set()))
-    mods |= set(ROLE_MODULES.get(spec_role_for(role), set()))
+    mods = allowed_modules_for_role(role)
+    # The caller may hand over an already-resolved list (require_auth does);
+    # the denylist is applied to it as well.
+    mods |= strip_denied_modules(role, user.get('modules') or [])
     return mods
 
 
@@ -4201,8 +4388,8 @@ def build_dashboard(c, user):
 
     # Spec step 1: also surface the modules list under the
     # normalized role so the frontend can gate on either form.
-    modules_raw = sorted(ROLE_MODULES.get(role, set()))
-    modules_alias = sorted(ROLE_MODULES.get(role_alias, set()))
+    modules_raw = sorted(allowed_modules_for_role(role))
+    modules_alias = sorted(allowed_modules_for_role(role_alias))
     modules = sorted(set(modules_raw) | set(modules_alias))
 
     return {
@@ -4727,7 +4914,7 @@ class API(BaseHTTPRequestHandler):
                         break
                     if prefix == '/api/vehicles' and (
                             'cars' in (user.get('modules') or [])
-                            or 'policesearch' in (user.get('modules') or [])
+                            or 'policesearch' in user_module_set(user)
                             or 'checkpoints' in (user.get('modules') or [])
                             or 'crimes' in (user.get('modules') or [])):
                         break
@@ -4886,7 +5073,7 @@ class API(BaseHTTPRequestHandler):
                         'role_alias': normalize_role(r_role) if user else '',
                         'is_admin': (r_role == ROLE_ADMIN),
                         'location_scope': checkpoint_scope(user) if user else None,
-                        'modules': sorted(ROLE_MODULES.get(r_role, set())),
+                        'modules': sorted(allowed_modules_for_role(r_role)),
                         'cards': [],
                         'quick_actions': [],
                         'activity': [],
@@ -5928,6 +6115,13 @@ if __name__ == '__main__':
         # Refuse to serve rather than quietly answer approvals unlocked.
         raise SystemExit('FATAL: fingerprint review lock failed its self-test; '
                          'refusing to start an unlocked server.')
+    rbac_problems = rbac_self_test()
+    if rbac_problems:
+        # Same fail-closed rule for the module scoping: a server that would
+        # grant Central Police Search to the Airport / CID units, or that
+        # stopped treating the command role as read-only, must not serve.
+        raise SystemExit('FATAL: RBAC self-test failed; refusing to start:\n' +
+                         ''.join(f'       - {p}\n' for p in rbac_problems))
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
     print(f'  database: PostgreSQL '
@@ -5946,5 +6140,8 @@ if __name__ == '__main__':
           f'{", ".join(sorted(READ_ONLY_ROLES))} — '
           f'{", ".join(sorted(READ_ONLY_BLOCKED_METHODS))} away from '
           f'{", ".join(sorted(READ_ONLY_EXEMPT_PATHS))} answer 403 Forbidden')
+    print('  RBAC self-test: PASS — module denylist in force for '
+          f'{", ".join(sorted(UNIT_MODULE_DENY))}, '
+          f'read-only roles: {", ".join(sorted(READ_ONLY_ROLES))}')
     print(f'  pid {os.getpid()}  started {SERVER_STARTED_AT}')
     bind_server(port).serve_forever()

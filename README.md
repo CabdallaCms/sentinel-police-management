@@ -136,6 +136,25 @@ UI and the API can never disagree:
 
 **Session persistence (refresh-safe sign-in).** On sign-in the auth token and user object are stored in browser storage (`localStorage.setItem('sentinel_token', token)` and `localStorage.setItem('sentinel_user', JSON.stringify(user))`, plus the legacy `sentinelSession` object used by the printable pages). On every page load `initApp()` re-hydrates `currentUser` and `authToken` **before** the initial API sync (`syncServer` / `fetchCheckpoints`), and every request automatically carries `Authorization: Bearer ${token}`. A refresh therefore never signs the officer out: only an explicit HTTP **401** from the dedicated auth check (`GET /api/me`) clears the session — non-fatal startup errors (server still booting, transient 5xx, a 404) keep the officer signed in and retry in the background.
 
+**Role normalization and the unit denylist.** The module a session receives is
+resolved through the alias tables *and* a family fallback, so the label spellings an operator may
+have typed into `users.role` — `Airport Control Officer`, `Airport Control Unit`, `CID Criminal
+Unit`, `Criminal Unit`, `Crime Unit`, `Chief Commander of Police Office`, … — resolve to their real
+role instead of falling through. That fall-through was the source of a real defect: an unrecognised
+role used to inherit the review-lock default module set (the Fingerprint set, which *includes*
+Central Police Search). Now:
+
+- `ROLE_MODULES[AirportControl] = {dashboard, people, airport}` and `ROLE_MODULES[CIDUnit] =
+  {dashboard, people, cid, crimes}` — and the hard denylist (`UNIT_MODULE_DENY` +
+  `denied_modules_for_role()` / `strip_denied_modules()`) is re-applied to **every** module list the
+  server emits or checks (login, `/api/me`, dashboard, `require_module`, `user_module_set`), so no
+  spelling, cached payload or future edit can leak `policesearch` into a unit session.
+- An **unrecognised** role is fail-closed: it resolves to dashboard only, never to another unit's
+  modules.
+- The server runs `rbac_self_test()` at start-up and **refuses to boot** if the denylist or the
+  read-only command role is not in force in that process (`RBAC self-test: PASS — module denylist in
+  force for AirportControl, CIDUnit, read-only roles: chief_commander`).
+
 **Role normalization.** Every accepted Checkpoint-officer spelling (`CheckpointSouth` / `CheckpointEast` / `CheckpointWest`, `checkpoint_south`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, …) is normalized to the canonical role **`checkpoint_officer`** while the officer's `location_scope` (`South` / `East` / `West`) is preserved (and derived from the alias when not passed explicitly). `GET /api/dashboard` and `GET /api/checkpoint-events` return HTTP 200 for all of these roles — never 404/401 for a valid checkpoint officer — and the checkpoint query matches the location case-insensitively (`LOWER(location_code) = 'south' OR LOWER(checkpoint_location) LIKE '%south%'` and equivalent columns).
 
 **Checkpoint table freshness.** `submitCheckpoint()` prepends the new stop into `db.checkpoints` immediately so the table and the location badge update instantly (`South Checkpoint 0 → 1`), and `syncServer()` never overwrites `db.checkpoints` with `[]` from a transient/failed response — only a successful response with rows replaces the local cache.
@@ -398,6 +417,10 @@ which the role used to manage, and unknown paths, which are refused before routi
 `quick_actions` payload, and that every `Commander` / `HighCommand` / `high_command` / `command_hq` /
 `hq_command` / `police_hq` / `chief.commander` spelling resolves to the same read-only role while
 SystemAdmin and the unit officers keep writing (a SystemAdmin `PUT` still gets the ordinary `405`).
+
+The suite also drives a **role-spelling matrix** directly against the server module: 23 spellings of
+the two restricted units must resolve to their own family (never `policesearch`), 14 other role
+spellings must keep it, unknown roles must be dashboard-only, and `rbac_self_test()` must be clean.
 
 The frontend half of the same contract is pinned in `backend/test_frontend_session.mjs` (the
 sidebar-removal code path, no *Review/Print* link for a read-only session, `hardenReadOnlyDom()`

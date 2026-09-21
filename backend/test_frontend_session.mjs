@@ -852,14 +852,24 @@ async function main() {
     if (modsFor('CIDUnit', ['dashboard', 'people', 'cid', 'crimes', 'policesearch'])
         !== JSON.stringify(['dashboard', 'people', 'cid', 'crimes']))
       throw new Error('CIDUnit must never hold policesearch');
-    // Every accepted spelling of both units is covered, and other roles keep it.
-    ['airport_officer', 'ap.officer', 'Airport Control'].forEach((spelling) => {
-      if (modsFor(spelling, ['airport', 'policesearch']).includes('policesearch'))
-        throw new Error(`Airport spelling ${spelling} must be denied policesearch`);
+    // Every accepted spelling of both units is covered — including the label
+    // spellings an operator may have typed into the users table, which used to
+    // fall through and inherit another unit's modules — and other roles keep it.
+    ['airport_officer', 'ap.officer', 'Airport Control', 'Airport Control Officer',
+     'Airport Control Unit', 'Airport Control Office'].forEach((spelling) => {
+      const out = modsFor(spelling, ['airport', 'people', 'policesearch']);
+      if (out.includes('policesearch'))
+        throw new Error(`Airport spelling ${spelling} must be denied policesearch (${out})`);
+      if (!out.includes('airport'))
+        throw new Error(`Airport spelling ${spelling} must keep its own module (${out})`);
     });
-    ['CIDUnit', 'cid.officer', 'criminal_investigation'].forEach((spelling) => {
-      if (modsFor(spelling, ['cid', 'policesearch', 'crimes']).includes('policesearch'))
-        throw new Error(`CID spelling ${spelling} must be denied policesearch`);
+    ['CIDUnit', 'cid.officer', 'criminal_investigation', 'CID Criminal Unit',
+     'cid_criminal_unit', 'Criminal Unit', 'Crime Unit'].forEach((spelling) => {
+      const out = modsFor(spelling, ['cid', 'people', 'crimes', 'policesearch']);
+      if (out.includes('policesearch'))
+        throw new Error(`CID spelling ${spelling} must be denied policesearch (${out})`);
+      if (!out.includes('cid'))
+        throw new Error(`CID spelling ${spelling} must keep its own module (${out})`);
     });
     if (probe(sb12, `sanitizeModules('FingerprintUnit',['fingerprint','policesearch']).includes('policesearch')`) !== true)
       throw new Error('the Fingerprint Unit keeps Central Police Search (only Airport + CID are stripped)');
