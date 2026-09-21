@@ -413,6 +413,29 @@ PERSON_FIELDS = NAME_PART_FIELDS + ('full_name', 'national_id', 'date_of_birth',
                                     'occupation', 'passport_id', 'photo_path')
 
 # ---------------------------------------------------------------------------
+# Dual-tier person-profile editing policy (Central Search & person modals).
+# ---------------------------------------------------------------------------
+# * Frontline officers may correct the VOLATILE contact fields when a citizen
+#   returns with updated details (phone, address/residence, occupation and
+#   the profile photo).
+# * The CORE identifiers that anchor Central Search matching (name parts,
+#   full name, Date of Birth, Mother's Name, National ID / Passport, place
+#   of birth) may only be edited by System Administrators, who correct data
+#   errors and maintain registry accuracy.
+# PATCH /api/persons/<id> enforces this server-side (fail closed): a
+# non-admin request that attempts to CHANGE a core field is rejected with
+# HTTP 403 and nothing is written.
+PERSON_VOLATILE_FIELDS = ('phone', 'residence', 'occupation', 'photo_path')
+PERSON_CORE_FIELDS = tuple(f for f in PERSON_FIELDS if f not in PERSON_VOLATILE_FIELDS)
+
+# Modules whose registers actually consume Central Person records (names on
+# unit tables, identity matching, suspect links). GET /api/persons* is gated
+# to these modules so a police-registration-only or vehicle-only role can
+# never bulk-read the central person registry out of context — their unit
+# tables render strictly their own domain logs.
+PERSON_READ_MODULES = ('people', 'fingerprint', 'airport', 'cid', 'checkpoints')
+
+# ---------------------------------------------------------------------------
 # Fingerprint / clearance-application policy.
 # ---------------------------------------------------------------------------
 # The mandatory `clearance_reason` values offered by the application form.
@@ -1028,25 +1051,40 @@ ROLE_LABELS = {
 #
 # Regional registration modules (frontend-only registers for now):
 #   * 'policesearch' — Central Police Search (officers/stations/cars filter
-#     by Region → District → Village); granted to the same roles that can
-#     see the Central Person Search ('people').
+#     by Region → District → Village). A CROSS-UNIT global search surface:
+#     it is deliberately NOT granted to the Fingerprint Unit or the HR
+#     Directorate, whose sidebars must stay strictly scoped to their own
+#     directorate (see ROLE_MODULES below).
+#   * 'people' — Central Person Search. Likewise a global search surface,
+#     granted only to units whose operations consume identity records
+#     (fingerprint capture, airport screening, CID casework, checkpoints).
+#     The HR Directorate registers police OFFICERS (the 'officers' module),
+#     not central persons, and never gets 'people'.
 #   * 'stations' / 'officers' / 'cars' — Police Registrations & Management;
-#     administrative operations, granted to SystemAdmin only.
+#     administrative operations, granted to SystemAdmin only (HR additionally
+#     holds 'officers' + 'stations' for its registration/posting duties).
 ROLE_MODULES = {
     ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
                  'policesearch', 'stations', 'officers', 'cars', 'crimes', 'conduct'},
-    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
+    # Fingerprint Unit: strictly fingerprint operations + the Central Person
+    # Registry its captures are filed into. NO 'policesearch' — the Central
+    # Police Search (cross-unit officers/stations/cars) never appears in a
+    # fingerprint officer's sidebar.
+    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint'},
     ROLE_AIRPORT: {'dashboard', 'people', 'airport', 'policesearch'},
     ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch', 'crimes'},
-    # HR Directorate: the full Police Officers register (roster + promotions +
-    # discipline, and their analytics bundle) plus the station register it
-    # posts officers against and the central registries it searches. The
-    # 'conduct' module is the promotions & disciplinary review desk — the HR
+    # HR Directorate (Police Personnel Registration): the full Police Officers
+    # register (roster + promotions + discipline, and their analytics bundle)
+    # plus the station register it posts officers against. The 'conduct'
+    # module is the promotions & disciplinary review desk — the HR
     # Directorate is the authority that reviews, verifies and approves or
     # rejects the conduct files station commanders submit, so it owns this
-    # register. Still no 'admin', no 'analytics', and no
+    # register. NO 'people' and NO 'policesearch': the HR Directorate works
+    # strictly against its own personnel/station registers — the global
+    # Central Person Search and Central Police Search cross-unit links are
+    # hidden from its sidebar. Still no 'admin', no 'analytics', and no
     # CID/checkpoint/airport/fingerprint modules.
-    ROLE_HR: {'dashboard', 'people', 'policesearch', 'stations', 'officers', 'conduct'},
+    ROLE_HR: {'dashboard', 'stations', 'officers', 'conduct'},
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
@@ -1357,6 +1395,13 @@ def filter_visibility(user):
         'can_view_global_analytics': has_permission(user, PERM_ANALYTICS_GLOBAL),
         'can_manage_stations': is_admin or has_permission(user, PERM_STATIONS_MANAGE),
         'checkpoint_scope': checkpoint_scope(user),
+        # Dual-tier person-profile editing (Central Search & person modals):
+        # every officer with person-registry access may correct the volatile
+        # contact fields; ONLY SystemAdmin may edit the core identifiers.
+        'can_edit_person_core': is_admin,
+        'can_edit_person_contact': True,
+        'person_volatile_fields': list(PERSON_VOLATILE_FIELDS),
+        'person_core_fields': list(PERSON_CORE_FIELDS),
     }
 
 # ---- migration --------------------------------------------------------------
@@ -4589,6 +4634,15 @@ class API(BaseHTTPRequestHandler):
                         break
                     require_module(user, mod)
                     break
+            # Scoped data visibility: the Central Person Registry is only
+            # readable by roles whose registers actually consume identity
+            # records (Central Search, Fingerprint, Airport, CID, Checkpoint).
+            # Police-registration-only or vehicle-only roles work strictly
+            # against their own domain logs (officers / stations / vehicles);
+            # cross-system links they need (e.g. plate lookups) have their own
+            # gates above.
+            if p.path == '/api/persons' or p.path.startswith('/api/persons/'):
+                require_any_module(user, PERSON_READ_MODULES)
             if p.path == '/api/me':
                 result = {**user, 'visibility': filter_visibility(user),
                           'roles': list(ALL_ROLES),
@@ -4984,6 +5038,29 @@ class API(BaseHTTPRequestHandler):
                         break
                     require_module(user, mod)
                     break
+            # Central Person Registry writes (create / resolve / upsert /
+            # photo) follow the same visibility boundary as the reads: only
+            # roles whose registers consume identity records may touch it.
+            if p.path == '/api/persons' or p.path.startswith('/api/persons/'):
+                require_any_module(user, PERSON_READ_MODULES)
+            if p.path.startswith('/api/persons/') and p.path.endswith('/photo'):
+                # Profile photo update — allowed for frontline officers too
+                # (photo is one of the volatile fields in the dual-tier
+                # editing policy). Multipart with a single `photo` file.
+                pid = p.path.split('/')[3]
+                row = c.execute('SELECT * FROM persons WHERE person_id=%s', (pid,)).fetchone()
+                if not row: self.send_json(404, {'error': 'Person not found'}); c.close(); return
+                fields, files = parse_multipart(self)
+                photo = save_upload_validated(files.get('photo'), OFFICER_IMAGE_EXTS,
+                                              'Profile photo', required=True)
+                c.execute("UPDATE persons SET photo_path=%s, "
+                          "updated_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') "
+                          "WHERE id=%s", (photo['path'], row['id']))
+                audit(c, user, 'UPDATE', 'person', pid, 'profile photo updated')
+                c.commit()
+                self.send_json(200, {'person': rowdict(c.execute(
+                    'SELECT * FROM persons WHERE id=%s', (row['id'],)).fetchone())})
+                c.close(); return
             if p.path == '/api/persons':
                 data = body_json(self)
                 if not build_full_name(data):
@@ -5492,19 +5569,49 @@ class API(BaseHTTPRequestHandler):
                 # HR Directorate writes (promotion verification, …) belong to
                 # the Police Officers Registration Office module.
                 require_module(user, 'officers')
+            elif p.path.startswith('/api/persons/'):
+                # Central Person Registry: only roles whose registers consume
+                # identity records may update profiles at all; the per-field
+                # dual-tier policy (admin = all fields, officer = volatile
+                # contact fields only) is enforced below.
+                require_any_module(user, PERSON_READ_MODULES)
             if p.path.startswith('/api/persons/'):
+                # Dual-tier profile editing (fail closed, mirrored in the UI):
+                #   * System Administrators — unrestricted: may correct ANY
+                #     field, including the core identifiers (name parts,
+                #     DOB, mother's name, National ID / Passport) that anchor
+                #     Central Search matching.
+                #   * Frontline officers — may only update the volatile
+                #     contact fields (phone, residence/address, occupation,
+                #     profile photo) when a citizen returns with new details.
+                #     A non-admin request that would CHANGE a core field is
+                #     rejected with 403 and nothing is written.
                 pid = p.path.split('/')[3]
                 row = c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone()
                 if not row: self.send_json(404,{'error':'Person not found'}); c.close(); return
+                caller_is_admin = is_admin_user(user)
                 updates, params = [], []
                 for f in PERSON_FIELDS:
                     val = data.get(f)
-                    if val is not None and str(val).strip()!='':
-                        updates.append(f'{f}=%s'); params.append(str(val).strip())
+                    if val is None or str(val).strip()=='':
+                        continue
+                    val = str(val).strip()
+                    if not caller_is_admin and f in PERSON_CORE_FIELDS:
+                        current = str((row[f] if f in row.keys() else None) or '').strip()
+                        if val != current:
+                            self.send_json(403,{'error':(
+                                'Only a System Administrator may edit core identity fields '
+                                '(name, date of birth, mother\'s name, ID / passport). '
+                                f'Officers may update phone, address, occupation and photo. '
+                                f'Rejected field: {f}')})
+                            c.close(); return
+                        continue   # unchanged core field re-sent by the form — ignore
+                    updates.append(f'{f}=%s'); params.append(val)
                 if updates:
                     updates.append("updated_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')"); params.append(row['id'])
                     c.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id=%s", params)
-                    audit(c,user,'UPDATE','person',pid)
+                    audit(c,user,'UPDATE','person',pid,
+                          'full profile (admin)' if caller_is_admin else 'volatile contact fields (officer)')
                 c.commit()
                 result = {'person': rowdict(c.execute('SELECT * FROM persons WHERE id=%s',(row['id'],)).fetchone())}
             elif p.path.startswith('/api/crime-cases/'):

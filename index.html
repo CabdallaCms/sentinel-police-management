@@ -1791,9 +1791,13 @@ function readIdentity(prefix){
 }
 function setLocked(el,val){
   if(!el)return;
-  const t=String(val==null?'':val).trim();
-  el.readOnly=!!t;
-  el.classList.toggle('locked',!!t);
+  // Auto-fill may populate a field, but a System Administrator is NEVER put
+  // into a read-only state by it — admins keep absolute, uninhibited edit
+  // permission across ALL fields (zero readonly locks), in every identity
+  // form (person drawer, fingerprint/airport/CID intake, checkpoints).
+  const locked=!!String(val==null?'':val).trim() && !canEditPersonCore();
+  el.readOnly=locked;
+  el.classList.toggle('locked',locked);
 }
 // Fill the identity form from a matched central person. Fields with actual non-empty
 // content are locked (read-only); fields that are blank/null stay fully editable so the
@@ -2068,29 +2072,83 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
 function val(id){return document.getElementById(id).value.trim()}
 
 // ---- unified central person drawer (create / view & update) ----
+// The edit modal locks / unlocks fields dynamically per the signed-in
+// user's role (dual-tier model — see applyPersonEditPermissions()).
 function openPersonDrawer(prefill,onSaved){
   const p=prefill&&prefill.id?prefill:null;
+  const admin=canEditPersonCore();
+  const editHint=admin
+    ?'Edit or append to this existing identity — as a <b>System Administrator</b> you have unrestricted access to every field, including the core identifiers (Full Name, DOB, Mother\u2019s Name, ID / Passport), to correct data errors and keep Central Search accurate.'
+    :'Update this citizen\u2019s <b>Phone Number, Address, Occupation or Profile Photo</b>. The core identity fields (Full Name, DOB, Mother\u2019s Name, ID / Passport) are locked — only a System Administrator can correct them.';
   const body=`
-  <div class="hint" style="margin-bottom:14px">${p?'Edit or append to this existing identity — the Central Person Registry is matched in real time and the profile is merged, never duplicated.':'Enter the identity below. The Central Person Registry is matched <b>in real time</b>; an exact match auto-fills existing data, otherwise a new Central Person record is created on save.'}</div>
-  <form class="form" id="personDrawerForm">${identityFormHTML('pd')}</form>`;
+  <div class="hint" style="margin-bottom:14px">${p?editHint:'Enter the identity below. The Central Person Registry is matched <b>in real time</b>; an exact match auto-fills existing data, otherwise a new Central Person record is created on save.'}</div>
+  <form class="form" id="personDrawerForm">${identityFormHTML('pd',{photo:true})}</form>`;
   openDrawer(p?'Update identity profile':'New central person',body,
     `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitPersonDrawer(${p?`'${p.id}'`:'null'})">${p?'Save updates':'Save person'}</button>`);
   if(p)fillIdentity('pd',p);
-  wireIdentity('pd');
+  // Keep the role locks authoritative in BOTH modes: in "new person" mode
+  // too, the live registry matcher can auto-fill an EXISTING record while
+  // the officer types — and every one of those auto-fills must re-apply the
+  // signed-in tier (officer → core locked, admin → zero locks) afterwards.
+  // Without the filler in create mode the auto-filled record came up
+  // read-only for everyone, including System Administrators.
+  wireIdentity('pd',{filler:(pre,per)=>{fillIdentity(pre,per);applyPersonEditPermissions(pre)}});
+  applyPersonEditPermissions('pd');
+  // Live preview for a newly chosen profile photo.
+  const ph=document.getElementById('pd-photo');
+  if(ph)ph.addEventListener('change',()=>{
+    const f=ph.files&&ph.files[0],pv=document.getElementById('pd-photoPrev');
+    if(f&&pv){try{const r=new FileReader();r.onload=()=>{pv.src=r.result;pv.style.display='block'};r.readAsDataURL(f)}catch(e){}}
+  });
   window._personDrawerCb=onSaved||null;
 }
 async function submitPersonDrawer(existingId){
   clearInvalid();
-  const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'pd',names:['first','second','third','fourth','dob','mother','address']});return}
+  const d=window._identityWires.pd.read();
+  const admin=canEditPersonCore();
+  const v=validateIdentity(d);
+  if(!v.ok){
+    // System Administrator correcting an EXISTING record: the full-form
+    // validation must not block the admin (zero validation blocks on core
+    // edits). The server-side PATCH only writes non-empty values, so a
+    // partial correction is always safe — the identity anchor
+    // (National ID / Passport) remains mandatory below.
+    if(!(existingId&&admin)){showFormError(v.msg,{prefix:'pd',names:['first','second','third','fourth','dob','mother','address']});return}
+    if(!d.national&&!d.passport){showFormError('National ID or Passport ID is required.',{prefix:'pd',names:['national','passport'],title:'Unable to Save'});return}
+  }
   const data={name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),first:d.first,second:d.second,third:d.third,fourth:d.fourth,
     nationalId:d.national,passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation};
   if(!data.nationalId&&!data.passportId){showFormError('National ID or Passport ID is required.',{prefix:'pd',names:['national','passport'],title:'Unable to Save'});return}
+  const photoFile=(document.getElementById('pd-photo')||{files:[]}).files[0]||null;
   try{
     let saved;
     if(serverOn){
-      if(existingId){await api('/api/persons/'+existingId,{method:'PATCH',body:JSON.stringify(stripServer(data))});saved=mapPerson((await api('/api/persons/'+existingId)))}
-      else saved=await upsertPerson(data);
-    }else saved=await upsertPerson(data);
+      if(existingId){
+        // Dual-tier payloads: officers PATCH only the volatile contact
+        // fields; admins PATCH the full profile. The server enforces the
+        // same policy (403 on a non-admin core-field change), the split
+        // here just keeps officer requests clean.
+        const payload=admin?stripServer(data)
+          :{phone:data.phone||'',residence:data.residence||'',occupation:data.occupation||''};
+        await api('/api/persons/'+existingId,{method:'PATCH',body:JSON.stringify(payload)});
+        if(photoFile){const fd=new FormData();fd.append('photo',photoFile);
+          await api('/api/persons/'+existingId+'/photo',{method:'POST',body:fd});}
+        saved=mapPerson((await api('/api/persons/'+existingId)));
+      }
+      else{
+        saved=await upsertPerson(data);
+        if(saved&&saved.id&&photoFile){const fd=new FormData();fd.append('photo',photoFile);
+          try{saved=mapPerson((await api('/api/persons/'+saved.id+'/photo',{method:'POST',body:fd})).person)}catch(e){}}
+      }
+    }else{
+      // Offline / local demo mode mirrors the same permission tiers.
+      if(existingId&&!admin){
+        const lp=person(existingId);
+        if(lp){['phone','residence','occupation'].forEach(k=>{if(data[k]&&String(data[k]).trim())lp[k]=data[k]});lp.updated='today';persist();saved=lp}
+        else saved=await upsertPerson(data);
+      }else saved=await upsertPerson(data);
+      if(saved&&photoFile){try{const url=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(photoFile)});saved.photoUrl=url;persist()}catch(e){}}
+    }
     closeDrawer();renderAll();toast(existingId?'Identity profile updated':'Person saved to central registry');
     if(window._personDrawerCb)window._personDrawerCb(saved);
   }catch(e){showFormError(e.message||'The person could not be saved.',{prefix:'pd',title:'Unable to Save'})}
@@ -2162,7 +2220,10 @@ function openPersonView(id){
   ];
   const grid=`<div class="pv-grid">${fields.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${esc(v||'—')}</b></div>`).join('')}</div>`;
   const unitsBlock=`<div class="pv-units"><small>Linked unit records</small><div>${units||'<span class="muted">Central only — no unit registers linked yet</span>'}</div></div>`;
-  const foot=`<div class="pv-foot"><button class="btn ghost" onclick="closeEntryModal('pvModal')">Close</button><button class="btn secondary" onclick="closeEntryModal('pvModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button></div>`;
+  // Dual-tier edit action: admins get the full editor, frontline officers
+  // get the contact-details editor (core identity fields locked).
+  const editLabel=canEditPersonCore()?'Edit full profile (Admin)':'Update contact details';
+  const foot=`<div class="pv-foot"><button class="btn ghost" onclick="closeEntryModal('pvModal')">Close</button><button class="btn secondary" title="${canEditPersonCore()?'System Administrator — all fields editable':'Officer tier — phone, address, occupation and photo only'}" onclick="closeEntryModal('pvModal');openPersonDrawer(window._viewingPerson)">${editLabel}</button></div>`;
   document.getElementById('pvModalTitle').textContent='Identity profile · '+p.id;
   document.getElementById('pvModalBody').innerHTML=head+grid+unitsBlock+foot;
   openEntryModal('pvModal');
@@ -2479,10 +2540,53 @@ function isChiefRole(role){
   const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
   return l==='chiefcommander'||l==='commanderhq'||l==='hqcommand'||l==='policehq';
 }
-// Normalized admin check ('SystemAdmin', 'system_admin', 'Admin', ...).
+// Normalized admin check ('SystemAdmin', 'system_admin', 'Admin',
+// 'System Administrator', ...). Mirrors the backend ADMIN_ROLE_KEYS so the
+// UI can never under-recognise a System Administrator and wrongly lock the
+// admin's core profile fields.
 function isAdminRole(role){
   const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
-  return l==='systemadmin'||l==='admin'||l==='administrator';
+  return l==='systemadmin'||l==='systemadministrator'||l==='admin'||l==='administrator'||l==='superadmin'||l==='root';
+}
+
+// ============================ dual-tier person editing =====================
+// Central Search & person modals follow a two-tier permission model:
+//   * Frontline officers — may edit the VOLATILE personal fields (Phone
+//     Number, Address, Occupation and the Profile Photo) when a citizen
+//     returns with updated details.
+//   * System Administrators — unrestricted: may edit ALL fields including
+//     the core identifiers (Full Name, Date of Birth, Mother's Name and
+//     ID / Passport) to correct data errors and keep Central Search
+//     matching accurate.
+// The same policy is enforced server-side by PATCH /api/persons/<id>
+// (fail closed), so the UI locks below are a mirror, not the only gate.
+const PERSON_VOLATILE_KEYS=['phone','address','occupation'];             // + the photo input
+const PERSON_CORE_KEYS=['first','second','third','fourth','dob','national','passport','mother','pob'];
+function canEditPersonCore(){
+  if(sessionVisibility && typeof sessionVisibility.can_edit_person_core==='boolean')
+    return sessionVisibility.can_edit_person_core;
+  return isAdminRole((sessionUser&&sessionUser.role)||'');
+}
+// Lock / unlock the identity form fields for an EXISTING profile based on
+// the signed-in user's tier. Called by openPersonDrawer() (the person edit
+// modal handler) after the form is filled.
+function applyPersonEditPermissions(prefix){
+  const admin=canEditPersonCore();
+  const set=(k,locked,title)=>{
+    const el=document.getElementById(prefix+'-'+k);if(!el)return;
+    el.readOnly=locked;el.classList.toggle('locked',locked);
+    if(title)el.title=title;else el.removeAttribute('title');
+  };
+  if(admin){
+    // System Administrator: full, unrestricted access to every field.
+    PERSON_CORE_KEYS.concat(PERSON_VOLATILE_KEYS).forEach(k=>set(k,false));
+  }else{
+    // Frontline officer: core identifiers locked, volatile fields open.
+    PERSON_CORE_KEYS.forEach(k=>set(k,true,'Core identity field — editable by System Administrators only'));
+    PERSON_VOLATILE_KEYS.forEach(k=>set(k,false));
+  }
+  const ph=document.getElementById(prefix+'-photo');
+  if(ph)ph.disabled=false;   // profile photo is a volatile field for every tier
 }
 
 // Auto-bind the location filter to the signed-in officer's scope on
@@ -3095,7 +3199,7 @@ const UNIT_STATS={
     ].join('');
   },
   officers:()=>{
-    const rows=db.officers||[];
+    const rows=officerDomainRows();
     const duty=s=>rows.filter(o=>String(o.duty_status||'')===s).length;
     return [
       usTile(rows.length,'Officers registered','▤','blue'),
@@ -3115,7 +3219,7 @@ const UNIT_STATS={
     ].join('');
   },
   cars:()=>{
-    const rows=db.cars||[];
+    const rows=vehicleDomainRows();
     const st=s=>rows.filter(v=>String(v.operational_status||'').trim()===s).length;
     return [
       usTile(rows.length,'Vehicles registered','🚓','blue'),
@@ -3125,7 +3229,7 @@ const UNIT_STATS={
     ].join('');
   },
   vehiclestatus:()=>{
-    const rows=db.cars||[];
+    const rows=vehicleDomainRows();
     const st=s=>rows.filter(v=>String(v.operational_status||'').trim()===s).length;
     const alerted=rows.filter(v=>['Stolen','Wanted in Crime','Impounded','Unregistered / Suspicious'].includes(String(v.security_alert||''))).length;
     return [
@@ -3640,8 +3744,17 @@ async function syncServer(){
     // Each collection is fetched through safeItems()/fetchCheckpoints():
     // a failed fetch reports ok=false and the corresponding local array is
     // left untouched (never clobbered with [] by a transient error).
+    // Scoped data visibility: the Central Person Registry is only pulled
+    // for roles whose registers actually consume identity records (Central
+    // Search, Fingerprint, Airport, CID, Checkpoints). Police-registration
+    // and vehicle roles sync strictly their own domain collections
+    // (officers / stations / vehicles / conduct); the cross-system links
+    // they need (e.g. checkpoint plate lookups against the central vehicle
+    // registry) keep their own dedicated gated fetches below.
+    const PERSON_CONSUMER_MODULES=['people','fingerprint','airport','cid','checkpoints'];
+    const wantsPersons = PERSON_CONSUMER_MODULES.some(m=>sessionUser.modules.includes(m));
     const fetches = [
-      safeItems('/api/persons'),
+      wantsPersons ? safeItems('/api/persons') : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('airport')    ? safeItems('/api/airport-records')          : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('fingerprint')? safeItems('/api/clearance-applications')   : Promise.resolve({ok:false,items:[]}),
       sessionUser.modules.includes('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
@@ -3988,6 +4101,17 @@ async function initApp(){
 // full-width table (with a search box) and a compact unit overview strip; the
 // entry form opens in a centered modal from the page's primary action button.
 function applyNavForRole(){
+  // STRICT UNIT SCOPING: `mods` is the module list the SERVER issued for the
+  // signed-in unit's role (/api/me → ROLE_MODULES). A global search category
+  // is shown ONLY when that unit was explicitly granted its module:
+  //   * 'people' (Central Person Search) — Fingerprint / Airport / CID /
+  //     Checkpoint / Admin only. NEVER the HR Directorate (personnel
+  //     registration works against the officer register, not persons).
+  //   * 'policesearch' (Central Police Search) — cross-unit search surface.
+  //     NEVER the Fingerprint Unit, NEVER the HR Directorate.
+  // Because the module list is server-issued, the sidebar can never drift
+  // from the backend gates: if a unit cannot read a register, its nav item
+  // for it is hidden here.
   const mods = (sessionUser && sessionUser.modules) || ['dashboard'];
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
   document.querySelectorAll('#nav button[data-page]').forEach(b => {
@@ -4423,7 +4547,8 @@ function vehicleStatusBadge(v){
 }
 function renderVehicleStatusTable(){
   const tb=document.getElementById('vsTable'); if(!tb)return;
-  const all=db.cars||[];
+  // Fleet board renders strictly vehicle-domain rows.
+  const all=vehicleDomainRows();
   const q=searchValue('vsSearch');
   const sel=document.getElementById('vsStatusFilter'); const status=sel?sel.value:'';
   const list=all.filter(c=>{
@@ -4968,10 +5093,36 @@ function dutyBadge(s){
   return `<span class="badge ${cls}">${esc(v)}</span>`;
 }
 function officerLocation(o){return {region:o.region_of_origin||'',district:o.district_of_origin||'',village:o.town_village||''}}
+// ---- Domain boundary guards -------------------------------------------------
+// The Police Registration and Vehicle unit tables strictly display their own
+// domain logs. These guards are the final render-side gate: a record must
+// carry its domain's identifying shape (an officer service ID / a vehicle
+// plate or VIN) to be listed, so a central person registry entry (P-XXXX
+// identity record) mis-mapped into a unit collection can never leak into a
+// unit table out of context. Cross-system links (station postings, plate
+// lookups, person IDs stored on unit rows) keep working in the background —
+// this only constrains what the unit tables paint.
+function isOfficerDomainRecord(o){
+  if(!o||typeof o!=='object')return false;
+  if(!String(o.service_id||'').trim())return false;              // officers carry a service ID
+  if(/^P-\d+$/i.test(String(o.id||'')))return false;             // never a central person id
+  return true;
+}
+function isVehicleDomainRecord(v){
+  if(!v||typeof v!=='object')return false;
+  if(!String(v.plate||v.plate_number||'').trim()&&!String(v.vin||'').trim())return false; // vehicles carry a plate / VIN
+  if(/^P-\d+$/i.test(String(v.id||'')))return false;             // never a central person id
+  return true;
+}
+function officerDomainRows(){return (db.officers||[]).filter(isOfficerDomainRecord)}
+function vehicleDomainRows(){return (db.cars||[]).filter(isVehicleDomainRecord)}
+
 function renderOfficersTable(){
   const tb=document.getElementById('officersTable');if(!tb)return;
   // Central Officer Search — name, service ID, rank, unit, station or contact.
-  const all=db.officers||[];
+  // Scoped to strict police-domain rows (registrations only — never central
+  // person registry entries).
+  const all=officerDomainRows();
   const q=searchValue('offSearch');
   const list=all.filter(o=>{
     if(!q)return true;
@@ -4997,7 +5148,9 @@ function vehicleAlertBadge(alert){
 function renderCarsTable(){
   const tb=document.getElementById('carsTable');if(!tb)return;
   // Central Vehicle Search — plate, VIN, make/model, owner, station or alert.
-  const all=db.cars||[];
+  // Scoped to strict vehicle-domain rows (plate/VIN records only — never
+  // central person registry entries).
+  const all=vehicleDomainRows();
   const q=searchValue('carSearch');
   const list=all.filter(c=>{
     if(!q)return true;
@@ -5044,7 +5197,7 @@ function renderPoliceSearch(){
   let rows='',count=0;
   if(psType==='officers'){
     head.innerHTML='<tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr>';
-    const list=(db.officers||[]).filter(o=>{
+    const list=officerDomainRows().filter(o=>{
       const st=stationOf(o);
       // Filter on the officer's own stored origin (Region → District → Town).
       return psLocMatch(officerLocation(o),f)
@@ -5066,7 +5219,7 @@ function renderPoliceSearch(){
       <td>${(db.cars||[]).filter(c=>c.station===s.id).length}</td></tr>`).join('');
   }else{
     head.innerHTML='<tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th><th>Alert</th></tr>';
-    const list=(db.cars||[]).filter(c=>{
+    const list=vehicleDomainRows().filter(c=>{
       const st=stationOf(c);
       return psLocMatch(recordLocation(c),f)
         && textMatch(c.plate,c.type,c.make,c.model,c.vin,st&&st.name,st&&st.code,c.security_alert);
