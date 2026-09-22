@@ -24,6 +24,12 @@ from vehicles import (
     VEHICLES_SCHEMA, register_vehicle, update_vehicle_alert, list_vehicles,
     VEHICLE_CATEGORIES, VEHICLE_OP_STATUSES, VEHICLE_ALERTS,
 )
+import enterprise
+from enterprise import (
+    ENTERPRISE_SCHEMA, FACILITY_CATEGORIES, FACILITY_TYPE_SEED,
+    FACILITY_TIERS as ENT_FACILITY_TIERS, FACILITY_STATUSES as ENT_FACILITY_STATUSES,
+    ENTERPRISE_ROLES,
+)
 
 
 # ---- secure environment loading ---------------------------------------------
@@ -334,9 +340,15 @@ CREATE TABLE IF NOT EXISTS audit_events(
 '''
 
 # Columns added after the initial migration (applied to existing databases).
+# Enterprise scaling refactor adds facility/region/district FKs and facility scoping
 ADDED_COLUMNS = {
     'users': [
         ('location_scope', "ALTER TABLE users ADD COLUMN location_scope TEXT"),
+        ('facility_id', "ALTER TABLE users ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
+        ('region_id', "ALTER TABLE users ADD COLUMN region_id INTEGER REFERENCES regions(id)"),
+        ('district_id', "ALTER TABLE users ADD COLUMN district_id INTEGER REFERENCES districts(id)"),
+        ('village_id', "ALTER TABLE users ADD COLUMN village_id INTEGER REFERENCES villages(id)"),
+        ('role_id', "ALTER TABLE users ADD COLUMN role_id INTEGER"),
     ],
     'persons': [
         ('first_name', "ALTER TABLE persons ADD COLUMN first_name TEXT"),
@@ -354,6 +366,7 @@ ADDED_COLUMNS = {
         ('airline', "ALTER TABLE airport_passengers ADD COLUMN airline TEXT"),
         ('origin_city', "ALTER TABLE airport_passengers ADD COLUMN origin_city TEXT"),
         ('destination_city', "ALTER TABLE airport_passengers ADD COLUMN destination_city TEXT"),
+        ('facility_id', "ALTER TABLE airport_passengers ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
     ],
     'clearance_applications': [
         ('guardian_id', "ALTER TABLE clearance_applications ADD COLUMN guardian_id TEXT"),
@@ -363,12 +376,13 @@ ADDED_COLUMNS = {
         ('applicant_docs', "ALTER TABLE clearance_applications ADD COLUMN applicant_docs TEXT"),
         ('guardian_docs', "ALTER TABLE clearance_applications ADD COLUMN guardian_docs TEXT"),
         ('applicant_photo', "ALTER TABLE clearance_applications ADD COLUMN applicant_photo TEXT"),
-        # Printable-application extras (Section 01 of the Good Conduct form).
         ('sex', "ALTER TABLE clearance_applications ADD COLUMN sex TEXT"),
         ('email', "ALTER TABLE clearance_applications ADD COLUMN email TEXT"),
+        ('facility_id', "ALTER TABLE clearance_applications ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
     ],
     'crime_cases': [
         ('incident_summary', "ALTER TABLE crime_cases ADD COLUMN incident_summary TEXT"),
+        ('facility_id', "ALTER TABLE crime_cases ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
     ],
     'suspect_alerts': [
         ('role', "ALTER TABLE suspect_alerts ADD COLUMN role TEXT NOT NULL DEFAULT 'Suspect'"),
@@ -389,13 +403,9 @@ ADDED_COLUMNS = {
         ('guardian_national_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_national_id TEXT"),
         ('guardian_passport_id', "ALTER TABLE checkpoint_events ADD COLUMN guardian_passport_id TEXT"),
         ('guardian_docs', "ALTER TABLE checkpoint_events ADD COLUMN guardian_docs TEXT"),
-        # Explicit location metadata: 'location_code' is the canonical short code
-        # (South / East / West); 'checkpoint_location' is the human-friendly label
-        # (e.g. 'South Checkpoint'). Both are written on every create so dashboards,
-        # the identity profile, and the activity feed can show the exact location
-        # without joining the locations table.
         ('location_code', "ALTER TABLE checkpoint_events ADD COLUMN location_code TEXT"),
         ('checkpoint_location', "ALTER TABLE checkpoint_events ADD COLUMN checkpoint_location TEXT"),
+        ('facility_id', "ALTER TABLE checkpoint_events ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
     ],
     'police_stations': [
         ('station_tier', "ALTER TABLE police_stations ADD COLUMN station_tier TEXT"),
@@ -404,6 +414,16 @@ ADDED_COLUMNS = {
         ('contact_phone', "ALTER TABLE police_stations ADD COLUMN contact_phone TEXT"),
         ('cell_capacity', "ALTER TABLE police_stations ADD COLUMN cell_capacity INTEGER"),
         ('operational_status', "ALTER TABLE police_stations ADD COLUMN operational_status TEXT DEFAULT 'Active'"),
+        ('facility_id', "ALTER TABLE police_stations ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
+    ],
+    'officers': [
+        ('facility_id', "ALTER TABLE officers ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
+    ],
+    'crime_incidents': [
+        ('facility_id', "ALTER TABLE crime_incidents ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
+    ],
+    'vehicles': [
+        ('facility_id', "ALTER TABLE vehicles ADD COLUMN facility_id INTEGER REFERENCES facilities(id)"),
     ],
 }
 
@@ -435,7 +455,7 @@ FINGERPRINT_ROLE_KEYS = {'fingerprint', 'fingerprintunit', 'fingerprintofficer',
 
 # Build marker — surfaced by /api/health and printed on startup so an operator
 # can confirm the running process carries the review-lock rules.
-BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
+BUILD_TAG = 'sentinel-enterprise-scaling-refactor-v1'
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
 # register; both prefixes resolve to the same handler and module gate.
@@ -1526,56 +1546,73 @@ def user_view(user):
     (existing checks use role === 'CheckpointSouth' etc.); the
     canonical normalized form is in 'role_alias' for the spec-mandated
     unified checks.
+
+    Enterprise scaling: also surfaces facility_id, region_id, district_id,
+    village_id, facility_code/name/type and a computed facility_scope via
+    enterprise.facility_scope() so admins can dynamically assign users to
+    new stations/branches without code change.
     """
     raw_role = user.get('role') or ''
-    # Spec step 1: normalise the role string. The session payload now
-    # carries the canonical 'checkpoint_officer' alias as 'role_alias'
-    # for any Checkpoint officer, regardless of the underlying
-    # storage form.
     role_alias = normalize_role(raw_role)
-    # Snake-case spec alias ('fingerprint_officer' / 'admin' / ...).
     spec_role = spec_role_for(raw_role)
     scope = user.get('location_scope') or ROLE_LOCATION_SCOPE.get(raw_role)
-    # Normalise legacy/derived scope for display: checkpoint users see a
-    # human-friendly location label, everyone else sees their branch.
     if raw_role.startswith('Checkpoint') and raw_role.endswith(('South', 'East', 'West')):
         location = raw_role[len('Checkpoint'):]
     else:
         location = scope or user.get('branch') or ''
-    # The module set must resolve for BOTH the raw stored role AND the
-    # normalised alias. Without the alias lookup a user stored as
-    # 'cp_south' / 'checkpoint_officer' would get modules: [] and the
-    # frontend would never fetch /api/checkpoint-events (the "0 records"
-    # bug).
+
     modules = set(ROLE_MODULES.get(raw_role, set())) | \
         set(ROLE_MODULES.get(role_alias, set())) | \
         set(ROLE_MODULES.get(spec_role, set()))
-    # Hard denylist: Airport Control and the CID Criminal Unit never receive
-    # Central Police Search, whatever the three lookups above returned.
     modules = strip_denied_modules(raw_role, modules)
-    return {
+
+    # Enterprise scope — new zero-code provisioning model
+    try:
+        ent_scope = enterprise.facility_scope(user)
+    except Exception:
+        ent_scope = {'facility_id': user.get('facility_id'),
+                     'region_id': user.get('region_id'),
+                     'district_id': user.get('district_id'),
+                     'scope_type': 'unknown'}
+
+    # Determine effective location display: prefer facility name if assigned
+    facility_name = user.get('facility_name')
+    if facility_name:
+        effective_branch = facility_name
+    else:
+        effective_branch = user.get('branch') or ''
+
+    payload = {
         'id': user['id'],
         'username': user['username'],
         'display_name': user['display_name'],
         'role': raw_role,
         'role_alias': role_alias,
-        # Spec-facing snake_case name ('fingerprint_officer', 'admin', ...).
-        # Never defaults to 'admin': an unknown role is treated as a standard
-        # officer, which keeps the 12-hour review lock fail-closed.
         'role_spec': spec_role,
         'spec_role': spec_role,
         'role_label': ROLE_LABELS.get(raw_role, raw_role),
-        'branch': user.get('branch') or '',
+        'branch': effective_branch,
         'location_scope': scope,
         'location': location,
         'modules': sorted(modules),
         'permissions': sorted(user_permissions(user)),
-        # Global read-only contract (Commander / High Command): the frontend
-        # renders every module in strict view-only mode when this is true.
         'read_only': is_read_only_role(raw_role),
         'can_write': not is_read_only_role(raw_role),
         'active': bool(user.get('active', 1)),
+        # --- enterprise scaling fields (zero-code provisioning) ---
+        'facility_id': user.get('facility_id'),
+        'facility_code': user.get('facility_code'),
+        'facility_name': user.get('facility_name'),
+        'facility_type': user.get('facility_type'),
+        'facility_category': user.get('facility_category'),
+        'region_id': user.get('region_id'),
+        'district_id': user.get('district_id'),
+        'village_id': user.get('village_id'),
+        'role_id': user.get('role_id'),
+        'enterprise_scope': ent_scope,
+        'facility_scope': ent_scope,
     }
+    return payload
 
 
 def require_role(user, role):
@@ -1741,6 +1778,8 @@ def relax_not_null(c, table, col):
 def migrate(c):
     """Idempotent in-place migration of an existing PostgreSQL database.
 
+    * creates enterprise scaling tables (regions, districts, villages,
+      facility_types, facilities, user_facility_assignments) if missing,
     * relaxes the legacy NOT NULL columns (persons.national_id,
       suspect_alerts.case_id) that older databases may still carry,
     * adds every column introduced after the initial schema
@@ -1748,6 +1787,16 @@ def migrate(c):
     * backfills the 4-part name columns and the explicit checkpoint
       location metadata for legacy rows.
     """
+    # --- enterprise scaling tables first (so FK columns can reference them) ---
+    # SCHEMA already created users; ENTERPRISE_SCHEMA creates regions etc.
+    # executescript is safe with CREATE TABLE IF NOT EXISTS.
+    try:
+        c.executescript(ENTERPRISE_SCHEMA)
+    except Exception:
+        # If tables already exist or partial failure, continue — ADDED_COLUMNS
+        # pass will still run. Real errors will surface on next operation.
+        pass
+
     tables = {r['name'] for r in c.execute(
         "SELECT table_name AS name FROM information_schema.tables "
         "WHERE table_schema='public' AND table_type='BASE TABLE'")}
@@ -1755,6 +1804,13 @@ def migrate(c):
         relax_not_null(c, 'persons', 'national_id')
     if 'suspect_alerts' in tables and has_notnull(c, 'suspect_alerts', 'case_id'):
         relax_not_null(c, 'suspect_alerts', 'case_id')
+
+    # Ensure enterprise tables are considered existing after the executescript
+    # above, even if information_schema was cached.
+    tables = {r['name'] for r in c.execute(
+        "SELECT table_name AS name FROM information_schema.tables "
+        "WHERE table_schema='public' AND table_type='BASE TABLE'")}
+
     for table, cols in ADDED_COLUMNS.items():
         if table not in tables:
             continue
@@ -1763,7 +1819,22 @@ def migrate(c):
             "WHERE table_schema='public' AND table_name=%s", (table,))}
         for col, sql in cols:
             if col not in existing:
-                c.execute(sql)
+                try:
+                    c.execute(sql)
+                except Exception:
+                    # Column may reference facilities/regions that didn't exist
+                    # until now; try again after ensuring enterprise schema.
+                    try:
+                        c.executescript(ENTERPRISE_SCHEMA)
+                        c.execute(sql)
+                    except Exception:
+                        pass
+
+    # Seed enterprise geography and facility types for existing DBs
+    try:
+        enterprise.seed_enterprise(c)
+    except Exception:
+        pass
     # Circular foreign key closure: police_stations.commander_id / deputy_id
     # point at officers(id) while officers.station_id points back at
     # police_stations(id). The CREATE TABLE script must declare them as plain
@@ -1819,7 +1890,15 @@ def init_db():
     c = get_db_connection()
     c.executescript(SCHEMA)
     c.executescript(VEHICLES_SCHEMA)
+    # Enterprise scaling refactor: regions -> districts -> villages -> facility_types -> facilities
+    # Must be created before migrate() tries to add facility_id FK columns.
+    c.executescript(ENTERPRISE_SCHEMA)
     migrate(c)
+    # Seed enterprise geography & facility types (idempotent)
+    try:
+        enterprise.seed_enterprise(c)
+    except Exception:
+        pass
     # Canonical checkpoint locations — referenced by both the data and the RBAC layer.
     if c.execute('SELECT COUNT(*) FROM locations').fetchone()[0] == 0:
         for code, label in (('South', 'South Checkpoint'),
@@ -2015,9 +2094,47 @@ def require_auth(handler):
         if user_id: TOKENS[token] = user_id
     if not user_id: raise PermissionError('Authentication required')
     c = get_db_connection()
-    user = rowdict(c.execute(
-        'SELECT id,username,display_name,role,branch,location_scope,active '
-        'FROM users WHERE id=%s AND active=1',(user_id,)).fetchone())
+    # Enterprise fields: facility_id, region_id, district_id, village_id, role_id
+    # Select * with fallback for DBs where columns not yet migrated
+    try:
+        user = rowdict(c.execute(
+            'SELECT id,username,display_name,role,branch,location_scope,'
+            'facility_id,region_id,district_id,village_id,role_id,active '
+            'FROM users WHERE id=%s AND active=1',(user_id,)).fetchone())
+    except Exception:
+        # Fallback for legacy DB without enterprise columns
+        user = rowdict(c.execute(
+            'SELECT id,username,display_name,role,branch,location_scope,active '
+            'FROM users WHERE id=%s AND active=1',(user_id,)).fetchone())
+    # Try to enrich with primary facility assignment if user has one
+    if user:
+        try:
+            # Check if user_facility_assignments exists
+            assign = c.execute('''SELECT facility_id FROM user_facility_assignments
+                                  WHERE user_id=%s AND is_primary=TRUE
+                                  ORDER BY assigned_at DESC LIMIT 1''', (user_id,)).fetchone()
+            if assign and not user.get('facility_id'):
+                user['facility_id'] = assign['facility_id']
+            # Also try to get facility details for scope
+            if user.get('facility_id'):
+                fac = c.execute('''SELECT f.*, ft.code AS ft_code, ft.category AS ft_category,
+                                          r.name AS region_name, d.name AS district_name
+                                   FROM facilities f
+                                   LEFT JOIN facility_types ft ON ft.id=f.facility_type_id
+                                   LEFT JOIN regions r ON r.id=f.region_id
+                                   LEFT JOIN districts d ON d.id=f.district_id
+                                   WHERE f.id=%s''', (user['facility_id'],)).fetchone()
+                if fac:
+                    user['facility_code'] = fac['code']
+                    user['facility_name'] = fac['name']
+                    user['facility_type'] = fac['ft_code']
+                    user['facility_category'] = fac['ft_category']
+                    if not user.get('region_id') and fac.get('region_id'):
+                        user['region_id'] = fac['region_id']
+                    if not user.get('district_id') and fac.get('district_id'):
+                        user['district_id'] = fac['district_id']
+        except Exception:
+            pass
     c.close()
     if not user: raise PermissionError('Authentication required')
     return user_view(user)
@@ -5193,6 +5310,218 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/vehicles':
                 q = parse_qs(p.query).get('q', [''])[0]
                 result = {'items': list_vehicles(c, q)}
+            # ---- enterprise scaling refactor — zero-code provisioning ----
+            elif p.path == '/api/regions' or p.path.startswith('/api/regions/'):
+                # GET /api/regions?q=...  or  GET /api/regions/<id|code>
+                qparams = parse_qs(p.query)
+                if p.path == '/api/regions':
+                    q = qparams.get('q', [''])[0] or qparams.get('search', [''])[0] or ''
+                    items = enterprise.list_regions(c, search=q)
+                    result = {'items': items, 'count': len(items)}
+                else:
+                    ref = p.path.split('/')[3]
+                    row = enterprise.resolve_region(c, ref)
+                    if not row:
+                        self.send_json(404, {'error': f'Region \"{ref}\" not found'}); c.close(); return
+                    # Enrich with districts count and facilities count
+                    dcount = c.execute('SELECT COUNT(*) FROM districts WHERE region_id=%s', (row['id'],)).fetchone()[0]
+                    fcount = c.execute('SELECT COUNT(*) FROM facilities WHERE region_id=%s', (row['id'],)).fetchone()[0]
+                    view = enterprise.region_view(row)
+                    view['district_count'] = dcount
+                    view['facility_count'] = fcount
+                    view['districts'] = enterprise.list_districts(c, region_id=row['id'])
+                    result = view
+            elif p.path == '/api/districts' or p.path.startswith('/api/districts/'):
+                qparams = parse_qs(p.query)
+                if p.path == '/api/districts':
+                    region_id = qparams.get('region_id', [''])[0] or qparams.get('region', [''])[0] or ''
+                    q = qparams.get('q', [''])[0] or qparams.get('search', [''])[0] or ''
+                    items = enterprise.list_districts(c, region_id=region_id or None, search=q)
+                    result = {'items': items, 'count': len(items)}
+                else:
+                    ref = p.path.split('/')[3]
+                    # Resolve district
+                    if ref.isdigit():
+                        row = c.execute('SELECT d.*, r.name AS region_name, r.code AS region_code FROM districts d JOIN regions r ON r.id=d.region_id WHERE d.id=%s', (int(ref),)).fetchone()
+                    else:
+                        row = c.execute('SELECT d.*, r.name AS region_name, r.code AS region_code FROM districts d JOIN regions r ON r.id=d.region_id WHERE d.code=%s OR LOWER(d.name)=LOWER(%s)', (ref, ref)).fetchone()
+                    if not row:
+                        self.send_json(404, {'error': f'District \"{ref}\" not found'}); c.close(); return
+                    view = enterprise.district_view(row)
+                    # Add facility count
+                    fcount = c.execute('SELECT COUNT(*) FROM facilities WHERE district_id=%s', (view['id'],)).fetchone()[0]
+                    view['facility_count'] = fcount
+                    result = view
+            elif p.path == '/api/villages' or p.path.startswith('/api/villages/'):
+                qparams = parse_qs(p.query)
+                if p.path == '/api/villages':
+                    district_id = qparams.get('district_id', [''])[0] or qparams.get('district', [''])[0] or ''
+                    search = qparams.get('q', [''])[0] or ''
+                    sql = 'SELECT v.*, d.name AS district_name, r.name AS region_name FROM villages v JOIN districts d ON d.id=v.district_id JOIN regions r ON r.id=d.region_id'
+                    where, args = [], []
+                    if district_id:
+                        if district_id.isdigit():
+                            where.append('v.district_id=%s'); args.append(int(district_id))
+                        else:
+                            where.append('(d.code=%s OR LOWER(d.name)=LOWER(%s))'); args.extend([district_id, district_id])
+                    if search:
+                        where.append('(v.name ILIKE %s)'); args.append(f'%{search}%')
+                    if where:
+                        sql += ' WHERE ' + ' AND '.join(where)
+                    sql += ' ORDER BY v.name ASC'
+                    rows = c.execute(sql, args).fetchall()
+                    items = [dict(r) for r in rows]
+                    result = {'items': items, 'count': len(items)}
+                else:
+                    ref = p.path.split('/')[3]
+                    if ref.isdigit():
+                        row = c.execute('SELECT v.*, d.name AS district_name, r.name AS region_name FROM villages v JOIN districts d ON d.id=v.district_id JOIN regions r ON r.id=d.region_id WHERE v.id=%s', (int(ref),)).fetchone()
+                    else:
+                        row = c.execute('SELECT v.*, d.name AS district_name, r.name AS region_name FROM villages v JOIN districts d ON d.id=v.district_id JOIN regions r ON r.id=d.region_id WHERE LOWER(v.name)=LOWER(%s)', (ref,)).fetchone()
+                    if not row:
+                        self.send_json(404, {'error': f'Village \"{ref}\" not found'}); c.close(); return
+                    result = dict(row)
+            elif p.path == '/api/facility-types' or p.path.startswith('/api/facility-types/'):
+                if p.path == '/api/facility-types':
+                    items = enterprise.list_facility_types(c)
+                    result = {'items': items, 'categories': list(FACILITY_CATEGORIES), 'count': len(items)}
+                else:
+                    ref = p.path.split('/')[3]
+                    ft = enterprise.resolve_facility_type(c, ref)
+                    if not ft:
+                        self.send_json(404, {'error': f'Facility type \"{ref}\" not found'}); c.close(); return
+                    result = enterprise.facility_type_view(ft)
+            elif p.path == '/api/facilities' or p.path.startswith('/api/facilities/'):
+                qparams = parse_qs(p.query)
+                # Check if /api/facilities/<id>/assignments or stats
+                parts = p.path.strip('/').split('/')
+                # /api/facilities => len 2, /api/facilities/<id> => 3, /api/facilities/<id>/assignments =>4
+                if len(parts) == 2:
+                    # list with filters
+                    region_id = qparams.get('region_id', [''])[0] or qparams.get('region', [''])[0] or ''
+                    district_id = qparams.get('district_id', [''])[0] or qparams.get('district', [''])[0] or ''
+                    ftype = qparams.get('facility_type', [''])[0] or qparams.get('type', [''])[0] or ''
+                    category = qparams.get('category', [''])[0] or ''
+                    search = qparams.get('q', [''])[0] or qparams.get('search', [''])[0] or ''
+                    items = enterprise.list_facilities(c, region_id=region_id or None, district_id=district_id or None,
+                                                       facility_type=ftype or None, search=search, category=category or None)
+                    result = {'items': items, 'count': len(items),
+                              'categories': list(FACILITY_CATEGORIES),
+                              'tiers': list(ENT_FACILITY_TIERS),
+                              'statuses': list(ENT_FACILITY_STATUSES)}
+                elif len(parts) == 3:
+                    ref = parts[2]
+                    row = c.execute('''SELECT f.*, ft.code AS facility_type_code, ft.name AS facility_type_name, ft.category AS facility_category,
+                                              r.name AS region_name, r.code AS region_code,
+                                              d.name AS district_name,
+                                              v.name AS village_name,
+                                              pf.name AS parent_facility_name
+                                       FROM facilities f
+                                       JOIN facility_types ft ON ft.id=f.facility_type_id
+                                       LEFT JOIN regions r ON r.id=f.region_id
+                                       LEFT JOIN districts d ON d.id=f.district_id
+                                       LEFT JOIN villages v ON v.id=f.village_id
+                                       LEFT JOIN facilities pf ON pf.id=f.parent_facility_id
+                                       WHERE f.facility_id=%s OR f.code=%s OR CAST(f.id AS TEXT)=%s''',
+                                    (ref, ref, ref)).fetchone()
+                    if not row:
+                        self.send_json(404, {'error': f'Facility \"{ref}\" not found'}); c.close(); return
+                    view = enterprise.facility_view(row)
+                    # assignments
+                    assigns = c.execute('''SELECT ufa.*, u.username, u.display_name, u.role
+                                           FROM user_facility_assignments ufa
+                                           JOIN users u ON u.id=ufa.user_id
+                                           WHERE ufa.facility_id=%s ORDER BY ufa.is_primary DESC, ufa.assigned_at DESC''',
+                                        (view['id'],)).fetchall()
+                    view['assigned_users'] = [dict(r) for r in assigns]
+                    result = view
+                elif len(parts) == 4 and parts[3] == 'assignments':
+                    ref = parts[2]
+                    fac = enterprise.resolve_facility(c, ref)
+                    if not fac:
+                        self.send_json(404, {'error': f'Facility \"{ref}\" not found'}); c.close(); return
+                    assigns = c.execute('''SELECT ufa.*, u.username, u.display_name, u.role
+                                           FROM user_facility_assignments ufa
+                                           JOIN users u ON u.id=ufa.user_id
+                                           WHERE ufa.facility_id=%s ORDER BY ufa.is_primary DESC, ufa.assigned_at DESC''',
+                                        (fac['id'],)).fetchall()
+                    result = {'facility_id': fac['facility_id'], 'code': fac['code'], 'items': [dict(r) for r in assigns]}
+                elif len(parts) == 4 and parts[3] == 'stats':
+                    ref = parts[2]
+                    fac = enterprise.resolve_facility(c, ref)
+                    if not fac:
+                        self.send_json(404, {'error': f'Facility \"{ref}\" not found'}); c.close(); return
+                    # Simple stats: crimes, officers, vehicles linked to facility or legacy station
+                    stats = {}
+                    try:
+                        stats['officers'] = c.execute('SELECT COUNT(*) FROM officers WHERE facility_id=%s', (fac['id'],)).fetchone()[0]
+                    except Exception:
+                        stats['officers'] = 0
+                    try:
+                        stats['crime_incidents'] = c.execute('SELECT COUNT(*) FROM crime_incidents WHERE facility_id=%s', (fac['id'],)).fetchone()[0]
+                    except Exception:
+                        stats['crime_incidents'] = 0
+                    try:
+                        stats['checkpoint_events'] = c.execute('SELECT COUNT(*) FROM checkpoint_events WHERE facility_id=%s', (fac['id'],)).fetchone()[0]
+                    except Exception:
+                        stats['checkpoint_events'] = 0
+                    try:
+                        stats['vehicles'] = c.execute('SELECT COUNT(*) FROM vehicles WHERE facility_id=%s', (fac['id'],)).fetchone()[0]
+                    except Exception:
+                        stats['vehicles'] = 0
+                    result = {'facility': enterprise.facility_view(fac), 'stats': stats}
+                else:
+                    self.send_json(404, {'error': 'Not found'}); c.close(); return
+            elif p.path == '/api/user-facility-assignments' or p.path.startswith('/api/user-facility-assignments/'):
+                qparams = parse_qs(p.query)
+                if p.path == '/api/user-facility-assignments':
+                    user_id = qparams.get('user_id', [''])[0] or ''
+                    facility_id = qparams.get('facility_id', [''])[0] or ''
+                    sql = '''SELECT ufa.*, u.username, u.display_name, f.name AS facility_name, f.code AS facility_code, f.facility_id AS fac_facility_id
+                             FROM user_facility_assignments ufa
+                             JOIN users u ON u.id=ufa.user_id
+                             JOIN facilities f ON f.id=ufa.facility_id'''
+                    where, args = [], []
+                    if user_id:
+                        where.append('ufa.user_id=%s'); args.append(int(user_id) if user_id.isdigit() else user_id)
+                    if facility_id:
+                        if facility_id.isdigit():
+                            where.append('ufa.facility_id=%s'); args.append(int(facility_id))
+                        else:
+                            where.append('(f.code=%s OR f.facility_id=%s)'); args.extend([facility_id, facility_id])
+                    if where:
+                        sql += ' WHERE ' + ' AND '.join(where)
+                    sql += ' ORDER BY ufa.assigned_at DESC'
+                    rows = c.execute(sql, args).fetchall()
+                    result = {'items': [dict(r) for r in rows], 'count': len(rows)}
+                else:
+                    self.send_json(404, {'error': 'Not found'}); c.close(); return
+            elif p.path == '/api/enterprise/overview':
+                # Aggregated overview for enterprise dashboard
+                regions_cnt = c.execute('SELECT COUNT(*) FROM regions').fetchone()[0]
+                districts_cnt = c.execute('SELECT COUNT(*) FROM districts').fetchone()[0]
+                villages_cnt = c.execute('SELECT COUNT(*) FROM villages').fetchone()[0]
+                facilities_cnt = c.execute('SELECT COUNT(*) FROM facilities').fetchone()[0]
+                fac_by_cat = {}
+                for r in c.execute('''SELECT ft.category, COUNT(*) AS cnt FROM facilities f JOIN facility_types ft ON ft.id=f.facility_type_id GROUP BY ft.category'''):
+                    fac_by_cat[r['category']] = r['cnt']
+                fac_by_region = []
+                for r in c.execute('''SELECT r.name, r.code, COUNT(f.id) AS cnt FROM regions r LEFT JOIN facilities f ON f.region_id=r.id GROUP BY r.id ORDER BY r.name'''):
+                    fac_by_region.append({'region': r['name'], 'code': r['code'], 'count': r['cnt']})
+                fac_by_type = []
+                for r in c.execute('''SELECT ft.code, ft.name, ft.category, COUNT(f.id) AS cnt FROM facility_types ft LEFT JOIN facilities f ON f.facility_type_id=ft.id GROUP BY ft.id ORDER BY ft.category, ft.name'''):
+                    fac_by_type.append({'code': r['code'], 'name': r['name'], 'category': r['category'], 'count': r['cnt']})
+                result = {
+                    'regions': regions_cnt,
+                    'districts': districts_cnt,
+                    'villages': villages_cnt,
+                    'facilities': facilities_cnt,
+                    'by_category': fac_by_cat,
+                    'by_region': fac_by_region,
+                    'by_type': fac_by_type,
+                    'facility_categories': list(FACILITY_CATEGORIES),
+                    'facility_types': [t[0] for t in FACILITY_TYPE_SEED],
+                }
             elif p.path == '/api/conduct':
                 # Conduct, promotions & disciplinary register — filtered by
                 # status, category (Promotion vs Disciplinary), region or
@@ -5506,6 +5835,7 @@ class API(BaseHTTPRequestHandler):
                 result = {'evidence_id':eid,'file_path':meta['path']}
             elif p.path == '/api/admin/users':
                 # Create a new officer / admin user. Admin only (module gate above).
+                # Enterprise extension: accepts facility_id / facility code for zero-code provisioning
                 data = body_json(self)
                 username = (data.get('username') or '').strip()
                 display_name = (data.get('display_name') or '').strip()
@@ -5516,15 +5846,6 @@ class API(BaseHTTPRequestHandler):
                 if not display_name: raise ValueError('display_name is required')
                 if not password or len(password) < 6:
                     raise ValueError('password must be at least 6 characters')
-                # Spec step 1: accept both the legacy compound forms and
-                # the canonical 'checkpoint_officer' alias — and ANY
-                # accepted checkpoint spelling ('cp_south',
-                # 'checkpoint_south', 'Checkpoint Officer (South)', ...).
-                # Aliases are normalised to 'checkpoint_officer' here so
-                # the stored role is canonical; the location is derived
-                # from the alias ('cp_south' -> 'South') when the caller
-                # does not pass an explicit location_scope, so
-                # normalizing never loses the officer's location.
                 role, derived_scope = normalize_incoming_role(role)
                 accepted_roles = set(ALL_ROLES) | {ROLE_CHECKPOINT_OFFICER}
                 if role not in accepted_roles:
@@ -5532,18 +5853,58 @@ class API(BaseHTTPRequestHandler):
                                      '(Checkpoint aliases such as CheckpointSouth / cp_south are also accepted)')
                 scope = canonical_location_scope(
                     data.get('location_scope') or derived_scope or ROLE_LOCATION_SCOPE.get(role))
-                if is_checkpoint_role(role) and not scope:
+                fac_ref_for_scope = str(data.get('facility_id') or data.get('facility') or '').strip()
+                if is_checkpoint_role(role) and not scope and not fac_ref_for_scope:
                     raise ValueError('location_scope is required for Checkpoint roles')
                 if scope and scope not in CHECKPOINT_LOCATIONS:
                     raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
                 if c.execute('SELECT 1 FROM users WHERE username=%s', (username,)).fetchone():
                     self.send_json(409, {'error': f'Username "{username}" already exists'}); c.close(); return
-                c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s)''',
-                    (username, display_name, role, branch, scope, password_hash(password),
-                     1 if data.get('active', True) else 0))
+                facility_id_val = None
+                region_id_val = None
+                district_id_val = None
+                village_id_val = None
+                fac = None
+                if fac_ref_for_scope:
+                    fac = enterprise.resolve_facility(c, fac_ref_for_scope)
+                    if not fac:
+                        raise ValueError(f'Facility "{fac_ref_for_scope}" not found - create it first via /api/facilities')
+                    facility_id_val = fac['id']
+                    region_id_val = fac['region_id']
+                    district_id_val = fac['district_id']
+                    village_id_val = fac['village_id']
+                    if branch == 'Central HQ' and fac.get('name'):
+                        branch = fac['name']
+                if not region_id_val and (data.get('region_id') or data.get('region')):
+                    r = enterprise.resolve_region(c, str(data.get('region_id') or data.get('region')))
+                    if r:
+                        region_id_val = r['id']
+                if not district_id_val and (data.get('district_id') or data.get('district')):
+                    d = enterprise.resolve_district(c, str(data.get('district_id') or data.get('district')), region_id=region_id_val)
+                    if d:
+                        district_id_val = d['id']
+                try:
+                    c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active,
+                                                   facility_id,region_id,district_id,village_id)
+                                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                              (username, display_name, role, branch, scope, password_hash(password),
+                               1 if data.get('active', True) else 0,
+                               facility_id_val, region_id_val, district_id_val, village_id_val))
+                except Exception:
+                    c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active)
+                                 VALUES(%s,%s,%s,%s,%s,%s,%s)''',
+                              (username, display_name, role, branch, scope, password_hash(password),
+                               1 if data.get('active', True) else 0))
                 new = rowdict(c.execute('SELECT * FROM users WHERE username=%s', (username,)).fetchone())
-                audit(c, user, 'CREATE', 'user', str(new['id']), username)
+                if fac and new:
+                    try:
+                        c.execute('''INSERT INTO user_facility_assignments(user_id,facility_id,is_primary,assigned_by)
+                                     VALUES(%s,%s,%s,%s)
+                                     ON CONFLICT(user_id,facility_id) DO UPDATE SET is_primary=EXCLUDED.is_primary, assigned_by=EXCLUDED.assigned_by''',
+                                  (new['id'], fac['id'], True, user['id']))
+                    except Exception:
+                        pass
+                audit(c, user, 'CREATE', 'user', str(new['id']), username + (f" -> facility {fac['code']}" if fac else ''))
                 c.commit()
                 result = {'user': user_view(new)}
             elif p.path == '/api/suspect-alerts':
@@ -5719,6 +6080,122 @@ class API(BaseHTTPRequestHandler):
                           'guardian_person_id':guardian_person['person_id'] if guardian_person else None,
                           'traveler_docs':len(tr_docs),'guardian_docs':len(gd_docs),
                           'identity':identity_result(c,data,person)}
+            # ---- enterprise scaling refactor — zero-code provisioning ----
+            elif p.path == '/api/regions':
+                require_module(user, 'admin')
+                data = body_json(self)
+                region = enterprise.create_region(c, user, data)
+                audit(c, user, 'CREATE', 'region', region['code'], region['name'])
+                c.commit()
+                result = {'region': region}
+            elif p.path == '/api/districts':
+                require_module(user, 'admin')
+                data = body_json(self)
+                district = enterprise.create_district(c, user, data)
+                audit(c, user, 'CREATE', 'district', district['code'], district['name'])
+                c.commit()
+                result = {'district': district}
+            elif p.path == '/api/villages':
+                require_module(user, 'admin')
+                data = body_json(self)
+                village = enterprise.create_village(c, user, data)
+                audit(c, user, 'CREATE', 'village', str(village['id']) if village else '', village['name'] if village else '')
+                c.commit()
+                result = {'village': village}
+            elif p.path == '/api/facility-types':
+                require_module(user, 'admin')
+                data = body_json(self)
+                code = str(data.get('code') or '').strip().upper()
+                name = str(data.get('name') or '').strip()
+                category = str(data.get('category') or '').strip()
+                if not code or not name or not category:
+                    raise ValueError('code, name, category are required for facility type')
+                if category not in FACILITY_CATEGORIES:
+                    raise ValueError(f'category must be one of {FACILITY_CATEGORIES}')
+                if c.execute('SELECT 1 FROM facility_types WHERE code=%s', (code,)).fetchone():
+                    self.send_json(409, {'error': f'Facility type code \"{code}\" already exists'}); c.close(); return
+                c.execute('INSERT INTO facility_types(code,name,category,description,is_global) VALUES(%s,%s,%s,%s,%s)',
+                          (code, name, category, data.get('description'), bool(data.get('is_global'))))
+                row = c.execute('SELECT * FROM facility_types WHERE code=%s', (code,)).fetchone()
+                audit(c, user, 'CREATE', 'facility_type', code, name)
+                c.commit()
+                result = {'facility_type': enterprise.facility_type_view(row)}
+            elif p.path == '/api/facilities':
+                require_module(user, 'admin')
+                data = body_json(self)
+                fac = enterprise.create_facility(c, user, data)
+                audit(c, user, 'CREATE', 'facility', fac['facility_id'], f"{fac['code']} {fac['name']}")
+                c.commit()
+                result = {'facility': fac}
+            elif p.path.startswith('/api/facilities/') and p.path.endswith('/assign-user'):
+                require_module(user, 'admin')
+                # /api/facilities/<ref>/assign-user
+                parts = p.path.strip('/').split('/')
+                if len(parts) != 4:
+                    self.send_json(400, {'error': 'Invalid path'}); c.close(); return
+                fac_ref = parts[2]
+                fac = enterprise.resolve_facility(c, fac_ref)
+                if not fac:
+                    self.send_json(404, {'error': f'Facility \"{fac_ref}\" not found'}); c.close(); return
+                data = body_json(self)
+                user_ref = str(data.get('user_id') or data.get('username') or '').strip()
+                if not user_ref:
+                    raise ValueError('user_id or username is required')
+                # Resolve user
+                if user_ref.isdigit():
+                    target_user = c.execute('SELECT * FROM users WHERE id=%s', (int(user_ref),)).fetchone()
+                else:
+                    target_user = c.execute('SELECT * FROM users WHERE username=%s', (user_ref,)).fetchone()
+                if not target_user:
+                    raise ValueError(f'User \"{user_ref}\" not found')
+                is_primary = bool(data.get('is_primary', True))
+                # If setting primary, clear existing primary for that user
+                if is_primary:
+                    c.execute('UPDATE user_facility_assignments SET is_primary=FALSE WHERE user_id=%s', (target_user['id'],))
+                    # Also update users.facility_id, region_id, district_id, village_id for fast lookup
+                    try:
+                        c.execute('UPDATE users SET facility_id=%s, region_id=%s, district_id=%s, village_id=%s WHERE id=%s',
+                                  (fac['id'], fac['region_id'], fac['district_id'], fac['village_id'], target_user['id']))
+                    except Exception:
+                        pass
+                c.execute('''INSERT INTO user_facility_assignments(user_id,facility_id,is_primary,assigned_by)
+                             VALUES(%s,%s,%s,%s)
+                             ON CONFLICT(user_id,facility_id) DO UPDATE SET is_primary=EXCLUDED.is_primary, assigned_by=EXCLUDED.assigned_by, assigned_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')''',
+                          (target_user['id'], fac['id'], is_primary, user['id']))
+                audit(c, user, 'ASSIGN', 'user_facility', f"{target_user['id']}->{fac['id']}", f"is_primary={is_primary}")
+                c.commit()
+                result = {'assigned': True, 'user_id': target_user['id'], 'username': target_user['username'],
+                          'facility_id': fac['facility_id'], 'code': fac['code'], 'is_primary': is_primary}
+            elif p.path == '/api/user-facility-assignments':
+                require_module(user, 'admin')
+                data = body_json(self)
+                user_ref = str(data.get('user_id') or '').strip()
+                fac_ref = str(data.get('facility_id') or '').strip()
+                if not user_ref or not fac_ref:
+                    raise ValueError('user_id and facility_id are required')
+                if user_ref.isdigit():
+                    target_user = c.execute('SELECT * FROM users WHERE id=%s', (int(user_ref),)).fetchone()
+                else:
+                    target_user = c.execute('SELECT * FROM users WHERE username=%s', (user_ref,)).fetchone()
+                if not target_user:
+                    raise ValueError(f'User \"{user_ref}\" not found')
+                fac = enterprise.resolve_facility(c, fac_ref)
+                if not fac:
+                    raise ValueError(f'Facility \"{fac_ref}\" not found')
+                is_primary = bool(data.get('is_primary', False))
+                if is_primary:
+                    c.execute('UPDATE user_facility_assignments SET is_primary=FALSE WHERE user_id=%s', (target_user['id'],))
+                    try:
+                        c.execute('UPDATE users SET facility_id=%s, region_id=%s, district_id=%s, village_id=%s WHERE id=%s',
+                                  (fac['id'], fac['region_id'], fac['district_id'], fac['village_id'], target_user['id']))
+                    except Exception:
+                        pass
+                c.execute('''INSERT INTO user_facility_assignments(user_id,facility_id,is_primary,assigned_by)
+                             VALUES(%s,%s,%s,%s)
+                             ON CONFLICT(user_id,facility_id) DO UPDATE SET is_primary=EXCLUDED.is_primary, assigned_by=EXCLUDED.assigned_by, assigned_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')''',
+                          (target_user['id'], fac['id'], is_primary, user['id']))
+                c.commit()
+                result = {'assigned': True, 'user_id': target_user['id'], 'facility_id': fac['facility_id']}
             elif p.path == '/api/stations':
                 data = body_json(self)
                 station = register_station(c, user, data)
@@ -5962,6 +6439,38 @@ class API(BaseHTTPRequestHandler):
                     if len(str(data['password'])) < 6:
                         raise ValueError('password must be at least 6 characters')
                     updates.append('password_hash=%s'); params.append(password_hash(str(data['password'])))
+                # Enterprise facility assignment via PATCH /api/admin/users/<id>
+                # Allows zero-code provisioning: admin assigns user to facility
+                if 'facility_id' in data or 'facility' in data:
+                    fac_ref = str(data.get('facility_id') or data.get('facility') or '').strip()
+                    if fac_ref:
+                        fac = enterprise.resolve_facility(c, fac_ref)
+                        if not fac:
+                            raise ValueError(f'Facility \"{fac_ref}\" not found')
+                        updates.append('facility_id=%s'); params.append(fac['id'])
+                        # Also set region/district/village from facility
+                        updates.append('region_id=%s'); params.append(fac['region_id'])
+                        updates.append('district_id=%s'); params.append(fac['district_id'])
+                        try:
+                            updates.append('village_id=%s'); params.append(fac['village_id'])
+                        except Exception:
+                            pass
+                        # Create assignment row
+                        try:
+                            is_primary = bool(data.get('is_primary', True))
+                            if is_primary:
+                                c.execute('UPDATE user_facility_assignments SET is_primary=FALSE WHERE user_id=%s', (int(uid),))
+                            c.execute('''INSERT INTO user_facility_assignments(user_id,facility_id,is_primary,assigned_by)
+                                         VALUES(%s,%s,%s,%s)
+                                         ON CONFLICT(user_id,facility_id) DO UPDATE SET is_primary=EXCLUDED.is_primary, assigned_by=EXCLUDED.assigned_by, assigned_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')''',
+                                      (int(uid), fac['id'], is_primary, user['id']))
+                        except Exception:
+                            pass
+                    else:
+                        updates.append('facility_id=%s'); params.append(None)
+                        updates.append('region_id=%s'); params.append(None)
+                        updates.append('district_id=%s'); params.append(None)
+                        updates.append('village_id=%s'); params.append(None)
                 if updates:
                     params.append(int(uid))
                     c.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=%s", params)
@@ -5969,6 +6478,111 @@ class API(BaseHTTPRequestHandler):
                 c.commit()
                 updated = rowdict(c.execute('SELECT * FROM users WHERE id=%s', (int(uid),)).fetchone())
                 result = {'user': user_view(updated)}
+            elif p.path.startswith('/api/regions/'):
+                require_module(user, 'admin')
+                ref = p.path.split('/')[3]
+                region = enterprise.resolve_region(c, ref)
+                if not region:
+                    self.send_json(404, {'error': f'Region \"{ref}\" not found'}); c.close(); return
+                updates, params = [], []
+                if 'name' in data and str(data['name']).strip():
+                    new_name = str(data['name']).strip()
+                    if c.execute('SELECT 1 FROM regions WHERE LOWER(name)=LOWER(%s) AND id<>%s', (new_name, region['id'])).fetchone():
+                        raise ValueError(f'Region \"{new_name}\" already exists')
+                    updates.append('name=%s'); params.append(new_name)
+                if 'code' in data and str(data['code']).strip():
+                    new_code = str(data['code']).strip().upper()
+                    if c.execute('SELECT 1 FROM regions WHERE code=%s AND id<>%s', (new_code, region['id'])).fetchone():
+                        raise ValueError(f'Region code \"{new_code}\" already exists')
+                    updates.append('code=%s'); params.append(new_code)
+                if 'description' in data:
+                    updates.append('description=%s'); params.append(str(data['description']).strip() or None)
+                if 'is_active' in data:
+                    updates.append('is_active=%s'); params.append(bool(data['is_active']))
+                if not updates:
+                    raise ValueError('No valid fields to update')
+                params.append(region['id'])
+                c.execute(f"UPDATE regions SET {', '.join(updates)} WHERE id=%s", params)
+                audit(c, user, 'UPDATE', 'region', str(region['id']))
+                c.commit()
+                updated = c.execute('SELECT * FROM regions WHERE id=%s', (region['id'],)).fetchone()
+                result = {'region': enterprise.region_view(updated)}
+            elif p.path.startswith('/api/districts/'):
+                require_module(user, 'admin')
+                ref = p.path.split('/')[3]
+                if ref.isdigit():
+                    district = c.execute('SELECT * FROM districts WHERE id=%s', (int(ref),)).fetchone()
+                else:
+                    district = c.execute('SELECT * FROM districts WHERE code=%s OR LOWER(name)=LOWER(%s)', (ref, ref)).fetchone()
+                if not district:
+                    self.send_json(404, {'error': f'District \"{ref}\" not found'}); c.close(); return
+                updates, params = [], []
+                if 'name' in data and str(data['name']).strip():
+                    new_name = str(data['name']).strip()
+                    if c.execute('SELECT 1 FROM districts WHERE region_id=%s AND LOWER(name)=LOWER(%s) AND id<>%s', (district['region_id'], new_name, district['id'])).fetchone():
+                        raise ValueError(f'District \"{new_name}\" already exists in region')
+                    updates.append('name=%s'); params.append(new_name)
+                if 'code' in data and str(data['code']).strip():
+                    new_code = str(data['code']).strip().upper()
+                    if c.execute('SELECT 1 FROM districts WHERE code=%s AND id<>%s', (new_code, district['id'])).fetchone():
+                        raise ValueError(f'District code \"{new_code}\" already exists')
+                    updates.append('code=%s'); params.append(new_code)
+                if 'description' in data:
+                    updates.append('description=%s'); params.append(str(data['description']).strip() or None)
+                if 'is_active' in data:
+                    updates.append('is_active=%s'); params.append(bool(data['is_active']))
+                if 'region_id' in data or 'region' in data:
+                    region_ref = str(data.get('region_id') or data.get('region') or '').strip()
+                    region = enterprise.resolve_region(c, region_ref)
+                    if not region:
+                        raise ValueError(f'Region \"{region_ref}\" not found')
+                    updates.append('region_id=%s'); params.append(region['id'])
+                if not updates:
+                    raise ValueError('No valid fields to update')
+                params.append(district['id'])
+                c.execute(f"UPDATE districts SET {', '.join(updates)} WHERE id=%s", params)
+                c.commit()
+                updated = c.execute('SELECT d.*, r.name AS region_name, r.code AS region_code FROM districts d JOIN regions r ON r.id=d.region_id WHERE d.id=%s', (district['id'],)).fetchone()
+                result = {'district': enterprise.district_view(updated)}
+            elif p.path.startswith('/api/facilities/'):
+                require_module(user, 'admin')
+                parts = p.path.strip('/').split('/')
+                if len(parts) < 3:
+                    self.send_json(400, {'error': 'facility id required'}); c.close(); return
+                ref = parts[2]
+                fac = enterprise.resolve_facility(c, ref)
+                if not fac:
+                    self.send_json(404, {'error': f'Facility \"{ref}\" not found'}); c.close(); return
+                updated = enterprise.update_facility(c, user, ref, data)
+                audit(c, user, 'UPDATE', 'facility', updated['facility_id'])
+                c.commit()
+                result = {'facility': updated}
+            elif p.path.startswith('/api/villages/'):
+                require_module(user, 'admin')
+                ref = p.path.split('/')[3]
+                if ref.isdigit():
+                    village = c.execute('SELECT * FROM villages WHERE id=%s', (int(ref),)).fetchone()
+                else:
+                    village = c.execute('SELECT * FROM villages WHERE LOWER(name)=LOWER(%s)', (ref,)).fetchone()
+                if not village:
+                    self.send_json(404, {'error': f'Village \"{ref}\" not found'}); c.close(); return
+                updates, params = [], []
+                if 'name' in data and str(data['name']).strip():
+                    new_name = str(data['name']).strip()
+                    if c.execute('SELECT 1 FROM villages WHERE district_id=%s AND LOWER(name)=LOWER(%s) AND id<>%s', (village['district_id'], new_name, village['id'])).fetchone():
+                        raise ValueError(f'Village \"{new_name}\" already exists in district')
+                    updates.append('name=%s'); params.append(new_name)
+                if 'village_type' in data or 'type' in data:
+                    updates.append('village_type=%s'); params.append(str(data.get('village_type') or data.get('type') or '').strip() or None)
+                if 'is_active' in data:
+                    updates.append('is_active=%s'); params.append(bool(data['is_active']))
+                if not updates:
+                    raise ValueError('No valid fields to update')
+                params.append(village['id'])
+                c.execute(f"UPDATE villages SET {', '.join(updates)} WHERE id=%s", params)
+                c.commit()
+                updated = c.execute('SELECT * FROM villages WHERE id=%s', (village['id'],)).fetchone()
+                result = {'village': dict(updated)}
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
