@@ -438,11 +438,12 @@ function assertShellContract() {
   if (!/\(m === 'admin' \? isAdmin : mods\.indexOf\(m\)!==-1\)/.test(html))
     throw new Error('applyNavForRole() must gate the admin entry on the admin flag');
 
-  // (e) UNIT MODULE DENYLIST — Airport Control and the CID Criminal Unit must
-  //     never see Central Police Search ('policesearch'), whatever a stale or
-  //     cached session payload claims. The server strips the module in
-  //     ROLE_MODULES; the client mirrors the rule and every nav / fetch / RBAC
-  //     check reads the sanitised list through effectiveModules()/hasModule().
+  // (e) UNIT MODULE DENYLIST — the Fingerprint Unit, Airport Control and the
+  //     CID Criminal Unit must never see Central Police Search ('policesearch'),
+  //     whatever a stale or cached session payload claims. The server strips the
+  //     module in ROLE_MODULES; the client mirrors the rule and every nav /
+  //     fetch / RBAC check reads the sanitised list through
+  //     effectiveModules()/hasModule().
   ['const UNIT_MODULE_DENY={',
    "airport:['policesearch']",
    "cid:['policesearch']",
@@ -871,8 +872,15 @@ async function main() {
       if (!out.includes('cid'))
         throw new Error(`CID spelling ${spelling} must keep its own module (${out})`);
     });
-    if (probe(sb12, `sanitizeModules('FingerprintUnit',['fingerprint','policesearch']).includes('policesearch')`) !== true)
-      throw new Error('the Fingerprint Unit keeps Central Police Search (only Airport + CID are stripped)');
+    // The Fingerprint Unit is stripped as well — every spelling of it.
+    ['FingerprintUnit', 'fingerprint_officer', 'fp.officer', 'Fingerprint Unit',
+     'Fingerprint Officer', 'Fingerprint Unit Officer', 'fp'].forEach((spelling) => {
+      const out = modsFor(spelling, ['dashboard', 'fingerprint', 'people', 'policesearch']);
+      if (out.includes('policesearch'))
+        throw new Error(`Fingerprint spelling ${spelling} must be denied policesearch (${out})`);
+      if (!out.includes('fingerprint'))
+        throw new Error(`Fingerprint spelling ${spelling} must keep its own module (${out})`);
+    });
     if (probe(sb12, `sanitizeModules('hr_officer',['people','policesearch','officers']).includes('policesearch')`) !== true)
       throw new Error('the HR Directorate keeps Central Police Search');
     // hasModule()/go() read the sanitised list, so the page is unreachable too.
@@ -885,7 +893,13 @@ async function main() {
     probe(sb12, "sessionUser={role:'CIDUnit',modules:['dashboard','people','cid','crimes','policesearch']};currentUser=sessionUser;");
     if (probe(sb12, "hasModule('policesearch')") !== false)
       throw new Error('hasModule(policesearch) must be false for the CID Criminal Unit');
-    console.log('ok 12: Central Police Search stripped from Airport Control and CID (client-side mirror)');
+    // A cached Fingerprint session that still lists the module locally.
+    probe(sb12, "sessionUser={role:'FingerprintUnit',modules:['dashboard','people','fingerprint','policesearch']};currentUser=sessionUser;");
+    if (probe(sb12, "hasModule('policesearch')") !== false)
+      throw new Error('hasModule(policesearch) must be false for the Fingerprint Unit');
+    if (probe(sb12, "effectiveModules().slice().sort().join(',')") !== 'dashboard,fingerprint,people')
+      throw new Error('effectiveModules() must drop policesearch for the Fingerprint Unit');
+    console.log('ok 12: Central Police Search stripped from Fingerprint, Airport Control and CID (client-side mirror)');
 
     // ---- 13) GLOBAL READ-ONLY COMMANDER ROLE ------------------------------
     // The role reads everything and writes nothing: the UI drops every write

@@ -853,6 +853,16 @@ UNIT_ROLE_ALIASES = {
     'fingerprint_unit': ROLE_FINGERPRINT,
     'fp_officer': ROLE_FINGERPRINT,
     'fp.officer': ROLE_FINGERPRINT,
+    # Label spellings an operator may have stored instead of the canonical id.
+    'Fingerprint Officer': ROLE_FINGERPRINT,
+    'fingerprint officer': ROLE_FINGERPRINT,
+    'Fingerprint Unit': ROLE_FINGERPRINT,
+    'fingerprint unit': ROLE_FINGERPRINT,
+    'Fingerprint Unit Officer': ROLE_FINGERPRINT,
+    'fingerprint_unit_officer': ROLE_FINGERPRINT,
+    'fingerprintunitofficer': ROLE_FINGERPRINT,
+    'Fingerprint': ROLE_FINGERPRINT,
+    'fp': ROLE_FINGERPRINT,
     ROLE_AIRPORT: ROLE_AIRPORT,
     'airport_officer': ROLE_AIRPORT,
     'airport_control': ROLE_AIRPORT,
@@ -1102,15 +1112,19 @@ ROLE_LABELS = {
 #     by Region → District → Village); granted ONLY to the roles whose remit
 #     is the central police registers (SystemAdmin, the HR Directorate — who
 #     own the officers / stations registers — and the Commander's HQ
-#     monitoring surface). The Airport Control and CID Criminal Unit roles
-#     deliberately do NOT hold it: those units see their own unit scope plus
-#     the personal Central Person Search ('people') and nothing else.
+#     monitoring surface). The operational units — Airport Control, the CID
+#     Criminal Unit and the Fingerprint Unit — deliberately do NOT hold it:
+#     each sees its own unit scope plus the personal Central Person Search
+#     ('people') and nothing else.
 #   * 'stations' / 'officers' / 'cars' — Police Registrations & Management;
 #     administrative operations, granted to SystemAdmin only.
 ROLE_MODULES = {
     ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
                  'policesearch', 'stations', 'officers', 'cars', 'crimes', 'conduct'},
-    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
+    # Fingerprint Unit: the biometrics register + Central Person Search only.
+    # Like the Airport and CID units it is NOT a party to Central Police Search
+    # (the cross-registry officers / stations / vehicles lookup).
+    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint'},
     # Airport Control: the Airport module + Central Person Search only.
     ROLE_AIRPORT: {'dashboard', 'people', 'airport'},
     # CID Criminal Unit: the Crime Unit (+ crime intake) + Central Person
@@ -1179,6 +1193,7 @@ for _alias, _canonical in UNIT_ROLE_ALIASES.items():
 # session even if a row in `users`, a cached payload, a stale process, a
 # future edit to ROLE_MODULES or an operator's local patch tried to grant it.
 UNIT_MODULE_DENY = {
+    ROLE_FINGERPRINT: frozenset({'policesearch'}),
     ROLE_AIRPORT: frozenset({'policesearch'}),
     ROLE_CID: frozenset({'policesearch'}),
 }
@@ -1257,15 +1272,23 @@ def rbac_self_test():
     requests.
     """
     problems = []
-    for role in (ROLE_AIRPORT, ROLE_CID):
+    for role in (ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID):
+        # (a) the effective grant (ROLE_MODULES minus the runtime denylist) …
         leaked = sorted(m for m in ('policesearch',)
                         if m in allowed_modules_for_role(role))
         if leaked:
             problems.append(f'{role} must not hold {leaked}')
+        # (b) … and the declaration itself, so a re-added 'policesearch' in
+        # ROLE_MODULES fails loudly at start-up instead of being silently
+        # masked by the denylist.
+        if 'policesearch' in ROLE_MODULES.get(role, set()):
+            problems.append(f'ROLE_MODULES[{role}] must not declare policesearch')
     # …and the label spellings of those units must be denied too — an
     # unrecognised string must never inherit another unit's module set (that
     # is how Central Police Search used to leak into a unit session).
-    for alias in ('AirportControl', 'airport_officer', 'ap.officer', 'Airport Control',
+    for alias in ('FingerprintUnit', 'fingerprint_officer', 'fp.officer', 'fp_officer',
+                  'Fingerprint Unit', 'Fingerprint Officer', 'Fingerprint Unit Officer',
+                  'AirportControl', 'airport_officer', 'ap.officer', 'Airport Control',
                   'Airport Control Officer', 'Airport Control Unit', 'CIDUnit',
                   'cid_officer', 'cid.officer', 'CID Criminal Unit', 'cid_criminal_unit',
                   'Criminal Unit', 'Crime Unit', 'criminal_investigation'):
@@ -1426,6 +1449,8 @@ def unit_role_family(role_key):
     k = str(role_key or '')
     if not k:
         return ''
+    if k.startswith('fingerprint') or k in ('fpofficer', 'fp'):
+        return ROLE_FINGERPRINT
     if k.startswith('airport') or k in ('apofficer', 'ap'):
         return ROLE_AIRPORT
     if (k.startswith('cid') or k.startswith('criminalinvestigation')
@@ -6135,7 +6160,7 @@ if __name__ == '__main__':
     # RBAC self-report: the two guarantees an operator most often needs to
     # confirm against a running process (and the ones this build changed).
     print('  RBAC: Central Police Search is NOT granted to '
-          f'{", ".join(sorted(r for r in (ROLE_AIRPORT, ROLE_CID)))}')
+          f'{", ".join(sorted(r for r in (ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID)))}')
     print('  RBAC: global read-only roles '
           f'{", ".join(sorted(READ_ONLY_ROLES))} — '
           f'{", ".join(sorted(READ_ONLY_BLOCKED_METHODS))} away from '

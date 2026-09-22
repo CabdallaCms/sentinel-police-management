@@ -65,6 +65,13 @@ def module_matrix_suite():
     inherited the Fingerprint module set.
     """
     print('== 0. Role spelling matrix (server module, no HTTP) ==')
+    fp_spellings = ['FingerprintUnit', 'fingerprintunit', 'fingerprint_officer', 'fp.officer',
+                    'fp_officer', 'Fingerprint Officer', 'Fingerprint Unit',
+                    'Fingerprint Unit Officer', 'fp']
+    for spelling in fp_spellings:
+        mods = srv.allowed_modules_for_role(spelling)
+        check(mods == {'dashboard', 'people', 'fingerprint'},
+              f'{spelling!r} -> {sorted(mods)} (Fingerprint family, no policesearch)')
     airport_spellings = ['AirportControl', 'airportcontrol', 'airport_officer', 'ap.officer',
                          'Airport Control', 'Airport Control Officer', 'airport_control_officer',
                          'Airport Control Unit', 'Airport Control Office', 'airportcontrolunit']
@@ -81,7 +88,7 @@ def module_matrix_suite():
         check(mods == {'dashboard', 'people', 'cid', 'crimes'},
               f'{spelling!r} -> {sorted(mods)} (CID family, no policesearch)')
     # Roles that legitimately keep Central Police Search are untouched.
-    for spelling in ('admin', 'SystemAdmin', 'fp.officer', 'FingerprintUnit', 'hr.officer',
+    for spelling in ('admin', 'SystemAdmin', 'hr.officer',
                      'HR Directorate', 'chief', 'chief_commander', 'commander', 'high_command',
                      'HighCommand', 'command_hq', 'police_hq', 'Chief Commander',
                      'Chief Commander of Police Office'):
@@ -93,6 +100,23 @@ def module_matrix_suite():
               f'unknown role {unknown!r} -> {sorted(srv.allowed_modules_for_role(unknown))}')
     # The boot-time self-test must be clean, and the command role read-only.
     check(srv.rbac_self_test() == [], f'rbac_self_test() clean: {srv.rbac_self_test()}')
+    # …and it must not be vacuous: re-introducing the leak in ROLE_MODULES has
+    # to be reported for every restricted unit (the probe runs on a copy of the
+    # declaration, so the live process is untouched).
+    _saved = {r: srv.ROLE_MODULES.get(r) for r in (srv.ROLE_FINGERPRINT, srv.ROLE_AIRPORT, srv.ROLE_CID)}
+    try:
+        for role in _saved:
+            srv.ROLE_MODULES[role] = set(_saved[role] or ()) | {'policesearch'}
+        reported = srv.rbac_self_test()
+        check(len(reported) == 3 and all('policesearch' in p for p in reported),
+              f'rbac_self_test() catches a re-introduced leak: {reported}')
+        for role in _saved:
+            check('policesearch' not in srv.allowed_modules_for_role(role),
+                  f'{role}: the runtime denylist still refuses policesearch even then')
+    finally:
+        for role, value in _saved.items():
+            srv.ROLE_MODULES[role] = value
+    check(srv.rbac_self_test() == [], 'rbac_self_test() clean again after the probe')
     for spelling in ('chief', 'chief_commander', 'commander', 'high_command', 'HighCommand',
                      'command_hq', 'police_hq', 'hq_command', 'Chief Commander',
                      'Chief Commander of Police Office'):
@@ -201,10 +225,18 @@ def unit_module_suite(base):
     # no longer see it. CID keeps the fleet read through its `crimes` module.
     check(request(base, 'GET', '/api/vehicles', tokens['ap.officer'])[0] == 401,
           'airport officer is refused POST-free vehicle read (/api/vehicles -> 401)')
-    # Fingerprint keeps the module (only Airport + CID are stripped).
+    # The Fingerprint Unit is stripped as well: it sees its own biometrics
+    # register plus Central Person Search, never the cross-registry search.
     fp, _ = login(base, 'fp.officer')
     _, fpme = request(base, 'GET', '/api/me', fp)
-    check('policesearch' in set(fpme['modules']), 'Fingerprint Unit keeps Central Police Search')
+    fp_mods = set(fpme['modules'])
+    check('policesearch' not in fp_mods,
+          f'Fingerprint Unit has no Central Police Search ({sorted(fp_mods)})')
+    check(fp_mods == {'dashboard', 'people', 'fingerprint'},
+          f'Fingerprint Unit module set is exactly {sorted(fp_mods)}')
+    check('fingerprint' in fp_mods, 'Fingerprint Unit keeps the biometrics register')
+    check(request(base, 'GET', '/api/vehicles', fp)[0] == 401,
+          'fingerprint officer is refused the police-search vehicle read (401)')
     hr, _ = login(base, 'hr.officer')
     _, hrme = request(base, 'GET', '/api/me', hr)
     check('policesearch' in set(hrme['modules']), 'HR Directorate keeps Central Police Search')

@@ -116,8 +116,9 @@ command token is valid, the write is simply not permitted. Sign in as `admin` (o
 who owns the record) to make the change. Read-only mode never blocks `GET` requests, so dashboards,
 registers, logs and searches keep working.
 
-Similarly, the **Airport Control** and **CID Criminal Unit** accounts intentionally have no
-*Central Police Search* in the sidebar (they keep *Central Person Search* and their own unit scope).
+Similarly, the **Fingerprint Unit**, **Airport Control** and **CID Criminal Unit** accounts
+intentionally have no *Central Police Search* in the sidebar (they keep *Central Person Search* and
+their own unit scope).
 The entry is **removed from the sidebar DOM** for those roles — not merely hidden — and the page is
 unreachable through `go()`, so it cannot be revealed by a cached stylesheet or a stray render.
 
@@ -125,8 +126,9 @@ If the entry still appears for a unit account, check the **role string stored fo
 (`SELECT username, role FROM users;`). Every spelling is now resolved — including label-style values
 such as `Airport Control Officer`, `Airport Control Unit`, `CID Criminal Unit`, `Criminal Unit` or
 `Crime Unit` — but a running server started before this build must be restarted to pick the rule up:
-it prints `RBAC self-test: PASS — module denylist in force for AirportControl, CIDUnit` when it is
-serving the fixed code and refuses to start at all if the denylist is not in force.
+it prints `RBAC self-test: PASS — module denylist in force for FingerprintUnit, AirportControl,
+CIDUnit` when it is serving the fixed code and refuses to start at all if the denylist is not in
+force.
 
 Still seeing the old menu or an action button after updating? That is a stale page, not a stale
 server (the backend prints its RBAC guarantees at start-up and answers 403 for every command-role

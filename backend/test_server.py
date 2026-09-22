@@ -1460,7 +1460,9 @@ def main():
                                   'cid', 'fingerprint', 'people', 'policesearch',
                                   'stations', 'officers', 'cars', 'crimes', 'conduct'}
             elif role == 'FingerprintUnit':
-                expected_mods |= {'fingerprint', 'people', 'policesearch'}
+                # The biometrics register + Central Person Search only — the
+                # Fingerprint Unit is not a party to Central Police Search.
+                expected_mods |= {'fingerprint', 'people'}
             elif role == 'AirportControl':
                 # Central Police Search is NOT part of the Airport Unit: the
                 # unit sees its own module + Central Person Search only.

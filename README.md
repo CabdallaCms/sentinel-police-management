@@ -83,7 +83,10 @@ The **Add Suspect** modal makes the **linked case strictly optional**: a suspect
 Officers sign in with one of nine roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
 
 - **System Admin** — full access to every module, every departmental analytics bundle and the User Management page.
-- **Fingerprint Unit** — Fingerprint module only.
+- **Fingerprint Unit** — the biometrics register plus Central Person Search only. Like the Airport
+  and CID units it is **not** a party to Central Police Search (`policesearch` is stripped from the
+  role's module set on the server and again in the sidebar), so a Fingerprint officer never sees the
+  cross-registry officers / stations / vehicles lookup.
 - **Airport Control** — the Airport module plus Central Person Search only. **Central Police
   Search is not part of this unit** (`policesearch` is stripped from the role's module set on the
   server and again in the sidebar), so an Airport officer never sees the cross-registry police
@@ -144,11 +147,14 @@ role instead of falling through. That fall-through was the source of a real defe
 role used to inherit the review-lock default module set (the Fingerprint set, which *includes*
 Central Police Search). Now:
 
-- `ROLE_MODULES[AirportControl] = {dashboard, people, airport}` and `ROLE_MODULES[CIDUnit] =
+- `ROLE_MODULES[FingerprintUnit] = {dashboard, people, fingerprint}`,
+  `ROLE_MODULES[AirportControl] = {dashboard, people, airport}` and `ROLE_MODULES[CIDUnit] =
   {dashboard, people, cid, crimes}` — and the hard denylist (`UNIT_MODULE_DENY` +
   `denied_modules_for_role()` / `strip_denied_modules()`) is re-applied to **every** module list the
   server emits or checks (login, `/api/me`, dashboard, `require_module`, `user_module_set`), so no
-  spelling, cached payload or future edit can leak `policesearch` into a unit session.
+  spelling, cached payload or future edit can leak `policesearch` into a unit session. The police
+  search surface itself (`/api/vehicles`, `/api/vehicles/analytics`) answers **401** for all three
+  units.
 - An **unrecognised** role is fail-closed: it resolves to dashboard only, never to another unit's
   modules.
 - The server runs `rbac_self_test()` at start-up and **refuses to boot** if the denylist or the
@@ -365,7 +371,7 @@ control and location-isolated checkpoints:
 | Username     | Role                | Scope / Module             |
 |--------------|---------------------|----------------------------|
 | `admin`      | System Administrator| All modules + analytics + user management |
-| `fp.officer` | Fingerprint Unit    | Fingerprint only           |
+| `fp.officer` | Fingerprint Unit    | Fingerprint register · Central Person Search (no police search) |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
 | `hr.officer` | HR Directorate      | Police Officers (roster + promotions + discipline) · Police Stations (read) · central search |
@@ -418,9 +424,10 @@ which the role used to manage, and unknown paths, which are refused before routi
 `hq_command` / `police_hq` / `chief.commander` spelling resolves to the same read-only role while
 SystemAdmin and the unit officers keep writing (a SystemAdmin `PUT` still gets the ordinary `405`).
 
-The suite also drives a **role-spelling matrix** directly against the server module: 23 spellings of
-the two restricted units must resolve to their own family (never `policesearch`), 14 other role
-spellings must keep it, unknown roles must be dashboard-only, and `rbac_self_test()` must be clean.
+The suite also drives a **role-spelling matrix** directly against the server module: 32 spellings of
+the three restricted units (Fingerprint, Airport Control, CID Criminal Unit) must resolve to their
+own family and never `policesearch`, 12 other role spellings must keep it, unknown roles must be
+dashboard-only, and `rbac_self_test()` must be clean.
 
 The frontend half of the same contract is pinned in `backend/test_frontend_session.mjs` (the
 sidebar-removal code path, no *Review/Print* link for a read-only session, `hardenReadOnlyDom()`

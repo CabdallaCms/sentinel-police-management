@@ -2678,14 +2678,19 @@ function watchReadOnlyDom(){
 // ============================ unit module denylist ============================
 // Central Police Search ('policesearch') belongs to the roles that operate the
 // central police registers (SystemAdmin · HR Directorate · Commander HQ). The
-// Airport Control and CID Criminal Unit roles must NEVER see it: their sidebar
-// shows their own unit scope plus Central Person Search ('people') only.
+// operational units — Fingerprint, Airport Control and the CID Criminal Unit —
+// must NEVER see it: their sidebar shows their own unit scope plus Central
+// Person Search ('people') only.
 //
 // The server already strips it from ROLE_MODULES for both roles; this mirror
 // is the client-side half of the same rule, so a stale /api/me payload, a
 // cached session object in localStorage or an offline fallback can never
 // resurrect the entry in the sidebar.
 const UNIT_MODULE_DENY={
+  // Fingerprint Unit — 'FingerprintUnit', 'fingerprint_officer', 'fp.officer',
+  // 'Fingerprint Officer', ... (the biometrics register is not a party to the
+  // cross-registry police search).
+  fingerprint:['policesearch'],
   // Airport Control — 'AirportControl', 'airport_officer', 'ap.officer', ...
   airport:['policesearch'],
   // CID Criminal Unit — 'CIDUnit', 'cid_officer', 'criminal_investigation', ...
@@ -2700,6 +2705,7 @@ function roleKey(role){return String(role||'').toLowerCase().replace(/[^a-z]/g,'
 function unitFamily(role){
   const k=roleKey(role);
   if(!k) return '';
+  if(k.startsWith('fingerprint')||k==='fpofficer'||k==='fp') return 'fingerprint';
   if(k.startsWith('airport')||k==='apofficer') return 'airport';
   if(k.startsWith('cid')||k.startsWith('criminalinvestigation')||k.startsWith('criminalunit')
      ||k.startsWith('crimeunit')) return 'cid';
@@ -4333,9 +4339,10 @@ function navItemAllowed(page,mods,isAdmin){
 }
 // ---- HARD SIDEBAR DENYLIST ------------------------------------------------
 // Every nav item whose module this session may not use is DELETED from the DOM
-// (`element.remove()`), not hidden: an Airport Control / CID Criminal Unit
-// officer has no "Central Police Search" node at all, and a node injected or
-// re-rendered by any other code path is deleted again by the observer below.
+// (`element.remove()`), not hidden: a Fingerprint / Airport Control / CID
+// Criminal Unit officer has no "Central Police Search" node at all, and a node
+// injected or re-rendered by any other code path is deleted again by the
+// observer below.
 // The markup is snapshotted (see NAV_ITEM_ORDER / ensureNavItem) so a role
 // that IS allowed to have the entry gets it back on the next sign-in.
 function enforceSidebarDenylist(){
