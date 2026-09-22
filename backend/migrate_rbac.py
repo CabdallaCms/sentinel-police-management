@@ -18,7 +18,9 @@ What it does:
   6. Normalises any legacy spelling of the Chief Commander role
      (``ChiefCommander`` / ``chief.commander`` / ``hq_command``) to the
      canonical ``chief_commander`` and seeds the ``chief`` demo user, who
-     holds the global permissions listed in CHIEF_COMMANDER_PERMISSIONS.
+     holds the global READ-ONLY command permissions listed in
+     CHIEF_COMMANDER_PERMISSIONS (the role may read every department but
+     every POST / PATCH / DELETE answers 403 Forbidden).
 
 Usage::
 
@@ -52,12 +54,14 @@ ROLES = (
     'chief_commander',      # Chief Commander of Police Office (HQ / Command)
 )
 # Capability permissions held by the global HQ role (mirrors
-# server.CHIEF_PERMISSIONS). Modules gate pages; permissions gate the
-# cross-department capabilities: global analytics, station management and
-# read access to the CID / Personnel / Transport departments.
+# server.ROLE_PERMISSIONS['chief_commander']). Modules gate pages; permissions
+# gate the cross-department capabilities: global analytics, read access to the
+# CID / Personnel / Transport departments and the global read-only marker.
+# 'stations:manage' is intentionally absent — the command role is view-only and
+# every mutation route refuses it with 403 Forbidden.
 CHIEF_COMMANDER_PERMISSIONS = (
     'analytics:global',
-    'stations:manage',
+    'readonly:global',
     'cid:view',
     'personnel:view',
     'transport:view',

@@ -83,16 +83,83 @@ The **Add Suspect** modal makes the **linked case strictly optional**: a suspect
 Officers sign in with one of nine roles. The sidebar, top-bar user pill, and every API call are scoped to the role:
 
 - **System Admin** — full access to every module, every departmental analytics bundle and the User Management page.
-- **Fingerprint Unit** — Fingerprint module only.
-- **Airport Control** — Airport module only.
-- **CID Criminal Unit** — CID / suspect alerts only, plus the `crime` section of the CID analytics bundle.
+- **Fingerprint Unit** — the biometrics register plus Central Person Search only. Like the Airport
+  and CID units it is **not** a party to Central Police Search (`policesearch` is stripped from the
+  role's module set on the server and again in the sidebar), so a Fingerprint officer never sees the
+  cross-registry officers / stations / vehicles lookup.
+- **Airport Control** — the Airport module plus Central Person Search only. **Central Police
+  Search is not part of this unit** (`policesearch` is stripped from the role's module set on the
+  server and again in the sidebar), so an Airport officer never sees the cross-registry police
+  search — only their own unit scope and the person register.
+- **CID Criminal Unit** — the CID / suspect-alert and Crime registers plus Central Person Search,
+  and the `crime` section of the CID analytics bundle — again **without Central Police Search**.
 - **HR Directorate** (`hr_officer`) — the **Police Officers** register in full (roster, green-badge promotions, red-badge discipline and their analytics bundle) plus read access to **Police Stations** for postings and the two central search registries. No admin, CID, checkpoint, airport or fleet-write rights.
-- **Chief Commander of Police Office (HQ / Command)** (`chief_commander`) — a **global** oversight role. Holds the `analytics:global` and `stations:manage` permissions plus `cid:view` / `personnel:view` / `transport:view`, so it can open every departmental register read-only, create stations, and use the two HQ pages: the **Global Executive Dashboard** (KPI grid — Total Officers · CID Clearance Rate · Active Checkpoint Hits · Fleet Readiness — department cards, charts and the regional stations table) and **Stations Oversight & Regional Data**. Backed by `GET /api/analytics/global` (also `GET /api/analytics?module=global`). No user management and no unit-record writes. Signing in as `chief_commander` lands directly on the Global Executive Dashboard.
+- **Chief Commander of Police Office (HQ / Command)** (`chief_commander`) — the **global read-only command role** (shown in the UI as *Commander / High Command*). It holds the `readonly:global` permission plus `analytics:global`, `cid:view`, `personnel:view` and `transport:view`, so it monitors every department, register, log and search across the whole country and uses the two HQ pages: the **Global Executive Dashboard** (KPI grid — Total Officers · CID Clearance Rate · Active Checkpoint Hits · Fleet Readiness — department cards, charts and the regional stations table) and **Stations Oversight & Regional Data**. Backed by `GET /api/analytics/global` (also `GET /api/analytics?module=global`). It **cannot write anything**: every `POST`, `PATCH` and `DELETE` on any route is refused with **`403 Forbidden`** by a single firewall in front of the API (see *Global read-only command role* below), and the UI renders every module in strict view-only mode — no *Register*, *Add*, *Edit*, *Approve* or *Open case* control is shown. Signing in as `chief_commander` lands directly on the Global Executive Dashboard.
 - **Checkpoint South / East / West** — only the Checkpoint module, **scoped to their assigned location**; `GET /api/checkpoint-events` returns a `scope` and `visible_locations` payload so the frontend can render the active filter, and `POST /api/checkpoint-events` rejects events at any other location.
 
-The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the executive analytics aggregation, a Fingerprint officer cannot list Airport or Crime records, and each departmental analytics bundle only ever returns the sections its caller's modules allow.
+The top bar shows the active officer and location, e.g. **Officer H. Xasan · South Checkpoint**, and the sidebar hides modules the user cannot use. Server-side enforcement mirrors the UI: a non-admin token cannot reach `/api/admin/*` or the executive analytics aggregation, a Fingerprint officer cannot list Airport or Crime records, an Airport or CID officer cannot open Central Police Search, and each departmental analytics bundle only ever returns the sections its caller's modules allow.
+
+### Global read-only command role (Commander / High Command)
+
+`chief_commander` is the only **read-only** role in the system, and the rule is enforced twice so the
+UI and the API can never disagree:
+
+- **Backend firewall.** `enforce_read_only()` runs inside `do_POST`, `do_PUT`, `do_PATCH` and
+  `do_DELETE` immediately after authentication and *before* any route-specific handling, so a
+  command token is refused with **`403 Forbidden`** (`{"error": …, "code": "read_only_role",
+  "read_only": true, "path": …}`) on every mutation in the API — persons, airport records,
+  clearance/fingerprint applications, crime cases and evidence, suspect alerts, checkpoint events,
+  stations, officers, vehicles, crime files, conduct submissions and HR reviews, promotions,
+  disciplinary actions and user management. Because the check sits in front of the router it also
+  covers paths that do not exist (a Commander never distinguishes 403 from 404) and the verb the API
+  does not serve (`PUT` → 403 instead of 405). `GET` / `HEAD` / `OPTIONS` are untouched, and
+  `POST /api/login` / `POST /api/logout` stay available so the officer can still sign in and out.
+  The role no longer holds `stations:manage`, so the station-management bypass is closed as well.
+- **Frontend view-only mode.** The Commander session applies `body.readonly-mode`, which hides
+  every control marked `data-write` / `.write-action` (Register Officer, Add, Edit, Approve
+  Clearance, Open Case, the register's *Review/Print* link, …), drops the dashboard's
+  quick-registration panel for a lock notice, swaps every action cell for a *View only* marker, and
+  shows a **View-only** badge + banner in the top bar. On top of the CSS marker there is a
+  **DOM hardener**: `hardenReadOnlyDom()` hides *any* element whose handler is a mutation entry
+  point (even one that lost its `data-write` marker), restores the controls when a write-capable
+  officer signs in on the same tab, and a `MutationObserver` re-runs it after every repaint — so
+  every department page is clean, including rows painted dynamically. Every write entry point
+  (`openEntryModal`, the person/case/checkpoint/user drawers, approval and review handlers) refuses
+  to run, and the `api()` transport refuses any non-`GET` call locally with a `403` before it leaves
+  the browser — the same status the server returns. The printable review page
+  (`application.html`) carries the same rule: a read-only session gets no *Approve Application*
+  button, a view-only note instead, and `approve()` never issues the request.
+- **Confirming which build is live.** `index.html` stamps `<meta name="sentinel-ui-build"
+  content="sentinel-rbac-readonly-3">` and shows *UI build …* in the sidebar footer
+  (`window.SENTINEL_UI_BUILD`), while the backend prints its RBAC guarantees at start-up
+  (*Central Police Search is NOT granted to AirportControl, CIDUnit* / *global read-only roles
+  chief_commander — DELETE, PATCH, POST, PUT … answer 403 Forbidden*). If a browser still shows the
+  old menu or action buttons, it is a stale tab: hard-refresh it (the server sends
+  `Cache-Control: no-store`).
 
 **Session persistence (refresh-safe sign-in).** On sign-in the auth token and user object are stored in browser storage (`localStorage.setItem('sentinel_token', token)` and `localStorage.setItem('sentinel_user', JSON.stringify(user))`, plus the legacy `sentinelSession` object used by the printable pages). On every page load `initApp()` re-hydrates `currentUser` and `authToken` **before** the initial API sync (`syncServer` / `fetchCheckpoints`), and every request automatically carries `Authorization: Bearer ${token}`. A refresh therefore never signs the officer out: only an explicit HTTP **401** from the dedicated auth check (`GET /api/me`) clears the session — non-fatal startup errors (server still booting, transient 5xx, a 404) keep the officer signed in and retry in the background.
+
+**Role normalization and the unit denylist.** The module a session receives is
+resolved through the alias tables *and* a family fallback, so the label spellings an operator may
+have typed into `users.role` — `Airport Control Officer`, `Airport Control Unit`, `CID Criminal
+Unit`, `Criminal Unit`, `Crime Unit`, `Chief Commander of Police Office`, … — resolve to their real
+role instead of falling through. That fall-through was the source of a real defect: an unrecognised
+role used to inherit the review-lock default module set (the Fingerprint set, which *includes*
+Central Police Search). Now:
+
+- `ROLE_MODULES[FingerprintUnit] = {dashboard, people, fingerprint}`,
+  `ROLE_MODULES[AirportControl] = {dashboard, people, airport}` and `ROLE_MODULES[CIDUnit] =
+  {dashboard, people, cid, crimes}` — and the hard denylist (`UNIT_MODULE_DENY` +
+  `denied_modules_for_role()` / `strip_denied_modules()`) is re-applied to **every** module list the
+  server emits or checks (login, `/api/me`, dashboard, `require_module`, `user_module_set`), so no
+  spelling, cached payload or future edit can leak `policesearch` into a unit session. The police
+  search surface itself (`/api/vehicles`, `/api/vehicles/analytics`) answers **401** for all three
+  units.
+- An **unrecognised** role is fail-closed: it resolves to dashboard only, never to another unit's
+  modules.
+- The server runs `rbac_self_test()` at start-up and **refuses to boot** if the denylist or the
+  read-only command role is not in force in that process (`RBAC self-test: PASS — module denylist in
+  force for AirportControl, CIDUnit, read-only roles: chief_commander`).
 
 **Role normalization.** Every accepted Checkpoint-officer spelling (`CheckpointSouth` / `CheckpointEast` / `CheckpointWest`, `checkpoint_south`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, …) is normalized to the canonical role **`checkpoint_officer`** while the officer's `location_scope` (`South` / `East` / `West`) is preserved (and derived from the alias when not passed explicitly). `GET /api/dashboard` and `GET /api/checkpoint-events` return HTTP 200 for all of these roles — never 404/401 for a valid checkpoint officer — and the checkpoint query matches the location case-insensitively (`LOWER(location_code) = 'south' OR LOWER(checkpoint_location) LIKE '%south%'` and equivalent columns).
 
@@ -105,7 +172,7 @@ The flat module list is organised into **departmental collapsible sidebar sectio
 | Section | Items (`data-page` · module) |
 |---------|------------------------------|
 | *(top level)* | **Dashboard** (`dashboard`) |
-| **CENTRAL SEARCH** | *Central Person Search* (`people`), *Central Police Search* (`policesearch` — one cascading Region → District → Village/Town filter across the officers, stations and cars registers plus free-text search) |
+| **CENTRAL SEARCH** | *Central Person Search* (`people`), *Central Police Search* (`policesearch` — one cascading Region → District → Village/Town filter across the officers, stations and cars registers plus free-text search; not granted to the Airport Control or CID Criminal Unit roles) |
 | **DEP. OF CID** | *Fingerprint Unit* (`fingerprint`), *Crime Unit* (`cid`), *Checkpoint Unit* (`checkpoints`), *Airport Unit* (`airport`) |
 | **DEP. OF POLICE PERSONNEL (REGISTRATION POLICE OFFICE)** | *Registration Office* (`officers`), *Conduct, Promotions & Disciplinary Management* (`conduct`) |
 | **DEP. OF TRANSPORT** | *Vehicle Registry* (`cars`), *Vehicle Status & Tracking* (`vehiclestatus`, module `cars`) |
@@ -129,7 +196,7 @@ The three levels are entered as **Dropdown (Region) → Dropdown (District) → 
 
 - **Reusable component** — `locationDropdowns(prefix, opts)` renders and wires the control (`{prefix}-region` select, `{prefix}-district` select, `{prefix}-village` text input) into a `.loc-grid` container: choosing a Region populates its official Districts (and clears the typed Village/Town); choosing a District clears the typed Village/Town. `opts.withAll` adds "All …" placeholders (used by the Central Police Search filter) and `opts.disabled` renders the whole block locked (for fixed-location contexts). `readLocation(prefix)` / `setLocation(prefix, loc)` read and write the three levels; `requireLocation(prefix)` enforces all three (village must be non-empty text).
 - **Station anchor model** — Police **Station Registration** captures *Station Name, Code, Region, District, Village/Town* (`requireLocation()` enforces all three levels) and now persists server-side via `POST /api/stations`. **Police Car** registration links a record to an assigned station; picking a station **pre-fills** the Region/District/Village fields with the station's location as editable defaults (`wireStationLocationDefaults()` → `paintLocationDefaults()`). **Police Officer** registration instead uses the station as a plain foreign-key dropdown (Section 1) and captures the officer's own **Regional & Origin Data** in a separate section (see *Officer Registration* below).
-- **Storage** — **Stations**, **Officers**, **Crime incidents** and **Vehicles** persist in PostgreSQL (`police_stations`, `officers`, `crime_incidents`, `vehicles`) and sync from `GET /api/stations`, `/api/officers`, `/api/crimes` and `/api/vehicles` in `syncServer()` (localStorage remains an offline fallback). Central Police Search filters officers, stations and vehicles through the same cascading location filter — for officers it matches stored **origin** (`officerLocation()`). The `policesearch` / `stations` / `officers` / `cars` / `crimes` module keys are part of `ROLE_MODULES` (policesearch granted to the roles that can see the person registry; registration modules admin-only except crime intake for CID). `/api/me` drives nav visibility and the `go()` RBAC redirect.
+- **Storage** — **Stations**, **Officers**, **Crime incidents** and **Vehicles** persist in PostgreSQL (`police_stations`, `officers`, `crime_incidents`, `vehicles`) and sync from `GET /api/stations`, `/api/officers`, `/api/crimes` and `/api/vehicles` in `syncServer()` (localStorage remains an offline fallback). Central Police Search filters officers, stations and vehicles through the same cascading location filter — for officers it matches stored **origin** (`officerLocation()`). The `policesearch` / `stations` / `officers` / `cars` / `crimes` module keys are part of `ROLE_MODULES`; `policesearch` is granted to the System Admin, the Fingerprint Unit, the HR Directorate and the Chief Commander, and is explicitly **not** part of `AirportControl` or `CIDUnit` (the frontend mirrors the same denylist in `sanitizeModules()`, so a cached session cannot resurrect the entry). Registration modules are admin-only except crime intake for CID. `/api/me` drives nav visibility and the `go()` RBAC redirect.
 
 ### Police Officers — HR Directorate register (System Admin + `hr_officer`)
 
@@ -304,14 +371,14 @@ control and location-isolated checkpoints:
 | Username     | Role                | Scope / Module             |
 |--------------|---------------------|----------------------------|
 | `admin`      | System Administrator| All modules + analytics + user management |
-| `fp.officer` | Fingerprint Unit    | Fingerprint only           |
+| `fp.officer` | Fingerprint Unit    | Fingerprint register · Central Person Search (no police search) |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
 | `hr.officer` | HR Directorate      | Police Officers (roster + promotions + discipline) · Police Stations (read) · central search |
 | `cp.south`   | Checkpoint South    | Checkpoint · South only    |
 | `cp.east`    | Checkpoint East     | Checkpoint · East only     |
 | `cp.west`    | Checkpoint West     | Checkpoint · West only     |
-| `chief`      | Chief Commander (HQ / Command) | Global Executive Dashboard · Stations Oversight · read access to CID / Personnel / Transport · station management |
+| `chief`      | Chief Commander (HQ / Command) — *Commander / High Command* | Global Executive Dashboard · Stations Oversight · **read-only** visibility across every department, register, log and search — every write answers `403 Forbidden` |
 
 These accounts are created automatically on first run and must be removed or
 changed before any real deployment. To add a real admin, sign in as `admin`
@@ -339,6 +406,37 @@ python3 backend/test_server.py
 ```
 
 Covers the identity-resolution tiers, unit-record routes, RBAC module gating, location-scoped checkpoint reads/writes, role-alias normalization (`cp_south` / `CheckpointEast` → `checkpoint_officer` with the scope preserved), the `/api/dashboard` contract for every role and the analytics aggregation.
+
+Read-only / unit-module regression suite (boots the real server against PostgreSQL; skipped when no
+database is configured):
+
+```bash
+python3 backend/test_read_only_rbac.py
+```
+
+Pins the two RBAC changes end to end: the Airport Control and CID Criminal Unit module sets
+(`ap.officer` → `{dashboard, people, airport}`, `cid.officer` → `{dashboard, people, cid, crimes}` —
+never `policesearch`), the Commander's global read set (21 dashboards/registers/logs/searches return
+`200`), the global write firewall (**25** refused calls across every route and all four verbs
+`POST` / `PUT` / `PATCH` / `DELETE` return `403` with `code: read_only_role` — including stations,
+which the role used to manage, and unknown paths, which are refused before routing), the empty
+`quick_actions` payload, and that every `Commander` / `HighCommand` / `high_command` / `command_hq` /
+`hq_command` / `police_hq` / `chief.commander` spelling resolves to the same read-only role while
+SystemAdmin and the unit officers keep writing (a SystemAdmin `PUT` still gets the ordinary `405`).
+
+The suite also drives a **role-spelling matrix** directly against the server module: 32 spellings of
+the three restricted units (Fingerprint, Airport Control, CID Criminal Unit) must resolve to their
+own family and never `policesearch`, 12 other role spellings must keep it, unknown roles must be
+dashboard-only, and `rbac_self_test()` must be clean.
+
+The frontend half of the same contract is pinned in `backend/test_frontend_session.mjs` (the
+sidebar-removal code path, no *Review/Print* link for a read-only session, `hardenReadOnlyDom()`
+returning the number of controls it changed, the entry points and the local `api()` firewall) and in
+`backend/test_print_fit.py` (the `application.html` read-only contract: marked control, view-only
+note, fail-closed session seed, `/api/me` flags, `applyReadOnlyUi()`, and `approve()` refusing
+locally). Sidebar removal/restore and the per-page control sweep are exercised behaviourally against
+the running server (jsdom), including a denied module coming back for an allowed role in the same
+tab.
 
 It also runs a dedicated **departmental analytics suite** (`departmental_analytics_suite()`), which
 boots a *second, isolated* server against a fresh database holding a fully deterministic fixture and

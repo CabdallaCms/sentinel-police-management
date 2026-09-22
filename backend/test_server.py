@@ -963,10 +963,11 @@ def hr_directorate_suite():
         proc.wait(timeout=10)
 
 def chief_commander_suite():
-    """Chief Commander of Police Office (HQ / Command) — `chief_commander`.
+    """Commander / Chief Commander of Police Office (HQ / Command) — `chief_commander`.
 
-    A GLOBAL oversight role: it reads every department, owns the executive
-    analytics endpoint (/api/analytics/global) and may manage stations, but
+    A GLOBAL READ-ONLY monitoring role: it reads every department and owns the
+    executive analytics endpoint (/api/analytics/global), but it may never
+    mutate anything — every POST / PATCH / DELETE answers 403 Forbidden — and
     it is not a SystemAdmin (no user management).
     """
     port = free_port()
@@ -1003,7 +1004,7 @@ def chief_commander_suite():
         assert s == 200, (s, me)
         assert me['role'] == 'chief_commander' and me['role_alias'] == 'chief_commander', me
         assert me['role_label'] == 'Chief Commander (HQ / Command)', me
-        assert set(me['permissions']) == {'analytics:global', 'stations:manage',
+        assert set(me['permissions']) == {'analytics:global', 'readonly:global',
                                           'cid:view', 'personnel:view', 'transport:view'}, me
         assert {'executive', 'oversight', 'fingerprint', 'cid', 'checkpoints', 'airport',
                 'officers', 'conduct', 'cars', 'stations'} <= set(me['modules']), me['modules']
@@ -1012,7 +1013,14 @@ def chief_commander_suite():
         assert me['visibility']['is_chief_commander'] is True, me['visibility']
         assert me['visibility']['can_manage_users'] is False, me['visibility']
         assert me['visibility']['can_view_global_analytics'] is True, me['visibility']
-        assert me['visibility']['can_manage_stations'] is True, me['visibility']
+        # ---- global read-only mandate -------------------------------------
+        assert me['read_only'] is True and me['can_write'] is False, me
+        assert me['visibility']['read_only'] is True, me['visibility']
+        assert me['visibility']['is_read_only'] is True, me['visibility']
+        assert me['visibility']['can_write'] is False, me['visibility']
+        # Station management was retired with the read-only mandate.
+        assert me['visibility']['can_manage_stations'] is False, me['visibility']
+        assert 'readonly:global' in me['permissions'], me['permissions']
         assert 'chief_commander' in me['roles'], me['roles']
 
         # ---- 2) /api/analytics/global — RBAC + shape ------------------------
@@ -1060,25 +1068,60 @@ def chief_commander_suite():
         for path in ('/api/admin/users', '/api/admin/analytics'):
             s, r = request(base, 'GET', path, chief)
             assert s == 401, (path, s, r)
-        s, r = request(base, 'POST', '/api/admin/users', chief,
-                       {'username': 'x', 'display_name': 'x', 'role': 'CIDUnit', 'password': 'Abcdef12!'})
-        assert s == 401, (s, r)
-
-        # ---- 4) stations:manage — the chief may create stations -----------
-        s, r = request(base, 'POST', '/api/stations', chief,
+        # ---- 4) GLOBAL READ-ONLY FIREWALL ---------------------------------
+        # Every mutation route answers 403 Forbidden for the command role —
+        # before any route-specific validation (so even a malformed payload
+        # can never be distinguished from a refused one).
+        read_only_calls = [
+            ('POST', '/api/persons', {'full_name': 'Refused Person'}),
+            ('POST', '/api/airport-records', {'person_id': 'P-0001'}),
+            ('POST', '/api/clearance-applications', {'person_id': 'P-0001'}),
+            ('POST', '/api/crime-cases', {'category': 'Theft'}),
+            ('POST', '/api/suspect-alerts', {'person_id': 'P-0001'}),
+            ('POST', '/api/checkpoint-events', {'person_id': 'P-0001'}),
+            ('POST', '/api/stations', {'name': 'HQ Oversight Post', 'station_tier': 'Outpost',
+                                       'region': 'Sanaag', 'district': 'Badhan',
+                                       'contact_phone': '0907333444'}),
+            ('POST', '/api/officers', {'full_name': 'Refused Officer'}),
+            ('POST', '/api/vehicles', {'category': 'Police Fleet', 'plate_number': 'HQ-1'}),
+            ('POST', '/api/crimes', {'category': 'Theft'}),
+            ('POST', '/api/conduct/submit', {'officer_service_id': 'POL-1'}),
+            ('POST', '/api/admin/users', {'username': 'x', 'display_name': 'x',
+                                          'role': 'CIDUnit', 'password': 'Abcdef12!'}),
+            ('PATCH', '/api/persons/P-0001', {'phone': '+252 63 000 0000'}),
+            ('PATCH', '/api/crime-cases/CC-0001', {'status': 'Closed'}),
+            ('PATCH', '/api/admin/users/2', {'active': False}),
+            ('DELETE', '/api/persons/P-0001', None),
+            ('DELETE', '/api/crime-cases/CC-0001', None),
+        ]
+        for method, path, payload in read_only_calls:
+            s, r = request(base, method, path, chief, payload)
+            assert s == 403, (method, path, s, r)
+            assert r.get('code') == 'read_only_role', (method, path, r)
+            assert r.get('read_only') is True, (method, path, r)
+            assert 'read-only' in r.get('error', '') or 'not permitted' in r.get('error', ''), r
+        # Reads are untouched — including the register it may no longer write.
+        for path in ('/api/stations', '/api/vehicles', '/api/persons'):
+            assert request(base, 'GET', path, chief)[0] == 200, path
+        # Sign in / sign out stay available (session plumbing, not a mutation).
+        assert request(base, 'POST', '/api/logout', chief)[0] == 200
+        s, again = request(base, 'POST', '/api/login',
+                           body={'username': 'chief', 'password': 'ChangeMe123!'})
+        assert s == 200 and again['user']['read_only'] is True, (s, again)
+        # The dashboard drops quick-registration actions for this role.
+        s, d = request(base, 'GET', '/api/dashboard', chief)
+        assert d['read_only'] is True and d['can_write'] is False, d
+        assert d['quick_actions'] == [], d['quick_actions']
+        assert 'view-only' in d['subhead'], d['subhead']
+        # SystemAdmin is NOT read-only: the same write still succeeds.
+        s, r = request(base, 'POST', '/api/stations', admin,
                        {'name': 'HQ Oversight Post', 'station_tier': 'Outpost',
                         'region': 'Sanaag', 'district': 'Badhan',
                         'contact_phone': '0907333444'})
-        assert s == 201 and r['station']['name'] == 'HQ Oversight Post', (s, r)
+        assert s == 201, (s, r)
         s, g = request(base, 'GET', '/api/analytics/global', chief)
         assert g['total_stations'] == 9, g['total_stations']
-        assert next(x for x in g['regions'] if x['region'] == 'Sanaag')['stations'] == 3, g['regions']
-        # ...but may not write unit records (vehicles are SystemAdmin-write).
-        s, r = request(base, 'POST', '/api/vehicles', chief,
-                       {'category': 'Police Fleet', 'plate_number': 'HQ-1', 'vin': 'ABCDEFGH123456789',
-                        'engine_number': 'E1', 'make_model': 'Toyota'})
-        assert s == 401, (s, r)
-        print('chief_commander suite: ok')
+        print('chief_commander suite: ok (global read-only — reads 200, writes 403, session alive)')
     finally:
         proc.terminate()
         proc.wait(timeout=10)
@@ -1417,11 +1460,16 @@ def main():
                                   'cid', 'fingerprint', 'people', 'policesearch',
                                   'stations', 'officers', 'cars', 'crimes', 'conduct'}
             elif role == 'FingerprintUnit':
-                expected_mods |= {'fingerprint', 'people', 'policesearch'}
+                # The biometrics register + Central Person Search only — the
+                # Fingerprint Unit is not a party to Central Police Search.
+                expected_mods |= {'fingerprint', 'people'}
             elif role == 'AirportControl':
-                expected_mods |= {'airport', 'people', 'policesearch'}
+                # Central Police Search is NOT part of the Airport Unit: the
+                # unit sees its own module + Central Person Search only.
+                expected_mods |= {'airport', 'people'}
             elif role == 'CIDUnit':
-                expected_mods |= {'cid', 'people', 'policesearch', 'crimes'}
+                # Same rule for the CID Criminal Unit — no 'policesearch'.
+                expected_mods |= {'cid', 'people', 'crimes'}
             elif role == 'hr_officer':
                 expected_mods |= {'people', 'policesearch', 'stations', 'officers',
                                   'conduct'}
@@ -1433,6 +1481,10 @@ def main():
             assert me['visibility']['is_admin'] is (role == 'SystemAdmin')
             assert me['visibility']['can_manage_users'] is (role == 'SystemAdmin')
             assert me['visibility']['can_view_analytics'] is (role == 'SystemAdmin')
+            # Unit roles are writers; only the command role is view-only.
+            assert me['visibility']['read_only'] is False, (u, me['visibility'])
+            assert me['visibility']['can_write'] is True, (u, me['visibility'])
+            assert r['user']['read_only'] is False, (u, r['user'])
             tokens[u] = r['token']
 
         # Cross-module RBAC: each unit role can only access its own module.

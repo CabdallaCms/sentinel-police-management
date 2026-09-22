@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<!-- UI build stamp. Lets an operator prove which frontend a browser is
+     running (the RBAC read-only / unit-denylist hardening ships in this
+     build) — see the sidebar footer and window.SENTINEL_UI_BUILD. -->
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-3" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -321,6 +325,28 @@ body.modal-open{overflow:hidden}
 body:not(.is-admin):not(.can-manage-stations) .admin-write{display:none !important}
 .admin-write-note{display:none}
 body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
+/* ==== Global read-only role (Commander / High Command) ====
+   The Commander holds universal READ-ONLY visibility: every register renders
+   in strict view-only mode. Each write control carries `data-write` (or the
+   `.write-action` / legacy `.admin-write` marker), so one body class removes
+   every "Register officer" · "Approve clearance" · "Open case" · "Edit" ·
+   "Add" action from the whole UI — including the buttons painted dynamically
+   into table rows. The backend refuses the matching POST / PATCH / DELETE
+   calls with HTTP 403, so the UI gate and the API gate agree exactly. */
+body.readonly-mode [data-write],
+body.readonly-mode .write-action,
+body.readonly-mode .admin-write{display:none !important}
+.ro-badge{display:none;align-items:center;gap:6px;background:#fff3d9;color:#7a5b17;
+  border:1px solid #f0dcae;border-radius:99px;padding:5px 11px;font-size:11px;
+  font-weight:800;letter-spacing:.4px;text-transform:uppercase;white-space:nowrap}
+body.readonly-mode .ro-badge{display:inline-flex}
+.ro-note{display:none}
+body.readonly-mode .ro-note{display:block}
+.ro-banner{display:none}
+body.readonly-mode .ro-banner{display:flex}
+.ro-banner{margin:0 0 16px;background:#eef4ff;border:1px solid #d3e0fb;color:#264d8a;
+  border-radius:12px;padding:11px 14px;align-items:flex-start;gap:10px;font-size:12.5px}
+.ro-banner b{display:block;margin-bottom:2px;font-size:13px}
 @media(max-width:650px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.da-search{min-width:100%}}
 /* ==== User management ==== */
 .um-table{font-size:13px}
@@ -452,15 +478,23 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
      the Chief Commander's Global Executive Dashboard (HQ / Command). Operational
      registers stay clean — a compact unit overview strip on top, full-width
      tables with a search box, and centered entry modals for new records. -->
-</nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span></div></aside>
+</nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span><br><span id="uiBuild" class="muted" style="opacity:.7;font-size:10.5px"></span></div></aside>
 <main class="main">
 <header class="top" id="topbar"><div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
+<span class="ro-badge" id="roBadge" title="This role holds global read-only (view-only) access — every register is monitoring-only.">🔒 View-only · Commander</span>
 <div class="user-pill" id="userPill" style="display:none">
   <div class="avatar" id="userInitials">?</div>
   <div><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
   <button class="logout admin-only" id="gotoAdmin" onclick="go('admin')" title="User management">⚙</button>
   <button class="logout" id="logoutBtn" onclick="doLogout()" title="Sign out">↩ Sign out</button>
 </div></header>
+<!-- GLOBAL READ-ONLY NOTICE (Commander / High Command) — shown only in
+     view-only mode; every write control is removed while it is visible. -->
+<div class="ro-banner" id="roBanner" role="status">
+  <span style="font-size:16px">🔒</span>
+  <div><b>Read-only command access</b>
+  <span>You are signed in with a global <b>monitoring</b> role: every department, register, dashboard, log and search is fully readable, but no record can be created, edited, approved or deleted. Write controls are hidden and the API refuses writes with <code>403 Forbidden</code>.</span></div>
+</div>
 
 <!-- DASHBOARD -->
 <section id="dashboard" class="page">
@@ -503,7 +537,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <!-- PEOPLE -->
 <section id="people" class="page">
-<div class="panel"><div class="panel-head"><div><h2>Central Person Registry</h2><div class="sub">One identity record — unit data is appended, never duplicated</div></div><button class="btn" onclick="openPersonDrawer(null)">+ New / update person</button></div>
+<div class="panel"><div class="panel-head"><div><h2>Central Person Registry</h2><div class="sub">One identity record — unit data is appended, never duplicated</div></div><button class="btn" data-write="1" onclick="openPersonDrawer(null)">+ New / update person</button></div>
 <div class="hint" style="margin-bottom:16px">Central data stores identity and contact reference only. Airport, Fingerprint, CID and Checkpoint records stay in their own registers and link through Person ID. Open any person to append new details (e.g. Passport ID, Guardian, phone).</div>
 <div class="search"><span>⌕</span><input id="personSearch" placeholder="Search name, national ID, passport or Person ID..." oninput="renderPeople()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Linked unit records</th><th>Actions</th></tr></thead><tbody id="peopleTable"></tbody></table></div>
@@ -517,7 +551,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div class="us-row" id="usFingerprintRow"></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="fpSearch" placeholder="Search application, person, purpose or status…" oninput="renderFingerprintTable()"></div><button class="btn" onclick="openEntryModal('fpDrawer')">＋ New Clearance Application</button></div></div>
+<div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="fpSearch" placeholder="Search application, person, purpose or status…" oninput="renderFingerprintTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('fpDrawer')">＋ New Clearance Application</button></div></div>
 <div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> a Fingerprint Officer can only approve once the 12-hour review period has elapsed; a System Administrator can approve immediately.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
@@ -550,7 +584,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 </div>
 <div class="field"><label>Guardian attachments — upload 3, <span class="req">at least 2 required</span></label><div class="docgrid" id="guardDocs"></div></div>
 <div class="field"><label>Supporting document notes</label><textarea id="fpNotes" placeholder="Document types, issuing authority, additional notes"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetFpForm()">Clear</button><button class="btn" type="submit">Save application</button></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetFpForm()">Clear</button><button class="btn" data-write="1" type="submit">Save application</button></div>
 </form>
 </div>
 </div>
@@ -563,7 +597,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div class="us-row" id="usAirportRow"></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Passenger records</h2><div class="sub">Airport unit register · Hargeisa Local Airport</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="airSearch" placeholder="Search passenger, flight, date or route…" oninput="renderAirportTable()"></div><button class="btn" onclick="openEntryModal('airDrawer')">＋ Register Airport Passenger</button></div></div>
+<div class="panel-head"><div><h2>Passenger records</h2><div class="sub">Airport unit register · Hargeisa Local Airport</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="airSearch" placeholder="Search passenger, flight, date or route…" oninput="renderAirportTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('airDrawer')">＋ Register Airport Passenger</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div>
 </div>
 </section>
@@ -588,7 +622,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="field"><label>Destination city *</label><input id="airDest" required placeholder="e.g. Hargeisa"></div>
 </div>
 <div class="field"><label>Travel notes</label><textarea id="airNotes"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">Save passenger</button></div>
+<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" data-write="1" type="submit">Save passenger</button></div>
 </form>
 </div>
 </div>
@@ -601,12 +635,12 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div class="us-row" id="usCidRow"></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="caseSearch" placeholder="Search case, category, location or status…" oninput="renderCases()"></div><button class="btn" onclick="openCaseDrawer()">+ New case</button></div></div>
+<div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="caseSearch" placeholder="Search case, category, location or status…" oninput="renderCases()"></div><button class="btn" data-write="1" onclick="openCaseDrawer()">+ New case</button></div></div>
 <div class="hint" style="margin-bottom:14px">Open a case to access its three workspace tabs: <b>Details &amp; incident summary</b>, <b>Participants &amp; suspect linkage</b>, and <b>Evidence &amp; media</b>.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th><th>Actions</th></tr></thead><tbody id="caseTable"></tbody></table></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="suspectSearch" placeholder="Search person, case, role or alert…" oninput="renderSuspectTable()"></div><button class="btn" onclick="openAddSuspect()">＋ Add suspect</button></div></div>
+<div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="suspectSearch" placeholder="Search person, case, role or alert…" oninput="renderSuspectTable()"></div><button class="btn" data-write="1" onclick="openAddSuspect()">＋ Add suspect</button></div></div>
 <div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes. Suspects listed without a case are recorded with a <b>Direct Intelligence Listing</b> or <b>Manual Entry</b> origin.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th><th>Actions</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
 </div>
@@ -634,7 +668,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 </div>
 <div class="field"><label>Incident summary</label><textarea id="cwSummary" style="min-height:140px" placeholder="Describe the incident, timeline and key facts…"></textarea></div>
 <div class="field"><label>Internal notes (confidential to CID)</label><textarea id="cwNotes"></textarea></div>
-<div class="form-actions"><button class="btn" onclick="saveCaseDetails()">Save case details</button></div>
+<div class="form-actions"><button class="btn" data-write="1" onclick="saveCaseDetails()">Save case details</button></div>
 </div>
 </div>
 <div class="tabpane" id="cw-participants">
@@ -649,7 +683,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="field"><label>Linked case (optional)</label><select id="cwCaseSel"></select></div>
 </div>
 <div class="field"><label>Participant note <span id="cwNoteReq" style="color:var(--red)">(required when no case)</span></label><input id="cwPartNote" placeholder="e.g. last seen, relationship to incident, reason for listing"></div>
-<div class="form-actions"><button class="btn danger" onclick="addParticipant()">Link participant</button></div>
+<div class="form-actions"><button class="btn danger" data-write="1" onclick="addParticipant()">Link participant</button></div>
 </div>
 </div>
 <div class="panel" style="box-shadow:none;border:1px solid var(--line)"><div class="panel-head"><div><h2>Linked participants</h2></div></div>
@@ -663,7 +697,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="grid2"><div class="field"><label>Caption</label><input id="evCaption" placeholder="e.g. CCTV still — south entrance"></div>
 <div class="field"><label>Type</label><select id="evType"><option>Image</option><option>Document</option><option>CCTV</option><option>Other</option></select></div></div>
 <div class="field"><label>File</label><input id="evFile" type="file"></div>
-<div class="form-actions"><button class="btn" onclick="uploadEvidence()">Upload evidence</button></div>
+<div class="form-actions"><button class="btn" data-write="1" onclick="uploadEvidence()">Upload evidence</button></div>
 </div>
 </div>
 <h3 style="margin:18px 0 10px;font-size:15px">Stored evidence</h3>
@@ -679,7 +713,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div class="us-row" id="usCheckpointsRow"></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="cpSearch" placeholder="Search traveler, person ID, guardian, location or outcome…" oninput="renderCheckpointPage()"></div><button class="btn" onclick="openCheckpointDrawer()">+ Record stop</button></div></div>
+<div class="panel-head"><div><h2>Checkpoint operations</h2><div class="sub">Screening against active suspect alerts</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="cpSearch" placeholder="Search traveler, person ID, guardian, location or outcome…" oninput="renderCheckpointPage()"></div><button class="btn" data-write="1" onclick="openCheckpointDrawer()">+ Record stop</button></div></div>
 <div class="panel-head" style="margin-bottom:14px">
   <div>
     <h3 style="margin:0;font-size:14px">Active location</h3>
@@ -736,7 +770,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 </div>
 <div class="da-note admin-write-note" style="margin-bottom:12px">Creating or editing a police station is a SystemAdmin action — this register is read-only for your role (the station list below still feeds officer postings and the deployment matrix).</div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="stCount" style="display:none">0</span><button class="btn admin-write" onclick="openEntryModal('stDrawer')">＋ Register Station</button></div></div>
+<div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="stCount" style="display:none">0</span><button class="btn admin-write" data-write="1" onclick="openEntryModal('stDrawer')">＋ Register Station</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="stSearch" placeholder="Central Station Search — name, code, region, district or village…" oninput="renderStationsTable()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
 </div>
@@ -763,7 +797,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="section-label">Location — Sool · Sanaag · East Togdheer</div>
 <div id="st-loc" class="loc-grid"></div>
 <div class="field"><label>Notes</label><textarea id="stNotes" placeholder="Coverage area, shift details…"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" type="submit">Register station</button></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" data-write="1" type="submit">Register station</button></div>
 </form>
 </div>
 </div>
@@ -784,7 +818,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 
 <div class="hr-pane active" id="hrPane-register">
 <div class="panel">
-<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" onclick="openEntryModal('offDrawer')">＋ Register Officer</button></div></div>
+<div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" data-write="1" onclick="openEntryModal('offDrawer')">＋ Register Officer</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="offSearch" placeholder="Central Officer Search — name, service ID, rank, unit or station…" oninput="renderOfficersTable()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
@@ -793,7 +827,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <!-- TAB 2 · Promotions & Commendations (green badge) -->
 <div class="hr-pane" id="hrPane-promotions">
 <div class="panel hr-green">
-<div class="panel-head"><div><h2>Awaiting commander verification</h2><div class="sub">FIFO — the longest-waiting nomination is worked first</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="prmSearch" placeholder="Search nomination, officer, rank or reason…" oninput="renderHrPanels()"></div><span class="badge green" id="prmAwaitCount">0</span><button class="btn hr-green" onclick="openEntryModal('prmDrawer')">＋ Nominate for Promotion</button></div></div>
+<div class="panel-head"><div><h2>Awaiting commander verification</h2><div class="sub">FIFO — the longest-waiting nomination is worked first</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="prmSearch" placeholder="Search nomination, officer, rank or reason…" oninput="renderHrPanels()"></div><span class="badge green" id="prmAwaitCount">0</span><button class="btn hr-green" data-write="1" onclick="openEntryModal('prmDrawer')">＋ Nominate for Promotion</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Nomination</th><th>Officer</th><th>Rank change</th><th>Reason</th><th>Action</th></tr></thead><tbody id="prmAwaitTable"></tbody></table></div>
 </div>
 <div class="panel hr-green" style="margin-top:14px">
@@ -805,7 +839,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <!-- TAB 3 · Disciplinary & Misconduct (red badge) -->
 <div class="hr-pane" id="hrPane-discipline">
 <div class="panel hr-red">
-<div class="panel-head"><div><h2>Open disciplinary actions</h2><div class="sub">Pending · In Review · Appealed — confirm to apply suspensions and demotions</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="dscSearch" placeholder="Search action, officer, type, severity or status…" oninput="renderHrPanels()"></div><span class="badge red" id="dscOpenCount">0</span><button class="btn hr-red" onclick="openEntryModal('dscDrawer')">＋ Record Disciplinary Action</button></div></div>
+<div class="panel-head"><div><h2>Open disciplinary actions</h2><div class="sub">Pending · In Review · Appealed — confirm to apply suspensions and demotions</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="dscSearch" placeholder="Search action, officer, type, severity or status…" oninput="renderHrPanels()"></div><span class="badge red" id="dscOpenCount">0</span><button class="btn hr-red" data-write="1" onclick="openEntryModal('dscDrawer')">＋ Record Disciplinary Action</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>Officer</th><th>Type</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead><tbody id="dscOpenTable"></tbody></table></div>
 </div>
 <div class="panel hr-red" style="margin-top:14px">
@@ -895,7 +929,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <button class="btn ghost" type="button" onclick="resetOfficerForm()">Clear</button>
 <button class="btn ghost" type="button" id="offBack" onclick="offStep(offCur-1)" style="display:none">← Back</button>
 <button class="btn secondary" type="button" id="offNext" onclick="offStep(offCur+1)">Next →</button>
-<button class="btn" type="submit" id="offSubmit">Register officer</button>
+<button class="btn" data-write="1" type="submit" id="offSubmit">Register officer</button>
 </div>
 </form>
 </div>
@@ -915,7 +949,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="field"><label>Nomination ID (auto-generated)</label><input id="prmId" readonly placeholder="PRM-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
 </div>
 <div class="field"><label>Reason / commendation *</label><textarea id="prmReason" placeholder="Operational commendation, examination pass, vacancy fill, long service…"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetPromotionForm()">Clear</button><button class="btn hr-green" type="submit">Submit nomination</button></div>
+<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetPromotionForm()">Clear</button><button class="btn hr-green" data-write="1" type="submit">Submit nomination</button></div>
 </form>
 </div>
 </div>
@@ -938,7 +972,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="field" id="dscEndWrap" style="display:none"><label>Suspension end</label><input id="dscEnd" type="date"></div>
 </div>
 <div class="field"><label>Incident summary *</label><textarea id="dscSummary" placeholder="What happened, where, witnesses, evidence reference…"></textarea></div>
-<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetDisciplineForm()">Clear</button><button class="btn hr-red" type="submit">Record action</button></div>
+<div class="form-actions"><button class="btn ghost" type="reset" onclick="resetDisciplineForm()">Clear</button><button class="btn hr-red" data-write="1" type="submit">Record action</button></div>
 </form>
 </div>
 </div>
@@ -954,7 +988,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div>
     <span class="badge gray" id="cdCount" style="margin-right:8px">0 files</span>
     <button class="btn ghost small" onclick="refreshConduct()">↻ Refresh</button>
-    <button class="btn small" onclick="openConductModal()">＋ New conduct action</button>
+    <button class="btn small" data-write="1" onclick="openConductModal()">＋ New conduct action</button>
   </div>
 </div>
 
@@ -1018,7 +1052,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div class="us-row" id="usCrimesRow"></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="crmSearch" placeholder="Search file number, category, station, officer or status…" oninput="renderCrimesTable()"></div><button class="btn" onclick="openEntryModal('crmDrawer')">＋ Register Crime / Victim Intake</button></div></div>
+<div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="crmSearch" placeholder="Search file number, category, station, officer or status…" oninput="renderCrimesTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('crmDrawer')">＋ Register Crime / Victim Intake</button></div></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Category</th><th>Station</th><th>Officer</th><th>Status</th></tr></thead><tbody id="crimesTable"></tbody></table></div>
 </div>
 </section>
@@ -1063,7 +1097,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="field"><label>Evidence 2 type</label><select id="crmE2Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
 <div class="field"><label>Evidence 2 file</label><input id="crmE2" type="file" accept=".pdf,image/jpeg,image/png"></div>
 </div>
-<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" type="submit">File incident</button></div>
+<div class="form-actions"><button class="btn ghost" type="reset">Clear</button><button class="btn" data-write="1" type="submit">File incident</button></div>
 </form>
 </div>
 </div>
@@ -1076,7 +1110,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
   <div class="us-row" id="usCarsRow"></div>
 </div>
 <div class="panel">
-<div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Security badge shown on every record</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="carCount" style="display:none">0</span><button class="btn" onclick="openEntryModal('carDrawer')">＋ Register Vehicle</button></div></div>
+<div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Security badge shown on every record</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="carCount" style="display:none">0</span><button class="btn" data-write="1" onclick="openEntryModal('carDrawer')">＋ Register Vehicle</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="carSearch" placeholder="Central Vehicle Search — plate, VIN, make, owner, station or alert…" oninput="renderCarsTable()"></div>
 <div class="table-wrap"><table class="table"><thead><tr><th>ID / Plate</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Alert</th></tr></thead><tbody id="carsTable"></tbody></table></div>
 </div>
@@ -1122,7 +1156,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="field"><label>Registration expiry</label><input id="carExpiry" type="date"></div>
 <div class="field"><label>Photo (JPEG/PNG ≤5MB)</label><input id="carPhoto" type="file" accept=".jpg,.jpeg,.png"></div>
 </div>
-<div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" type="submit">Register vehicle</button></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="resetCarForm()">Clear</button><button class="btn" data-write="1" type="submit">Register vehicle</button></div>
 </form>
 </div>
 </div>
@@ -1136,7 +1170,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
       <h2>User management</h2>
       <div class="sub">Provision officers, assign roles and locations</div>
     </div>
-    <button class="btn" onclick="openNewUserDrawer()">+ New officer</button>
+    <button class="btn" data-write="1" onclick="openNewUserDrawer()">+ New officer</button>
   </div>
   <div class="hint" style="margin-bottom:16px"><b>RBAC:</b> System Admins see all units; unit officers only see their module; checkpoint officers only see their assigned location. Deactivated users cannot sign in.</div>
   <div class="table-wrap">
@@ -1231,7 +1265,7 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
 <div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
 <!-- Identity profile · shared centered popup (Fingerprint · Airport · Checkpoint "View" actions) -->
 <div class="cmodal-ov" id="pvModalOv" onclick="closeEntryModal('pvModal')"></div>
-<div class="cmodal profile" id="pvModal" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
+<div class="cmodal profile" id="pvModal" data-view="1" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
   <div class="cm-head"><div><h3 id="pvModalTitle">Identity profile</h3><div class="sub">Central Person Registry</div></div><button class="iconbtn" onclick="closeEntryModal('pvModal')" aria-label="Close">✕</button></div>
   <div class="cm-body" id="pvModalBody"></div>
 </div>
@@ -1354,6 +1388,20 @@ function showFormError(msg,opts={}){const{prefix,names,title,notice}=opts;if(pre
 // explicit auth rejection (401) apart from a non-fatal 404 / 5xx — only the
 // former is ever allowed to sign the officer out.
 async function api(path,options={}){
+  // ---- global read-only firewall (client half) ---------------------------
+  // The Commander / High Command role may READ anything and write NOTHING.
+  // Refuse a mutation before it leaves the browser; the server independently
+  // answers 403 Forbidden for the same attempt (and for any client that
+  // bypasses this UI). Sign in / sign out stay available — they are session
+  // plumbing, not data mutations.
+  const method=String(options.method||'GET').toUpperCase();
+  if(method!=='GET'&&method!=='HEAD'&&method!=='OPTIONS'&&isReadOnlyUser()
+     &&path!=='/api/login'&&path!=='/api/logout'){
+    const e=new Error('Read-only role — '+method+' '+path+' is not permitted. '
+      +'The Commander (HQ / Command) role holds global view-only access.');
+    e.status=403; e.readOnly=true;
+    throw e;
+  }
   options.headers={...(options.headers||{})};
   if(!(options.body instanceof FormData))options.headers['Content-Type']='application/json';
   const t=authToken();
@@ -1411,7 +1459,7 @@ let sessionRoster=null;        // {roles, role_labels, checkpoint_locations}
 // Command) is routed straight to the Global Executive Dashboard; every other
 // role lands on the role-scoped operations dashboard.
 function homePage(){
-  if(sessionUser && (isChiefRole(sessionUser.role) || (sessionUser.modules||[]).includes('executive'))) return 'executive';
+  if(sessionUser && (isChiefRole(sessionUser.role) || hasModule('executive'))) return 'executive';
   return 'dashboard';
 }
 // Pages that live under a module with a different name (the module list is
@@ -1420,14 +1468,18 @@ const PAGE_MODULE={vehiclestatus:'cars',caseworkspace:'cid'};
 function pageModule(page){return PAGE_MODULE[page]||page}
 function go(page){
   if(page==='home') page = homePage();
+  const mods = effectiveModules();          // unit denylist applied (no Central Police Search for Airport / CID)
   if(!sessionUser){
     if(!ALLOWED_PAGES_WITHOUT_AUTH.has(page)) return;
-  } else if(!sessionUser.modules.includes(pageModule(page))){
+  } else if(mods.indexOf(pageModule(page))===-1){
     // RBAC: redirect to the first page the user is allowed to see.
-    page = sessionUser.modules.includes('dashboard') ? homePage() : (sessionUser.modules[0] || 'dashboard');
+    page = (mods.indexOf('dashboard')!==-1) ? homePage() : (mods[0] || 'dashboard');
   }
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.getElementById(page).classList.add('active');
+  // Every page switch re-asserts the read-only contract for the page being
+  // opened (a Commander sees no action button on ANY department page).
+  hardenReadOnlyDom(document.getElementById(page)||document);
   // The case workspace is a sub-page of the Crime Department — highlight
   // its nav entry (and keep its CID group expanded) while inside a case.
   const navPage = page==='caseworkspace' ? 'cid' : page;
@@ -2036,7 +2088,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElement
 // page's primary action button. The form markup stays in the document
 // (hidden until opened), so every field id, event wire and validator behaves
 // exactly as it did when the form was inline on the page.
+// Modals that stay available to a read-only (Commander / High Command)
+// session: the identity profile popup is a pure VIEW surface.
+const READ_ONLY_VIEW_MODALS=new Set(['pvModal']);
 function openEntryModal(id){
+  // Read-only role: entry/registration modals are refused; the read-only
+  // identity-profile popup ('pvModal') still opens.
+  if(!READ_ONLY_VIEW_MODALS.has(id) && guardReadOnly('Opening an entry form')) return;
   const d=document.getElementById(id);if(!d)return;
   const ov=document.getElementById(id+'Ov');
   clearTimeout(d._closeT);
@@ -2069,6 +2127,7 @@ function val(id){return document.getElementById(id).value.trim()}
 
 // ---- unified central person drawer (create / view & update) ----
 function openPersonDrawer(prefill,onSaved){
+  if(guardReadOnly('Creating or updating a person record')) return;
   const p=prefill&&prefill.id?prefill:null;
   const body=`
   <div class="hint" style="margin-bottom:14px">${p?'Edit or append to this existing identity — the Central Person Registry is matched in real time and the profile is merged, never duplicated.':'Enter the identity below. The Central Person Registry is matched <b>in real time</b>; an exact match auto-fills existing data, otherwise a new Central Person record is created on save.'}</div>
@@ -2080,6 +2139,7 @@ function openPersonDrawer(prefill,onSaved){
   window._personDrawerCb=onSaved||null;
 }
 async function submitPersonDrawer(existingId){
+  if(guardReadOnly('Saving a person record')) return;
   clearInvalid();
   const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'pd',names:['first','second','third','fourth','dob','mother','address']});return}
   const data={name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),first:d.first,second:d.second,third:d.third,fourth:d.fourth,
@@ -2162,7 +2222,7 @@ function openPersonView(id){
   ];
   const grid=`<div class="pv-grid">${fields.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${esc(v||'—')}</b></div>`).join('')}</div>`;
   const unitsBlock=`<div class="pv-units"><small>Linked unit records</small><div>${units||'<span class="muted">Central only — no unit registers linked yet</span>'}</div></div>`;
-  const foot=`<div class="pv-foot"><button class="btn ghost" onclick="closeEntryModal('pvModal')">Close</button><button class="btn secondary" onclick="closeEntryModal('pvModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button></div>`;
+  const foot=`<div class="pv-foot"><button class="btn ghost" onclick="closeEntryModal('pvModal')">Close</button>${canWrite()?`<button class="btn secondary" onclick="closeEntryModal('pvModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button>`:''}</div>`;
   document.getElementById('pvModalTitle').textContent='Identity profile · '+p.id;
   document.getElementById('pvModalBody').innerHTML=head+grid+unitsBlock+foot;
   openEntryModal('pvModal');
@@ -2174,6 +2234,7 @@ function caseOptions(selected){
   return `<option value="">No linked case — direct intelligence / manual entry</option>${opts}`;
 }
 function openAddSuspect(){
+  if(guardReadOnly('Adding a suspect')) return;
   openDrawer('Add suspect',`
    <div class="hint" style="margin-bottom:14px">Type the identity below — the Central Person Registry is matched <b>in real time</b>. An exact match auto-fills the existing record; if no match exists, a new Central Person is created automatically before the suspect record is attached. The linked case is <b>optional</b>.</div>
    <form class="form" id="addSuspectForm">
@@ -2201,6 +2262,7 @@ function openAddSuspect(){
   wireIdentity('sp');
 }
 async function submitAddSuspect(){
+  if(guardReadOnly('Adding a suspect')) return;
   clearInvalid();
   const d=window._identityWires.sp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'sp',names:['first','second','third','fourth','dob','mother','address']});return}
   const caseId=val('spCase'),origin=caseId?'Case Link':val('spOrigin');
@@ -2269,7 +2331,10 @@ const QUICK_ACTION_DRAWERS={
   cid:()=>openCaseDrawer(),
   checkpoints:()=>openCheckpointDrawer()
 };
-function quickAction(page){go(page);const open=QUICK_ACTION_DRAWERS[page];if(open)setTimeout(open,80)}
+function quickAction(page){
+  // Quick-registration shortcut — refused for a read-only (Commander) role.
+  if(guardReadOnly('Opening a registration action')) return;
+  go(page);const open=QUICK_ACTION_DRAWERS[page];if(open)setTimeout(open,80)}
 
 function renderDashboard(){
   if(!serverOn){ renderDashboardLocal(); return; }
@@ -2361,10 +2426,15 @@ function paintDashboard(d){
   }
 
   // ---- Quick-action buttons (only for accessible units) ----
-  const quick = d.quick_actions || [];
+  // A global read-only role never receives quick-registration actions (the
+  // server returns an empty list); say why instead of leaving a blank box.
+  const readOnly = d.read_only===true || isReadOnlyUser();
+  const quick = readOnly ? [] : (d.quick_actions || []);
   const quickEl = document.getElementById('quickActions');
   if(!quick.length){
-    quickEl.innerHTML = '<div class="empty" style="grid-column:1/-1">No quick-registration actions are available for your role.</div>';
+    quickEl.innerHTML = readOnly
+      ? '<div class="empty" style="grid-column:1/-1">🔒 Read-only access — registration and approval actions are disabled for this role.</div>'
+      : '<div class="empty" style="grid-column:1/-1">No quick-registration actions are available for your role.</div>';
   } else {
     quickEl.innerHTML = quick.map(q =>
       `<button class="btn ${q.kind==='secondary'?'secondary':''}" onclick="quickAction('${esc(q.page)}')">${esc(q.label)}</button>`
@@ -2477,13 +2547,190 @@ function isCheckpointRole(role){
 // its accepted spellings ('ChiefCommander', 'chief.commander', ...).
 function isChiefRole(role){
   const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
-  return l==='chiefcommander'||l==='commanderhq'||l==='hqcommand'||l==='policehq';
+  if(!l) return false;
+  // Every spelling the server resolves to `chief_commander` (see
+  // UNIT_ROLE_ALIASES / COMMANDER_ROLE_ALIASES in backend/server.py) plus the
+  // human label 'Chief Commander of Police Office (HQ / Command)'. The
+  // authoritative switch is still the server-declared `read_only` flag —
+  // this list only covers the pre-/api/me (offline / cached) case.
+  return l==='chiefcommander'||l==='commanderhq'||l==='hqcommand'||l==='policehq'
+    ||l==='commander'||l==='highcommand'||l==='commandhq'
+    ||l.indexOf('chiefcommander')===0||l.indexOf('highcommand')===0
+    ||l.indexOf('commanderhq')===0||l.indexOf('hqcommander')===0;
 }
 // Normalized admin check ('SystemAdmin', 'system_admin', 'Admin', ...).
 function isAdminRole(role){
   const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
   return l==='systemadmin'||l==='admin'||l==='administrator';
 }
+
+// ============================ global read-only role ============================
+// The Commander / Chief Commander / High Command role holds universal
+// READ-ONLY authority: every department, register, dashboard, log and search
+// is fully readable, and NOTHING may be created, edited, approved or deleted.
+//
+//   * The server is authoritative — /api/login, /api/me and /api/dashboard all
+//     report `read_only: true` / `can_write: false`, and every mutation route
+//     answers 403 Forbidden for this role.
+//   * The UI mirrors it exactly: `body.readonly-mode` hides every write
+//     control (static `[data-write]` buttons and the ones painted into table
+//     rows), and `api()` refuses a non-GET call before it leaves the browser.
+//   * The role-name check is the offline fallback, so view-only mode is never
+//     lost on a page refresh / transient failure before /api/me answers.
+function isReadOnlyRole(role){
+  return isChiefRole(role);
+}
+function isReadOnlyUser(){
+  const u = sessionUser || currentUser || null;
+  if(u){
+    if(u.read_only===true) return true;              // server-declared flag
+    if(u.can_write===false) return true;             // server-declared inverse
+    if(isReadOnlyRole(u.role)) return true;          // offline / cached fallback
+  }
+  const v = sessionVisibility || (u && u.visibility) || null;
+  if(v && (v.read_only===true || v.is_read_only===true || v.can_write===false)) return true;
+  if(v && isReadOnlyRole(v.role)) return true;
+  return false;
+}
+// "May the current session write anything?" — the single question every
+// render path asks before painting a write control.
+function canWrite(){ return !isReadOnlyUser(); }
+// Guard for the write entry points (open a form / approve / verify ...).
+// Returns true when the caller must abandon the action.
+function guardReadOnly(action){
+  if(canWrite()) return false;
+  toast('Read-only access', (action||'This action')+' is disabled for the Commander (HQ / Command) role.');
+  return true;
+}
+
+// ---- DOM-level hardener (belt & braces) -------------------------------------
+// `body.readonly-mode` hides everything marked `data-write` / `.write-action`.
+// This sweep is the safety net for the write controls that are painted
+// dynamically (table rows, modal footers, drawers) or that carry no marker at
+// all: for a read-only (Commander / High Command) session it hides ANY element
+// whose inline handler is one of the mutation entry points, and it restores
+// them when a write-capable officer signs in on the same tab. A MutationObserver
+// re-runs it after every repaint, so a newly rendered button can never slip
+// through — on any department page.
+const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal")|openPersonDrawer|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
+// The visible label of a mutation action: "+ New case", "＋ Add suspect",
+// "Approve", "Edit", "Save", "Delete", "New", "Register …", "Nominate",
+// "Record …", "Upload", "Submit", "Verify", "Confirm", "Reject", "Enable" /
+// "Disable". Deliberately blunt — under read-only mode a control that *reads*
+// like a mutation is removed even when it carries no marker and no
+// recognisable handler.
+const RO_MUTATION_TEXT_RE=/^\s*[+＋✓✕×*]?\s*(new|approve|edit|save|delete|add|remove|register|nominate|record|upload|create|submit|verify|confirm|reject|enable|disable|open\s+case|link(\s|$))/i;
+// Surfaces that are pure navigation / read-only and must never be swept:
+// the sidebar (navigation), the top bar (identity + sign-out), the login
+// screen, the read-only badge/banner and the view-only identity modal.
+const RO_SWEEP_EXEMPT_SELECTOR='#nav, .side, #topbar, #loginScreen, #roBanner, [data-view="1"], [data-ro-keep]';
+function isMutationLabel(el){
+  if(!el || el.nodeType!==1) return false;
+  if(el.tagName!=='BUTTON' && el.tagName!=='A') return false;
+  if(el.closest(RO_SWEEP_EXEMPT_SELECTOR)) return false;
+  return RO_MUTATION_TEXT_RE.test(el.textContent||'');
+}
+function isWriteControl(el){
+  if(!el || el.nodeType!==1) return false;
+  if(el.closest('[data-view="1"], #roBanner, #loginScreen')) return false;   // explicit read surfaces
+  if(el.hasAttribute('data-write') || el.classList.contains('write-action')
+     || el.classList.contains('admin-write')) return true;
+  if(isMutationLabel(el)) return true;
+  const oc=(el.getAttribute('onclick')||'').replace(/\s+/g,'');
+  return oc?WRITE_CONTROL_RE.test(oc):false;
+}
+function hardenReadOnlyDom(root){
+  const scope=root||document;
+  if(!scope.querySelectorAll) return 0;
+  const ro=isReadOnlyUser();
+  let changed=0;
+  scope.querySelectorAll('[data-write], .write-action, .admin-write, button, a, [onclick]').forEach(el=>{
+    if(ro && isWriteControl(el)){
+      if(el.style.display!=='none'){el.style.display='none';changed++}
+      el.setAttribute('data-ro-hidden','1');
+      el.setAttribute('aria-hidden','true');
+      el.setAttribute('tabindex','-1');
+    } else if(!ro && el.hasAttribute('data-ro-hidden')){
+      // Role switch / sign-out in the same tab: put the control back exactly
+      // as it was (only the attributes this sweep owns are cleared).
+      el.removeAttribute('data-ro-hidden'); el.removeAttribute('aria-hidden'); el.removeAttribute('tabindex');
+      el.style.display=''; changed++;
+    }
+  });
+  return changed;
+}
+let _roSweepQueued=false, _roObserver=null;
+function queueReadOnlySweep(){
+  if(_roSweepQueued) return;
+  _roSweepQueued=true;
+  setTimeout(()=>{ _roSweepQueued=false; try{hardenReadOnlyDom(document)}catch(_){} },0);
+}
+function watchReadOnlyDom(){
+  if(_roObserver || typeof MutationObserver==='undefined' || !document.body) return;
+  _roObserver=new MutationObserver(()=>{
+    // A denied nav entry must not survive a repaint, whatever painted it.
+    try{ if(enforceSidebarDenylist()) {} }catch(_){}
+    if(isReadOnlyUser()) queueReadOnlySweep();
+  });
+  _roObserver.observe(document.body,{childList:true,subtree:true});
+}
+
+// ============================ unit module denylist ============================
+// Central Police Search ('policesearch') belongs to the roles that operate the
+// central police registers (SystemAdmin · HR Directorate · Commander HQ). The
+// operational units — Fingerprint, Airport Control and the CID Criminal Unit —
+// must NEVER see it: their sidebar shows their own unit scope plus Central
+// Person Search ('people') only.
+//
+// The server already strips it from ROLE_MODULES for both roles; this mirror
+// is the client-side half of the same rule, so a stale /api/me payload, a
+// cached session object in localStorage or an offline fallback can never
+// resurrect the entry in the sidebar.
+const UNIT_MODULE_DENY={
+  // Fingerprint Unit — 'FingerprintUnit', 'fingerprint_officer', 'fp.officer',
+  // 'Fingerprint Officer', ... (the biometrics register is not a party to the
+  // cross-registry police search).
+  fingerprint:['policesearch'],
+  // Airport Control — 'AirportControl', 'airport_officer', 'ap.officer', ...
+  airport:['policesearch'],
+  // CID Criminal Unit — 'CIDUnit', 'cid_officer', 'criminal_investigation', ...
+  cid:['policesearch'],
+};
+function roleKey(role){return String(role||'').toLowerCase().replace(/[^a-z]/g,'')}
+// Resolve any accepted spelling of the two restricted units to its family
+// ('' for every other role, e.g. 'FingerprintUnit' / 'hr_officer').
+// Mirrors unit_role_family() in backend/server.py: the label spellings an
+// operator may have stored ('Airport Control Officer', 'CID Criminal Unit',
+// 'Crime Unit', ...) resolve to their family here as well.
+function unitFamily(role){
+  const k=roleKey(role);
+  if(!k) return '';
+  if(k.startsWith('fingerprint')||k==='fpofficer'||k==='fp') return 'fingerprint';
+  if(k.startsWith('airport')||k==='apofficer') return 'airport';
+  if(k.startsWith('cid')||k.startsWith('criminalinvestigation')||k.startsWith('criminalunit')
+     ||k.startsWith('crimeunit')) return 'cid';
+  return '';
+}
+function deniedModulesForRole(role){return UNIT_MODULE_DENY[unitFamily(role)]||[]}
+// Drop the denied modules from a module list (accepts any role spelling the
+// backend normalises to AirportControl / CIDUnit).
+function sanitizeModules(role,mods){
+  const deny=deniedModulesForRole(role);
+  const list=Array.isArray(mods)?mods.slice():[];
+  const out=deny.length?list.filter(m=>deny.indexOf(m)===-1):list;
+  // A session whose stored role names a restricted unit can never be handed
+  // Central Police Search, even if the cached user object (or an old server)
+  // listed it.
+  if(unitFamily(role)&&out.indexOf('people')===-1) out.push('people');
+  return out;
+}
+// The signed-in user's EFFECTIVE modules: the server-issued list with the
+// unit denylist applied. Every nav / fetch / RBAC check uses this.
+function effectiveModules(){
+  const u=sessionUser||currentUser||null;
+  return sanitizeModules(u&&u.role,(u&&u.modules)||['dashboard']);
+}
+function hasModule(m){return effectiveModules().indexOf(m)!==-1}
 
 // Auto-bind the location filter to the signed-in officer's scope on
 // every page navigation. For Checkpoint officers the filter is forced
@@ -2740,7 +2987,7 @@ function buildLocalActivity(){
   // Local / offline fallback: build a small activity feed filtered to the
   // signed-in user's modules / scope. Mirrors the backend's role-aware
   // feed so the same scoped view is rendered in offline mode.
-  const mods = (sessionUser && sessionUser.modules) || ['dashboard'];
+  const mods = effectiveModules();
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
   const scope = (sessionUser && sessionUser.location_scope) || '';
   const now = Date.now()/1000;
@@ -2871,14 +3118,18 @@ function renderDashboardLocal(){
     cards.push({id:'cid_cases_today',label:'Cases reported today',icon:'◉',value:db.cases.filter(x=>(x.time||'').slice(0,10)===today).length,trend:'New intake today',module:'cid'});
     cards.push({id:'cid_suspects',label:'Suspects on file',icon:'⌁',value:db.suspects.filter(x=>(x.role||'Suspect')==='Suspect').length,trend:'All-time suspect listings',module:'cid'});
   }
+  // Offline fallback mirrors the server contract: a global read-only role
+  // (Commander / High Command) gets no quick-registration actions at all.
+  const readOnly = isReadOnlyUser();
   const quick = [];
-  if(isAdmin || role==='AirportControl') quick.push({id:'add_airport',label:'+ Airport passenger',kind:'primary',page:'airport',module:'airport'});
-  if(isAdmin || role==='FingerprintUnit') quick.push({id:'add_clearance',label:'+ Clearance application',kind:'secondary',page:'fingerprint',module:'fingerprint'});
-  if(isAdmin || role==='CIDUnit') quick.push({id:'add_case',label:'+ New crime case',kind:'secondary',page:'cid',module:'cid'});
-  if(isAdmin || isCheckpoint) quick.push({id:'add_checkpoint',label:'+ Record checkpoint stop',kind:'primary',page:'checkpoints',module:'checkpoints'});
+  if(!readOnly && (isAdmin || role==='AirportControl')) quick.push({id:'add_airport',label:'+ Airport passenger',kind:'primary',page:'airport',module:'airport'});
+  if(!readOnly && (isAdmin || role==='FingerprintUnit')) quick.push({id:'add_clearance',label:'+ Clearance application',kind:'secondary',page:'fingerprint',module:'fingerprint'});
+  if(!readOnly && (isAdmin || role==='CIDUnit')) quick.push({id:'add_case',label:'+ New crime case',kind:'secondary',page:'cid',module:'cid'});
+  if(!readOnly && (isAdmin || isCheckpoint)) quick.push({id:'add_checkpoint',label:'+ Record checkpoint stop',kind:'primary',page:'checkpoints',module:'checkpoints'});
   const d = {
     generated_at: new Date().toISOString(),
     role: role, is_admin: isAdmin, location_scope: scope,
+    read_only: readOnly, can_write: !readOnly,
     cards: cards, quick_actions: quick,
     activity: buildLocalActivity(),
     subhead: isAdmin ? 'System overview · all units' : (isCheckpoint ? (scope+' Checkpoint operations · live') : ((sessionUser && sessionUser.role_label) || role) + ' · module overview'),
@@ -3017,6 +3268,14 @@ function renderRegisterRow(item,currentUser){
   const isLocked = staleBuild || (!isAdmin && (hoursElapsed < REVIEW_LOCK_HOURS || !(createdAtTime>0)));
   const approved = !staleBuild && (item.status==='Approved' || item.status==='APPROVED');
 
+  // Global read-only role (Commander / High Command): the register renders
+  // in strict view-only mode — an approved file keeps its printable
+  // Certificate link, everything else is a plain status label.
+  if(isReadOnlyUser()){
+    return approved
+      ? `<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(item.id)}">Certificate</a>`
+      : '<span class="muted">View only</span>';
+  }
   let actionHtml='';
   if(staleBuild){
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="The running backend is not the review-lock build — approvals are disabled.">&#128274; Stale backend — locked</button>`;
@@ -3191,6 +3450,8 @@ function renderAll(){
   if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
     paintActivity();
   }
+  // Re-assert view-only mode after a full repaint (rows, drawers, tables).
+  hardenReadOnlyDom(document);
 }
 // ---- Register table painters (each honours its header search box) ---------
 function renderFingerprintTable(){
@@ -3205,7 +3466,7 @@ function renderFingerprintTable(){
    <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td class="actions">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     <a class="btn secondary small" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -3273,6 +3534,7 @@ async function saveFingerprint(e){
   }catch(err){showFormError(err.message||'The clearance application could not be saved.',{notice:'fpNotice',title:'Unable to Save'})}
 }
 async function approveFP(id){
+  if(guardReadOnly('Approving a clearance application')) return;
   // Client-side guard for the mandatory 12-hour review period. Non-admin
   // officers never even reach the network: the call is blocked here (and
   // the server rejects it with HTTP 400 if it ever does).
@@ -3358,6 +3620,7 @@ async function saveAirport(e){
 // ============================ CID case workspace ============================
 let cwCase=null;
 function openCaseDrawer(){
+  if(guardReadOnly('Opening a new crime case')) return;
   openDrawer('New crime case',`
    <form class="form" id="caseDrawerForm">
     <div class="grid2"><div class="field"><label>Category *</label><input id="cdCategory" placeholder="Theft, Fraud…"></div>
@@ -3368,6 +3631,7 @@ function openCaseDrawer(){
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCaseDrawer()">Create case</button>`);
 }
 async function submitCaseDrawer(){
+  if(guardReadOnly('Creating a crime case')) return;
   clearInvalid();
   if(!val('cdCategory')){showFormError('Category is required to create a case.',{prefix:'cd',names:['category'],title:'Unable to Save'});return}
   const payload={category:val('cdCategory'),location:val('cdLocation')||'Not specified',status:val('cdStatus'),incident_summary:val('cdSummary')};
@@ -3407,6 +3671,7 @@ function renderCwEvidence(list){
       <div class="ev-body"><b>${esc(x.caption||x.file_name||'Evidence')}</b><small>${esc(x.file_type||'')} ${src?`· <a href="${esc(src)}" target="_blank">open</a>`:''}</small></div></div>`}).join('')||'<div class="empty">No evidence uploaded yet</div>';
 }
 async function addParticipant(){
+  if(guardReadOnly('Linking a case participant')) return;
   clearInvalid();
   const d=window._identityWires.cw.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'cw',names:['first','second','third','fourth','dob','mother','address'],notice:'cwAlert'});return}
   const role=cwRole.value,note=cwPartNote.value.trim(),caseId=val('cwCaseSel')||null;
@@ -3421,6 +3686,7 @@ async function addParticipant(){
   }catch(e){showFormError(e.message||'The participant could not be linked.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 async function saveCaseDetails(){
+  if(guardReadOnly('Saving case details')) return;
   clearInvalid();
   const payload={status:cwStatus.value,category:cwCategory.value.trim(),location:cwLocation.value.trim(),incident_summary:cwSummary.value,notes:cwNotes.value};
   try{
@@ -3430,6 +3696,7 @@ async function saveCaseDetails(){
   }catch(e){showFormError(e.message||'The case details could not be saved.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 async function uploadEvidence(){
+  if(guardReadOnly('Uploading evidence')) return;
   const f=evFile.files[0];if(!f){showFormError('Choose a file to upload.',{notice:'cwAlert',title:'Unable to Save'});return}
   try{
     if(serverOn){const fd=new FormData();fd.append('caption',evCaption.value.trim());fd.append('file_type',evType.value);fd.append('file',f);await api('/api/crime-cases/'+cwCase+'/evidence',{method:'POST',body:fd})}
@@ -3440,6 +3707,7 @@ async function uploadEvidence(){
 
 // ============================ checkpoints ============================
 function openCheckpointDrawer(){
+  if(guardReadOnly('Recording a checkpoint stop')) return;
   // RBAC: a Checkpoint user is scoped to a single location — lock the picker.
   const scope = (sessionUser && (sessionUser.location_scope || (isCheckpointRole(sessionUser.role)?scopeFromRole(sessionUser.role):''))) || '';
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
@@ -3635,6 +3903,12 @@ async function syncServer(){
   }
   serverOn = true;
   sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me; currentUser = me;
+  // Bind the session identity to the effective RBAC contract in ONE place, so
+  // every downstream check (nav, fetches, tables, write controls) agrees:
+  //   * 'policesearch' is stripped from Airport / CID sessions, and
+  //   * read-only mode (Commander / High Command) is applied to the document.
+  me.modules = sanitizeModules(me.role, me.modules);
+  applyReadOnlyMode();
   try{
     document.getElementById('envBadge').innerHTML='Environment: <span style="color:#7fe3cf">central database</span>';
     // Each collection is fetched through safeItems()/fetchCheckpoints():
@@ -3642,17 +3916,17 @@ async function syncServer(){
     // left untouched (never clobbered with [] by a transient error).
     const fetches = [
       safeItems('/api/persons'),
-      sessionUser.modules.includes('airport')    ? safeItems('/api/airport-records')          : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('fingerprint')? safeItems('/api/clearance-applications')   : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('cid')        ? safeItems('/api/suspect-alerts')           : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('stations') || sessionUser.modules.includes('crimes') ? safeItems('/api/stations') : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('officers') || sessionUser.modules.includes('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('officers') ? safeItems('/api/officers/promotions') : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('officers') ? safeItems('/api/officers/discipline') : Promise.resolve({ok:false,items:[]}),
-      sessionUser.modules.includes('crimes')     ? safeItems('/api/crimes')                  : Promise.resolve({ok:false,items:[]}),
-      (sessionUser.modules.includes('cars') || sessionUser.modules.includes('policesearch') || sessionUser.modules.includes('checkpoints') || sessionUser.modules.includes('crimes')) ? safeItems('/api/vehicles') : Promise.resolve({ok:false,items:[]}),
+      hasModule('airport')    ? safeItems('/api/airport-records')          : Promise.resolve({ok:false,items:[]}),
+      hasModule('fingerprint')? safeItems('/api/clearance-applications')   : Promise.resolve({ok:false,items:[]}),
+      hasModule('cid')        ? safeItems('/api/crime-cases')              : Promise.resolve({ok:false,items:[]}),
+      hasModule('cid')        ? safeItems('/api/suspect-alerts')           : Promise.resolve({ok:false,items:[]}),
+      hasModule('checkpoints')? fetchCheckpoints()                         : Promise.resolve({ok:false,items:[]}),
+      hasModule('stations') || hasModule('crimes') ? safeItems('/api/stations') : Promise.resolve({ok:false,items:[]}),
+      hasModule('officers') || hasModule('crimes') ? safeItems('/api/officers') : Promise.resolve({ok:false,items:[]}),
+      hasModule('officers') ? safeItems('/api/officers/promotions') : Promise.resolve({ok:false,items:[]}),
+      hasModule('officers') ? safeItems('/api/officers/discipline') : Promise.resolve({ok:false,items:[]}),
+      hasModule('crimes')     ? safeItems('/api/crimes')                  : Promise.resolve({ok:false,items:[]}),
+      (hasModule('cars') || hasModule('policesearch') || hasModule('checkpoints') || hasModule('crimes')) ? safeItems('/api/vehicles') : Promise.resolve({ok:false,items:[]}),
       api('/api/dashboard').catch(()=>null),
     ];
     const results = await Promise.all(fetches);
@@ -3819,6 +4093,10 @@ async function submitLogin(ev){
     const r = await api('/api/login', {method:'POST', body: JSON.stringify({username:u,password:p})});
     apiToken = r.token;
     currentUser = r.user;
+    // Apply the effective module contract + read-only mode immediately, so a
+    // Commander never sees a write control during the first paint.
+    if(currentUser) currentUser.modules = sanitizeModules(currentUser.role, currentUser.modules);
+    applyReadOnlyMode();
     // Stash the new token immediately so subsequent api() calls (e.g.
     // /api/me in loadSession) can authenticate. sessionUser is set
     // authoritatively inside loadSession() once /api/me confirms the
@@ -3853,6 +4131,9 @@ function resetSessionState(){
   sessionVisibility = null;
   sessionRoster = null;
   serverOn = false;
+  // Leave read-only (view-only) mode with the session it belonged to.
+  currentUser = null;
+  applyReadOnlyMode();
   // Reset the role-scoped dashboard cache so the next paint is forced
   // to refetch from the server for the freshly signed-in officer.
   if(typeof db !== 'undefined'){
@@ -3868,6 +4149,9 @@ async function loadSession(){
   try{
     const me = await api('/api/me');
     sessionUser = me; sessionVisibility = me.visibility; sessionRoster = me; currentUser = me;
+    // Effective RBAC contract (unit denylist + global read-only mode).
+    me.modules = sanitizeModules(me.role, me.modules);
+    applyReadOnlyMode();
     // Refresh the stored user object with the server-confirmed profile.
     try{ saveSession(authToken(), me); }catch(_){}
   }catch(e){
@@ -3934,6 +4218,11 @@ async function initApp(){
   if(currentUser){
     sessionUser=currentUser;
     sessionVisibility=currentUser.visibility||null;
+    // Apply the effective module contract (no Central Police Search for
+    // Airport / CID) and read-only mode BEFORE the first paint, from the
+    // re-hydrated profile, so a refresh can never flash a write control.
+    currentUser.modules=sanitizeModules(currentUser.role,currentUser.modules);
+    applyReadOnlyMode();
     applyNavForRole();
     updateUserPill();
   }
@@ -3945,6 +4234,8 @@ async function initApp(){
     const me=await api('/api/me');        // dedicated auth check
     serverOn=true;
     sessionUser=me; sessionVisibility=me.visibility; sessionRoster=me; currentUser=me;
+    me.modules=sanitizeModules(me.role,me.modules);
+    applyReadOnlyMode();
     try{ saveSession(authToken(), me); }catch(_){}
     document.getElementById('loginScreen').style.display='none';
     applyNavForRole();
@@ -3987,13 +4278,109 @@ async function initApp(){
 // sees only their own directorate — each register renders as a clean,
 // full-width table (with a search box) and a compact unit overview strip; the
 // entry form opens in a centered modal from the page's primary action button.
+// ---- pristine sidebar items -------------------------------------------------
+// Denied modules are REMOVED from the sidebar DOM (not merely hidden), so an
+// Airport Control / CID officer cannot see "Central Police Search" even if a
+// later CSS or JS change forgets the rule. The authored markup is snapshotted
+// once, which lets the item come back for a role that is allowed to have it
+// (e.g. signing in as the Commander or the HR Directorate in the same tab).
+const NAV_ITEM_ORDER=[];
+function snapshotNavItems(){
+  if(NAV_ITEM_ORDER.length) return;
+  const add=(node,group)=>{
+    if(!node||!node.dataset||!node.dataset.page) return;
+    NAV_ITEM_ORDER.push({page:node.dataset.page,group:group||null,
+                         modules:node.dataset.modules||'',html:node.outerHTML});
+  };
+  const nav=document.getElementById('nav');
+  if(!nav) return;
+  nav.querySelectorAll(':scope > button[data-page]').forEach(b=>add(b,null));
+  nav.querySelectorAll('.nav-group-body').forEach(body=>{
+    body.querySelectorAll('button[data-page]').forEach(b=>add(b,body.dataset.groupBody||null));
+  });
+}
+function navItemFor(page){return document.querySelector('#nav button[data-page="'+page+'"]')}
+function removeNavItem(page){const b=navItemFor(page);if(b)b.remove()}
+function ensureNavItem(page){
+  if(navItemFor(page)) return;
+  const spec=NAV_ITEM_ORDER.find(x=>x.page===page);
+  if(!spec) return;
+  const holder=document.createElement('div');
+  holder.innerHTML=spec.html;
+  const node=holder.firstElementChild;
+  if(!node) return;
+  let container, later=null;
+  if(spec.group){
+    container=document.querySelector('#nav .nav-group-body[data-group-body="'+spec.group+'"]');
+    if(container){
+      const idx=NAV_ITEM_ORDER.indexOf(spec);
+      for(const spec2 of NAV_ITEM_ORDER.slice(idx+1)){
+        if(spec2.group!==spec.group) continue;
+        const sib=navItemFor(spec2.page);
+        if(sib && sib.parentNode===container){later=sib;break}
+      }
+    }
+  } else {
+    container=document.getElementById('nav');
+    if(container) later=container.querySelector('.nav-group')||null;
+  }
+  if(!container) return;
+  container.insertBefore(node,later);
+  node.onclick=()=>go(node.dataset.page);
+}
+// Is `page` part of this session's menu? `admin` is gated on the admin flag;
+// every other item on its module — and the deny list always wins.
+function navItemAllowed(page,mods,isAdmin){
+  const spec=NAV_ITEM_ORDER.find(x=>x.page===page);
+  const mod=(spec&&spec.modules)||page;
+  if(mod==='admin' || page==='admin') return isAdmin;
+  if(deniedModulesForRole((sessionUser&&sessionUser.role)||'').indexOf(mod)!==-1) return false;
+  return mods.indexOf(mod)!==-1;
+}
+// ---- HARD SIDEBAR DENYLIST ------------------------------------------------
+// Every nav item whose module this session may not use is DELETED from the DOM
+// (`element.remove()`), not hidden: a Fingerprint / Airport Control / CID
+// Criminal Unit officer has no "Central Police Search" node at all, and a node
+// injected or re-rendered by any other code path is deleted again by the
+// observer below.
+// The markup is snapshotted (see NAV_ITEM_ORDER / ensureNavItem) so a role
+// that IS allowed to have the entry gets it back on the next sign-in.
+function enforceSidebarDenylist(){
+  const nav=document.getElementById('nav');
+  if(!nav || !sessionUser) return 0;
+  const mods=effectiveModules();
+  const isAdmin=!!(sessionVisibility && sessionVisibility.is_admin);
+  let removed=0;
+  nav.querySelectorAll('button[data-page], a[data-page]').forEach(el=>{
+    const page=el.dataset.page;
+    if(!page) return;
+    const mod=el.dataset.modules||page;
+    const allowed=(mod==='admin'||page==='admin') ? isAdmin
+      : (deniedModulesForRole(sessionUser.role).indexOf(mod)===-1 && mods.indexOf(mod)!==-1);
+    if(!allowed){ el.remove(); removed++; }
+  });
+  return removed;
+}
 function applyNavForRole(){
-  const mods = (sessionUser && sessionUser.modules) || ['dashboard'];
+  // `effectiveModules()` applies the client-side unit denylist on top of the
+  // server-issued module list, so Central Police Search can never render for
+  // Airport Control / CID, whatever a cached session object claims.
+  const mods = effectiveModules();
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
+  snapshotNavItems();
+  NAV_ITEM_ORDER.forEach(spec=>{
+    // Hard removal for a denied module, restore when the role may have it.
+    if(!sessionUser){ removeNavItem(spec.page); return; }
+    if(navItemAllowed(spec.page,mods,isAdmin)) ensureNavItem(spec.page);
+    else removeNavItem(spec.page);
+  });
   document.querySelectorAll('#nav button[data-page]').forEach(b => {
     const m = b.dataset.modules;
-    b.style.display = (m === 'admin' ? isAdmin : mods.includes(m)) ? '' : 'none';
+    b.style.display = (m === 'admin' ? isAdmin : mods.indexOf(m)!==-1) ? '' : 'none';
   });
+  // Global read-only (Commander / High Command): apply view-only mode and
+  // refresh the "View-only" pill in the same pass that paints the menu.
+  applyReadOnlyMode();
   // A whole section disappears when every item inside it is hidden — e.g.
   // Administration for any non-admin, Police Registrations for a checkpoint
   // officer, CID for the HR Directorate.
@@ -4010,8 +4397,10 @@ function applyNavForRole(){
   // `.admin-write` blocks (SystemAdmin-only forms inside a readable register)
   // follow the same flag.
   if(document.body) document.body.classList.toggle('is-admin', isAdmin);
-  // Station registry writes are also open to the `stations:manage`
-  // permission (Chief Commander) — reveal the SystemAdmin-only station form.
+  // Station registry writes are SystemAdmin-only: the Commander / High
+  // Command role monitors the station register read-only (its
+  // `stations:manage` capability was retired with the read-only mandate), so
+  // the station entry form stays hidden for it.
   const canManageStations = isAdmin || !!(sessionVisibility && sessionVisibility.can_manage_stations)
     || ((sessionUser && sessionUser.permissions) || []).includes('stations:manage');
   if(document.body) document.body.classList.toggle('can-manage-stations', canManageStations);
@@ -4019,7 +4408,54 @@ function applyNavForRole(){
   // Disciplinary [red]) follow the same `officers` module gate as the
   // embedded HR analytics strip above them.
   const hrTabs = document.getElementById('hrTabs');
-  if(hrTabs) hrTabs.style.display = mods.includes('officers') ? '' : 'none';
+  if(hrTabs) hrTabs.style.display = (mods.indexOf('officers')!==-1) ? '' : 'none';
+  // Final pass: delete every nav node this session may not have (removes any
+  // item that was restored or injected outside the snapshot).
+  enforceSidebarDenylist();
+}
+
+// ============================ read-only mode (UI) ============================
+// The single place that paints the global view-only state:
+//
+//   * `body.readonly-mode` removes EVERY write control from the UI — the
+//     static `[data-write]` buttons and the ones painted into table rows /
+//     modal footers (see the CSS block near `.admin-write`).
+//   * the top-bar "View-only · Commander" pill and the page banner explain why.
+//   * dashboard quick-registration actions are repainted as a view-only note.
+//
+// Called from applyNavForRole() (every nav pass), syncServer() (after /api/me),
+// loadSession() and the sign-in / sign-out transitions.
+// Which frontend build this browser is running — the read-only / unit-denylist
+// hardening ships in 'sentinel-rbac-readonly-3'. Shown in the sidebar footer so
+// an operator can tell a stale cached page from a stale server.
+function applyUiBuildLabel(){
+  const meta=document.querySelector('meta[name="sentinel-ui-build"]');
+  window.SENTINEL_UI_BUILD=(meta&&meta.content)||'unknown';
+  const el=document.getElementById('uiBuild');
+  if(el) el.textContent='UI build '+window.SENTINEL_UI_BUILD;
+}
+function applyReadOnlyMode(){
+  const ro = isReadOnlyUser();
+  if(document.body && document.body.classList){
+    document.body.classList.toggle('readonly-mode', ro);
+    document.body.classList.toggle('view-only', ro);
+  }
+  const badge = document.getElementById('roBadge');
+  if(badge) badge.style.display = ro ? '' : 'none';
+  const banner = document.getElementById('roBanner');
+  if(banner) banner.style.display = ro ? 'flex' : 'none';
+  applyUiBuildLabel();
+  // Hard enforcement: hide every write control *in the DOM* (not only through
+  // the CSS class) and keep watching for controls painted later by any
+  // renderer — a Commander must see no action button on any page.
+  hardenReadOnlyDom(document);
+  // The observer is armed for every session: it re-deletes a denied nav entry
+  // (Airport / CID) and re-sweeps the write controls (Commander).
+  watchReadOnlyDom();
+  // The dashboard's "Quick registration" panel carries no write actions for
+  // this role (the server returns `quick_actions: []`); paintDashboard() and
+  // renderDashboardLocal() render the view-only explanation.
+  return ro;
 }
 
 function updateUserPill(){
@@ -4461,9 +4897,9 @@ async function renderUserTable(){
         <td>${loc}</td>
         <td class="muted">${esc(u.branch || '—')}</td>
         <td><span class="${u.active?'status-on':'status-off'}">${u.active?'Active':'Disabled'}</span></td>
-        <td class="actions">
+        <td class="actions">${canWrite() ? `
           <button class="btn secondary small" onclick='openEditUserDrawer(${JSON.stringify(u).replace(/'/g,"&apos;")})'>Edit</button>
-          ${u.id===sessionUser.id ? '' : `<button class="btn small" onclick="toggleUserActive(${u.id}, ${!u.active})">${u.active?'Disable':'Enable'}</button>`}
+          ${u.id===sessionUser.id ? '' : `<button class="btn small" onclick="toggleUserActive(${u.id}, ${!u.active})">${u.active?'Disable':'Enable'}</button>`}` : '<span class="muted">View only</span>'}
         </td>
       </tr>`;
     }).join('');
@@ -4473,6 +4909,7 @@ async function renderUserTable(){
 }
 
 async function toggleUserActive(uid, active){
+  if(guardReadOnly('Enabling / disabling a user')) return;
   try{
     await api('/api/admin/users/'+uid, {method:'PATCH', body: JSON.stringify({active})});
     toast(active ? 'User enabled' : 'User disabled');
@@ -4481,6 +4918,7 @@ async function toggleUserActive(uid, active){
 }
 
 function openNewUserDrawer(){
+  if(guardReadOnly('Registering a user')) return;
   const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
   const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
@@ -4522,6 +4960,7 @@ function refreshUserLocationOptions(){
   if(!isCheckpointRole(role)) scopeEl.value = '';
 }
 async function submitNewUser(){
+  if(guardReadOnly('Registering a user')) return;
   const data = {
     username: document.getElementById('nu-username').value.trim(),
     display_name: document.getElementById('nu-display').value.trim(),
@@ -4541,6 +4980,7 @@ async function submitNewUser(){
 }
 
 function openEditUserDrawer(u){
+  if(guardReadOnly('Editing a user record')) return;
   const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
   const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
@@ -4574,6 +5014,7 @@ function openEditUserDrawer(u){
   openDrawer('Edit officer · ' + u.username, body, foot);
 }
 async function submitEditUser(uid){
+  if(guardReadOnly('Updating a user record')) return;
   const data = {
     display_name: document.getElementById('eu-display').value.trim(),
     role: document.getElementById('eu-role').value,
@@ -4636,7 +5077,7 @@ let hrActiveTab = 'register';
 let _hrLoaded = false;
 
 function canManageHr(){
-  return ((sessionUser && sessionUser.modules) || []).includes('officers');
+  return hasModule('officers');
 }
 function hrAwaitingList(){
   return (db.promotions || []).filter(p => p.awaiting_verification || p.verification_status === 'Awaiting Verification');
@@ -4740,9 +5181,10 @@ function renderHrPanels(){
       <td><b>${esc(p.full_name || '—')}</b><br><small class="muted">${esc(p.service_id || '')} · ${esc(p.station_name || '')}</small></td>
       <td>${esc(p.current_rank || p.officer_rank || '')} → <b class="st-green">${esc(p.proposed_rank || '')}</b></td>
       <td>${esc(p.reason || '—')}<br><small class="muted">by ${esc(p.nominated_by || '—')}</small></td>
-      <td class="actions">
+      <td class="actions">${canWrite() ? `
         <button class="btn small hr-green" type="button" onclick="verifyPromotionNomination('${esc(p.nomination_id)}','Verified')">Verify</button>
-        <button class="btn small ghost" type="button" onclick="verifyPromotionNomination('${esc(p.nomination_id)}','Rejected')">Reject</button>
+        <button class="btn small ghost" type="button" onclick="verifyPromotionNomination('${esc(p.nomination_id)}','Rejected')">Reject</button>`
+        : '<span class="muted">View only</span>'}
       </td></tr>`).join('')
     || `<tr><td colspan="5" class="empty">${prmQ ? 'No nominations match that search' : 'No nominations awaiting verification'}</td></tr>`;
 
@@ -4770,9 +5212,10 @@ function renderHrPanels(){
       <td><span class="badge red">${esc(d.action_type || '')}</span>${d.action_type === 'Demotion' && d.to_rank ? `<br><small class="muted">${esc(d.from_rank || d.officer_rank || '')} → ${esc(d.to_rank)}</small>` : ''}${d.action_type === 'Suspension' && d.suspension_end ? `<br><small class="muted">until ${esc(String(d.suspension_end).slice(0, 10))}</small>` : ''}</td>
       <td>${esc(d.severity || '—')}</td>
       <td><b class="st-red">${esc(d.status || '')}</b></td>
-      <td class="actions">
+      <td class="actions">${canWrite() ? `
         ${d.status === 'Confirmed' ? '' : `<button class="btn small hr-red" type="button" onclick="setDisciplineStatus('${esc(d.action_id)}','Confirmed')">Confirm</button>`}
-        <button class="btn small ghost" type="button" onclick="setDisciplineStatus('${esc(d.action_id)}','Closed')">Close</button>
+        <button class="btn small ghost" type="button" onclick="setDisciplineStatus('${esc(d.action_id)}','Closed')">Close</button>`
+        : '<span class="muted">View only</span>'}
       </td></tr>`).join('')
     || `<tr><td colspan="6" class="empty">${dscQ ? 'No actions match that search' : 'No open disciplinary actions'}</td></tr>`;
 
@@ -4840,6 +5283,7 @@ async function savePromotionNomination(e){
   }
 }
 async function verifyPromotionNomination(nominationId, status){
+  if(guardReadOnly('Verifying a promotion nomination')) return;
   if(!nominationId) return;
   const row = (db.promotions || []).find(p => p.nomination_id === nominationId);
   if(!serverOn){
@@ -4925,6 +5369,7 @@ async function saveDisciplineAction(e){
   }
 }
 async function setDisciplineStatus(actionId, status){
+  if(guardReadOnly('Updating a disciplinary action')) return;
   if(!actionId) return;
   const row = (db.discipline || []).find(d => d.action_id === actionId);
   if(!serverOn){
@@ -5458,10 +5903,11 @@ function renderConduct(){
         <td>${change}</td>
         <td>${cdSubmittedBy(a)}<br>${claim}</td>
         <td>${cdStatusBadge(a.status)}</td>
-        <td class="actions">
+        <td class="actions">${canWrite() ? `
           <button class="btn secondary small" onclick="openConductReview('${esc(a.action_id)}')">Review file</button>
           <button class="btn small" style="background:#2e7d32" title="Verify &amp; approve — executes the rank change" onclick="conductReviewDecision('${esc(a.action_id)}','approve')">✓ Approve</button>
-          <button class="btn small" style="background:#c62828" onclick="conductReviewDecision('${esc(a.action_id)}','reject')">✕ Reject</button>
+          <button class="btn small" style="background:#c62828" onclick="conductReviewDecision('${esc(a.action_id)}','reject')">✕ Reject</button>`
+          : '<span class="muted">View only</span>'}
         </td>
       </tr>`;
     }).join('')||'<tr><td colspan="6" class="empty">No pending submissions — the HR queue is clear</td></tr>';
@@ -5495,7 +5941,7 @@ async function refreshConduct(){
     if(Array.isArray(r.items)) db.conduct=r.items;
   }catch(e){ /* keep the local cache on a transient error */ }
   try{
-    if(sessionUser&&(sessionUser.modules||[]).includes('officers')){
+    if(sessionUser&&hasModule('officers')){
       const r=await api('/api/officers');
       if(Array.isArray(r.items)){ db.officers=r.items; renderOfficersTable(); renderPoliceSearch(); }
     }
@@ -5507,6 +5953,7 @@ async function refreshConduct(){
 
 // ---- HR action modal (new conduct file) --------------------------------------
 function openConductModal(){
+  if(guardReadOnly('Submitting a conduct action')) return;
   cdSelectedOfficer=null;
   const now=new Date();
   const p=n=>String(n).padStart(2,'0');
@@ -5719,13 +6166,16 @@ async function openConductView(aid){
   <div class="field cd-docs"><label>Supporting documents</label>${docs}</div>
   <div class="section-label">Officer service history (immutable)</div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Entry</th><th>Rank</th><th>Summary</th><th>Recorded</th></tr></thead><tbody>${history}</tbody></table></div>`;
-  const foot=CD_PENDING.includes(a.status)
+  // Only a writer sees the "Review file" hand-off — a read-only Commander
+  // gets the plain Close action.
+  const foot=(CD_PENDING.includes(a.status) && canWrite())
     ?`<button class="btn ghost" onclick="closeDrawer()">Close</button>
       <button class="btn secondary" onclick="closeDrawer();openConductReview('${esc(a.action_id)}')">Review file</button>`
     :`<button class="btn ghost" onclick="closeDrawer()">Close</button>`;
   openDrawer('Conduct file · '+a.action_id, body, foot);
 }
 function openConductReview(aid){
+  if(guardReadOnly('Reviewing a conduct file')) return;
   const a=cdFind(aid);
   if(!a){showFormError('Conduct file not found');return}
   const deskReviewer=document.getElementById('cdReviewerSelect')?document.getElementById('cdReviewerSelect').value:'';
@@ -5759,6 +6209,7 @@ function openConductReview(aid){
   openDrawer('HR review · '+a.action_id, body, foot);
 }
 async function conductReviewDecision(aid,decision,fromModal){
+  if(guardReadOnly('Deciding a conduct review')) return;
   const a=cdFind(aid);
   if(!a){showFormError('Conduct file not found');return}
   if(decision==='approve'&&a.is_rank_action&&!confirm('Approve '+aid+' and execute the rank change\n'+a.officer_rank+' → '+a.proposed_rank+' for '+a.officer_name+'?'))return;
@@ -5879,6 +6330,7 @@ refreshStationSelects();
 wireStationLocationDefaults('carStation','car');
 initOriginDropdowns();
 offStep(1);
+applyUiBuildLabel();  // stamp the running frontend build in the sidebar
 applyNavForRole();   // hide admin pages until sign-in
 // Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
 // filter when investigating the 'South Checkpoint 0' bug). Toggle

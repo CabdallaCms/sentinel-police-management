@@ -125,6 +125,14 @@
     .toolbar,.lockbar,.toast{display:none!important}
     *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   }
+  /* ---- global read-only role (Commander / High Command) ----
+     The command role reads every application and approves nothing: the
+     approve control is removed from the DOM view entirely (the API answers
+     403 for the same call). Printing the document stays available. */
+  body.readonly-mode [data-write]{display:none!important}
+  .ro-note{display:none}
+  body.readonly-mode .ro-note{display:block;margin:0 0 14px;background:#eef4ff;border:1px solid #d3e0fb;
+    color:#264d8a;border-radius:10px;padding:9px 12px;font-size:12.5px;font-family:Arial,sans-serif}
 </style>
 </head>
 <body>
@@ -134,8 +142,12 @@
   <div style="flex:1"></div>
   <span id="statusBadge" class="badge amber">Pending Review</span>
   <button class="btn" onclick="window.print()">&#128424; Print application</button>
-  <button class="btn green" id="approveBtn" onclick="approve()">&#10003; Approve Application</button>
+  <button class="btn green" data-write="1" id="approveBtn" onclick="approve()">&#10003; Approve Application</button>
 </div>
+
+<div class="ro-note" id="roNote">&#128274; <b>View-only command access.</b> The Commander / High Command role
+holds global read-only access — this application can be reviewed and printed, but it cannot be approved.
+Sign in as a System Administrator or the Fingerprint Unit officer to approve it.</div>
 
 <div class="lockbar" id="lockbar"></div>
 
@@ -232,6 +244,25 @@ let app=null;
 const STANDARD_ROLE='fingerprint_officer';
 let currentRole=STANDARD_ROLE;
 let isAdmin=false;
+// Every role spelling the server resolves to `chief_commander` (see
+// COMMANDER_ROLE_ALIASES in backend/server.py). Used only as the offline /
+// cached fallback — `read_only` / `can_write` from /api/me are authoritative.
+const CHIEF_ROLE_RE=/^(chief_commander|chiefcommander|chief\.commander|commander|commander_hq|commanderhq|command_hq|commandhq|hq_command|hqcommand|high_command|highcommand|police_hq|policehq)$/i;
+// Global read-only role (Commander / High Command). Fail-closed: the stored
+// session object can already flag it (so the approve control never flashes),
+// and /api/me is authoritative once it answers.
+let isReadOnly=(function(){
+  try{
+    const u=JSON.parse(localStorage.getItem('sentinel_user')||'null');
+    if(!u) return false;
+    if(u.read_only===true||u.can_write===false) return true;
+    return CHIEF_ROLE_RE.test(String(u.role||''));
+  }catch(_){ return false; }
+})();
+// Fail-closed: a stored read-only session never sees the Approve control, not
+// even for the split second before /api/me answers. (Function declarations are
+// hoisted, so this call site is fine this early.)
+applyReadOnlyUi();
 
 function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]))}
 // The template ships with '-' placeholders; keep that convention for blanks.
@@ -310,7 +341,8 @@ function render(a){
   badge.className='badge '+(approved?'green':'amber');
   badge.textContent=a.status||'Pending Review';
   const btn=document.getElementById('approveBtn');
-  btn.style.display=approved?'none':'';
+  applyReadOnlyUi();
+  btn.style.display=(approved||isReadOnly)?'none':'';
 
   // ---- approval lock for non-admin officers ----
   const lock=reviewLock(a);
@@ -329,7 +361,8 @@ function render(a){
   }else{
     btn.disabled=false;btn.title='';btn.removeAttribute('disabled');btn.setAttribute('style','');
     btn.innerHTML=isAdmin?'&#10003; Approve Application (Admin bypass)':'&#10003; Approve Application';
-    lockbar('');
+    if(isReadOnly){btn.setAttribute('style','display:none');}
+    lockbar(isReadOnly?'&#128274; View-only command access — this role can review and print the application but never approve it.':'');
   }
 
   // ---- QAYBTA 01 — applicant identification ----
@@ -411,11 +444,39 @@ async function resolveRole(token){
     const me=await r.json();
     currentRole=me.role_spec||me.role||STANDARD_ROLE;
     isAdmin=!!(me.visibility&&me.visibility.is_admin===true);
+    // ---- global read-only role (Commander / High Command) ----------------
+    // The server is authoritative: `read_only` / `can_write` come straight
+    // from /api/me, so even an unknown command-role spelling lands in
+    // view-only mode here. A missing flag falls back to the role name.
+    if(me.read_only===true||me.can_write===false) isReadOnly=true;
+    else if(me.read_only===false||me.can_write===true) isReadOnly=CHIEF_ROLE_RE.test(String(me.role||''));
+    else isReadOnly=isReadOnly||CHIEF_ROLE_RE.test(String(me.role||''));
+    applyReadOnlyUi();
     return true;
   }catch(_){ return false; }
 }
+// ---- read-only (Commander / High Command) view ------------------------------
+// The command role may open, read and PRINT every application, but it approves
+// nothing: the approve control is removed from the page, approve() refuses
+// locally, and the API answers 403 Forbidden for the same role.
+function applyReadOnlyUi(){
+  const ro=!!isReadOnly;
+  if(document.body) document.body.classList.toggle('readonly-mode',ro);
+  const btn=document.getElementById('approveBtn');
+  if(btn){
+    btn.style.display=ro?'none':'';
+    btn.setAttribute('aria-hidden',ro?'true':'false');
+    if(ro){btn.setAttribute('tabindex','-1')}else{btn.removeAttribute('tabindex')}
+  }
+  const note=document.getElementById('roNote');
+  if(note) note.style.display=ro?'block':'none';
+  return ro;
+}
 async function approve(){
   const btn=document.getElementById('approveBtn');
+  // Read-only (Commander / High Command): never send the approval at all —
+  // the server answers 403 for this role regardless, this keeps the UI honest.
+  if(isReadOnly){ toast('Read-only access — approvals are disabled for this role.'); return; }
   // Client-side block: a locked application never reaches the API.
   if(app&&app.status!=='Approved'){
     const lock=reviewLock(app);

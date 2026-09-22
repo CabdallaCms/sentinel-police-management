@@ -663,11 +663,22 @@ ROLE_REGISTRATION = ROLE_HR
 ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
 ROLE_CHECKPOINT_EAST = 'CheckpointEast'
 ROLE_CHECKPOINT_WEST = 'CheckpointWest'
-# Chief Commander of Police Office (HQ / Command). A GLOBAL, cross-department
-# oversight role: it reads every directorate (CID, Personnel, Transport),
-# owns the executive analytics surface and manages the station registry —
-# but it is NOT a SystemAdmin (no user management, no unit-record writes).
+# Chief Commander of Police Office (HQ / Command) — the COMMAND / "Commander"
+# role. A GLOBAL, cross-department MONITORING role: it READS every directorate
+# (CID, Personnel, Transport, Stations, Registers, executive analytics) and is
+# STRICTLY READ-ONLY. Every mutation route (POST / PATCH / DELETE) answers
+# HTTP 403 for this role — see `enforce_read_only()` — and the frontend hides
+# every write control so each register renders in view-only mode. It is NOT a
+# SystemAdmin (no user management).
 ROLE_CHIEF = 'chief_commander'
+# Accepted spellings of the command role ('Commander', 'High Command', …).
+# A deployment that stores any of them gets the identical global read-only
+# authority because `canonical_unit_role()` resolves them all to ROLE_CHIEF.
+COMMANDER_ROLE_ALIASES = ('chief_commander', 'chiefcommander', 'chief.commander',
+                          'ChiefCommander', 'commander', 'Commander',
+                          'commander_hq', 'hq_command', 'command_hq',
+                          'police_hq', 'high_command', 'highcommand',
+                          'HighCommand')
 
 # Fine-grained permission strings. Modules (below) gate which PAGES a role
 # can open; permissions gate cross-cutting CAPABILITIES that do not map onto
@@ -678,8 +689,17 @@ PERM_STATIONS_MANAGE = 'stations:manage'
 PERM_CID_VIEW = 'cid:view'
 PERM_PERSONNEL_VIEW = 'personnel:view'
 PERM_TRANSPORT_VIEW = 'transport:view'
+# Marker permission: the holder may READ everything but may never MUTATE
+# anything (the global read-only command role).
+PERM_READ_ONLY_GLOBAL = 'readonly:global'
 CHIEF_PERMISSIONS = frozenset({PERM_ANALYTICS_GLOBAL, PERM_STATIONS_MANAGE,
                                PERM_CID_VIEW, PERM_PERSONNEL_VIEW, PERM_TRANSPORT_VIEW})
+# The command role's authority: every read capability, zero write capability.
+# `stations:manage` is deliberately ABSENT — the Commander monitors the
+# station registry, it does not create or edit stations.
+COMMANDER_PERMISSIONS = frozenset({PERM_ANALYTICS_GLOBAL, PERM_CID_VIEW,
+                                   PERM_PERSONNEL_VIEW, PERM_TRANSPORT_VIEW,
+                                   PERM_READ_ONLY_GLOBAL})
 
 # Canonical normalized alias for any Checkpoint officer regardless of
 # location. The spec mandates that role-checking logic accept BOTH the
@@ -754,6 +774,13 @@ def canonical_unit_role(role):
     for alias, canonical in UNIT_ROLE_ALIASES.items():
         if _role_key(alias) == key:
             return canonical
+    # Free-form family fallback: an operator spelling that still names the unit
+    # ('Airport Control Office', 'CID/Criminal Investigation', 'High Command')
+    # resolves to it, so the restricted units keep their own scope instead of
+    # falling through to a default module set.
+    family = unit_role_family(key)
+    if family:
+        return family
     return r
 
 
@@ -826,14 +853,48 @@ UNIT_ROLE_ALIASES = {
     'fingerprint_unit': ROLE_FINGERPRINT,
     'fp_officer': ROLE_FINGERPRINT,
     'fp.officer': ROLE_FINGERPRINT,
+    # Label spellings an operator may have stored instead of the canonical id.
+    'Fingerprint Officer': ROLE_FINGERPRINT,
+    'fingerprint officer': ROLE_FINGERPRINT,
+    'Fingerprint Unit': ROLE_FINGERPRINT,
+    'fingerprint unit': ROLE_FINGERPRINT,
+    'Fingerprint Unit Officer': ROLE_FINGERPRINT,
+    'fingerprint_unit_officer': ROLE_FINGERPRINT,
+    'fingerprintunitofficer': ROLE_FINGERPRINT,
+    'Fingerprint': ROLE_FINGERPRINT,
+    'fp': ROLE_FINGERPRINT,
     ROLE_AIRPORT: ROLE_AIRPORT,
     'airport_officer': ROLE_AIRPORT,
     'airport_control': ROLE_AIRPORT,
     'ap_officer': ROLE_AIRPORT,
+    # Label spellings an operator may have typed into the users table
+    # ('Airport Control Officer', 'Airport Control Unit', ...). Without these
+    # the role fell through to the review-lock default module set and quietly
+    # inherited Central Police Search.
+    'Airport Control': ROLE_AIRPORT,
+    'airport control': ROLE_AIRPORT,
+    'Airport Control Officer': ROLE_AIRPORT,
+    'airport_control_officer': ROLE_AIRPORT,
+    'Airport Control Unit': ROLE_AIRPORT,
+    'airport_control_unit': ROLE_AIRPORT,
+    'airportcontrolunit': ROLE_AIRPORT,
     ROLE_CID: ROLE_CID,
     'cid_officer': ROLE_CID,
     'cidunit': ROLE_CID,
     'criminal_investigation': ROLE_CID,
+    # …and the same for the Criminal Investigation Unit labels.
+    'CID Criminal Unit': ROLE_CID,
+    'cid criminal unit': ROLE_CID,
+    'cid_criminal_unit': ROLE_CID,
+    'cidcriminalunit': ROLE_CID,
+    'CID Criminal Unit Officer': ROLE_CID,
+    'cid_criminal_unit_officer': ROLE_CID,
+    'Criminal Unit': ROLE_CID,
+    'criminal_unit': ROLE_CID,
+    'criminalunit': ROLE_CID,
+    'Crime Unit': ROLE_CID,
+    'crime_unit': ROLE_CID,
+    'crimeunit': ROLE_CID,
     # HR Directorate aliases — 'HROfficer', 'hr', 'Human Resources', … all
     # resolve to the canonical 'hr_officer' role so a token issued for any
     # spelling still carries the officers module set.
@@ -847,15 +908,35 @@ UNIT_ROLE_ALIASES = {
     'human_resources': ROLE_HR,
     'humanresources': ROLE_HR,
     'personnel_officer': ROLE_HR,
-    # Chief Commander of Police Office (HQ / Command) aliases.
+    # Chief Commander of Police Office (HQ / Command) aliases — every
+    # "Commander" / "High Command" spelling resolves to the same canonical
+    # global READ-ONLY role.
     ROLE_CHIEF: ROLE_CHIEF,
     'chief_commander': ROLE_CHIEF,
     'chiefcommander': ROLE_CHIEF,
     'chief.commander': ROLE_CHIEF,
     'ChiefCommander': ROLE_CHIEF,
+    'commander': ROLE_CHIEF,
+    'Commander': ROLE_CHIEF,
     'commander_hq': ROLE_CHIEF,
+    'command_hq': ROLE_CHIEF,
     'hq_command': ROLE_CHIEF,
     'police_hq': ROLE_CHIEF,
+    'high_command': ROLE_CHIEF,
+    'highcommand': ROLE_CHIEF,
+    'HighCommand': ROLE_CHIEF,
+    # Label-derived spellings ('Chief Commander of Police Office (HQ /
+    # Command)') and the short form an operator may have stored instead.
+    'Chief Commander': ROLE_CHIEF,
+    'chief commander': ROLE_CHIEF,
+    'Chief Commander of Police Office': ROLE_CHIEF,
+    'chief_commander_of_police_office': ROLE_CHIEF,
+    'chiefcommanderofficepolice': ROLE_CHIEF,
+    'chief_of_police': ROLE_CHIEF,
+    'chiefofpolice': ROLE_CHIEF,
+    'chief': ROLE_CHIEF,
+    'HQ / Command': ROLE_CHIEF,
+    'hq_command': ROLE_CHIEF,
 }
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
@@ -1028,16 +1109,27 @@ ROLE_LABELS = {
 #
 # Regional registration modules (frontend-only registers for now):
 #   * 'policesearch' — Central Police Search (officers/stations/cars filter
-#     by Region → District → Village); granted to the same roles that can
-#     see the Central Person Search ('people').
+#     by Region → District → Village); granted ONLY to the roles whose remit
+#     is the central police registers (SystemAdmin, the HR Directorate — who
+#     own the officers / stations registers — and the Commander's HQ
+#     monitoring surface). The operational units — Airport Control, the CID
+#     Criminal Unit and the Fingerprint Unit — deliberately do NOT hold it:
+#     each sees its own unit scope plus the personal Central Person Search
+#     ('people') and nothing else.
 #   * 'stations' / 'officers' / 'cars' — Police Registrations & Management;
 #     administrative operations, granted to SystemAdmin only.
 ROLE_MODULES = {
     ROLE_ADMIN: {'dashboard', 'analytics', 'admin', 'people', 'fingerprint', 'airport', 'cid', 'checkpoints',
                  'policesearch', 'stations', 'officers', 'cars', 'crimes', 'conduct'},
-    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint', 'policesearch'},
-    ROLE_AIRPORT: {'dashboard', 'people', 'airport', 'policesearch'},
-    ROLE_CID: {'dashboard', 'people', 'cid', 'policesearch', 'crimes'},
+    # Fingerprint Unit: the biometrics register + Central Person Search only.
+    # Like the Airport and CID units it is NOT a party to Central Police Search
+    # (the cross-registry officers / stations / vehicles lookup).
+    ROLE_FINGERPRINT: {'dashboard', 'people', 'fingerprint'},
+    # Airport Control: the Airport module + Central Person Search only.
+    ROLE_AIRPORT: {'dashboard', 'people', 'airport'},
+    # CID Criminal Unit: the Crime Unit (+ crime intake) + Central Person
+    # Search only.
+    ROLE_CID: {'dashboard', 'people', 'cid', 'crimes'},
     # HR Directorate: the full Police Officers register (roster + promotions +
     # discipline, and their analytics bundle) plus the station register it
     # posts officers against and the central registries it searches. The
@@ -1050,11 +1142,13 @@ ROLE_MODULES = {
     ROLE_CHECKPOINT_SOUTH: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_EAST: {'dashboard', 'checkpoints'},
     ROLE_CHECKPOINT_WEST: {'dashboard', 'checkpoints'},
-    # Chief Commander (HQ / Command): the executive dashboard + station
-    # oversight pages, plus READ access to every departmental register
-    # (CID units, Personnel, Transport). Deliberately no 'admin' (user
-    # management) and no 'analytics' (the legacy SystemAdmin flag) — the
-    # global analytics surface is its own module, gated by
+    # Chief Commander / Commander (HQ / Command): the executive dashboard +
+    # station oversight pages, plus READ access to every departmental
+    # register (CID units, Personnel, Transport). This is the GLOBAL
+    # READ-ONLY role: the full monitoring surface with zero write capability
+    # (every POST / PATCH / DELETE answers 403). Deliberately no 'admin'
+    # (user management) and no 'analytics' (the legacy SystemAdmin flag) —
+    # the global analytics surface is its own module, gated by
     # `analytics:global`.
     ROLE_CHIEF: {'dashboard', 'executive', 'oversight', 'people', 'policesearch',
                  'fingerprint', 'airport', 'cid', 'checkpoints', 'crimes',
@@ -1089,16 +1183,144 @@ ROLE_LOCATION_SCOPE = {
 # issued for 'admin') is never left with an empty module list.
 for _alias, _canonical in UNIT_ROLE_ALIASES.items():
     ROLE_MODULES.setdefault(_alias, ROLE_MODULES[_canonical])
+
+
+# ---- HARD UNIT-MODULE DENYLIST ---------------------------------------------
+# `ROLE_MODULES` above is the declaration, but the rule is re-applied EVERY time
+# a module list is produced or checked (login payload, /api/me, dashboard,
+# require_module, user_module_set, the degraded dashboard fallback). Central
+# Police Search therefore cannot reach an Airport Control or CID Criminal Unit
+# session even if a row in `users`, a cached payload, a stale process, a
+# future edit to ROLE_MODULES or an operator's local patch tried to grant it.
+UNIT_MODULE_DENY = {
+    ROLE_FINGERPRINT: frozenset({'policesearch'}),
+    ROLE_AIRPORT: frozenset({'policesearch'}),
+    ROLE_CID: frozenset({'policesearch'}),
+}
+
+
+# Roles this process understands. A role outside this set is an unknown
+# spelling: it must NOT inherit another unit's modules (the review-lock
+# `spec_role_for()` default used to hand such rows the Fingerprint set, which
+# includes Central Police Search).
+KNOWN_CANONICAL_ROLES = frozenset(ROLE_MODULES) | frozenset(UNIT_ROLE_ALIASES.values())
+
+
+def canonical_roles_for(role):
+    """Every canonical role key a stored role string may resolve to.
+
+    Only keys that name a role this build knows about are returned — the
+    snake-case spec alias is included *only* when the stored role resolved to a
+    real canonical role, so an unrecognised string cannot borrow a unit's
+    module set through the review-lock fallback.
+    """
+    if not role:
+        return set()
+    canonical = canonical_unit_role(role)
+    keys = {role, canonical}
+    normalised = normalize_role(role)
+    if normalised in KNOWN_CANONICAL_ROLES:
+        keys.add(normalised)
+    spec = spec_role_for(canonical)
+    if canonical in KNOWN_CANONICAL_ROLES and spec in ROLE_MODULES:
+        keys.add(spec)
+    return {k for k in keys if k}
+
+
+def denied_modules_for_role(role):
+    """Modules the given role must never hold, whatever ROLE_MODULES says."""
+    if not role:
+        return frozenset()
+    denied = set()
+    for key in canonical_roles_for(role):
+        denied |= set(UNIT_MODULE_DENY.get(key, ()))
+    return frozenset(denied)
+
+
+def allowed_modules_for_role(role):
+    """The module set a role may actually use: ROLE_MODULES minus the denylist.
+
+    The single source of truth for every module answer the server gives out.
+    An unrecognised role resolves to no unit at all and is handed the
+    fail-closed minimum (`dashboard`) rather than another unit's modules.
+    """
+    if not role:
+        return set()
+    mods = set()
+    for key in canonical_roles_for(role):
+        mods |= set(ROLE_MODULES.get(key, set()))
+    mods -= set(denied_modules_for_role(role))
+    if not mods:
+        # Unknown / unrecognised role: dashboard only. Never a unit's modules.
+        return {'dashboard'} if canonical_unit_role(role) not in KNOWN_CANONICAL_ROLES \
+            else set()
+    return mods
+
+
+def strip_denied_modules(role, modules):
+    """Apply the denylist to an already-resolved module list (login / me)."""
+    denied = denied_modules_for_role(role)
+    return {m for m in (modules or set()) if m not in denied}
+
+
+def rbac_self_test():
+    """Prove the RBAC invariants of this build hold *in this process*.
+
+    Returns a list of human-readable problems (empty when everything is in
+    force). Called at start-up, which refuses to serve when it is not empty —
+    a binary that lost the unit denylist or the command role must not answer
+    requests.
+    """
+    problems = []
+    for role in (ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID):
+        # (a) the effective grant (ROLE_MODULES minus the runtime denylist) …
+        leaked = sorted(m for m in ('policesearch',)
+                        if m in allowed_modules_for_role(role))
+        if leaked:
+            problems.append(f'{role} must not hold {leaked}')
+        # (b) … and the declaration itself, so a re-added 'policesearch' in
+        # ROLE_MODULES fails loudly at start-up instead of being silently
+        # masked by the denylist.
+        if 'policesearch' in ROLE_MODULES.get(role, set()):
+            problems.append(f'ROLE_MODULES[{role}] must not declare policesearch')
+    # …and the label spellings of those units must be denied too — an
+    # unrecognised string must never inherit another unit's module set (that
+    # is how Central Police Search used to leak into a unit session).
+    for alias in ('FingerprintUnit', 'fingerprint_officer', 'fp.officer', 'fp_officer',
+                  'Fingerprint Unit', 'Fingerprint Officer', 'Fingerprint Unit Officer',
+                  'AirportControl', 'airport_officer', 'ap.officer', 'Airport Control',
+                  'Airport Control Officer', 'Airport Control Unit', 'CIDUnit',
+                  'cid_officer', 'cid.officer', 'CID Criminal Unit', 'cid_criminal_unit',
+                  'Criminal Unit', 'Crime Unit', 'criminal_investigation'):
+        if 'policesearch' in allowed_modules_for_role(alias):
+            problems.append(f'unit alias {alias!r} must not hold policesearch')
+    for unknown in ('Some Unknown Role', '', 'x', 'Deputy Dog'):
+        leaked = sorted(allowed_modules_for_role(unknown) - {'dashboard'})
+        if leaked:
+            problems.append(f'unknown role {unknown!r} must not inherit modules {leaked}')
+    for alias in tuple(COMMANDER_ROLE_ALIASES) + ('Chief Commander of Police Office',
+                                                  'Chief Commander', 'chief'):
+        if canonical_unit_role(alias) != ROLE_CHIEF:
+            problems.append(f'commander alias {alias!r} must resolve to {ROLE_CHIEF}')
+        if not is_read_only_user({'role': alias}):
+            problems.append(f'commander alias {alias!r} must be read-only')
+    if not is_read_only_user({'role': ROLE_CHIEF}):
+        problems.append('the command role must be read-only')
+    for verb in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        if verb in READ_ONLY_SAFE_METHODS:
+            problems.append(f'{verb} must never be a safe method')
+    return problems
     ROLE_LOCATION_SCOPE.setdefault(_alias, ROLE_LOCATION_SCOPE[_canonical])
     ROLE_LABELS.setdefault(_alias, ROLE_LABELS[_canonical])
 
 # Capability permissions per canonical role. SystemAdmin keeps every
-# permission (it already sees everything); the Chief Commander holds the
-# global HQ set; unit roles carry only the view permission of their own
+# permission (it already sees everything); the Commander / High Command holds
+# the global HQ READ set plus the `readonly:global` marker — never a write
+# capability; unit roles carry only the view permission of their own
 # department so `has_permission()` answers consistently for every role.
 ROLE_PERMISSIONS = {
     ROLE_ADMIN: set(CHIEF_PERMISSIONS),
-    ROLE_CHIEF: set(CHIEF_PERMISSIONS),
+    ROLE_CHIEF: set(COMMANDER_PERMISSIONS),
     ROLE_FINGERPRINT: {PERM_CID_VIEW},
     ROLE_AIRPORT: {PERM_CID_VIEW},
     ROLE_CID: {PERM_CID_VIEW},
@@ -1138,6 +1360,108 @@ def require_permission(user, permission):
 
 def is_chief_commander(user):
     return bool(user) and canonical_unit_role(user.get('role') or '') == ROLE_CHIEF
+
+
+# ---- global read-only command authority -------------------------------------
+# The Commander / High Command role is a MONITORING role: it can read every
+# dashboard, register, log and search result in the system, but it can never
+# alter data. The rule is enforced centrally (not per route) so a future
+# endpoint can never forget it:
+#
+#   * `enforce_read_only()` runs at the top of every mutating HTTP handler
+#     (do_POST / do_PATCH / do_DELETE) and raises `ReadOnlyRoleError`, which
+#     the handlers translate into an HTTP 403 Forbidden response.
+#   * Reads are untouched: GET / HEAD / OPTIONS always pass, and the sign-in /
+#     sign-out plumbing (/api/login, /api/logout) stays available so a
+#     Commander can actually open and close a session.
+READ_ONLY_ROLES = frozenset({ROLE_CHIEF})
+READ_ONLY_SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+# Every mutating HTTP verb the firewall guards (enforced in do_POST / do_PUT /
+# do_PATCH / do_DELETE). Listed here so the contract is explicit and testable.
+READ_ONLY_BLOCKED_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
+READ_ONLY_EXEMPT_PATHS = frozenset({'/api/login', '/api/logout'})
+
+
+class ReadOnlyRoleError(PermissionError):
+    """A read-only role (Commander / High Command) attempted a write.
+
+    Carries its own HTTP status so the request handlers answer **403
+    Forbidden** instead of the 401 used for ordinary permission failures.
+    """
+
+    status_code = 403
+    http_status = 403
+
+
+def is_read_only_role(role):
+    """True when `role` is a global read-only (view-only) role."""
+    if not role:
+        return False
+    return canonical_unit_role(str(role).strip()) in READ_ONLY_ROLES
+
+
+def is_read_only_user(user):
+    """True when the session user holds the global read-only authority."""
+    if not user:
+        return False
+    # Alias spellings ('commander', 'high_command', ...) all resolve to
+    # ROLE_CHIEF, so both stored and normalized role strings work.
+    if is_read_only_role(user.get('role') or ''):
+        return True
+    return is_read_only_role(normalize_role(user.get('role') or ''))
+
+
+def enforce_read_only(user, method, path=None):
+    """Global write firewall for read-only roles.
+
+    Called by do_POST / do_PATCH / do_DELETE BEFORE any route-specific logic,
+    so the Commander role is refused by the whole API surface rather than by
+    whichever routes happen to remember the check. Raises `ReadOnlyRoleError`
+    (HTTP 403) if a read-only role attempts a mutation.
+    """
+    if not is_read_only_user(user):
+        return
+    verb = str(method or '').upper()
+    if verb in READ_ONLY_SAFE_METHODS:
+        return
+    # POST / PUT / PATCH / DELETE — every mutation, on every path (a future
+    # route cannot forget the check because it lives here, in front of them).
+    p = str(path or '').split('?')[0].rstrip('/') or '/'
+    if p in READ_ONLY_EXEMPT_PATHS:
+        return
+    role = (user or {}).get('role') or ''
+    label = ROLE_LABELS.get(canonical_unit_role(role), 'Commander')
+    raise ReadOnlyRoleError(
+        f'{label} holds global read-only (view-only) access — '
+        f'{verb} {p or "/"} is not permitted. The Commander role can view '
+        'every dashboard, register and search but never alter data.')
+
+
+def unit_role_family(role_key):
+    """Map a normalized role key onto one of the restricted unit families.
+
+    `role_key` is the alphanumeric-lowercase form of a role string
+    (`_role_key`). Returns the canonical role for a recognisable family, or ''
+    when the string names no known unit — which keeps this a *widening* of the
+    alias table rather than a guess: only the two restricted units and the
+    command role are matched, and each match is one of their canonical names.
+    """
+    k = str(role_key or '')
+    if not k:
+        return ''
+    if k.startswith('fingerprint') or k in ('fpofficer', 'fp'):
+        return ROLE_FINGERPRINT
+    if k.startswith('airport') or k in ('apofficer', 'ap'):
+        return ROLE_AIRPORT
+    if (k.startswith('cid') or k.startswith('criminalinvestigation')
+            or k.startswith('criminalunit') or k.startswith('crimeunit')):
+        return ROLE_CID
+    if k.startswith('chiefcommander') or k.startswith('highcommand'):
+        return ROLE_CHIEF
+    if k in ('commander', 'commanderhq', 'hqcommander', 'commandhq', 'hqcommand',
+             'policehq', 'chiefcommand', 'commanderinchief'):
+        return ROLE_CHIEF
+    return ''
 
 
 def canonical_location_scope(scope):
@@ -1226,6 +1550,9 @@ def user_view(user):
     modules = set(ROLE_MODULES.get(raw_role, set())) | \
         set(ROLE_MODULES.get(role_alias, set())) | \
         set(ROLE_MODULES.get(spec_role, set()))
+    # Hard denylist: Airport Control and the CID Criminal Unit never receive
+    # Central Police Search, whatever the three lookups above returned.
+    modules = strip_denied_modules(raw_role, modules)
     return {
         'id': user['id'],
         'username': user['username'],
@@ -1243,6 +1570,10 @@ def user_view(user):
         'location': location,
         'modules': sorted(modules),
         'permissions': sorted(user_permissions(user)),
+        # Global read-only contract (Commander / High Command): the frontend
+        # renders every module in strict view-only mode when this is true.
+        'read_only': is_read_only_role(raw_role),
+        'can_write': not is_read_only_role(raw_role),
         'active': bool(user.get('active', 1)),
     }
 
@@ -1264,13 +1595,11 @@ def require_module(user, module):
     role = user.get('role') or ''
     # Try the raw role first, then the normalised alias — so the
     # module set is resolved for both spellings of the same logical
-    # role.
-    modules = ROLE_MODULES.get(role, set())
-    if module in modules:
+    # role. The hard unit denylist is applied to every lookup, so a denied
+    # module can never be authorised here even if ROLE_MODULES changed.
+    if module in allowed_modules_for_role(role):
         return
-    normalised = normalize_role(role)
-    modules = ROLE_MODULES.get(normalised, set())
-    if module in modules:
+    if module in strip_denied_modules(role, user.get('modules') or []):
         return
     raise PermissionError(
         f'Restricted to {ROLE_LABELS.get(role, role)}')
@@ -1285,11 +1614,11 @@ def user_module_set(user):
     """
     if not user:
         return set()
-    mods = set(user.get('modules') or [])
     role = user.get('role') or ''
-    mods |= set(ROLE_MODULES.get(role, set()))
-    mods |= set(ROLE_MODULES.get(normalize_role(role), set()))
-    mods |= set(ROLE_MODULES.get(spec_role_for(role), set()))
+    mods = allowed_modules_for_role(role)
+    # The caller may hand over an already-resolved list (require_auth does);
+    # the denylist is applied to it as well.
+    mods |= strip_denied_modules(role, user.get('modules') or [])
     return mods
 
 
@@ -1349,13 +1678,22 @@ def filter_visibility(user):
     # canonical SystemAdmin row.
     is_admin = canonical_unit_role(role) == ROLE_ADMIN
     chief = canonical_unit_role(role) == ROLE_CHIEF
+    read_only = is_read_only_role(role)
     return {
         'is_admin': is_admin,
         'is_chief_commander': chief,
         'can_manage_users': is_admin,
         'can_view_analytics': is_admin,
         'can_view_global_analytics': has_permission(user, PERM_ANALYTICS_GLOBAL),
+        # The Commander monitors the station registry read-only, so the
+        # station write form stays hidden for it (SystemAdmin only).
         'can_manage_stations': is_admin or has_permission(user, PERM_STATIONS_MANAGE),
+        # ---- global read-only contract (Commander / High Command) ----------
+        # `read_only` is the single switch the frontend keys every write
+        # control off; `can_write` is its inverse for readability.
+        'read_only': read_only,
+        'is_read_only': read_only,
+        'can_write': not read_only,
         'checkpoint_scope': checkpoint_scope(user),
     }
 
@@ -4032,17 +4370,22 @@ def build_dashboard(c, user):
         cards = []
 
     # ---- Quick-registration buttons ----------------------------------------
+    # The Commander / High Command holds a global READ-ONLY mandate, so it
+    # never receives a quick-registration action: the dashboard renders as a
+    # monitoring surface with a view-only notice instead of write buttons.
     quick = []
-    if is_admin or role == ROLE_AIRPORT or role_alias == ROLE_AIRPORT:
-        quick.append({'id':'add_airport','label':'+ Airport passenger','kind':'primary','page':'airport','module':'airport'})
-    if is_admin or role == ROLE_FINGERPRINT or role_alias == ROLE_FINGERPRINT:
-        quick.append({'id':'add_clearance','label':'+ Clearance application','kind':'secondary','page':'fingerprint','module':'fingerprint'})
-    if is_admin or role == ROLE_CID or role_alias == ROLE_CID:
-        quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
-    if is_admin or is_checkpoint:
-        quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
-    if is_admin or role == ROLE_REGISTRATION or role_alias == ROLE_REGISTRATION:
-        quick.append({'id':'add_conduct','label':'+ New conduct action','kind':'primary','page':'conduct','module':'conduct'})
+    read_only = is_read_only_user(user)
+    if not read_only:
+        if is_admin or role == ROLE_AIRPORT or role_alias == ROLE_AIRPORT:
+            quick.append({'id':'add_airport','label':'+ Airport passenger','kind':'primary','page':'airport','module':'airport'})
+        if is_admin or role == ROLE_FINGERPRINT or role_alias == ROLE_FINGERPRINT:
+            quick.append({'id':'add_clearance','label':'+ Clearance application','kind':'secondary','page':'fingerprint','module':'fingerprint'})
+        if is_admin or role == ROLE_CID or role_alias == ROLE_CID:
+            quick.append({'id':'add_case','label':'+ New crime case','kind':'secondary','page':'cid','module':'cid'})
+        if is_admin or is_checkpoint:
+            quick.append({'id':'add_checkpoint','label':'+ Record checkpoint stop','kind':'primary','page':'checkpoints','module':'checkpoints'})
+        if is_admin or role == ROLE_REGISTRATION or role_alias == ROLE_REGISTRATION:
+            quick.append({'id':'add_conduct','label':'+ New conduct action','kind':'primary','page':'conduct','module':'conduct'})
 
     # ---- Real-time activity stream (filtered to the user's scope) ---------
     events = _build_activity_feed(c, role, is_admin or is_chief, scope, is_checkpoint, now_ts, cp_scope_sql)
@@ -4070,8 +4413,8 @@ def build_dashboard(c, user):
 
     # Spec step 1: also surface the modules list under the
     # normalized role so the frontend can gate on either form.
-    modules_raw = sorted(ROLE_MODULES.get(role, set()))
-    modules_alias = sorted(ROLE_MODULES.get(role_alias, set()))
+    modules_raw = sorted(allowed_modules_for_role(role))
+    modules_alias = sorted(allowed_modules_for_role(role_alias))
     modules = sorted(set(modules_raw) | set(modules_alias))
 
     return {
@@ -4093,9 +4436,12 @@ def build_dashboard(c, user):
         'peak_travel_hour': peak_travel_hour,
         'activity_feed': events,
         'is_chief_commander': is_chief,
+        # Global read-only contract: true for the Commander / High Command.
+        'read_only': read_only,
+        'can_write': not read_only,
         'subhead': (
             'System overview · all units' if is_admin else
-            'HQ / Command · global overview' if is_chief else
+            'HQ / Command · global overview · view-only' if is_chief else
             (f'{scope} Checkpoint operations · live' if is_checkpoint else
              f'{ROLE_LABELS.get(role, role)} · live operations feed')
         ),
@@ -4468,7 +4814,7 @@ class API(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(out)))
         self.send_header('Access-Control-Allow-Origin','*')
         self.send_header('Access-Control-Allow-Headers','Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Methods','GET, POST, PATCH, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods','GET, POST, PUT, PATCH, DELETE, OPTIONS')
         for name, value in (extra_headers or []):
             self.send_header(name, value)
         self.end_headers(); self.wfile.write(out)
@@ -4491,6 +4837,16 @@ class API(BaseHTTPRequestHandler):
         return True
 
     def do_OPTIONS(self): self.send_json(204, {})
+
+    def read_only_403(self, exc, path=None):
+        """Answer an HTTP 403 Forbidden for a read-only-role write attempt.
+
+        The Commander / High Command role is refused by the whole mutation
+        surface (POST / PATCH / DELETE), so this is the single response shape
+        every write route returns for it.
+        """
+        self.send_json(403, {'error': str(exc), 'code': 'read_only_role',
+                             'read_only': True, 'path': path or self.path})
 
     # ---- static pages & uploads --------------------------------------------
     def serve_static(self, path):
@@ -4583,7 +4939,7 @@ class API(BaseHTTPRequestHandler):
                         break
                     if prefix == '/api/vehicles' and (
                             'cars' in (user.get('modules') or [])
-                            or 'policesearch' in (user.get('modules') or [])
+                            or 'policesearch' in user_module_set(user)
                             or 'checkpoints' in (user.get('modules') or [])
                             or 'crimes' in (user.get('modules') or [])):
                         break
@@ -4742,7 +5098,7 @@ class API(BaseHTTPRequestHandler):
                         'role_alias': normalize_role(r_role) if user else '',
                         'is_admin': (r_role == ROLE_ADMIN),
                         'location_scope': checkpoint_scope(user) if user else None,
-                        'modules': sorted(ROLE_MODULES.get(r_role, set())),
+                        'modules': sorted(allowed_modules_for_role(r_role)),
                         'cards': [],
                         'quick_actions': [],
                         'activity': [],
@@ -4753,6 +5109,8 @@ class API(BaseHTTPRequestHandler):
                         'total_travelers': 0,
                         'peak_travel_hour': '—',
                         'activity_feed': [],
+                        'read_only': is_read_only_user(user),
+                        'can_write': not is_read_only_user(user),
                         'subhead': 'Dashboard temporarily unavailable',
                         'degraded': True,
                         'degraded_reason': str(e),
@@ -4943,7 +5301,14 @@ class API(BaseHTTPRequestHandler):
                                extra_headers=[('Set-Cookie',
                                                'sentinel_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax')])
                 return
-            user = require_auth(self); c = get_db_connection()
+            user = require_auth(self)
+            # ---- GLOBAL READ-ONLY FIREWALL ----------------------------------
+            # The Commander / High Command role may read everything and write
+            # nothing: every mutation route answers 403 before any
+            # route-specific logic (login / logout above stay exempt so the
+            # role can still open and close a session).
+            enforce_read_only(user, 'POST', p.path)
+            c = get_db_connection()
             # RBAC: same module gate for the POST/PATCH handlers.
             # Writes follow the documented ownership of each register: the
             # station and vehicle registries are SystemAdmin-write (the HR
@@ -5461,6 +5826,10 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)
+        except ReadOnlyRoleError as e:
+            # Read-only role (Commander / High Command) attempted a write.
+            if c: c.close()
+            self.read_only_403(e)
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
@@ -5482,7 +5851,12 @@ class API(BaseHTTPRequestHandler):
         c = None
         try:
             p = urlparse(self.path)
-            user = require_auth(self); data = body_json(self); c = get_db_connection()
+            user = require_auth(self)
+            # ---- GLOBAL READ-ONLY FIREWALL ----------------------------------
+            # Identical gate to do_POST: the Commander / High Command can read
+            # every record but may never alter one (403 Forbidden).
+            enforce_read_only(user, 'PATCH', p.path)
+            data = body_json(self); c = get_db_connection()
             # RBAC: only admins can edit user records; CID module updates CID cases.
             if p.path.startswith('/api/admin/users'):
                 require_module(user, 'admin')
@@ -5598,6 +5972,10 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
+        except ReadOnlyRoleError as e:
+            # Read-only role (Commander / High Command) attempted a write.
+            if c: c.close()
+            self.read_only_403(e)
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
@@ -5610,6 +5988,57 @@ class API(BaseHTTPRequestHandler):
         except Exception as e:
             if c: c.close()
             self.send_json(500,{'error':str(e)})
+
+    # ---- DELETE -------------------------------------------------------------
+    def do_DELETE(self):
+        """Deletion surface — read-only roles are refused with 403.
+
+        The API exposes no DELETE routes today (every destructive operation is
+        an explicit POST action, e.g. /api/logout), but the global read-only
+        contract covers DELETE too (and PUT, see do_PUT): a Commander / High
+        Command caller always receives **403 Forbidden**, while every other role
+        receives an explicit 405 telling it the method is not exposed. Nothing
+        can therefore silently fall through to the stdlib's 501.
+        """
+        try:
+            p = urlparse(self.path)
+            user = require_auth(self)
+            enforce_read_only(user, 'DELETE', p.path)
+            self.send_json(405, {'error': 'Method DELETE is not supported by this API',
+                                 'method': 'DELETE', 'path': p.path},
+                           extra_headers=[('Allow', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')])
+        except ReadOnlyRoleError as e:
+            self.read_only_403(e)
+        except PermissionError as e:
+            self.send_json(401, {'error': str(e)})
+        except Exception as e:
+            self.send_json(500, {'error': str(e)})
+
+    # ---- PUT ----------------------------------------------------------------
+    def do_PUT(self):
+        """PUT surface — the global read-only firewall covers it too.
+
+        No route of this API is served over PUT (updates use PATCH), but a
+        Commander / High Command caller must never be able to probe the method
+        either: the firewall answers **403 Forbidden** (`code:
+        read_only_role`) before any routing. Every other role receives an
+        explicit 405 naming the verb, so nothing falls through to the stdlib's
+        opaque 501.
+        """
+        try:
+            p = urlparse(self.path)
+            user = require_auth(self)
+            enforce_read_only(user, 'PUT', p.path)
+            self.send_json(405, {'error': 'Method PUT is not supported by this API',
+                                 'method': 'PUT', 'path': p.path},
+                           extra_headers=[('Allow', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')])
+        except ReadOnlyRoleError as e:
+            self.read_only_403(e)
+        except PermissionError as e:
+            self.send_json(401, {'error': str(e)})
+        except Exception as e:
+            self.send_json(500, {'error': str(e)})
+
 
 def _pids_listening_on(port):
     """Best-effort, cross-platform list of PIDs listening on TCP `port`."""
@@ -5711,6 +6140,13 @@ if __name__ == '__main__':
         # Refuse to serve rather than quietly answer approvals unlocked.
         raise SystemExit('FATAL: fingerprint review lock failed its self-test; '
                          'refusing to start an unlocked server.')
+    rbac_problems = rbac_self_test()
+    if rbac_problems:
+        # Same fail-closed rule for the module scoping: a server that would
+        # grant Central Police Search to the Airport / CID units, or that
+        # stopped treating the command role as read-only, must not serve.
+        raise SystemExit('FATAL: RBAC self-test failed; refusing to start:\n' +
+                         ''.join(f'       - {p}\n' for p in rbac_problems))
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
     print(f'  database: PostgreSQL '
@@ -5721,5 +6157,16 @@ if __name__ == '__main__':
           f'(admin/SystemAdmin bypasses, every other role is locked)')
     print(f'  {review_lock_self_test()}')
     print(f'  clearance reasons: {", ".join(CLEARANCE_REASONS)}')
+    # RBAC self-report: the two guarantees an operator most often needs to
+    # confirm against a running process (and the ones this build changed).
+    print('  RBAC: Central Police Search is NOT granted to '
+          f'{", ".join(sorted(r for r in (ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID)))}')
+    print('  RBAC: global read-only roles '
+          f'{", ".join(sorted(READ_ONLY_ROLES))} — '
+          f'{", ".join(sorted(READ_ONLY_BLOCKED_METHODS))} away from '
+          f'{", ".join(sorted(READ_ONLY_EXEMPT_PATHS))} answer 403 Forbidden')
+    print('  RBAC self-test: PASS — module denylist in force for '
+          f'{", ".join(sorted(UNIT_MODULE_DENY))}, '
+          f'read-only roles: {", ".join(sorted(READ_ONLY_ROLES))}')
     print(f'  pid {os.getpid()}  started {SERVER_STARTED_AT}')
     bind_server(port).serve_forever()

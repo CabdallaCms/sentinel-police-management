@@ -41,7 +41,7 @@ password `ChangeMe123!`:
 | Username     | Role                | Scope / Module             |
 |--------------|---------------------|----------------------------|
 | `admin`      | System Administrator| All modules + analytics + user management |
-| `fp.officer` | Fingerprint Unit    | Fingerprint only           |
+| `fp.officer` | Fingerprint Unit    | Biometrics register · Central Person Search (no police search) |
 | `ap.officer` | Airport Control     | Airport only               |
 | `cid.officer`| CID Criminal Unit   | CID / suspect alerts only  |
 | `hr.officer` | HR Directorate      | Police Officers register (roster + green promotions + red discipline), `stations` read, central search |
@@ -250,6 +250,8 @@ so the server owns all the arithmetic.
 - `GET /api/stations/analytics` (`stations` / `crimes`) — operational capacity by tier (Regional HQ, District HQ, Outpost, Checkpoint, Border Post), status counts, cell capacity totals/averages, and the **deployment matrix** (stations, officers, *active* officers and vehicles per region and per station across Sool · Sanaag · East Togdheer) with the unstaffed-station list.
 - `GET /api/analytics?module=cid|officers|vehicles|stations|all` — unified alias for the same builders (`hr` / `cars` / `station` are accepted aliases; an unknown module answers **400**). `module=all` returns every bundle the caller may see and omits the rest.
 - `GET /api/officers/promotions` / `GET /api/officers/discipline` (`officers` module) — the raw HR lists behind the badges.
+- **Global read-only firewall** — `enforce_read_only()` runs in `do_POST` / `do_PUT` / `do_PATCH` / `do_DELETE` directly after authentication, so the read-only command role (`chief_commander`, alias `Commander` / `high_command` / `HighCommand` / `command_hq` / `hq_command` / `police_hq`) is refused with **403 Forbidden** on every mutation route (`code: read_only_role`). The check precedes routing, so unknown paths are refused with 403 as well and `PUT` never reaches its 405. Reads, `GET`/`HEAD`/`OPTIONS` and `POST /api/login` + `POST /api/logout` are unaffected; `user_view()` / `filter_visibility()` expose `read_only` / `can_write` so clients render the same rule, and `CORS Access-Control-Allow-Methods` advertises PUT so the firewall — not a browser preflight — is what refuses it.
+- **Unit module denylist** — `policesearch` is part of the System Admin, HR Directorate and Chief Commander module sets (the Fingerprint Unit, Airport Control and CID Criminal Unit are all denied it), and is deliberately absent from `ROLE_MODULES['AirportControl']` and `ROLE_MODULES['CIDUnit']` (those units hold only their own module plus `people`). The rule is enforced again at runtime by `UNIT_MODULE_DENY` / `denied_modules_for_role()` / `strip_denied_modules()` on every module list the server emits or checks, `unit_role_family()` resolves label-style role spellings (`'Airport Control Officer'`, `'CID Criminal Unit'`, `'Crime Unit'`, …) to their real role, and an unrecognised role is fail-closed (dashboard only) instead of inheriting the review-lock default module set. `rbac_self_test()` runs at start-up and the server refuses to serve when the denylist or the read-only command role is not in force.
 - `POST /api/officers/promotions` (`officers` module) — nominate an officer for promotion (`PRM-YYYY-XXXX`); validates the officer exists and the proposed rank is a different, valid `OFFICER_RANKS` value; defaults to `Awaiting Verification`.
 - `PATCH /api/officers/promotions/{nomination_id}` (`officers` module) — commander verification (`Verified` / `Rejected` / `Awaiting Verification`); stamps `verified_by` + `verified_at`.
 - `POST /api/officers/discipline` (`officers` module) — record a disciplinary action (`DSC-YYYY-XXXX`); a `Demotion` must name a strictly junior `to_rank`.
@@ -263,10 +265,17 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 ```bash
 python3 backend/test_server.py        # API suite (Python stdlib only)
 python3 backend/test_review_gate.py   # 12h review gate + admin bypass (API)
+python3 backend/test_read_only_rbac.py # unit-module denylist + global read-only Commander (PostgreSQL)
 node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18)
 node backend/test_approval_flow.mjs   # approve/print button journey (Node >= 18)
 node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node >= 18)
 ```
+
+The backend serves **PostgreSQL only** (`SENTINEL_DB_NAME` / `_USER` / `_PASSWORD` / `_HOST` /
+`_PORT`). `test_read_only_rbac.py` and `test_frontend_session.mjs` therefore boot the API against a
+PostgreSQL database: they use an already-configured server when `SENTINEL_DB_HOST` /
+`SENTINEL_DB_NAME` are set, otherwise a throwaway cluster via the `pgserver` pip package
+(`pip install pgserver`), and print `SKIP` when neither is available.
 
 The backend suite starts the server against a temporary database and
 verifies the **departmental analytics arithmetic** (a second, isolated

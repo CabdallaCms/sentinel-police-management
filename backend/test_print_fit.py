@@ -288,6 +288,29 @@ check('certificate.html: long-date + uppercase filters mirrored (d F Y / upper)'
       'function dmyLong(' in cert and 'function upper(' in cert)
 
 # ---------------------------------------------------------------------------
+# 3b. Global read-only (Commander / High Command) contract on the printable
+#     review page: the command role reads and prints, it never approves.
+# ---------------------------------------------------------------------------
+check('application.html: the approve control carries the data-write marker',
+      'data-write="1" id="approveBtn"' in app)
+check('application.html: read-only CSS removes marked write controls',
+      'body.readonly-mode [data-write]' in app)
+check('application.html: a view-only note element is present',
+      'id="roNote"' in app and "getElementById('roNote')" in app)
+check('application.html: the read-only state is seeded from the stored session (fail-closed)',
+      "localStorage.getItem('sentinel_user')" in app and 'isReadOnly' in app)
+check('application.html: /api/me read_only / can_write drives the view-only mode',
+      'me.read_only===true||me.can_write===false' in app)
+check('application.html: applyReadOnlyUi() hides the approve control',
+      'function applyReadOnlyUi(' in app and "btn.style.display=ro?'none':''" in app)
+check('application.html: render() never re-shows Approve for a read-only session',
+      "btn.style.display=(approved||isReadOnly)?'none':''" in app)
+check('application.html: approve() refuses locally (no request) for a read-only session',
+      'if(isReadOnly){ toast(' in app and 'approvals are disabled for this role' in app)
+check('certificate.html: exposes no mutation control (print + view only)',
+      'onclick="approve(' not in cert and 'data-write' not in cert)
+
+# ---------------------------------------------------------------------------
 # 4. Blueprint fidelity (official wording, verbatim)
 # ---------------------------------------------------------------------------
 for marker in ['CODSIGA SHAHAADADA DAMBI-LA\'AANTA',
