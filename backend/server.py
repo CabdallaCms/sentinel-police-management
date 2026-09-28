@@ -1405,6 +1405,23 @@ class ReadOnlyRoleError(PermissionError):
     http_status = 403
 
 
+class ConflictError(Exception):
+    """The request conflicts with the current state of the data -> HTTP 409.
+
+    The request itself is well-formed and authorised, but it cannot be
+    applied against the records that exist right now — e.g. deleting a
+    station that officers / incidents still foreign-key-reference. The
+    database raises `psycopg2.IntegrityError` for the same situation; both
+    are funnelled into this type so the handler can answer a descriptive
+    **409 Conflict** instead of an unhandled 500. Any `extra` payload is
+    merged into the JSON body.
+    """
+
+    def __init__(self, message, **extra):
+        super().__init__(message)
+        self.extra = extra
+
+
 def is_read_only_role(role):
     """True when `role` is a global read-only (view-only) role."""
     if not role:
@@ -2401,6 +2418,71 @@ def register_station(c, user, data):
     row = c.execute('SELECT * FROM police_stations WHERE station_id=%s',
                     (station_id,)).fetchone()
     return station_view(row)
+
+
+# Dependents that block station deletion — (table, human phrasing). Extend
+# this list if a new table ever FKs into police_stations; the IntegrityError
+# safety net below still catches anything missed.
+STATION_DELETE_DEPENDENTS = (
+    ('officers', 'officer(s) assigned to it'),
+    ('crime_incidents', 'crime incident(s) filed at it'),
+    ('officer_conduct_actions', 'conduct action(s) recorded by it'),
+    ('vehicles', 'vehicle(s) attached to it'),
+)
+
+
+def delete_station(c, user, ref):
+    """Delete a police station by public code ('STN-…') or integer row id.
+
+    A station that operational records still reference must never vanish —
+    and must also never blow up as a 500: the dependents are counted first
+    so the refusal is descriptive, and any remaining foreign-key violation
+    (anything unlisted, or a last-moment concurrent insert) is caught as
+    ``psycopg2.IntegrityError`` and re-raised as ``ConflictError``. Both
+    paths answer HTTP 409 Conflict from the DELETE route.
+    """
+    require_module(user, 'stations')
+    ref = str(ref or '').strip()
+    if not ref:
+        raise ValueError('station id or code is required')
+    row = None
+    if ref.isdigit():
+        row = c.execute('SELECT * FROM police_stations WHERE id=%s', (int(ref),)).fetchone()
+    if row is None:
+        row = c.execute('SELECT * FROM police_stations WHERE UPPER(station_id)=UPPER(%s)',
+                        (ref,)).fetchone()
+    if not row:
+        raise LookupError(f'Station not found: {ref}')
+    pk = row['id']
+    label = f"{row['name']} ({row['station_id']})"
+    dependents = {}
+    phrases = []
+    for table, noun in STATION_DELETE_DEPENDENTS:
+        n = c.execute(f'SELECT COUNT(*) FROM {table} WHERE station_id=%s',
+                      (pk,)).fetchone()[0]
+        if n:
+            dependents[table] = n
+            phrases.append(f'{n} {noun}')
+    if phrases:
+        raise ConflictError(
+            f"Cannot delete station {label}: it is still referenced by "
+            + ', '.join(phrases)
+            + '. Reassign or remove those records first.',
+            code='station_in_use', dependents=dependents, station=station_view(row))
+    try:
+        c.execute('DELETE FROM police_stations WHERE id=%s', (pk,))
+    except psycopg2.IntegrityError as e:
+        # A failed statement aborts the transaction — roll it back so this
+        # per-request connection stays usable, then answer 409.
+        c.rollback()
+        constraint = getattr(getattr(e, 'diag', None), 'constraint_name', None)
+        raise ConflictError(
+            'Cannot delete station '
+            f"{label}: other records still reference it"
+            + (f' (constraint {constraint})' if constraint else '')
+            + '. Reassign or remove them first.',
+            code='station_in_use', dependents={}, station=station_view(row)) from e
+    return row
 
 
 def register_crime(c, user, fields, files):
@@ -6038,25 +6120,52 @@ class API(BaseHTTPRequestHandler):
     def do_DELETE(self):
         """Deletion surface — read-only roles are refused with 403.
 
-        The API exposes no DELETE routes today (every destructive operation is
-        an explicit POST action, e.g. /api/logout), but the global read-only
-        contract covers DELETE too (and PUT, see do_PUT): a Commander / High
-        Command caller always receives **403 Forbidden**, while every other role
-        receives an explicit 405 telling it the method is not exposed. Nothing
-        can therefore silently fall through to the stdlib's 501.
+        One route exists: ``DELETE /api/stations/<ref>`` (`stations` module)
+        removes an unused station (ref is its public `STN-…` code or integer
+        row id). A station that operational records still reference answers
+        **409 Conflict** (`code: station_in_use`) with the blocking counts —
+        the foreign keys guarantee it can never be silently deleted, and the
+        caught ``psycopg2.IntegrityError`` means it never 500s either. An
+        unknown station answers 404, every other DELETE path keeps the
+        explicit **405**, and the global read-only firewall answers **403
+        Forbidden** for a Commander / High Command caller before routing.
         """
+        c = None
         try:
             p = urlparse(self.path)
             user = require_auth(self)
             enforce_read_only(user, 'DELETE', p.path)
+            if p.path.startswith('/api/stations/'):
+                c = get_db_connection()
+                ref = p.path.split('/', 3)[3]
+                row = delete_station(c, user, ref)
+                audit(c, user, 'DELETE', 'police_station', row['station_id'],
+                      f"{row['name']} ({row['code']}) deleted")
+                c.commit()
+                c.close()
+                self.send_json(200, {'deleted': True, 'station': station_view(row)})
+                return
             self.send_json(405, {'error': 'Method DELETE is not supported by this API',
                                  'method': 'DELETE', 'path': p.path},
                            extra_headers=[('Allow', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')])
         except ReadOnlyRoleError as e:
+            if c: c.close()
             self.read_only_403(e)
         except PermissionError as e:
+            if c: c.close()
             self.send_json(401, {'error': str(e)})
+        except ConflictError as e:
+            # 409 — station (or similar) still referenced by other records.
+            if c: c.close()
+            self.send_json(409, {'error': str(e), **e.extra})
+        except LookupError as e:
+            if c: c.close()
+            self.send_json(404, {'error': str(e)})
+        except ValueError as e:
+            if c: c.close()
+            self.send_json(400, {'error': str(e)})
         except Exception as e:
+            if c: c.close()
             self.send_json(500, {'error': str(e)})
 
     # ---- PUT ----------------------------------------------------------------
