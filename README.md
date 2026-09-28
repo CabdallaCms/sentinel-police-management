@@ -329,11 +329,12 @@ officer whose `duty_status` is `Active`; the **red badge** counts actions still 
 
 The **User Management** page (admin only) lets a System Admin create, edit, activate and deactivate officers and assign their role and location scope. The backend supports `GET /api/admin/users`, `POST /api/admin/users`, `PATCH /api/admin/users/{id}` and `GET /api/admin/users/{id}` for headless provisioning.
 
-A standalone migration script applies the RBAC schema to an existing database without re-creating it:
-
-```bash
-python3 backend/migrate_rbac.py
-```
+The RBAC schema and the demo users are applied automatically: `backend/server.py`
+runs its idempotent `migrate()` (plus the seed pass) against the configured
+PostgreSQL database on every startup, and `python3 backend/database.py` creates
+the same canonical schema ahead of time. The retired
+`python3 backend/migrate_rbac.py` script targeted the old SQLite file database
+and no longer applies.
 
 ## Architecture
 

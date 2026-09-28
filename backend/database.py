@@ -1,84 +1,56 @@
-import os
-import psycopg2
+#!/usr/bin/env python3
+"""Initialise the Sentinel PostgreSQL schema from the command line.
 
-def load_env_file():
-    """Reads the .env configuration file explicitly using only the Python standard library."""
-    # Find the root folder path where the .env file lives
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env_path = os.path.join(base_dir, '.env')
-    
-    if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            for line in f:
-                # Clean up lines and ignore comments or empty entries
-                line = line.strip()
-                if not line or line.startswith('#') or '=' not in line:
-                    continue
-                key, val = line.split('=', 1)
-                # Save the parameter configuration straight to your environment system
-                os.environ[key.strip()] = val.strip()
+This script delegates to the canonical definitions in ``server.py``:
+``SCHEMA`` + ``VEHICLES_SCHEMA`` create any missing table and
+``server.migrate()`` applies every in-place column migration, relaxation
+and backfill. A database created here is therefore indistinguishable from
+one the API server created itself, so the two entry points can be run in
+either order — running ``database.py`` first no longer produces a
+``persons`` table whose shape predates the canonical schema (the legacy
+standalone DDL lacked ``full_name`` / ``national_id`` / ``date_of_birth`` /
+``phone`` and crashed ``server.migrate()`` with
+``UndefinedColumn: column "full_name" does not exist``).
+
+Usage::
+
+    python3 backend/database.py
+
+Connection settings come from the project-root ``.env`` (loaded by
+``server.py`` at import time) or real environment variables:
+``SENTINEL_DB_NAME`` / ``SENTINEL_DB_USER`` / ``SENTINEL_DB_PASSWORD`` /
+``SENTINEL_DB_HOST`` / ``SENTINEL_DB_PORT``.
+"""
+import os
+import sys
+
+# This script lives in backend/ next to server.py; make the sibling import
+# work no matter which directory the user invokes it from.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 def init_postgresql_schema():
-    # Load the environment details before starting the database connection engine
-    load_env_file()
-    
     try:
+        import server  # noqa: E402  (loads the root .env at import time)
+
         print("Connecting to your local PostgreSQL Cluster...")
-        conn = psycopg2.connect(
-            dbname=os.environ.get('SENTINEL_DB_NAME', 'sentinel_police'),
-            user=os.environ.get('SENTINEL_DB_USER', 'postgres'),
-            password=os.environ.get('SENTINEL_DB_PASSWORD', ''),
-            host=os.environ.get('SENTINEL_DB_HOST', '127.0.0.1'),
-            port=os.environ.get('SENTINEL_DB_PORT', '5432')
-        )
-        cur = conn.cursor()
-        
-        # 1. Central Persons Registry Table
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS persons (
-            id SERIAL PRIMARY KEY,
-            person_id VARCHAR(50) UNIQUE NOT NULL,
-            first_name VARCHAR(100) NOT NULL,
-            second_name VARCHAR(100) NOT NULL,
-            third_name VARCHAR(100) NOT NULL,
-            fourth_name VARCHAR(100) NOT NULL,
-            mother_name VARCHAR(255),
-            dob DATE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-        
-        # 2. Police Officers Core HR Roster Table
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS officers (
-            id SERIAL PRIMARY KEY,
-            service_id VARCHAR(50) UNIQUE NOT NULL,
-            full_name VARCHAR(255) NOT NULL,
-            rank VARCHAR(100) NOT NULL,
-            assigned_station VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-        
-        # 3. Officer Immutable Service History Table
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS officer_service_history (
-            id SERIAL PRIMARY KEY,
-            officer_id VARCHAR(50) REFERENCES officers(service_id) ON DELETE CASCADE,
-            action_type VARCHAR(100) NOT NULL,
-            narrative TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-        
+        conn = server.get_db_connection()
+
+        # Canoncial table set (vehicles registry included), then every
+        # in-place migration — idempotent, safe on a fresh or a populated
+        # database.
+        conn.executescript(server.SCHEMA)
+        conn.executescript(server.VEHICLES_SCHEMA)
+        server.migrate(conn)
+
         conn.commit()
-        cur.close()
         conn.close()
         print("SUCCESS: Relational database structures created successfully inside pgAdmin!")
-        
-    except (Exception, psycopg2.DatabaseError) as error:
+
+    except Exception as error:
         print(f"\nDATABASE CONNECTION ERROR: {error}")
         print("Please double-check your SENTINEL_DB_PASSWORD inside your .env file.")
+
 
 if __name__ == '__main__':
     init_postgresql_schema()

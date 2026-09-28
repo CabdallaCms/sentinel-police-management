@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Regression tests for the Sentinel backend.
 
-Standard library only. Starts the API against a temporary SQLite database,
-then verifies the identity-resolution tiers, optional suspect case linking,
-auto-create behaviour and the migrations.
+Standard library only. Starts the API against a throwaway PostgreSQL
+database on the configured cluster (root .env / SENTINEL_DB_*, see
+pg_fixture_db.py), then verifies the identity-resolution tiers, optional
+suspect case linking, auto-create behaviour and the migrations.
 
 Usage:
     python3 backend/test_server.py
@@ -12,13 +13,14 @@ import datetime
 import json
 import os
 import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
+
+import pg_fixture_db
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SERVER = os.path.join(ROOT, 'server.py')
@@ -137,8 +139,8 @@ def departmental_analytics_suite():
     """Boot an isolated Sentinel server and verify every department's maths."""
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-analytics-')
-    db_path = os.path.join(tmp, 'analytics.db')
-    env = dict(os.environ, SENTINEL_DB=db_path, PORT=str(port),
+    dbname, db_env, drop_db = pg_fixture_db.temp_database('sentinel_analytics')
+    env = dict(os.environ, **db_env, PORT=str(port),
                SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
     proc = subprocess.Popen([sys.executable, SERVER], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -163,8 +165,7 @@ def departmental_analytics_suite():
         admin = tokens['admin']
 
         def sql(statement, params=(), fetch=False):
-            conn = sqlite3.connect(db_path, timeout=10)
-            conn.row_factory = sqlite3.Row
+            conn = pg_fixture_db.connect(dbname)
             try:
                 cur = conn.execute(statement, params)
                 rows = [dict(r) for r in cur.fetchall()] if fetch else None
@@ -664,11 +665,15 @@ def departmental_analytics_suite():
         assert s == 400 and 'module must be one of' in r['error'], (s, r)
 
         # The dispatcher applies the same per-module RBAC as the direct routes.
+        # Fingerprint Unit no longer holds a fleet-read module ('cars' /
+        # 'policesearch' / 'checkpoints' / 'crimes' — see ROLE_MODULES and the
+        # denylist contract asserted by test_read_only_rbac.py), so its
+        # vehicles bundle answers 401; CID keeps the read through 'crimes'.
         for username, path, expected in (
                 ('fp.officer', '/api/analytics?module=officers', 401),
                 ('fp.officer', '/api/analytics?module=stations', 401),
                 ('fp.officer', '/api/analytics?module=cid', 200),
-                ('fp.officer', '/api/analytics?module=vehicles', 200),
+                ('fp.officer', '/api/analytics?module=vehicles', 401),
                 ('cid.officer', '/api/analytics?module=officers', 401),
                 ('cid.officer', '/api/analytics?module=stations', 200),
                 ('cp.south', '/api/analytics?module=officers', 401),
@@ -684,7 +689,7 @@ def departmental_analytics_suite():
             assert s == expected, (username, path, s, expected, r)
         # module=all silently omits the bundles the caller may not see.
         s, r = request(base, 'GET', '/api/analytics?module=all', tokens['fp.officer'])
-        assert s == 200 and r['modules'] == ['cid', 'vehicles'], (s, r)
+        assert s == 200 and r['modules'] == ['cid'], (s, r)
         assert r['bundles']['cid']['sections'] == ['fingerprint'], r
         s, r = request(base, 'GET', '/api/analytics?module=all', tokens['cp.south'])
         assert s == 200 and r['modules'] == ['cid', 'vehicles'], (s, r)
@@ -710,6 +715,7 @@ def departmental_analytics_suite():
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+        drop_db()
 
 
 def hr_directorate_suite():
@@ -722,8 +728,8 @@ def hr_directorate_suite():
     """
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-hr-')
-    db_path = os.path.join(tmp, 'hr.db')
-    env = dict(os.environ, SENTINEL_DB=db_path, PORT=str(port),
+    dbname, db_env, drop_db = pg_fixture_db.temp_database('sentinel_hr')
+    env = dict(os.environ, **db_env, PORT=str(port),
                SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
     proc = subprocess.Popen([sys.executable, SERVER], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -961,6 +967,7 @@ def hr_directorate_suite():
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+        drop_db()
 
 def chief_commander_suite():
     """Commander / Chief Commander of Police Office (HQ / Command) — `chief_commander`.
@@ -972,8 +979,8 @@ def chief_commander_suite():
     """
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-chief-')
-    db_path = os.path.join(tmp, 'chief.db')
-    env = dict(os.environ, SENTINEL_DB=db_path, PORT=str(port),
+    dbname, db_env, drop_db = pg_fixture_db.temp_database('sentinel_chief')
+    env = dict(os.environ, **db_env, PORT=str(port),
                SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
     proc = subprocess.Popen([sys.executable, SERVER], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1108,8 +1115,13 @@ def chief_commander_suite():
         s, again = request(base, 'POST', '/api/login',
                            body={'username': 'chief', 'password': 'ChangeMe123!'})
         assert s == 200 and again['user']['read_only'] is True, (s, again)
+        # Logout revoked the previous token everywhere (in-memory cache and
+        # the persistent sessions table), so the fresh login's token must be
+        # used from here on.
+        chief = again['token']
         # The dashboard drops quick-registration actions for this role.
         s, d = request(base, 'GET', '/api/dashboard', chief)
+        assert s == 200, (s, d)
         assert d['read_only'] is True and d['can_write'] is False, d
         assert d['quick_actions'] == [], d['quick_actions']
         assert 'view-only' in d['subhead'], d['subhead']
@@ -1125,13 +1137,14 @@ def chief_commander_suite():
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+        drop_db()
 
 
 def main():
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-test-')
-    db_path = os.path.join(tmp, 'test.db')
-    env = dict(os.environ, SENTINEL_DB=db_path, PORT=str(port), SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
+    dbname, db_env, drop_db = pg_fixture_db.temp_database('sentinel_main')
+    env = dict(os.environ, **db_env, PORT=str(port), SENTINEL_UPLOADS=os.path.join(tmp, 'uploads'))
     proc = subprocess.Popen([sys.executable, SERVER], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f'http://127.0.0.1:{port}'
@@ -2242,7 +2255,7 @@ def main():
             """Rewrite created_at to `hours` in the past (simulates elapsed time)."""
             stamp = (datetime.datetime.now(datetime.timezone.utc)
                      - datetime.timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
-            conn = sqlite3.connect(db_path, timeout=10)
+            conn = pg_fixture_db.connect(dbname)
             try:
                 conn.execute('UPDATE clearance_applications SET created_at=? WHERE application_id=?',
                              (stamp, application_id))
@@ -2395,7 +2408,7 @@ def main():
         s, created = new_clearance(tokens['admin'], '55500055', purpose='Travel')
         assert s == 201, created
         nostamp_app = created['application_id']
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = pg_fixture_db.connect(dbname)
         try:
             conn.execute('UPDATE clearance_applications SET created_at=NULL WHERE application_id=?',
                          (nostamp_app,))
@@ -2481,7 +2494,7 @@ def main():
         # still resolves to the Fingerprint modules and the 12-hour gate.
         sys.path.insert(0, ROOT)
         import server as sentinel_server
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = pg_fixture_db.connect(dbname)
         try:
             conn.execute("INSERT INTO users(username,display_name,role,branch,password_hash,active) "
                          "VALUES('legacy.fp','Legacy FP','fingerprint_officer','Fingerprint Unit',?,1)",
@@ -2789,7 +2802,7 @@ def main():
             'narrative': 'Commendation file CF-2026-31: outstanding traffic-control duty.'})
         assert s == 201, (s, r)
         stale = r['action_id']
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = pg_fixture_db.connect(dbname)
         try:  # POL-2026-0002 is a Constable; jump him to Inspector behind HR's back
             conn.execute("UPDATE officers SET rank='Inspector' WHERE service_id='POL-2026-0002'")
             conn.commit()
@@ -2887,8 +2900,7 @@ def main():
 
         # The immutable service-history rows are plain audit records: the
         # review endpoint never rewrites them (one row per approval above).
-        conn = sqlite3.connect(db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
+        conn = pg_fixture_db.connect(dbname)
         try:
             rows = [dict(x) for x in conn.execute(
                 'SELECT officer_id, entry_type, from_rank, to_rank FROM officer_service_history '
@@ -2960,8 +2972,9 @@ def main():
 
         audit = os.path.join(os.path.dirname(SERVER), 'audit_instant_approvals.py')
         run = lambda *extra: subprocess.run(
-            [sys.executable, audit, '--db', db_path, '--json', *extra],
-            capture_output=True, text=True, timeout=120)
+            [sys.executable, audit, '--json', *extra],
+            capture_output=True, text=True, timeout=120,
+            env=dict(os.environ, **db_env))
 
         clean = run()
         assert clean.returncode == 0, clean.stdout + clean.stderr
@@ -2970,7 +2983,7 @@ def main():
         # Rewrite the row to look like an instant approval (what a stale
         # server leaves behind: reviewed_at == created_at) and re-audit.
         now_stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = pg_fixture_db.connect(dbname)
         try:
             conn.execute('UPDATE clearance_applications SET created_at=?, reviewed_at=? '
                          'WHERE application_id=?', (now_stamp, now_stamp, audit_app))
@@ -2987,8 +3000,7 @@ def main():
 
         reverted = run('--revert', '--yes')
         assert reverted.returncode == 1, reverted.stdout + reverted.stderr  # still reports
-        conn = sqlite3.connect(db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
+        conn = pg_fixture_db.connect(dbname)
         try:
             row = conn.execute('SELECT status,certificate_number,reviewed_at '
                                'FROM clearance_applications WHERE application_id=?',
@@ -3029,6 +3041,7 @@ def main():
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+        drop_db()
 
 
 if __name__ == '__main__':

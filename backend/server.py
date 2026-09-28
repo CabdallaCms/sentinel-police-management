@@ -36,7 +36,10 @@ def load_env_file():
                 line = line.strip()
                 if not line or line.startswith('#') or '=' not in line: continue
                 key, val = line.split('=', 1)
-                os.environ[key.strip()] = val.strip()
+                # Seed only: REAL environment variables win over the .env
+                # file (per .env.example), so test harnesses can aim a spawned
+                # server at a throwaway database via SENTINEL_DB_* overrides.
+                os.environ.setdefault(key.strip(), val.strip())
 
 
 # Load the project-root .env into the process environment BEFORE any of the
@@ -339,6 +342,13 @@ ADDED_COLUMNS = {
         ('location_scope', "ALTER TABLE users ADD COLUMN location_scope TEXT"),
     ],
     'persons': [
+        # Databases initialised by the legacy standalone backend/database.py
+        # script lack these columns entirely — the SCHEMA block only writes
+        # them when it creates the table on a fresh database.
+        ('full_name', "ALTER TABLE persons ADD COLUMN full_name TEXT"),
+        ('national_id', "ALTER TABLE persons ADD COLUMN national_id TEXT"),
+        ('date_of_birth', "ALTER TABLE persons ADD COLUMN date_of_birth TEXT"),
+        ('phone', "ALTER TABLE persons ADD COLUMN phone TEXT"),
         ('first_name', "ALTER TABLE persons ADD COLUMN first_name TEXT"),
         ('second_name', "ALTER TABLE persons ADD COLUMN second_name TEXT"),
         ('third_name', "ALTER TABLE persons ADD COLUMN third_name TEXT"),
@@ -349,6 +359,8 @@ ADDED_COLUMNS = {
         ('occupation', "ALTER TABLE persons ADD COLUMN occupation TEXT"),
         ('passport_id', "ALTER TABLE persons ADD COLUMN passport_id TEXT"),
         ('photo_path', "ALTER TABLE persons ADD COLUMN photo_path TEXT"),
+        ('updated_at', "ALTER TABLE persons ADD COLUMN updated_at TEXT "
+                       "DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))"),
     ],
     'airport_passengers': [
         ('airline', "ALTER TABLE airport_passengers ADD COLUMN airline TEXT"),
@@ -1788,6 +1800,30 @@ def migrate(c):
     # Existing case-linked suspects are recorded as case links.
     c.execute("UPDATE suspect_alerts SET origin='Case Link' "
               "WHERE case_id IS NOT NULL AND origin='Direct Intelligence Listing'")
+    # Converge databases first created by the legacy standalone
+    # backend/database.py script. That schema pre-dates the canonical persons
+    # table: it has no full_name / national_id / date_of_birth / phone
+    # (added above), carries an extra NOT NULL `dob` DATE column the server
+    # never writes, and stores created_at as a native TIMESTAMP whose
+    # datetime values the JSON layer cannot serialise.
+    if 'persons' in tables:
+        pcols = {r['name'] for r in c.execute(
+            "SELECT column_name AS name FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='persons'")}
+        if 'dob' in pcols:
+            if has_notnull(c, 'persons', 'dob'):
+                relax_not_null(c, 'persons', 'dob')
+            c.execute("UPDATE persons SET date_of_birth = to_char(dob, 'YYYY-MM-DD') "
+                      "WHERE (date_of_birth IS NULL OR TRIM(date_of_birth) = '') "
+                      "AND dob IS NOT NULL")
+        ts = c.execute("SELECT data_type FROM information_schema.columns "
+                       "WHERE table_schema='public' AND table_name='persons' "
+                       "AND column_name='created_at'").fetchone()
+        if ts and str(ts['data_type']).startswith('timestamp'):
+            c.execute("ALTER TABLE persons ALTER COLUMN created_at TYPE TEXT "
+                      "USING to_char(created_at, 'YYYY-MM-DD HH24:MI:SS')")
+            c.execute("ALTER TABLE persons ALTER COLUMN created_at SET DEFAULT "
+                      "(to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))")
     # Backfill 4-part name columns from legacy full_name values.
     rows = c.execute("SELECT id,full_name FROM persons "
                      "WHERE TRIM(COALESCE(first_name,''))=''").fetchall()
@@ -1795,6 +1831,12 @@ def migrate(c):
         a, b, d, e = raw_parts(r['full_name'])
         c.execute('UPDATE persons SET first_name=%s,second_name=%s,third_name=%s,fourth_name=%s WHERE id=%s',
                   (a, b, d, e, r['id']))
+    # The reverse direction for databases the legacy database.py script
+    # created: the 4-part names exist but full_name was never recorded.
+    c.execute("UPDATE persons SET full_name = TRIM(CONCAT_WS(' ', "
+              "NULLIF(TRIM(first_name), ''), NULLIF(TRIM(second_name), ''), "
+              "NULLIF(TRIM(third_name), ''), NULLIF(TRIM(fourth_name), ''))) "
+              "WHERE full_name IS NULL OR TRIM(full_name) = ''")
     # Backfill the explicit checkpoint location metadata so the dashboard
     # and identity profile can show 'Checkpoint (South)' for legacy rows
     # where only the short 'location' code is present.
@@ -3722,7 +3764,10 @@ def update_discipline(c, user, action_id, data):
             c.execute("UPDATE officers SET duty_status='Suspended' WHERE id=%s "
                       "AND duty_status NOT IN ('Terminated','Retired')", (officer_id,))
         elif action['status'] == 'Closed':
-            placeholders = ','.join('%s' * len(DISCIPLINE_OPEN_STATUSES))
+            # NB: join over a LIST of '%s' tokens — ','.join('%s' * n) would
+            # iterate the string's characters into '%,s,%,s', which psycopg2
+            # rejects with "unsupported format character ','".
+            placeholders = ','.join(['%s'] * len(DISCIPLINE_OPEN_STATUSES))
             sql = ('SELECT COUNT(*) FROM officer_discipline WHERE officer_id=%s '
                    'AND action_id<>%s AND status IN (' + placeholders + ')')
             still_open = c.execute(sql, (officer_id, action_id) + tuple(DISCIPLINE_OPEN_STATUSES)).fetchone()[0]

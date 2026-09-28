@@ -272,10 +272,15 @@ node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node
 ```
 
 The backend serves **PostgreSQL only** (`SENTINEL_DB_NAME` / `_USER` / `_PASSWORD` / `_HOST` /
-`_PORT`). `test_read_only_rbac.py` and `test_frontend_session.mjs` therefore boot the API against a
-PostgreSQL database: they use an already-configured server when `SENTINEL_DB_HOST` /
+`_PORT`). All Python suites boot the API against a **throwaway database on the configured
+cluster** (created and dropped per run by `backend/pg_fixture_db.py`, which also supplies the
+suites' direct fixture connections with sqlite-style `?` placeholders), so no test ever writes
+into the configured development database. `test_read_only_rbac.py` and `test_frontend_session.mjs`
+can instead target a separate cluster: they use the configured server when `SENTINEL_DB_HOST` /
 `SENTINEL_DB_NAME` are set, otherwise a throwaway cluster via the `pgserver` pip package
-(`pip install pgserver`), and print `SKIP` when neither is available.
+(`pip install pgserver`), and print `SKIP` when neither is available. Real environment variables
+override the root `.env` — that precedence is what lets the harnesses aim a spawned server at a
+scratch database.
 
 The backend suite starts the server against a temporary database and
 verifies the **departmental analytics arithmetic** (a second, isolated

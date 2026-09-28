@@ -282,11 +282,9 @@ async function main() {
   const port = await freePort();
   const tmp = `/tmp/sentinel-approval-test-${Date.now()}`;
   mkdirSync(tmp, { recursive: true });
-  const dbFile = `${tmp}/db.sqlite`;
   const proc = spawn('python3', [path.join(ROOT, 'server.py')], {
     env: {
       ...process.env,
-      SENTINEL_DB: dbFile,
       SENTINEL_UPLOADS: `${tmp}/uploads`,
       PORT: String(port),
     },
@@ -335,13 +333,22 @@ async function main() {
     };
 
     const backdate = (aid, hours) => {
+      // PostgreSQL-era fixture poke: SENTINEL_DB (the old sqlite path) is
+      // ignored by the backend — the row lives in the database named by the
+      // SENTINEL_DB_* environment this process inherited.
       const py = [
-        'import sqlite3, datetime',
-        `conn = sqlite3.connect(${JSON.stringify(dbFile)}, timeout=10)`,
+        'import os, psycopg2, datetime',
+        'conn = psycopg2.connect(dbname=os.environ.get("SENTINEL_DB_NAME","sentinel_police"),',
+        '                        user=os.environ.get("SENTINEL_DB_USER","postgres"),',
+        '                        password=os.environ.get("SENTINEL_DB_PASSWORD",""),',
+        '                        host=os.environ.get("SENTINEL_DB_HOST","localhost"),',
+        '                        port=os.environ.get("SENTINEL_DB_PORT","5432"))',
         `stamp = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=${hours}))`,
-        `conn.execute("UPDATE clearance_applications SET created_at=? WHERE application_id=?",`,
-        `             (stamp.strftime("%Y-%m-%d %H:%M:%S"), ${JSON.stringify(aid)}))`,
+        'cur = conn.cursor()',
+        `cur.execute("UPDATE clearance_applications SET created_at=%s WHERE application_id=%s",`,
+        `            (stamp.strftime("%Y-%m-%d %H:%M:%S"), ${JSON.stringify(aid)}))`,
         'conn.commit()',
+        'conn.close()',
       ].join('\n');
       execFileSync('python3', ['-c', py]);
     };

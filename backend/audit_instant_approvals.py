@@ -13,6 +13,10 @@ Usage
     python3 backend/audit_instant_approvals.py --revert        # undo them
     python3 backend/audit_instant_approvals.py --json          # machine output
 
+The tool walks the configured PostgreSQL database (root .env /
+SENTINEL_DB_NAME / _USER / _PASSWORD / _HOST / _PORT — the same settings
+the server uses).
+
 Reverting sets the row back to 'Pending Review', clears the certificate
 number and the reviewed_at stamp, and writes an audit event. The row then
 falls under the normal gate again: it stays locked until
@@ -26,11 +30,13 @@ import datetime
 import json
 import os
 import re
-import sqlite3
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.environ.get('SENTINEL_DB', os.path.join(ROOT, 'sentinel.db'))
+sys.path.insert(0, ROOT)
+
+import pg_fixture_db  # noqa: E402  (configured-PostgreSQL fixture handle)
+
 WINDOW_HOURS = 12.0
 
 ADMIN_ROLE_KEYS = {'systemadmin', 'admin', 'administrator', 'sysadmin', 'superuser'}
@@ -160,28 +166,32 @@ def revert(conn, violations):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--db', default=DB_PATH, help='path to sentinel.db')
+    ap.add_argument('--db', default=None,
+                    help='deprecated, ignored — the tool reads the configured '
+                         'PostgreSQL database (root .env / SENTINEL_DB_*)')
     ap.add_argument('--revert', action='store_true',
                     help='set violating applications back to Pending Review')
     ap.add_argument('--json', action='store_true', help='emit JSON')
     ap.add_argument('--yes', action='store_true', help='do not prompt before reverting')
     args = ap.parse_args(argv)
 
-    if not os.path.exists(args.db):
-        print(f'no database at {args.db}', file=sys.stderr)
-        return 2
+    if args.db:
+        print('note: --db is deprecated and ignored; auditing the configured '
+              'PostgreSQL database', file=sys.stderr)
+    db_label = (f"{os.environ.get('SENTINEL_DB_NAME', 'sentinel_police')} @ "
+                f"{os.environ.get('SENTINEL_DB_HOST', 'localhost')}:"
+                f"{os.environ.get('SENTINEL_DB_PORT', '5432')}")
 
-    conn = sqlite3.connect(args.db)
-    conn.row_factory = sqlite3.Row
+    conn = pg_fixture_db.connect()
     violations, admin_bypassed = scan(conn)
 
     if args.json:
-        print(json.dumps({'database': os.path.abspath(args.db),
+        print(json.dumps({'database': db_label,
                           'window_hours': WINDOW_HOURS,
                           'violations': violations,
                           'admin_bypassed': admin_bypassed}, indent=2))
     else:
-        print(f'database      : {os.path.abspath(args.db)}')
+        print(f'database      : {db_label}')
         print(f'review window : {int(WINDOW_HOURS)}h (administrators may bypass)')
         total = conn.execute("SELECT COUNT(*) FROM clearance_applications "
                              "WHERE status='Approved'").fetchone()[0]

@@ -24,13 +24,14 @@ import datetime
 import json
 import os
 import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
+
+import pg_fixture_db
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SERVER = os.path.join(ROOT, 'server.py')
@@ -85,8 +86,8 @@ def multipart_request(base, path, token=None, fields=None, files=None):
 def main():
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-gate-')
-    db_path = os.path.join(tmp, 'db.sqlite')
-    env = {**os.environ, 'SENTINEL_DB': db_path,
+    dbname, db_env, drop_db = pg_fixture_db.temp_database('sentinel_gate')
+    env = {**os.environ, **db_env,
            'SENTINEL_UPLOADS': os.path.join(tmp, 'uploads'),
            'PORT': str(port), 'SENTINEL_NO_PORT_TAKEOVER': '1'}
     proc = subprocess.Popen([sys.executable, SERVER], env=env,
@@ -162,7 +163,7 @@ def main():
         def backdate(application_id, hours):
             stamp = (datetime.datetime.now(datetime.timezone.utc)
                      - datetime.timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
-            conn = sqlite3.connect(db_path, timeout=10)
+            conn = pg_fixture_db.connect(dbname)
             try:
                 conn.execute('UPDATE clearance_applications SET created_at=? '
                              'WHERE application_id=?', (stamp, application_id))
@@ -239,7 +240,7 @@ def main():
 
         # ---- 3) fail-closed: missing stamp locks officers, not admins ------
         app4 = new_application(purpose='Citizenship')
-        conn = sqlite3.connect(db_path, timeout=10)
+        conn = pg_fixture_db.connect(dbname)
         try:
             conn.execute('UPDATE clearance_applications SET created_at=NULL '
                          'WHERE application_id=?', (app4,))
@@ -279,7 +280,7 @@ def main():
         print('ok 5: re-approving an approved row is idempotent (same certificate)')
 
         # ---- 6) the gate survives a server restart (persistent sessions) ---
-        # Sessions live in SQLite, so a signed-in browser keeps its token
+        # Sessions live in PostgreSQL, so a signed-in browser keeps its token
         # across a restart — and the review lock must still be enforced
         # against it (an in-memory token map used to 401 every browser and
         # push the frontend into its offline fallbacks).
@@ -308,6 +309,7 @@ def main():
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+        drop_db()
 
 
 if __name__ == '__main__':
