@@ -123,6 +123,24 @@ def _seed_officer(dbname, station_pk, service_id='POL-OPS-0001'):
         conn.close()
 
 
+def _seed_legacy_persons_fk(dbname, station_pk):
+    """Simulate the reported ticket: a `persons`-style table whose
+    `station_id` FK (ON DELETE RESTRICT, plain REFERENCES) points at the
+    station and is UNKNOWN to the route's dependency pre-check — so the raw
+    database IntegrityError is what must be caught, not a count."""
+    conn = pg_fixture_db.connect(dbname)
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS persons_legacy_station_refs(
+                        id SERIAL PRIMARY KEY,
+                        station_id INTEGER NOT NULL
+                            REFERENCES police_stations(id) ON DELETE RESTRICT)""")
+        conn.execute('INSERT INTO persons_legacy_station_refs(station_id) VALUES(?)',
+                     (station_pk,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_unit_in_use_cannot_be_deleted(api):
     """Station with dependent records: DELETE -> 409 Conflict, not a 500."""
     base, admin, dbname = api
@@ -136,6 +154,39 @@ def test_unit_in_use_cannot_be_deleted(api):
     assert 'officer' in r['error'].lower(), r
     assert r.get('dependents', {}).get('officers') == 1, r
     # Nothing was deleted — the station is still served.
+    s, lst = request(base, 'GET', '/api/stations', admin)
+    assert s == 200 and any(x['station_id'] == code for x in lst['items']), lst
+
+
+def test_in_use_station_delete_by_numeric_id(api):
+    """Numeric-row-id route form (the reported request hit …/station/1)."""
+    base, admin, dbname = api
+    code = _create_station(base, admin, 'Numeric-Id In-Use Post')
+    pk = _station_pk(dbname, code)
+    _seed_officer(dbname, pk, service_id='POL-OPS-0002')
+
+    s, r = request(base, 'DELETE', f'/api/stations/{pk}', admin)
+
+    assert s == 409, f'numeric-id in-use delete must answer 409, got {s}: {r}'
+    assert r.get('code') == 'station_in_use', r
+    assert r.get('dependents', {}).get('officers') == 1, r
+
+
+def test_fk_violation_from_unknown_table_is_caught(api):
+    """The IntegrityError safety net: a dependents table the pre-check does
+    NOT know about (persons-style RESTRICT FK) — the database must raise,
+    and the handler must still answer 409, never a 500 stack trace."""
+    base, admin, dbname = api
+    code = _create_station(base, admin, 'Legacy-Referenced Post')
+    _seed_legacy_persons_fk(dbname, _station_pk(dbname, code))
+
+    s, r = request(base, 'DELETE', f'/api/stations/{code}', admin)
+
+    assert s == 409, f'raw FK violation must surface as 409, got {s}: {r}'
+    assert r.get('code') == 'station_in_use', r
+    assert 'referenced' in r['error'].lower() or 'reference' in r['error'].lower(), r
+    assert 'Traceback' not in json.dumps(r), r
+    # The station survives, and so does the connection/transaction.
     s, lst = request(base, 'GET', '/api/stations', admin)
     assert s == 200 and any(x['station_id'] == code for x in lst['items']), lst
 
