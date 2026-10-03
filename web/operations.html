@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Operations — Sentinel</title>
+<link rel="stylesheet" href="/identity.css">
+</head>
+<body>
+<header class="top">
+  <h1>Sentinel · Operations <span class="nav"><a href="/">← Central Person Registry</a><a href="/directorate.html">Directorate →</a></span></h1>
+  <label>Signed in as<select id="user" aria-label="User"></select></label>
+  <span id="who" style="font-size:12px;opacity:.9"></span>
+</header>
+<main>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="checkpoint" aria-selected="true">Checkpoint stop</button>
+    <button type="button" role="tab" data-tab="airport" aria-selected="false">Airport passenger log</button>
+    <button type="button" role="tab" data-tab="station" aria-selected="false">Station crime incident</button>
+  </div>
+
+  <!-- ===================================================== CHECKPOINT -->
+  <section id="tab-checkpoint" class="panel" role="tabpanel">
+    <h2>Checkpoint stop</h2>
+    <div class="sub">Record a traveler stopped at your checkpoint. The traveler is looked up in the Central Person Registry first — an existing person is loaded and locked, never duplicated. The result is screened against active alerts.</div>
+    <div class="unitpick"><div class="field"><label for="cp-unit">Checkpoint *</label><select id="cp-unit"></select></div></div>
+    <div class="section">Traveler</div>
+    <div id="t-fields"></div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="field"><label for="cp-purpose">Purpose of visit *</label><input id="cp-purpose" autocomplete="off"></div>
+      <div class="field"><label for="cp-permaddr">Permanent address</label><input id="cp-permaddr" autocomplete="off"></div>
+      <div class="field"><label for="cp-photo">Traveler photo *</label><input id="cp-photo" type="file" accept="image/*" capture="user"></div>
+      <div class="field"><label for="cp-docs">Traveler documents * (PDF / JPG / PNG)</label><input id="cp-docs" type="file" accept=".pdf,image/*" multiple></div>
+    </div>
+    <div class="section">Guardian / contact person <span id="g-policy" class="tag"></span></div>
+    <div id="g-fields"></div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="field"><label for="g-relationship">Relationship *</label><select id="g-relationship"><option value="">— select —</option>
+        <option>Parent</option><option>Spouse</option><option>Legal Guardian</option><option>Sibling</option><option>Uncle</option><option>Relative</option><option>Employer</option><option>Other</option></select></div>
+      <div class="field"><label for="cp-gdocs">Guardian documents * (PDF / JPG / PNG)</label><input id="cp-gdocs" type="file" accept=".pdf,image/*" multiple></div>
+    </div>
+    <div class="field" style="margin-top:12px"><label for="cp-notes">Notes</label><textarea id="cp-notes"></textarea></div>
+    <div class="row"><button class="btn primary" id="cp-save" type="button">Record stop</button><button class="btn" id="cp-new" type="button">Next traveler</button></div>
+    <div id="cp-result" class="result" role="status"></div>
+  </section>
+  <section id="cp-recent" class="panel"><h2>Recent checkpoint stops</h2><div class="sub">Only the units you are allowed to view.</div><div id="cp-list"></div></section>
+
+  <!-- ===================================================== AIRPORT -->
+  <section id="tab-airport" class="panel hidden" role="tabpanel">
+    <h2>Airport arrival / departure log</h2>
+    <div class="sub">Log a passenger movement. A National ID or passport is required so the passenger resolves to one registry record, whichever airport they use.</div>
+    <div class="unitpick"><div class="field"><label for="ap-unit">Airport *</label><select id="ap-unit"></select></div></div>
+    <div class="section">Passenger</div>
+    <div id="a-fields"></div>
+    <div class="section">Flight</div>
+    <div class="grid2">
+      <div class="field"><label for="ap-movement">Movement *</label><select id="ap-movement"><option>Arrival</option><option>Departure</option></select></div>
+      <div class="field"><label for="ap-date">Travel date *</label><input id="ap-date" type="date"></div>
+      <div class="field"><label for="ap-flight">Flight number *</label><input id="ap-flight" autocomplete="off" placeholder="e.g. FZ123"></div>
+      <div class="field"><label for="ap-airline">Airline</label><input id="ap-airline" autocomplete="off"></div>
+      <div class="field" id="ap-origin-wrap"><label for="ap-origin">Origin city *</label><input id="ap-origin" autocomplete="off"></div>
+      <div class="field" id="ap-dest-wrap"><label for="ap-dest">Destination city</label><input id="ap-dest" autocomplete="off"></div>
+    </div>
+    <div class="field" style="margin-top:12px"><label for="ap-notes">Notes</label><textarea id="ap-notes"></textarea></div>
+    <div class="row"><button class="btn primary" id="ap-save" type="button">Log passenger</button><button class="btn" id="ap-new" type="button">Next passenger</button></div>
+    <div id="ap-result" class="result" role="status"></div>
+  </section>
+  <section id="ap-recent" class="panel hidden"><h2>Recent airport records</h2><div class="sub">Only the airports you are allowed to view.</div><div id="ap-list"></div></section>
+
+  <!-- ===================================================== STATION -->
+  <section id="tab-station" class="panel hidden" role="tabpanel">
+    <h2>Register crime — station incident intake</h2>
+    <div class="sub">File an incident at your station. A victim who is already in the Central Person Registry is linked by National ID; nobody is ever registered as a person from here, and an anonymous victim keeps no identity.</div>
+    <div class="unitpick"><div class="field"><label for="st-unit">Station *</label><select id="st-unit"></select></div>
+      <div class="field"><label for="st-officer">Desk officer (service ID)</label><input id="st-officer" autocomplete="off" placeholder="optional"></div></div>
+    <div class="grid2">
+      <div class="field"><label for="st-category">Crime category *</label><select id="st-category"></select></div>
+      <div class="field"><label for="st-severity">Severity</label><select id="st-severity"></select></div>
+      <div class="field"><label for="st-when">Incident date / time *</label><input id="st-when" type="datetime-local"></div>
+      <div class="field"><label for="st-location">Location of occurrence *</label><input id="st-location" autocomplete="off"></div>
+      <div class="field"><label for="st-party">Reporting party</label><select id="st-party"></select></div>
+      <div class="field"><label for="st-status">Case status</label><select id="st-status"></select></div>
+    </div>
+    <div class="field" style="margin-top:12px"><label for="st-desc">Incident description *</label><textarea id="st-desc"></textarea></div>
+    <div class="section">Victim</div>
+    <div class="checkline"><input type="checkbox" id="st-anon"><label for="st-anon">Anonymous victim — store no identifying details</label></div>
+    <div id="st-victim" class="grid2" style="margin-top:10px">
+      <div class="field"><label for="st-vname">Full name</label><input id="st-vname" autocomplete="off"></div>
+      <div class="field"><label for="st-vnid">National ID</label><input id="st-vnid" autocomplete="off"><div class="hint-note" id="st-vlink" style="display:block"></div></div>
+      <div class="field"><label for="st-vcontact">Contact</label><input id="st-vcontact" autocomplete="off"></div>
+      <div class="field"><label for="st-vgender">Gender</label><select id="st-vgender"></select></div>
+      <div class="field"><label for="st-vage">Age</label><input id="st-vage" type="number" min="0" max="120"></div>
+      <div class="field"><label for="st-vaddr">Address</label><input id="st-vaddr" autocomplete="off"></div>
+    </div>
+    <div class="field" style="margin-top:12px"><label for="st-statement">Statement</label><textarea id="st-statement"></textarea></div>
+    <div class="section">Evidence</div>
+    <div class="grid2">
+      <div class="field"><label for="st-e1type">Evidence 1 type</label><select id="st-e1type"></select></div>
+      <div class="field"><label for="st-e1file">Evidence 1 file</label><input id="st-e1file" type="file" accept=".pdf,image/*"></div>
+      <div class="field"><label for="st-e2type">Evidence 2 type</label><select id="st-e2type"></select></div>
+      <div class="field"><label for="st-e2file">Evidence 2 file</label><input id="st-e2file" type="file" accept=".pdf,image/*"></div>
+    </div>
+    <div class="row"><button class="btn primary" id="st-save" type="button">File incident</button><button class="btn" id="st-new" type="button">New incident</button></div>
+    <div id="st-result" class="result" role="status"></div>
+  </section>
+  <section id="st-recent" class="panel hidden"><h2>Recent incidents</h2><div class="sub">Only the units you are allowed to view.</div><div id="st-list"></div></section>
+</main>
+<script src="/identity-core.js"></script>
+<script src="/identity-intake.js"></script>
+<script src="/operations.js"></script>
+</body>
+</html>

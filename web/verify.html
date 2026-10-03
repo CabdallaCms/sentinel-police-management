@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verify a clearance certificate</title><link rel="stylesheet" href="/identity.css"></head>
+<body>
+<header class="top"><h1>Northeastern State Police · Verify a clearance certificate</h1></header>
+<main><div class="panel" style="max-width:560px;margin:0 auto">
+  <h2>Certificate check</h2>
+  <div class="sub">Enter the number printed on the certificate (CL-…). No sign-in is needed. Only the validity, purpose, issue date and a masked holder name are shown.</div>
+  <div class="field"><label for="n">Certificate number</label><input id="n" autocomplete="off" placeholder="CL-DIR-FP-2026-000001"></div>
+  <div class="row"><button class="btn primary" id="go" type="button">Verify</button></div>
+  <div id="out" class="result" role="status"></div>
+</div></main>
+<script>
+(function(){
+  var out=document.getElementById('out'),n=document.getElementById('n');
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function run(){
+    var v=n.value.trim(); if(!v){return;}
+    fetch('/api/verify/'+encodeURIComponent(v)).then(function(r){return r.json();}).then(function(d){
+      out.className='result show '+(d.valid?'good':'bad');
+      out.innerHTML=d.valid?('<b>VALID</b> — issued to '+esc(d.holder)+' for '+esc(d.purpose)+' on '+esc(String(d.issued_at||'').slice(0,10))+' by '+esc(d.issuer)+'.'+(d.notice?'<br>'+esc(d.notice):'')):('<b>NOT VALID</b> — '+esc(d.reason||'This certificate cannot be verified.'));
+    }).catch(function(){out.className='result show bad';out.textContent='Could not reach the verification service.';});
+  }
+  document.getElementById('go').addEventListener('click',run);
+  n.addEventListener('keydown',function(e){if(e.key==='Enter')run();});
+  var q=new URLSearchParams(location.search).get('n'); if(q){n.value=q;run();}
+})();
+</script></body></html>

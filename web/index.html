@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Central Person Registry — Sentinel</title>
+<link rel="stylesheet" href="/identity.css">
+</head>
+<body>
+<header class="top">
+  <h1>Sentinel · Central Person Registry <span class="nav"><a href="/operations.html">Operations →</a><a href="/directorate.html">Directorate →</a></span></h1>
+  <label>Signed in as<select id="user" aria-label="User"></select></label>
+  <label>Working at unit<select id="unit" aria-label="Unit"></select></label>
+  <span id="who" style="font-size:12px;opacity:.9"></span>
+</header>
+<main>
+  <section class="panel" id="search-panel">
+    <h2>Central Person Search</h2>
+    <div class="sub">One identity record per person, shared by every unit. Search a name, National ID, passport or Person ID.</div>
+    <div class="search"><span>⌕</span><input id="q" placeholder="Search name, national ID, passport or Person ID…" autocomplete="off" aria-label="Search the Central Person Registry"></div>
+    <div id="q-out"></div>
+  </section>
+
+  <section class="panel" id="intake-panel">
+    <h2 id="p-title">Person intake</h2>
+    <div class="sub">Type the person's details. If they are already in the registry they are found instantly and their record is loaded — core identity fields (names, date of birth, place of birth, IDs) are locked; you can still complete blank details and update address, phone and occupation.</div>
+    <div id="p-fields"></div>
+    <div class="checkline" id="noid-line"><input type="checkbox" id="noid"><label for="noid">No ID — child / person without documents (a guardian can be added after saving)</label></div>
+    <div id="reason-row" class="field hidden" style="margin-top:12px"><label for="reason">Reason for correcting locked identity (National Admin) *</label><input id="reason" placeholder="e.g. Birth certificate shows a different spelling"></div>
+    <div class="row">
+      <button class="btn primary" id="save-btn" type="button">Register person</button>
+      <button class="btn" id="clear-btn" type="button">Not this person — clear</button>
+      <button class="btn link" id="new-btn" type="button">New blank form</button>
+    </div>
+    <div id="p-result" class="result" role="status"></div>
+  </section>
+
+  <section class="panel hidden" id="guardian-panel">
+    <h2>Guardian details</h2>
+    <div class="hint" id="g-hint"></div>
+    <ul id="g-list" style="margin:0 0 14px;padding-left:18px"></ul>
+    <div id="g-fields"></div>
+    <div class="row"><button class="btn primary" id="g-save-btn" type="button">Add guardian</button></div>
+    <div id="g-result" class="result" role="status"></div>
+  </section>
+</main>
+<script src="/identity-core.js"></script>
+<script src="/identity-intake.js"></script>
+</body>
+</html>

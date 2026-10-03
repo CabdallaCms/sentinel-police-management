@@ -1,0 +1,4 @@
+# Runtime
+psycopg2-binary>=2.9
+# Tests (embedded PostgreSQL when BLUEPRINT_PG_URI is not set)
+pgserver>=0.1

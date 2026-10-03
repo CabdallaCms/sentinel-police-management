@@ -1,0 +1,3 @@
+{ "name": "sentinel-ui-tests", "private": true, "type": "module",
+  "description": "Drives web/index.html against the real API with jsdom. Run: python -m tests.run_ui_flow",
+  "devDependencies": { "jsdom": "^25.0.0" } }

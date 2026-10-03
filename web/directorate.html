@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Directorate services — Sentinel</title>
+<link rel="stylesheet" href="/identity.css">
+</head>
+<body>
+<header class="top">
+  <h1>Sentinel · Directorate services <span class="nav"><a href="/">← Central Person Registry</a><a href="/operations.html">Operations</a><a href="/verify.html">Verify a certificate</a></span></h1>
+  <label>Signed in as<select id="user" aria-label="User"></select></label>
+  <span id="who" style="font-size:12px;opacity:.9"></span>
+</header>
+<main>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="clearance" aria-selected="true">Fingerprint clearance</button>
+    <button type="button" role="tab" data-tab="cid" aria-selected="false">CID cases &amp; alerts</button>
+    <button type="button" role="tab" data-tab="hr" aria-selected="false">HR officers &amp; conduct</button>
+    <button type="button" role="tab" data-tab="admin" aria-selected="false">Structure (admin)</button>
+  </div>
+
+  <!-- ================================================================ CLEARANCE -->
+  <section id="tab-clearance" class="tabpane">
+    <div class="panel">
+      <h2>Clearance intake</h2>
+      <div class="sub">Filed locally at your unit; approval, signing and printing are national (Fingerprint directorate). The applicant and guardian are resolved through the Central Person Registry.</div>
+      <div class="unitpick"><div class="field"><label for="cl-unit">Intake unit *</label><select id="cl-unit"></select></div>
+        <div class="field"><label for="cl-purpose">Clearance reason *</label><select id="cl-purpose"></select></div></div>
+      <div class="section">Applicant</div>
+      <div id="c-fields"></div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="field"><label for="cl-photo">Applicant photo *</label><input id="cl-photo" type="file" accept="image/*"></div>
+        <div class="field"><label for="cl-docs">Applicant documents * (PDF / JPG / PNG)</label><input id="cl-docs" type="file" accept=".pdf,image/*" multiple></div>
+      </div>
+      <div class="section">Guardian <span id="cl-gpolicy" class="tag"></span></div>
+      <div id="cg-fields"></div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="field"><label for="cl-grel">Relationship *</label><select id="cl-grel"><option value="">— select —</option><option>Parent</option><option>Spouse</option><option>Legal Guardian</option><option>Sibling</option><option>Uncle</option><option>Relative</option><option>Other</option></select></div>
+        <div class="field"><label for="cl-gdocs">Guardian documents * (PDF / JPG / PNG)</label><input id="cl-gdocs" type="file" accept=".pdf,image/*" multiple></div>
+      </div>
+      <div class="row"><button class="btn primary" id="cl-save" type="button">File application</button><button class="btn" id="cl-new" type="button">New application</button></div>
+      <div id="cl-result" class="result" role="status"></div>
+    </div>
+    <div class="panel">
+      <h2>Applications</h2>
+      <div class="sub">What you may see: applications filed at your units, or — at the Fingerprint directorate — all of them. A decision needs the review window (<span id="cl-window">12</span> h) to have passed.</div>
+      <div class="unitpick"><div class="field"><label for="cl-notes">Decision notes (required to reject)</label><input id="cl-notes" autocomplete="off"></div></div>
+      <div id="cl-list"></div>
+      <div id="cl-cert" class="result" role="status"></div>
+    </div>
+  </section>
+
+  <!-- ================================================================ CID -->
+  <section id="tab-cid" class="tabpane hidden">
+    <div class="panel">
+      <h2>Open a CID case</h2>
+      <div class="sub">Every participant is a person of the Central Registry. A <b>Suspect</b> raises an alert that checkpoints see as a yes/no flag.</div>
+      <div class="grid2">
+        <div class="field"><label for="cs-owner">Owning CID unit *</label><select id="cs-owner"></select></div>
+        <div class="field"><label for="cs-category">Crime category *</label><input id="cs-category" autocomplete="off"></div>
+        <div class="field"><label for="cs-location">Location</label><input id="cs-location" autocomplete="off"></div>
+        <div class="field"><label for="cs-status">Status</label><select id="cs-status"></select></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="cs-summary">Incident summary</label><textarea id="cs-summary"></textarea></div>
+      <div class="section">Participants</div>
+      <div id="cs-parts"></div>
+      <div class="row"><button class="btn" id="cs-addpart" type="button">+ Add participant</button><button class="btn primary" id="cs-save" type="button">Open case</button></div>
+      <div id="cs-result" class="result" role="status"></div>
+    </div>
+    <div class="panel"><h2>Cases</h2><div class="sub">Only cases owned by units you may view.</div><div id="cs-list"></div></div>
+    <div class="panel hidden" id="cs-detail-panel"><h2 id="cs-detail-title">Case</h2><div id="cs-detail"></div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="field"><label for="cs-newstatus">Change status</label><select id="cs-newstatus"></select></div>
+        <div class="field"><label for="cs-evfile">Add evidence file</label><input id="cs-evfile" type="file" accept=".pdf,image/*"></div>
+        <div class="field"><label for="cs-evtype">Evidence type</label><select id="cs-evtype"></select></div>
+        <div class="field"><label for="cs-evcap">Caption</label><input id="cs-evcap" autocomplete="off"></div>
+      </div>
+      <div class="row"><button class="btn primary" id="cs-update" type="button">Save status</button><button class="btn" id="cs-addev" type="button">Attach evidence</button></div>
+      <div id="cs-detail-result" class="result" role="status"></div>
+    </div>
+    <div class="panel"><h2>Suspect alerts</h2>
+      <div class="sub">Direct intelligence listings need a reason. Alerts are lifted (with a reason), never deleted.</div>
+      <div class="grid2">
+        <div class="field"><label for="al-first">First name *</label><input id="al-first" autocomplete="off"></div>
+        <div class="field"><label for="al-second">Second name *</label><input id="al-second" autocomplete="off"></div>
+        <div class="field"><label for="al-third">Third name *</label><input id="al-third" autocomplete="off"></div>
+        <div class="field"><label for="al-dob">Date of birth</label><input id="al-dob" type="date"></div>
+        <div class="field"><label for="al-nid">National ID</label><input id="al-nid" autocomplete="off"></div>
+        <div class="field"><label for="al-reason">Reason *</label><input id="al-reason" autocomplete="off"></div>
+      </div>
+      <div class="row"><button class="btn primary" id="al-save" type="button">List person</button></div>
+      <div id="al-result" class="result" role="status"></div>
+      <div id="al-list"></div>
+    </div>
+  </section>
+
+  <!-- ================================================================ HR -->
+  <section id="tab-hr" class="tabpane hidden">
+    <div class="panel"><h2>Officer register</h2><div class="sub">The national roster (HR) or the officers posted at your unit and below.</div>
+      <div class="field" style="max-width:320px"><label for="of-q">Search</label><input id="of-q" autocomplete="off" placeholder="name or POL- service reference"></div>
+      <div id="of-list"></div>
+      <div id="of-detail" class="kv" style="margin-top:10px"></div></div>
+    <div class="panel hidden" id="of-new-panel">
+      <h2>Register an officer</h2>
+      <div class="sub">The officer becomes a person of the Central Registry. Rank can later change only through an approved conduct file.</div>
+      <div id="o-fields"></div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="field"><label for="of-unit">Posting unit *</label><select id="of-unit"></select></div>
+        <div class="field"><label for="of-rank">Rank *</label><select id="of-rank"></select></div>
+        <div class="field"><label for="of-role">Unit / division *</label><select id="of-role"></select></div>
+        <div class="field"><label for="of-enlist">Date of enlistment *</label><input id="of-enlist" type="date"></div>
+        <div class="field"><label for="of-photo">Officer picture *</label><input id="of-photo" type="file" accept="image/*"></div>
+        <div class="field"><label for="of-doc1t">Document 1 type *</label><select id="of-doc1t"></select></div>
+        <div class="field"><label for="of-doc1">Document 1 file *</label><input id="of-doc1" type="file" accept=".pdf,image/*"></div>
+        <div class="field"><label for="of-gname">Guarantor name *</label><input id="of-gname" autocomplete="off"></div>
+        <div class="field"><label for="of-gaddr">Guarantor address *</label><input id="of-gaddr" autocomplete="off"></div>
+        <div class="field"><label for="of-gcontact">Guarantor contact *</label><input id="of-gcontact" autocomplete="off"></div>
+        <div class="field"><label for="of-grel">Guarantor relationship</label><select id="of-grel"></select></div>
+      </div>
+      <div class="row"><button class="btn primary" id="of-save" type="button">Register officer</button></div>
+      <div id="of-result" class="result" role="status"></div>
+    </div>
+    <div class="panel hidden" id="cd-new-panel">
+      <h2>File a conduct / disciplinary record</h2>
+      <div class="sub">Only against officers at your unit or below. HR reviews nationally; the filer can never review their own file.</div>
+      <div class="grid2">
+        <div class="field"><label for="cd-officer">Officer *</label><select id="cd-officer"></select></div>
+        <div class="field"><label for="cd-unit">Filing for unit *</label><select id="cd-unit"></select></div>
+        <div class="field"><label for="cd-type">Action type *</label><select id="cd-type"></select></div>
+        <div class="field"><label for="cd-class">Classification *</label><select id="cd-class"></select></div>
+        <div class="field" id="cd-rank-wrap"><label for="cd-rank">Proposed rank</label><select id="cd-rank"></select></div>
+        <div class="field"><label for="cd-doc">Supporting document</label><input id="cd-doc" type="file" accept=".pdf,image/*"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="cd-narr">Narrative / justification *</label><textarea id="cd-narr"></textarea></div>
+      <div class="row"><button class="btn primary" id="cd-save" type="button">Submit to HR</button></div>
+      <div id="cd-result" class="result" role="status"></div>
+    </div>
+    <div class="panel"><h2>Conduct files</h2><div class="unitpick"><div class="field"><label for="cd-notes">Reviewer notes (required to reject)</label><input id="cd-notes" autocomplete="off"></div></div>
+      <div id="cd-list"></div><div id="cd-review-result" class="result" role="status"></div></div>
+  </section>
+
+  <!-- ================================================================ ADMIN -->
+  <section id="tab-admin" class="tabpane hidden">
+    <div class="panel"><h2>Organisation units</h2>
+      <div class="sub">Bureaus, branches and stations are data. Types and parent rules come from the database; a bureau may claim one of the state's regions (Sool, Sanaag, East Togdheer).</div>
+      <div id="ad-units"></div></div>
+    <div class="panel hidden" id="ad-new-panel"><h2>Add a unit</h2>
+      <div class="grid2">
+        <div class="field"><label for="ad-parent">Parent *</label><select id="ad-parent"></select></div>
+        <div class="field"><label for="ad-type">Type *</label><select id="ad-type"></select></div>
+        <div class="field"><label for="ad-code">Code *</label><input id="ad-code" autocomplete="off"></div>
+        <div class="field"><label for="ad-name">Name *</label><input id="ad-name" autocomplete="off"></div>
+        <div class="field"><label for="ad-region">Claimed region (bureaus)</label><select id="ad-region"></select></div>
+      </div>
+      <div class="row"><button class="btn primary" id="ad-save" type="button">Create unit</button></div>
+      <div id="ad-result" class="result" role="status"></div></div>
+    <div class="panel"><h2>Role assignments</h2><div class="sub">You see and manage assignments inside the units you administer; a role can be granted only if you already hold all of its permissions there.</div>
+      <div class="grid2">
+        <div class="field"><label for="as-user">Username *</label><input id="as-user" autocomplete="off"></div>
+        <div class="field"><label for="as-role">Role *</label><select id="as-role"></select></div>
+        <div class="field"><label for="as-unit">Unit *</label><select id="as-unit"></select></div>
+      </div>
+      <div class="row"><button class="btn primary" id="as-save" type="button">Grant</button></div>
+      <div id="as-result" class="result" role="status"></div>
+      <div id="as-list"></div></div>
+  </section>
+</main>
+<script src="/identity-core.js"></script>
+<script src="/identity-intake.js"></script>
+<script src="/directorate.js"></script>
+</body>
+</html>
