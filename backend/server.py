@@ -36,7 +36,9 @@ def load_env_file():
                 line = line.strip()
                 if not line or line.startswith('#') or '=' not in line: continue
                 key, val = line.split('=', 1)
-                os.environ[key.strip()] = val.strip()
+                # Explicit process settings (CI/test runners/container env) take
+                # precedence over the optional project .env file.
+                os.environ.setdefault(key.strip(), val.strip())
 
 
 # Load the project-root .env into the process environment BEFORE any of the
@@ -120,20 +122,27 @@ def get_db_connection():
     transactions. The caller owns the lifecycle (commit() / close()), exactly
     like the previous per-call sqlite3.connect() helper.
 
-    Engine settings come from the process environment / root .env:
-      SENTINEL_DB_NAME, SENTINEL_DB_USER, SENTINEL_DB_PASSWORD,
-      SENTINEL_DB_HOST, SENTINEL_DB_PORT
+    Engine settings come from the process environment / root .env. A
+    SENTINEL_DATABASE_URL connection string takes precedence; otherwise the
+    individual SENTINEL_DB_NAME / USER / PASSWORD / HOST / PORT settings are
+    used.
     """
+    connect_options = {
+        'connection_factory': SentinelPGConnection,
+        'cursor_factory': SentinelCursor,
+        'connect_timeout': 10,
+        'application_name': 'sentinel-backend',
+    }
+    database_url = os.environ.get('SENTINEL_DATABASE_URL', '').strip()
+    if database_url:
+        return psycopg2.connect(database_url, **connect_options)
     return psycopg2.connect(
         dbname=os.environ.get('SENTINEL_DB_NAME', 'sentinel_police'),
         user=os.environ.get('SENTINEL_DB_USER', 'postgres'),
         password=os.environ.get('SENTINEL_DB_PASSWORD', ''),
         host=os.environ.get('SENTINEL_DB_HOST', 'localhost'),
         port=os.environ.get('SENTINEL_DB_PORT', '5432'),
-        connection_factory=SentinelPGConnection,
-        cursor_factory=SentinelCursor,
-        connect_timeout=10,
-        application_name='sentinel-backend',
+        **connect_options,
     )
 
 # ---- schema -----------------------------------------------------------------
@@ -147,6 +156,15 @@ CREATE TABLE IF NOT EXISTS locations(
   id SERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL,
   label TEXT NOT NULL, kind TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS police_branches(
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  region TEXT NOT NULL,
+  unit_type TEXT NOT NULL CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport')),
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_police_branches_name_region_unit
+  ON police_branches (LOWER(name), LOWER(region), unit_type);
 CREATE TABLE IF NOT EXISTS persons(
   id SERIAL PRIMARY KEY, person_id TEXT UNIQUE NOT NULL,
   full_name TEXT NOT NULL, first_name TEXT, second_name TEXT, third_name TEXT, fourth_name TEXT,
@@ -157,7 +175,9 @@ CREATE TABLE IF NOT EXISTS persons(
 );
 CREATE TABLE IF NOT EXISTS airport_passengers(
   id SERIAL PRIMARY KEY, record_id TEXT UNIQUE NOT NULL,
-  person_id INTEGER NOT NULL REFERENCES persons(id), movement TEXT NOT NULL,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
+  movement TEXT NOT NULL,
   travel_date TEXT NOT NULL, flight_number TEXT NOT NULL,
   airline TEXT, origin_city TEXT, destination_city TEXT,
   route TEXT NOT NULL, notes TEXT, created_by INTEGER REFERENCES users(id),
@@ -165,7 +185,9 @@ CREATE TABLE IF NOT EXISTS airport_passengers(
 );
 CREATE TABLE IF NOT EXISTS clearance_applications(
   id SERIAL PRIMARY KEY, application_id TEXT UNIQUE NOT NULL,
-  person_id INTEGER NOT NULL REFERENCES persons(id), purpose TEXT NOT NULL,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
+  purpose TEXT NOT NULL,
   guardian_name TEXT, guardian_relationship TEXT, guardian_id TEXT,
   guardian_occupation TEXT, guardian_address TEXT, guardian_phone TEXT,
   legal_document_ref TEXT, notes TEXT,
@@ -176,6 +198,7 @@ CREATE TABLE IF NOT EXISTS clearance_applications(
 );
 CREATE TABLE IF NOT EXISTS crime_cases(
   id SERIAL PRIMARY KEY, case_id TEXT UNIQUE NOT NULL,
+  branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
   category TEXT NOT NULL, location TEXT, status TEXT NOT NULL DEFAULT 'Reported',
   incident_summary TEXT, notes TEXT, created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
@@ -200,6 +223,7 @@ CREATE TABLE IF NOT EXISTS case_evidence(
 CREATE TABLE IF NOT EXISTS checkpoint_events(
   id SERIAL PRIMARY KEY, event_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id),
+  branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
   location TEXT NOT NULL, location_code TEXT, checkpoint_location TEXT,
   screening_result TEXT NOT NULL,
   action_taken TEXT NOT NULL DEFAULT 'Cleared', notes TEXT,
@@ -255,6 +279,7 @@ CREATE TABLE IF NOT EXISTS crime_incidents(
   id SERIAL PRIMARY KEY, file_number TEXT UNIQUE NOT NULL,
   station_id INTEGER NOT NULL REFERENCES police_stations(id),
   officer_id INTEGER NOT NULL REFERENCES officers(id),
+  branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
   category TEXT NOT NULL, incident_at TEXT NOT NULL,
   location_of_occurrence TEXT, severity TEXT,
   description TEXT NOT NULL,
@@ -351,11 +376,13 @@ ADDED_COLUMNS = {
         ('photo_path', "ALTER TABLE persons ADD COLUMN photo_path TEXT"),
     ],
     'airport_passengers': [
+        ('branch_id', "ALTER TABLE airport_passengers ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
         ('airline', "ALTER TABLE airport_passengers ADD COLUMN airline TEXT"),
         ('origin_city', "ALTER TABLE airport_passengers ADD COLUMN origin_city TEXT"),
         ('destination_city', "ALTER TABLE airport_passengers ADD COLUMN destination_city TEXT"),
     ],
     'clearance_applications': [
+        ('branch_id', "ALTER TABLE clearance_applications ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
         ('guardian_id', "ALTER TABLE clearance_applications ADD COLUMN guardian_id TEXT"),
         ('guardian_occupation', "ALTER TABLE clearance_applications ADD COLUMN guardian_occupation TEXT"),
         ('guardian_address', "ALTER TABLE clearance_applications ADD COLUMN guardian_address TEXT"),
@@ -368,6 +395,7 @@ ADDED_COLUMNS = {
         ('email', "ALTER TABLE clearance_applications ADD COLUMN email TEXT"),
     ],
     'crime_cases': [
+        ('branch_id', "ALTER TABLE crime_cases ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
         ('incident_summary', "ALTER TABLE crime_cases ADD COLUMN incident_summary TEXT"),
     ],
     'suspect_alerts': [
@@ -375,6 +403,7 @@ ADDED_COLUMNS = {
         ('origin', "ALTER TABLE suspect_alerts ADD COLUMN origin TEXT NOT NULL DEFAULT 'Direct Intelligence Listing'"),
     ],
     'checkpoint_events': [
+        ('branch_id', "ALTER TABLE checkpoint_events ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
         ('purpose_of_visit', "ALTER TABLE checkpoint_events ADD COLUMN purpose_of_visit TEXT"),
         ('current_address', "ALTER TABLE checkpoint_events ADD COLUMN current_address TEXT"),
         ('permanent_address', "ALTER TABLE checkpoint_events ADD COLUMN permanent_address TEXT"),
@@ -396,6 +425,9 @@ ADDED_COLUMNS = {
         # without joining the locations table.
         ('location_code', "ALTER TABLE checkpoint_events ADD COLUMN location_code TEXT"),
         ('checkpoint_location', "ALTER TABLE checkpoint_events ADD COLUMN checkpoint_location TEXT"),
+    ],
+    'crime_incidents': [
+        ('branch_id', "ALTER TABLE crime_incidents ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
     ],
     'police_stations': [
         ('station_tier', "ALTER TABLE police_stations ADD COLUMN station_tier TEXT"),
@@ -942,6 +974,20 @@ UNIT_ROLE_ALIASES = {
 # Canonical checkpoint location codes. The data uses the short codes ('South',
 # 'East', 'West') so the scoping stays in sync with existing seed data.
 CHECKPOINT_LOCATIONS = ('South', 'East', 'West')
+
+# Branch departments are stored as stable API values in `police_branches`.
+BRANCH_UNIT_TYPES = ('fingerprint', 'crime', 'checkpoint', 'airport')
+BRANCH_UNIT_LABELS = {
+    'fingerprint': 'Fingerprint Unit',
+    'crime': 'Crime Unit',
+    'checkpoint': 'Checkpoint Unit',
+    'airport': 'Airport Unit',
+}
+DEFAULT_POLICE_BRANCHES = (
+    ('Buuhoodle Branch', 'East Togdheer'),
+    ('Lasanod Branch', 'Sool'),
+    ('Erigavo Branch', 'Sanaag'),
+)
 
 # ---------------------------------------------------------------------------
 # Officer Registration domain (Police Registrations & Management module).
@@ -1820,6 +1866,13 @@ def init_db():
     c.executescript(SCHEMA)
     c.executescript(VEHICLES_SCHEMA)
     migrate(c)
+    # Seed the three default regional branches for each CID unit. Inserts are
+    # idempotent and the expression index protects against case-only duplicates.
+    for branch_name, region in DEFAULT_POLICE_BRANCHES:
+        for unit_type in BRANCH_UNIT_TYPES:
+            c.execute('''INSERT INTO police_branches(name,region,unit_type)
+                         VALUES(%s,%s,%s) ON CONFLICT DO NOTHING''',
+                      (branch_name, region, unit_type))
     # Canonical checkpoint locations — referenced by both the data and the RBAC layer.
     if c.execute('SELECT COUNT(*) FROM locations').fetchone()[0] == 0:
         for code, label in (('South', 'South Checkpoint'),
@@ -1909,6 +1962,50 @@ def init_db():
 # ---- helpers ----------------------------------------------------------------
 def password_hash(value): return hashlib.sha256(value.encode()).hexdigest()
 def rowdict(row): return dict(row) if row else None
+
+
+def branch_view(row):
+    """Public branch catalogue shape used by `/api/branches` and intake rows."""
+    if not row:
+        return None
+    return {
+        'id': row['id'],
+        'name': row['name'],
+        'region': row['region'],
+        'unit_type': row['unit_type'],
+    }
+
+
+def normalize_branch_unit_type(value):
+    unit_type = str(value or '').strip().lower()
+    if unit_type not in BRANCH_UNIT_TYPES:
+        raise ValueError('unit_type must be one of: ' + ', '.join(BRANCH_UNIT_TYPES))
+    return unit_type
+
+
+def resolve_branch(c, branch_id, expected_unit_type, required=False):
+    """Resolve a selected branch and prevent cross-department assignments.
+
+    `branch_id` stays optional at the API boundary for older API clients and
+    already-installed integrations; the current UI requires one for every new
+    intake. When present it is always validated against its owning unit.
+    """
+    expected_unit_type = normalize_branch_unit_type(expected_unit_type)
+    raw = '' if branch_id is None else str(branch_id).strip()
+    if not raw:
+        if required:
+            raise ValueError('A branch selection is required')
+        return None
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError('branch_id must be a positive integer')
+    branch = c.execute('''SELECT id,name,region,unit_type FROM police_branches WHERE id=%s''',
+                       (int(raw),)).fetchone()
+    if not branch:
+        raise ValueError('Selected branch does not exist; reload the branch list and try again')
+    if branch['unit_type'] != expected_unit_type:
+        raise ValueError(f'Selected branch is not registered for the {BRANCH_UNIT_LABELS[expected_unit_type]}')
+    return branch
+
 
 def body_json(handler):
     try: return json.loads(handler.rfile.read(int(handler.headers.get('Content-Length','0')) or 0) or b'{}')
@@ -2362,6 +2459,7 @@ def register_station(c, user, data):
 
 
 def register_crime(c, user, fields, files):
+    branch = resolve_branch(c, fields.get('branch_id'), 'crime')
     station_code = str(fields.get('station_id') or '').strip()
     if not station_code:
         raise ValueError('station_id is required')
@@ -2409,14 +2507,13 @@ def register_crime(c, user, fields, files):
     if e2 and not e2_type:
         raise ValueError('Evidence slot 2 type is required when a file is attached')
     file_number = new_crime_file_number(c, station['code'])
-    c.execute('''INSERT INTO crime_incidents(file_number,station_id,officer_id,category,incident_at,
+    c.execute('''INSERT INTO crime_incidents(file_number,station_id,officer_id,branch_id,category,incident_at,
         location_of_occurrence,severity,description,case_status,reporting_party_type,
         victim_anonymous,victim_full_name,victim_contact,victim_national_id,victim_gender,victim_age,
         victim_address,statement,evidence1_type,evidence1_path,evidence2_type,evidence2_path,created_by)
-        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-        (file_number, station['id'], officer['id'], category, incident_at,
-         location,
-         severity, description, status, party, 1 if anon else 0,
+        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+        (file_number, station['id'], officer['id'], branch['id'] if branch else None,
+         category, incident_at, location, severity, description, status, party, 1 if anon else 0,
          str(fields.get('victim_full_name') or '').strip() or None,
          str(fields.get('victim_contact') or '').strip() or None,
          str(fields.get('victim_national_id') or '').strip() or None,
@@ -2424,10 +2521,12 @@ def register_crime(c, user, fields, files):
          str(fields.get('statement') or '').strip() or None,
          e1_type, e1['path'] if e1 else None, e2_type, e2['path'] if e2 else None, user['id']))
     row = c.execute('''SELECT ci.*, s.station_id AS station_code, s.code AS station_short_code,
-        o.service_id AS officer_service_id, o.full_name AS officer_name
+        o.service_id AS officer_service_id, o.full_name AS officer_name,
+        b.name AS branch_name, b.region AS branch_region
         FROM crime_incidents ci
         JOIN police_stations s ON s.id=ci.station_id
         JOIN officers o ON o.id=ci.officer_id
+        LEFT JOIN police_branches b ON b.id=ci.branch_id
         WHERE ci.file_number=%s''', (file_number,)).fetchone()
     return crime_view(row)
 
@@ -4950,6 +5049,29 @@ class API(BaseHTTPRequestHandler):
                           'roles': list(ALL_ROLES),
                           'role_labels': ROLE_LABELS,
                           'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
+            elif p.path == '/api/branches':
+                query = parse_qs(p.query)
+                raw_unit_type = str(query.get('unit_type', [''])[0] or '').strip()
+                unit_type = normalize_branch_unit_type(raw_unit_type) if raw_unit_type else None
+                region = re.sub(r'\s+', ' ', str(query.get('region', [''])[0] or '')).strip()
+                where, args = [], []
+                if unit_type:
+                    where.append('unit_type=%s'); args.append(unit_type)
+                if region:
+                    where.append('LOWER(region)=LOWER(%s)'); args.append(region)
+                sql = 'SELECT id,name,region,unit_type FROM police_branches'
+                if where:
+                    sql += ' WHERE ' + ' AND '.join(where)
+                sql += ' ORDER BY region,name,id'
+                rows = c.execute(sql, args).fetchall()
+                regions = c.execute('''SELECT DISTINCT region FROM police_branches
+                                       ORDER BY region''').fetchall()
+                result = {
+                    'items': [branch_view(r) for r in rows],
+                    'regions': [r['region'] for r in regions],
+                    'unit_types': list(BRANCH_UNIT_TYPES),
+                    'unit_labels': BRANCH_UNIT_LABELS,
+                }
             elif p.path == '/api/persons':
                 q = re.sub(r'\s+', ' ', parse_qs(p.query).get('q',[''])[0]).strip()
                 like = f'%{q}%'
@@ -4972,15 +5094,18 @@ class API(BaseHTTPRequestHandler):
                     FROM checkpoint_events WHERE person_id=%s ORDER BY id DESC''',(person['id'],)).fetchall()]
                 result = person
             elif p.path == '/api/airport-records':
-                rows = c.execute('''SELECT a.record_id,a.movement,a.travel_date,a.flight_number,a.airline,
-                    a.origin_city,a.destination_city,a.route,a.notes,
-                    p.person_id,p.full_name,p.national_id FROM airport_passengers a
-                    JOIN persons p ON p.id=a.person_id ORDER BY a.id DESC''').fetchall()
+                rows = c.execute('''SELECT a.record_id,a.branch_id,b.name AS branch_name,b.region AS branch_region,
+                    a.movement,a.travel_date,a.flight_number,a.airline,a.origin_city,a.destination_city,
+                    a.route,a.notes,p.person_id,p.full_name,p.national_id
+                    FROM airport_passengers a JOIN persons p ON p.id=a.person_id
+                    LEFT JOIN police_branches b ON b.id=a.branch_id ORDER BY a.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path == '/api/clearance-applications':
-                rows = c.execute('''SELECT a.application_id,a.purpose,a.status,a.certificate_number,a.created_at,
+                rows = c.execute('''SELECT a.application_id,a.branch_id,b.name AS branch_name,
+                    b.region AS branch_region,a.purpose,a.status,a.certificate_number,a.created_at,
                     a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone
-                    FROM clearance_applications a JOIN persons p ON p.id=a.person_id ORDER BY a.id DESC''').fetchall()
+                    FROM clearance_applications a JOIN persons p ON p.id=a.person_id
+                    LEFT JOIN police_branches b ON b.id=a.branch_id ORDER BY a.id DESC''').fetchall()
                 items = []
                 for r in rows:
                     item = rowdict(r)
@@ -4993,8 +5118,10 @@ class API(BaseHTTPRequestHandler):
             elif p.path.startswith('/api/clearance-applications/'):
                 aid = p.path.split('/')[3]
                 a = rowdict(c.execute('''SELECT a.*,p.full_name,p.national_id,p.date_of_birth,p.mother_name,
-                    p.place_of_birth,p.residence,p.occupation,p.passport_id,p.photo_path,p.phone
+                    p.place_of_birth,p.residence,p.occupation,p.passport_id,p.photo_path,p.phone,
+                    b.name AS branch_name,b.region AS branch_region
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id
+                    LEFT JOIN police_branches b ON b.id=a.branch_id
                     WHERE a.application_id=%s''',(aid,)).fetchone())
                 if not a: self.send_json(404,{'error':'Application not found'}); c.close(); return
                 # 12-hour mandatory review window metadata for the printable page.
@@ -5002,13 +5129,18 @@ class API(BaseHTTPRequestHandler):
                 a['can_approve'] = bool(is_admin_user(user) or not a['review']['review_locked'])
                 result = a
             elif p.path == '/api/crime-cases':
-                rows = c.execute('''SELECT cc.*, COUNT(sa.id) AS participant_count
-                    FROM crime_cases cc LEFT JOIN suspect_alerts sa ON sa.case_id=cc.id
-                    GROUP BY cc.id ORDER BY cc.id DESC''').fetchall()
+                rows = c.execute('''SELECT cc.*,b.name AS branch_name,b.region AS branch_region,
+                    COUNT(sa.id) AS participant_count
+                    FROM crime_cases cc
+                    LEFT JOIN police_branches b ON b.id=cc.branch_id
+                    LEFT JOIN suspect_alerts sa ON sa.case_id=cc.id
+                    GROUP BY cc.id,b.name,b.region ORDER BY cc.id DESC''').fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path.startswith('/api/crime-cases/'):
                 cid = p.path.split('/')[3]
-                case = rowdict(c.execute('SELECT * FROM crime_cases WHERE case_id=%s',(cid,)).fetchone())
+                case = rowdict(c.execute('''SELECT cc.*,b.name AS branch_name,b.region AS branch_region
+                    FROM crime_cases cc LEFT JOIN police_branches b ON b.id=cc.branch_id
+                    WHERE cc.case_id=%s''',(cid,)).fetchone())
                 if not case: self.send_json(404,{'error':'Case not found'}); c.close(); return
                 case['participants'] = [dict(r) for r in c.execute('''SELECT sa.alert_id,sa.role,sa.notes,sa.alert_status,
                     sa.origin,cc.case_id,p.person_id,p.full_name,p.national_id,p.phone FROM suspect_alerts sa
@@ -5137,7 +5269,8 @@ class API(BaseHTTPRequestHandler):
                 # trailing space, casing, or punctuation variation in
                 # 'location' / 'checkpoint_location' is still caught.
                 scope = checkpoint_scope(user)
-                base_cols = '''ce.event_id,ce.location,ce.location_code,ce.checkpoint_location,
+                base_cols = '''ce.event_id,ce.branch_id,b.name AS branch_name,b.region AS branch_region,
+                    ce.location,ce.location_code,ce.checkpoint_location,
                     ce.screening_result,ce.action_taken,ce.notes,ce.created_at,
                     ce.purpose_of_visit,ce.current_address,ce.permanent_address,
                     ce.traveler_photo,ce.traveler_docs,ce.guardian_person_id,ce.guardian_name,
@@ -5152,6 +5285,7 @@ class API(BaseHTTPRequestHandler):
                     rows = c.execute(
                         f"SELECT {base_cols} FROM checkpoint_events ce "
                         f"JOIN persons p ON p.id=ce.person_id "
+                        f"LEFT JOIN police_branches b ON b.id=ce.branch_id "
                         f"WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=%s "
                         f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
                         f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
@@ -5163,7 +5297,9 @@ class API(BaseHTTPRequestHandler):
                          scope.lower(), f"%{scope.lower()}%", f"%{scope.lower()}%")).fetchall()
                 else:
                     rows = c.execute(f"SELECT {base_cols} FROM checkpoint_events ce "
-                                     f"JOIN persons p ON p.id=ce.person_id ORDER BY ce.id DESC").fetchall()
+                                     f"JOIN persons p ON p.id=ce.person_id "
+                                     f"LEFT JOIN police_branches b ON b.id=ce.branch_id "
+                                     f"ORDER BY ce.id DESC").fetchall()
                 # Surface the explicit location metadata in every response item
                 # so the frontend can render the friendly label without re-deriving it.
                 items = []
@@ -5184,10 +5320,12 @@ class API(BaseHTTPRequestHandler):
                 result = {'items': [officer_view(r) for r in officer_rows(c)]}
             elif p.path == '/api/crimes':
                 rows = c.execute('''SELECT ci.*, s.station_id AS station_code, s.code AS station_short_code,
-                    o.service_id AS officer_service_id, o.full_name AS officer_name
+                    o.service_id AS officer_service_id, o.full_name AS officer_name,
+                    b.name AS branch_name,b.region AS branch_region
                     FROM crime_incidents ci
                     JOIN police_stations s ON s.id=ci.station_id
                     JOIN officers o ON o.id=ci.officer_id
+                    LEFT JOIN police_branches b ON b.id=ci.branch_id
                     ORDER BY ci.id DESC''').fetchall()
                 result = {'items': [crime_view(r) for r in rows]}
             elif p.path == '/api/vehicles':
@@ -5323,6 +5461,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/crime-cases': 'cid',
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
+                '/api/branches': 'admin',
                 '/api/admin/users': 'admin',
                 '/api/stations': 'admin',
                 '/api/officers': 'officers',
@@ -5349,7 +5488,34 @@ class API(BaseHTTPRequestHandler):
                         break
                     require_module(user, mod)
                     break
-            if p.path == '/api/persons':
+            if p.path == '/api/branches':
+                data = body_json(self)
+                name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()
+                region = re.sub(r'\s+', ' ', str(data.get('region') or '')).strip()
+                unit_type = normalize_branch_unit_type(data.get('unit_type'))
+                if not name:
+                    raise ValueError('Branch name is required')
+                if len(name) > 160:
+                    raise ValueError('Branch name must be 160 characters or fewer')
+                if not region:
+                    raise ValueError('Branch region is required')
+                if len(region) > 100:
+                    raise ValueError('Branch region must be 100 characters or fewer')
+                duplicate = c.execute('''SELECT id FROM police_branches
+                    WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND unit_type=%s''',
+                    (name, region, unit_type)).fetchone()
+                if duplicate:
+                    self.send_json(409, {'error': 'This branch already exists for that unit and region'})
+                    c.close(); return
+                row = c.execute('''INSERT INTO police_branches(name,region,unit_type)
+                    VALUES(%s,%s,%s) RETURNING id,name,region,unit_type''',
+                    (name, region, unit_type)).fetchone()
+                branch = branch_view(row)
+                audit(c, user, 'CREATE', 'police_branch', str(branch['id']),
+                      f"{branch['name']} · {branch['region']} · {branch['unit_type']}")
+                c.commit()
+                result = {'branch': branch}
+            elif p.path == '/api/persons':
                 data = body_json(self)
                 if not build_full_name(data):
                     raise ValueError('full_name or a 4-part name is required')
@@ -5367,6 +5533,7 @@ class API(BaseHTTPRequestHandler):
                 c.commit(); result = {'person':person,'created':created}
             elif p.path == '/api/airport-records':
                 data = body_json(self)
+                branch = resolve_branch(c, data.get('branch_id'), 'airport')
                 person, created = ensure_person(c, data)
                 if created:
                     audit(c,user,'CREATE','person',person['person_id'],'auto-created from airport register')
@@ -5378,9 +5545,11 @@ class API(BaseHTTPRequestHandler):
                 if not route and (origin or destination):
                     route = (origin + ' / ' + destination) if origin and destination else (origin or destination)
                 rid = 'AR-'+str(int(time.time()*1000))[-8:]
-                c.execute('''INSERT INTO airport_passengers(record_id,person_id,movement,travel_date,
-                    flight_number,airline,origin_city,destination_city,route,notes,created_by) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (rid,person['id'],data.get('movement','Arrival'),data.get('travel_date',''),
+                c.execute('''INSERT INTO airport_passengers(record_id,person_id,branch_id,movement,travel_date,
+                    flight_number,airline,origin_city,destination_city,route,notes,created_by)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (rid,person['id'],branch['id'] if branch else None,
+                     data.get('movement','Arrival'),data.get('travel_date',''),
                      data.get('flight_number',''),data.get('airline',''),origin,destination,
                      route,data.get('notes',''),user['id']))
                 audit(c,user,'CREATE','airport_record',rid,person['person_id']); c.commit()
@@ -5391,6 +5560,7 @@ class API(BaseHTTPRequestHandler):
                     fields, files = parse_multipart(self)
                 else:
                     fields, files = body_json(self), {}
+                branch = resolve_branch(c, fields.get('branch_id'), 'fingerprint')
                 if not build_full_name(fields):
                     raise ValueError('Applicant full name (4-part) is required')
                 if not (fields.get('national_id') or '').strip() and not (fields.get('passport_id') or '').strip():
@@ -5416,12 +5586,12 @@ class API(BaseHTTPRequestHandler):
                 # The submission timestamp is stored explicitly (UTC) so the
                 # 12-hour mandatory review window can be evaluated against it.
                 submitted_at = utc_now_stamp()
-                c.execute('''INSERT INTO clearance_applications(application_id,person_id,purpose,
+                c.execute('''INSERT INTO clearance_applications(application_id,person_id,branch_id,purpose,
                     guardian_name,guardian_relationship,guardian_id,guardian_occupation,guardian_address,
                     guardian_phone,legal_document_ref,notes,applicant_docs,guardian_docs,applicant_photo,
                     sex,email,created_by,created_at)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (aid,person['id'],purpose,fields.get('guardian_name',''),
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (aid,person['id'],branch['id'] if branch else None,purpose,fields.get('guardian_name',''),
                      fields.get('guardian_relationship',''),fields.get('guardian_id',''),
                      fields.get('guardian_occupation',''),fields.get('guardian_address',''),
                      fields.get('guardian_phone',''),fields.get('legal_document_ref',''),
@@ -5483,14 +5653,17 @@ class API(BaseHTTPRequestHandler):
                           'reviewer_is_fingerprint_officer':is_fingerprint_officer(user)}
             elif p.path == '/api/crime-cases':
                 data = body_json(self)
+                branch = resolve_branch(c, data.get('branch_id'), 'crime')
                 if not data.get('category'): raise ValueError('category is required')
                 nxt = c.execute('SELECT COUNT(*) FROM crime_cases').fetchone()[0]+8
                 case_id = 'CID-2026-'+str(nxt).zfill(3)
-                c.execute('''INSERT INTO crime_cases(case_id,category,location,status,incident_summary,notes,created_by)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s)''',(case_id,data['category'],data.get('location','Not specified'),
-                    data.get('status','Reported'),data.get('incident_summary',''),data.get('notes',''),user['id']))
+                c.execute('''INSERT INTO crime_cases(case_id,branch_id,category,location,status,incident_summary,notes,created_by)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)''',(case_id,branch['id'] if branch else None,
+                    data['category'],data.get('location','Not specified'),data.get('status','Reported'),
+                    data.get('incident_summary',''),data.get('notes',''),user['id']))
                 audit(c,user,'CREATE','crime_case',case_id); c.commit()
-                result = {'case_id':case_id,'category':data['category'],'status':'Reported'}
+                result = {'case_id':case_id,'category':data['category'],'status':'Reported',
+                          'branch':branch_view(branch) if branch else None}
             elif p.path.startswith('/api/crime-cases/') and p.path.endswith('/evidence'):
                 cid = p.path.split('/')[3]
                 case = c.execute('SELECT id FROM crime_cases WHERE case_id=%s',(cid,)).fetchone()
@@ -5592,6 +5765,7 @@ class API(BaseHTTPRequestHandler):
                     data, files = parse_multipart(self)
                 else:
                     data, files = body_json(self), {}
+                branch = resolve_branch(c, data.get('branch_id'), 'checkpoint')
                 # ---- validate everything before any person/file writes ----
                 if not build_full_name(data):
                     raise ValueError('Traveler full name (4-part) is required')
@@ -5692,16 +5866,17 @@ class API(BaseHTTPRequestHandler):
                 # persisted in canonical form.)
                 checkpoint_location = f'{location_code} Checkpoint'
                 event_id = 'CP-'+str(int(time.time()*1000))[-8:]
-                c.execute('''INSERT INTO checkpoint_events(event_id,person_id,location,location_code,
+                c.execute('''INSERT INTO checkpoint_events(event_id,person_id,branch_id,location,location_code,
                     checkpoint_location,screening_result,action_taken,notes,purpose_of_visit,
                     current_address,permanent_address,traveler_photo,traveler_docs,
                     guardian_person_id,guardian_name,guardian_relationship,guardian_phone,
                     guardian_address,guardian_occupation,guardian_national_id,guardian_passport_id,
-                    guardian_docs,created_by) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (event_id,person['id'],location,location_code,checkpoint_location,
-                     screen,action,(data.get('notes') or '').strip(),
-                     purpose,current_addr,(data.get('permanent_address') or '').strip(),
-                     photo['path'],json.dumps(tr_docs),
+                    guardian_docs,created_by)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (event_id,person['id'],branch['id'] if branch else None,
+                     location,location_code,checkpoint_location,screen,action,
+                     (data.get('notes') or '').strip(),purpose,current_addr,
+                     (data.get('permanent_address') or '').strip(),photo['path'],json.dumps(tr_docs),
                      guardian_person['id'] if guardian_person else None,
                      guardian_name,(data.get('guardian_relationship') or '').strip(),
                      (data.get('guardian_phone') or '').strip(),
@@ -5715,6 +5890,7 @@ class API(BaseHTTPRequestHandler):
                 result = {'event_id':event_id,'person_id':person['person_id'],'location':location,
                           'location_code':location_code,
                           'checkpoint_location':checkpoint_location,
+                          'branch':branch_view(branch) if branch else None,
                           'screening_result':screen,'action_taken':action,'alerted':bool(alerted),
                           'guardian_person_id':guardian_person['person_id'] if guardian_person else None,
                           'traveler_docs':len(tr_docs),'guardian_docs':len(gd_docs),
@@ -6124,14 +6300,18 @@ if __name__ == '__main__':
         init_db()
     except psycopg2.OperationalError as exc:
         # Fail loudly and legibly when the PostgreSQL engine is unreachable —
-        # the usual causes are a stopped server or missing .env settings.
+        # never print a URL because it may contain credentials.
+        if os.environ.get('SENTINEL_DATABASE_URL', '').strip():
+            target = 'the SENTINEL_DATABASE_URL target'
+        else:
+            target = (f'{os.environ.get("SENTINEL_DB_NAME", "sentinel_police")} at '
+                      f'{os.environ.get("SENTINEL_DB_HOST", "localhost")}:'
+                      f'{os.environ.get("SENTINEL_DB_PORT", "5432")} as '
+                      f'{os.environ.get("SENTINEL_DB_USER", "postgres")}')
         raise SystemExit(
-            'FATAL: cannot connect to PostgreSQL — '
-            f'{os.environ.get("SENTINEL_DB_NAME", "sentinel_police")} at '
-            f'{os.environ.get("SENTINEL_DB_HOST", "localhost")}:'
-            f'{os.environ.get("SENTINEL_DB_PORT", "5432")} as '
-            f'{os.environ.get("SENTINEL_DB_USER", "postgres")}.\n'
-            '       Check the server is running and the root .env defines '
+            f'FATAL: cannot connect to PostgreSQL — {target}.\n'
+            '       Check the server is running and the root .env or process '
+            'environment defines SENTINEL_DATABASE_URL, or '
             'SENTINEL_DB_NAME / SENTINEL_DB_USER / SENTINEL_DB_PASSWORD / '
             'SENTINEL_DB_HOST / SENTINEL_DB_PORT.\n'
             f'       Driver error: {exc}')
@@ -6149,10 +6329,13 @@ if __name__ == '__main__':
                          ''.join(f'       - {p}\n' for p in rbac_problems))
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
-    print(f'  database: PostgreSQL '
-          f'{os.environ.get("SENTINEL_DB_NAME", "sentinel_police")} @ '
-          f'{os.environ.get("SENTINEL_DB_HOST", "localhost")}:'
-          f'{os.environ.get("SENTINEL_DB_PORT", "5432")}')
+    if os.environ.get('SENTINEL_DATABASE_URL', '').strip():
+        print('  database: PostgreSQL via SENTINEL_DATABASE_URL')
+    else:
+        print(f'  database: PostgreSQL '
+              f'{os.environ.get("SENTINEL_DB_NAME", "sentinel_police")} @ '
+              f'{os.environ.get("SENTINEL_DB_HOST", "localhost")}:'
+              f'{os.environ.get("SENTINEL_DB_PORT", "5432")}')
     print(f'  fingerprint review window: {FINGERPRINT_REVIEW_WINDOW_HOURS}h '
           f'(admin/SystemAdmin bypasses, every other role is locked)')
     print(f'  {review_lock_self_test()}')

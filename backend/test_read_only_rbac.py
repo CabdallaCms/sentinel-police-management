@@ -26,7 +26,7 @@ PostgreSQL database (the backend serves PostgreSQL only):
      SystemAdmin and for the unit officers.
 
 Database resolution (mirrors the other suites):
-  * SENTINEL_DB_HOST / _NAME / _USER / _PASSWORD / _PORT when set, or
+  * SENTINEL_DATABASE_URL or SENTINEL_DB_HOST / _NAME / _USER / _PASSWORD / _PORT when set, or
   * a throwaway cluster booted with the `pgserver` pip package
     (`pip install pgserver`) in a temporary directory, or
   * SKIP (exit 0) with a message when neither is available.
@@ -179,7 +179,10 @@ sys.stdin.read()
 
 def provision_database(tmp):
     """Return (env_overrides, stop_callable) or (None, None) when unavailable."""
-    if os.environ.get('SENTINEL_DB_HOST') or os.environ.get('SENTINEL_DB_NAME'):
+    if (os.environ.get('SENTINEL_DATABASE_URL', '').strip()
+            or any(os.environ.get(key) for key in (
+                'SENTINEL_DB_HOST', 'SENTINEL_DB_PORT', 'SENTINEL_DB_USER',
+                'SENTINEL_DB_PASSWORD', 'SENTINEL_DB_NAME'))):
         return ({}, lambda: None)
     try:
         import pgserver  # noqa: F401

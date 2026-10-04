@@ -4,16 +4,17 @@ This is the server-side foundation for the Sentinel system. It uses Python's sta
 
 ## Database / environment configuration
 
-The server reads its engine settings from the process environment, falling back to a root `.env` file (see `.env.example`) loaded with a small standard-library reader:
+The server reads its engine settings from the process environment, falling back to a root `.env` file (see `.env.example`) loaded with a small standard-library reader. Explicit process variables take precedence over `.env`. Set either `SENTINEL_DATABASE_URL` (preferred when supplied) or the individual `SENTINEL_DB_*` variables:
 
-| Variable               | Default          | Purpose                       |
-|------------------------|------------------|-------------------------------|
-| `SENTINEL_DB_NAME`     | `sentinel_police`| PostgreSQL database name      |
-| `SENTINEL_DB_USER`     | `postgres`       | PostgreSQL role               |
-| `SENTINEL_DB_PASSWORD` | *(empty)*        | PostgreSQL password           |
-| `SENTINEL_DB_HOST`     | `localhost`      | PostgreSQL host               |
-| `SENTINEL_DB_PORT`     | `5432`           | PostgreSQL port               |
-| `PORT`                 | `8001`           | HTTP port the API listens on  |
+| Variable                  | Default           | Purpose                                                  |
+|---------------------------|-------------------|----------------------------------------------------------|
+| `SENTINEL_DATABASE_URL`   | *(unset)*         | PostgreSQL URL; overrides individual connection settings |
+| `SENTINEL_DB_NAME`        | `sentinel_police` | PostgreSQL database name                                 |
+| `SENTINEL_DB_USER`        | `postgres`        | PostgreSQL role                                          |
+| `SENTINEL_DB_PASSWORD`    | *(empty)*         | PostgreSQL password                                      |
+| `SENTINEL_DB_HOST`        | `localhost`       | PostgreSQL host                                          |
+| `SENTINEL_DB_PORT`        | `5432`            | PostgreSQL port                                          |
+| `PORT`                    | `8001`            | HTTP port the API listens on                             |
 
 Install the driver first (`pip install psycopg2-binary`) and create the database (e.g. `sentinel_police` in pgAdmin). Tables are created with `CREATE TABLE IF NOT EXISTS`, so pointing the server at an empty database or an already-initialised one both work.
 
@@ -143,21 +144,34 @@ development admin fallback**: with no valid session (or on a 401 from
 `/api/me`) they clear the stored keys, show a "Sign in required" screen and
 render every record **locked**.
 
+## Dynamic police branches
+
+The backend creates `police_branches` automatically and idempotently seeds the requested
+regional branches for each unit type: Buuhoodle Branch / East Togdheer, Lasanod Branch /
+Sool, and Erigavo Branch / Sanaag. The same catalogue feeds the administrator-only
+`Branch Management` page under the existing Administration sidebar group and all four
+operational intake selectors. New intake records keep a nullable `branch_id` foreign key (the API
+continues to accept older clients that do not send it); the current UI requires a branch
+selection and displays the saved branch on its register row. Branch writes are audited
+and SystemAdmin-only.
+
 ## Current endpoints
 
 - `POST /api/login`
 - `POST /api/logout` (authenticated)
 - `GET /api/health`
 - `GET /api/me` (authenticated)
+- `GET /api/branches?unit_type=fingerprint|crime|checkpoint|airport&region=...` (authenticated — filters the dynamic branch catalogue by department and/or region; returns `items`, available `regions`, and unit labels)
+- `POST /api/branches` (SystemAdmin only — `{name, region, unit_type}`; adds a branch immediately, rejects case-insensitive duplicates with 409)
 - `GET /api/persons?q=...` (authenticated — searches name parts, full name, National ID, passport, phone, mother's name, Person ID)
 - `POST /api/persons` (authenticated — strict create, 409 if the National ID/passport already exists)
 - `POST /api/persons/resolve` (authenticated — Tier 1/2/3/4 smart identity resolution with flexible partial-name matching and dropdown `suggestions`)
 - `POST /api/persons/upsert` (authenticated — Tier 1/2 merge or create; returns `created`)
 - `PATCH /api/persons/{person_id}` (authenticated — append/update profile details)
 - `GET /api/persons/{person_id}` (authenticated — profile plus linked airport/clearance/CID records)
-- `GET /api/airport-records` / `POST /api/airport-records` (authenticated — accepts `person_id` or identity fields; auto-creates the central person)
+- `GET /api/airport-records` / `POST /api/airport-records` (authenticated — accepts `person_id` or identity fields; auto-creates the central person; accepts the selected Airport Unit `branch_id`)
 - `GET /api/clearance-applications` (authenticated)
-- `POST /api/clearance-applications` (authenticated, `multipart/form-data` — applicant identity fields, 4 applicant docs and 3 guardian docs with **at least 2 of each required**, optional photo; identity is resolved/auto-created. `purpose` (clearance reason) is **mandatory** and must be one of `Education`, `Travel`, `Employment`, `Citizenship`, `Licence`; the submission timestamp is stored explicitly in `created_at`)
+- `POST /api/clearance-applications` (authenticated, `multipart/form-data` — the Fingerprint UI requires a dynamic `fingerprint` `branch_id`; applicant identity fields, 4 applicant docs and 3 guardian docs with **at least 2 of each required**, optional photo; identity is resolved/auto-created. `purpose` (clearance reason) is **mandatory** and must be one of `Education`, `Travel`, `Employment`, `Citizenship`, `Licence`; the submission timestamp is stored explicitly in `created_at`)
 - `GET /api/clearance-applications/{application_id}` (authenticated — full detail for the printable pages, plus the `review` block and `can_approve` flag for the 12-hour gate)
 - `POST /api/clearance-applications/{id}/approve` (authenticated — issues the certificate number and unlocks the certificate, subject to the mandatory 12-hour review period)
 
@@ -209,19 +223,19 @@ identically:
   A row stored as `fingerprint_officer` therefore keeps its modules, RBAC
   gates, role label and review-window behaviour; creating or patching a
   user with an alias stores the canonical role.
-- `GET /api/crime-cases` / `POST /api/crime-cases` (authenticated)
+- `GET /api/crime-cases` / `POST /api/crime-cases` (authenticated — CID cases accept `branch_id` from the `crime` branch catalogue; the admin UI requires a branch selection)
 - `GET /api/crime-cases/{case_id}` (authenticated — incident summary, participants and evidence)
 - `PATCH /api/crime-cases/{case_id}` (authenticated — update status, category, location, summary, notes)
 - `POST /api/crime-cases/{case_id}/evidence` (authenticated, `multipart/form-data` — evidence file + caption/type)
 - `GET /api/suspect-alerts` / `POST /api/suspect-alerts` (authenticated — participants carry a role: Suspect/Victim/Witness/Complainant; `case_id` is **optional**, `origin` is recorded when no case is linked; `notes`/`reason` is **mandatory for unlinked suspects** — 400 otherwise — and defaults to `Linked to CID case {code} — {category}` when a case is linked and the reason is empty)
-- `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated, `multipart/form-data` — **traveler + guardian screening layout**: traveler 4-part name, date of birth, purpose of visit, current/permanent address, real-time `photo` file, ≥1 `doc_tr_N` file; guardian 4-part name, relationship, contact, permanent address, occupation, optional National ID/Passport and ≥1 `doc_gd_N` file; optional `guardian_person_id` links a known central person. Traveler identity is resolved/auto-created with IDs optional; all file paths are persisted as JSON arrays on the event, and screening result is computed server-side against active suspect alerts, setting the action to `Supervisor contacted` or `Cleared`. **`GET` is location-scoped for Checkpoint users** — the response carries a `scope` and `visible_locations` field, and a Checkpoint officer can only POST at their assigned location)
+- `GET /api/checkpoint-events` / `POST /api/checkpoint-events` (authenticated, `multipart/form-data` — the UI requires a checkpoint-unit `branch_id` from the dynamic branch catalogue, separate from the existing South/East/West RBAC location; **traveler + guardian screening layout**: traveler 4-part name, date of birth, purpose of visit, current/permanent address, real-time `photo` file, ≥1 `doc_tr_N` file; guardian 4-part name, relationship, contact, permanent address, occupation, optional National ID/Passport and ≥1 `doc_gd_N` file; optional `guardian_person_id` links a known central person. Traveler identity is resolved/auto-created with IDs optional; all file paths are persisted as JSON arrays on the event, and screening result is computed server-side against active suspect alerts, setting the action to `Supervisor contacted` or `Cleared`. **`GET` is location-scoped for Checkpoint users** — the response carries a `scope` and `visible_locations` field, and a Checkpoint officer can only POST at their assigned location)
 - `GET /api/admin/users` / `GET /api/admin/users/{id}` (SystemAdmin only — list users; the list response includes a `roles`, `role_labels` and `checkpoint_locations` roster for the admin UI)
 - `POST /api/admin/users` (SystemAdmin only — `username`, `display_name`, `role`, `password` (≥6 chars), optional `branch` / `location_scope` / `active`. Checkpoint roles require a `location_scope`.)
 - `PATCH /api/admin/users/{id}` (SystemAdmin only — edit `display_name`, `role`, `branch`, `location_scope`, `password`, `active`. Role changes auto-derive the matching `location_scope` unless one is explicitly passed.)
 - `GET /api/admin/analytics` (SystemAdmin only — `summary` totals, `crime_distribution` by location + time-of-day bucket, `checkpoint_volume` by location + age-bracket demographics, ready for charts)
 - `GET /api/stations` / `POST /api/stations` (SystemAdmin write; CID may `GET` for crime intake. `POST` requires name, station tier, region/district from the Sool–Sanaag–East Togdheer gazetteer, and contact phone. Auto-generates `ST-XXX` plus public code `STN-{SOL|SAN|ETG}-XXX`. Commander must be Inspector or above when supplied.)
 - `GET /api/officers` / `POST /api/officers` (SystemAdmin write; CID may `GET`. `POST` accepts `multipart/form-data` with the five-section officer fields plus the `photo` (required), `guarantor_photo`, `doc1_file` (required) and `doc2_file` uploads. Auto-generates `POL-YYYY-XXXX` Service IDs, enforces the rank/unit/duty/blood/relationship/document dropdown lists, the station foreign key, and the JPEG/PNG + 5 MB upload policy.)
-- `GET /api/crimes` / `POST /api/crimes` (CID + SystemAdmin — crime/victim intake. File numbers are `CRM-YYYY-{station-code}-XXXX`. Requires station, desk officer, category, incident datetime, location of occurrence and description. Optional victim block, reporting party, severity, two evidence slots.)
+- `GET /api/crimes` / `POST /api/crimes` (CID + SystemAdmin — crime/victim intake. The UI requires a dynamic `crime` `branch_id`. File numbers are `CRM-YYYY-{station-code}-XXXX`. Requires station, desk officer, category, incident datetime, location of occurrence and description. Optional victim block, reporting party, severity, two evidence slots.)
 - `GET /api/vehicles` / `POST /api/vehicles` (SystemAdmin write; Checkpoint, CID and Central Police Search may `GET`. Helpers live in `backend/vehicles.py`. IDs are `VEH-YYYY-XXXX`. Plate is unique uppercase; VIN is 17 characters without I/O/Q and unique. Police Fleet requires `station_id` (optional `officer_id` + operational status). Civilian / Commercial requires owner name, phone and national ID/passport. Security alert defaults to `Clean / Normal`; Stolen / Wanted in Crime / Impounded / Unregistered / Suspicious require `alert_reason`. Optional JPEG/PNG ≤ 5 MB photo.)
 - `POST /api/vehicles/{vehicle_id}/status` (SystemAdmin — update `security_alert` + reason. Checkpoint plate lookup uses `GET /api/vehicles?q=`.)
 - `GET /api/officers/promotions` / `POST /api/officers/promotions` (`officers` module — SystemAdmin + HR Directorate; `PRM-YYYY-XXXX`, the proposed rank must be a different valid `OFFICER_RANKS` value, defaults to `Awaiting Verification`)
@@ -264,18 +278,22 @@ The API enforces the central-person rule: Airport, Fingerprint, CID and Checkpoi
 
 ```bash
 python3 backend/test_server.py        # API suite (Python stdlib only)
-python3 backend/test_review_gate.py   # 12h review gate + admin bypass (API)
+python3 backend/test_review_gate.py   # PostgreSQL review gate + admin bypass (API)
 python3 backend/test_read_only_rbac.py # unit-module denylist + global read-only Commander (PostgreSQL)
+python3 backend/test_dynamic_branches.py # default branch seed, filtering, admin RBAC and intake association (PostgreSQL)
 node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18)
 node backend/test_approval_flow.mjs   # approve/print button journey (Node >= 18)
 node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node >= 18)
 ```
 
-The backend serves **PostgreSQL only** (`SENTINEL_DB_NAME` / `_USER` / `_PASSWORD` / `_HOST` /
-`_PORT`). `test_read_only_rbac.py` and `test_frontend_session.mjs` therefore boot the API against a
-PostgreSQL database: they use an already-configured server when `SENTINEL_DB_HOST` /
-`SENTINEL_DB_NAME` are set, otherwise a throwaway cluster via the `pgserver` pip package
-(`pip install pgserver`), and print `SKIP` when neither is available.
+The backend serves **PostgreSQL only**. Configure `SENTINEL_DATABASE_URL` or the individual
+`SENTINEL_DB_NAME` / `_USER` / `_PASSWORD` / `_HOST` / `_PORT` variables. The PostgreSQL-backed
+integration tests use that configured database when present; otherwise they use an isolated
+throwaway cluster via the `pgserver` pip package (`pip install pgserver`) and print `SKIP` when
+neither a configured database nor `pgserver` is available. Use a dedicated test database for any
+explicit connection configuration because the suites create test fixtures there. The review-gate
+tests backdate `clearance_applications.created_at` via `server.get_db_connection()` and use
+PostgreSQL `%s` parameters; they do not open SQLite files.
 
 The backend suite starts the server against a temporary database and
 verifies the **departmental analytics arithmetic** (a second, isolated

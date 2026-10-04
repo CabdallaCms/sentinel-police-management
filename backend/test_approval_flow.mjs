@@ -3,8 +3,9 @@
  * Approve / Print button end-to-end regression test (backend + Node VM,
  * no browser).
  *
- * Boots backend/server.py against a temporary SQLite database, then drives
- * the REAL scripts of index.html, application.html and certificate.html
+ * Boots backend/server.py against configured PostgreSQL or an isolated
+ * temporary PostgreSQL cluster, then drives the REAL scripts of index.html,
+ * application.html and certificate.html
  * inside Node VM sandboxes with a minimal DOM stub. It reproduces the exact
  * bug report — "the approve/print button does not work for either users or
  * administrators" — and pins the three mandated rules:
@@ -29,15 +30,106 @@
  *
  * Usage:  node backend/test_approval_flow.mjs
  */
-import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync } from 'node:fs';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import vm from 'node:vm';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.dirname(ROOT);
+const PYTHON = process.env.PYTHON || 'python3';
+
+const PG_SERVE = `
+import pathlib, sys, pgserver
+d = pathlib.Path(sys.argv[1]); d.mkdir(parents=True, exist_ok=True)
+pgserver.get_server(str(d))
+print(d, flush=True)
+sys.stdin.read()
+`;
+
+function databaseEnvironment() {
+  const env = { ...process.env };
+  const envPath = path.join(PROJECT_ROOT, '.env');
+  if (existsSync(envPath)) {
+    for (const raw of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || !line.includes('=')) continue;
+      const i = line.indexOf('=');
+      const key = line.slice(0, i).trim();
+      const value = line.slice(i + 1).trim();
+      if (key && env[key] === undefined) env[key] = value;
+    }
+  }
+  return env;
+}
+
+function hasDatabaseConfig(env) {
+  return Boolean(env.SENTINEL_DATABASE_URL?.trim()
+    || ['SENTINEL_DB_HOST', 'SENTINEL_DB_PORT', 'SENTINEL_DB_USER',
+      'SENTINEL_DB_PASSWORD', 'SENTINEL_DB_NAME'].some((key) => env[key]));
+}
+
+async function provisionDatabase(tmp, baseEnv) {
+  if (hasDatabaseConfig(baseEnv)) {
+    const source = baseEnv.SENTINEL_DATABASE_URL
+      ? 'SENTINEL_DATABASE_URL' : 'SENTINEL_DB_* settings';
+    return { env: baseEnv, stop: async () => {}, label: `configured PostgreSQL (${source})` };
+  }
+  const probe = spawnSync(PYTHON, ['-c', 'import pgserver'], { env: baseEnv, stdio: 'ignore' });
+  if (probe.status !== 0) return null;
+
+  const child = spawn(PYTHON, ['-u', '-c', PG_SERVE, path.join(tmp, 'pgdata')], {
+    env: baseEnv, stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  let buffer = '';
+  let socketDir = '';
+  const ready = await new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(false), 90000);
+    const finish = (ok) => { clearTimeout(timeout); resolve(ok); };
+    child.stdout.on('data', (chunk) => {
+      buffer += String(chunk);
+      const match = buffer.match(/^(\/\S+)$/m);
+      if (match) { socketDir = match[1]; finish(true); }
+    });
+    child.once('exit', () => finish(false));
+  });
+  if (!ready || !socketDir) {
+    child.kill('SIGKILL');
+    return null;
+  }
+  const env = {
+    ...baseEnv,
+    SENTINEL_DB_HOST: socketDir,
+    SENTINEL_DB_PORT: '5432',
+    SENTINEL_DB_NAME: 'postgres',
+    SENTINEL_DB_USER: 'postgres',
+    SENTINEL_DB_PASSWORD: '',
+  };
+  return {
+    env,
+    label: `temporary pgserver PostgreSQL cluster at ${socketDir}`,
+    stop: async () => {
+      if (child.exitCode !== null) return;
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => child.kill('SIGKILL'), 5000);
+        child.once('exit', () => { clearTimeout(timeout); resolve(); });
+        child.stdin.end();
+      });
+    },
+  };
+}
+
+async function stopChild(child) {
+  if (!child || child.exitCode !== null) return;
+  await new Promise((resolve) => {
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 5000);
+    child.once('exit', () => { clearTimeout(timeout); resolve(); });
+    child.kill('SIGTERM');
+  });
+}
 
 function freePort() {
   return new Promise((resolve) => {
@@ -280,23 +372,34 @@ function trackFetches(sb) {
 
 async function main() {
   const port = await freePort();
-  const tmp = `/tmp/sentinel-approval-test-${Date.now()}`;
-  mkdirSync(tmp, { recursive: true });
-  const dbFile = `${tmp}/db.sqlite`;
-  const proc = spawn('python3', [path.join(ROOT, 'server.py')], {
-    env: {
-      ...process.env,
-      SENTINEL_DB: dbFile,
-      SENTINEL_UPLOADS: `${tmp}/uploads`,
-      PORT: String(port),
-    },
-    stdio: 'ignore',
-  });
-  const base = `http://127.0.0.1:${port}`;
+  const tmp = mkdtempSync(path.join(tmpdir(), 'sentinel-approval-test-'));
+  let proc = null;
+  let pg = null;
+  let serverEnv = null;
   try {
+    const baseEnv = databaseEnvironment();
+    pg = await provisionDatabase(tmp, baseEnv);
+    if (!pg) {
+      console.log('SKIP: no PostgreSQL test database available.');
+      console.log('      Set SENTINEL_DATABASE_URL or SENTINEL_DB_* variables,');
+      console.log('      or install pgserver with: python -m pip install pgserver');
+      return 0;
+    }
+    console.log('using ' + pg.label);
+    serverEnv = {
+      ...pg.env,
+      SENTINEL_UPLOADS: path.join(tmp, 'uploads'),
+      PORT: String(port),
+      SENTINEL_NO_PORT_TAKEOVER: '1',
+    };
+    proc = spawn(PYTHON, [path.join(ROOT, 'server.py')], {
+      env: serverEnv,
+      stdio: 'ignore',
+    });
+    const base = `http://127.0.0.1:${port}`;
     await waitFor(async () => {
       try { return (await fetch(base + '/api/health')).ok; } catch { return false; }
-    }, 'backend health');
+    }, 'backend health', 60000);
 
     // ---- helpers -----------------------------------------------------------
     const loginAs = async (user) => (await (await fetch(base + '/api/login', {
@@ -311,15 +414,16 @@ async function main() {
     });
 
     let seq = 0;
+    const runSuffix = String(Math.floor(Math.random() * 100_000_000)).padStart(8, '0');
     const createClearance = async (user) => {
       const auth = typeof user === 'string' ? await loginAs(user) : user;
       seq += 1;
       const fd = new FormData();
       const fields = {
-        first_name: 'Flow', second_name: 'Test', third_name: 'Case', fourth_name: String(seq),
-        date_of_birth: '1992-02-02', national_id: `888${String(seq).padStart(5, '0')}`,
+        first_name: 'Flow', second_name: 'Test', third_name: 'Case', fourth_name: `${runSuffix}-${seq}`,
+        date_of_birth: '1992-02-02', national_id: `88${runSuffix}${String(seq).padStart(2, '0')}`,
         mother_name: 'Hooyo Flow', residence: 'Hargeisa, Flow Ward',
-        phone: '+252 63 555 0100', sex: 'Male', email: 'flow@example.com',
+        phone: '+252 63 555 0100', sex: 'Male', email: `flow-${runSuffix}@example.com`,
         purpose: 'Employment',
         guardian_name: 'Guardian Flow', guardian_relationship: 'Uncle', guardian_id: 'GD-2',
         guardian_occupation: 'Trader', guardian_address: 'Burao', guardian_phone: '+252 63 555 0101',
@@ -336,14 +440,24 @@ async function main() {
 
     const backdate = (aid, hours) => {
       const py = [
-        'import sqlite3, datetime',
-        `conn = sqlite3.connect(${JSON.stringify(dbFile)}, timeout=10)`,
-        `stamp = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=${hours}))`,
-        `conn.execute("UPDATE clearance_applications SET created_at=? WHERE application_id=?",`,
-        `             (stamp.strftime("%Y-%m-%d %H:%M:%S"), ${JSON.stringify(aid)}))`,
-        'conn.commit()',
+        'import datetime, sys',
+        `sys.path.insert(0, ${JSON.stringify(ROOT)})`,
+        'import server',
+        'conn = server.get_db_connection()',
+        'try:',
+        `    stamp = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=${JSON.stringify(hours)}))`,
+        '    stamp = stamp.strftime("%Y-%m-%d %H:%M:%S")',
+        '    cur = conn.execute("UPDATE clearance_applications SET created_at=%s WHERE application_id=%s",',
+        `                       (stamp, ${JSON.stringify(aid)}))`,
+        '    assert cur.rowcount == 1, f"expected one application update, got {cur.rowcount}"',
+        '    conn.commit()',
+        'except Exception:',
+        '    conn.rollback()',
+        '    raise',
+        'finally:',
+        '    conn.close()',
       ].join('\n');
-      execFileSync('python3', ['-c', py]);
+      execFileSync(PYTHON, ['-c', py], { cwd: PROJECT_ROOT, env: serverEnv, stdio: 'inherit' });
     };
 
     const fpRow = (sb, aid) => {
@@ -607,7 +721,9 @@ async function main() {
     console.log('ALL APPROVAL-FRONTEND TESTS PASSED');
     return 0;
   } finally {
-    proc.kill('SIGTERM');
+    await stopChild(proc);
+    if (pg) await pg.stop();
+    rmSync(tmp, { recursive: true, force: true });
   }
 }
 

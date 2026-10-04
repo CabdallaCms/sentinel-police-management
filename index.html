@@ -472,6 +472,7 @@ body.readonly-mode .ro-banner{display:flex}
 <button type="button" class="nav-group-toggle" data-group-toggle="admin"><i>⚙</i><span>Administration</span><span class="nav-chev">▾</span></button>
 <div class="nav-group-body" data-group-body="admin">
 <button data-page="admin" data-modules="admin"><i>⚙</i><span>User Management</span></button>
+<button data-page="branches" data-modules="admin"><i>⌂</i><span>Branch Management</span></button>
 </div>
 </div>
 <!-- Analytics is not a standalone page: the only full analytics surface is
@@ -559,7 +560,7 @@ body.readonly-mode .ro-banner{display:flex}
 <!-- New clearance application -->
 <div class="cmodal-ov" id="fpDrawerOv" onclick="closeEntryModal('fpDrawer')"></div>
 <div class="cmodal" id="fpDrawer" role="dialog" aria-modal="true" aria-labelledby="fpDrawerTitle">
-<div class="cm-head"><div><h3 id="fpDrawerTitle">New clearance application</h3><div class="sub">Fingerprint Unit · Hargeisa Branch</div></div><button class="iconbtn" onclick="closeEntryModal('fpDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-head"><div><h3 id="fpDrawerTitle">New clearance application</h3><div class="sub">Fingerprint Unit · select a registered regional branch</div></div><button class="iconbtn" onclick="closeEntryModal('fpDrawer')" aria-label="Close">✕</button></div>
 <div class="cm-body">
 <div id="fpNotice" class="notice"></div>
 <div class="record-type">Unit-specific record: guardian, clearance reason and supporting legal documents are stored here — the applicant’s identity is matched/updated in the Central Person Registry.</div>
@@ -567,6 +568,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="section-label">Applicant identity — Central Person Registry</div>
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>: an exact match (National ID/passport or 4-part name + DOB) auto-fills the existing record; if no match exists a new Central Person is created automatically on save.</div>
 <div id="fpIdentity"></div>
+<div class="field"><label>Fingerprint branch *</label><select id="fpBranch" data-branch-unit="fingerprint" required><option value="">Loading branches…</option></select></div>
 <div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Education</option><option>Travel</option><option>Employment</option><option>Citizenship</option><option>Licence</option></select></div>
 <div class="grid2">
 <div class="field"><label>Gender</label><select id="fpSex"><option value="">Not stated</option><option>Male</option><option>Female</option></select></div>
@@ -604,7 +606,7 @@ body.readonly-mode .ro-banner{display:flex}
 <!-- Register airport passenger -->
 <div class="cmodal-ov" id="airDrawerOv" onclick="closeEntryModal('airDrawer')"></div>
 <div class="cmodal" id="airDrawer" role="dialog" aria-modal="true" aria-labelledby="airDrawerTitle">
-<div class="cm-head"><div><h3 id="airDrawerTitle">Register airport passenger</h3><div class="sub">Hargeisa Local Airport · Passenger register</div></div><button class="iconbtn" onclick="closeEntryModal('airDrawer')" aria-label="Close">✕</button></div>
+<div class="cm-head"><div><h3 id="airDrawerTitle">Register airport passenger</h3><div class="sub">Airport Unit · select a registered regional branch</div></div><button class="iconbtn" onclick="closeEntryModal('airDrawer')" aria-label="Close">✕</button></div>
 <div class="cm-body">
 <div id="airNotice" class="notice"></div>
 
@@ -613,6 +615,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
 <div id="airIdentity"></div>
 <div class="section-label">Travel</div>
+<div class="field"><label>Airport branch *</label><select id="airBranch" data-branch-unit="airport" required><option value="">Loading branches…</option></select></div>
 <div class="grid2">
 <div class="field"><label>Movement type</label><select id="airMove"><option>Arrival</option><option>Departure</option></select></div>
 <div class="field"><label>Travel date</label><input id="airDate" type="date" value="2026-09-01"></div>
@@ -1069,6 +1072,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="field"><label>Police station *</label><select id="crmStation"></select></div>
 <div class="field"><label>Desk officer *</label><select id="crmOfficer"></select></div>
 </div>
+<div class="field"><label>Crime branch *</label><select id="crmBranch" data-branch-unit="crime" required><option value="">Loading branches…</option></select></div>
 <div class="section-label">2 · Incident</div>
 <div class="grid2">
 <div class="field"><label>Category *</label><select id="crmCat"><option value="">— select —</option><option>Theft/Burglary</option><option>Assault</option><option>Robbery</option><option>Traffic Accident</option><option>Homicide</option><option>Fraud</option><option>Domestic Incident</option><option>Public Order</option><option>Cybercrime</option><option>Other</option></select></div>
@@ -1186,6 +1190,36 @@ body.readonly-mode .ro-banner{display:flex}
       </tr></thead>
       <tbody id="userTable"></tbody>
     </table>
+  </div>
+</div>
+</section>
+
+<!-- BRANCH MANAGEMENT (System Administrator only) -->
+<section id="branches" class="page">
+<div class="panel" id="branchAdminPanel">
+  <div class="panel-head">
+    <div>
+      <h2>Branch Management</h2>
+      <div class="sub">Manage the branch catalogue used by Fingerprint, Crime, Checkpoint and Airport intake forms.</div>
+    </div>
+    <button class="btn ghost small" type="button" onclick="refreshBranchManagement(true)">↻ Refresh branches</button>
+  </div>
+  <div class="hint" style="margin-bottom:16px">New branches are available immediately in the matching unit's intake dropdown. Add entries such as Buuhoodle Branch / East Togdheer, Lasanod Branch / Sool, or Erigavo Branch / Sanaag. Existing CID, personnel and regional navigation remains unchanged.</div>
+  <form class="form" id="branchForm" onsubmit="saveBranch(event)">
+    <div class="grid3">
+      <div class="field"><label for="branchName">Branch Name *</label><input id="branchName" required maxlength="160" placeholder="e.g. Buuhoodle Branch"></div>
+      <div class="field"><label for="branchRegion">Region *</label><select id="branchRegion" required><option value="">Loading regions…</option></select></div>
+      <div class="field"><label for="branchUnitType">Unit Department *</label><select id="branchUnitType" required>
+        <option value="fingerprint">Fingerprint Unit</option><option value="crime">Crime Unit</option>
+        <option value="checkpoint">Checkpoint Unit</option><option value="airport">Airport Unit</option>
+      </select></div>
+    </div>
+    <div class="form-actions"><button class="btn" data-write="1" type="submit">+ Add New Branch</button></div>
+  </form>
+  <div class="notice" id="branchNotice" aria-live="polite"></div>
+  <div class="table-wrap" style="margin-top:14px">
+    <table class="table"><thead><tr><th>Branch Name</th><th>Region</th><th>Unit Department</th></tr></thead>
+    <tbody id="branchTable"><tr><td class="empty" colspan="3">Loading branches…</td></tr></tbody></table>
   </div>
 </div>
 </section>
@@ -1413,6 +1447,47 @@ async function api(path,options={}){
   if(!r.ok){ const e=new Error(data.error||'Server request failed'); e.status=r.status; throw e; }
   return data;
 }
+
+// Live branch catalogue. Branch names/regions come only from /api/branches;
+// the client never carries a parallel hardcoded list of branch choices.
+const BRANCH_UNIT_LABELS={fingerprint:'Fingerprint Unit',crime:'Crime Unit',checkpoint:'Checkpoint Unit',airport:'Airport Unit'};
+let branchCatalog={loaded:false,items:[],regions:[],unit_types:[]};
+async function loadBranchCatalog(force=false){
+  if(branchCatalog.loaded&&!force)return branchCatalog;
+  const data=await api('/api/branches');
+  branchCatalog={loaded:true,items:Array.isArray(data.items)?data.items:[],
+    regions:Array.isArray(data.regions)?data.regions:[],
+    unit_types:Array.isArray(data.unit_types)?data.unit_types:[]};
+  return branchCatalog;
+}
+async function refreshBranchSelect(selectId,unitType){
+  const select=document.getElementById(selectId);
+  if(!select)return false;
+  const previous=select.value;
+  select.disabled=true;
+  select.innerHTML='<option value="">Loading branches…</option>';
+  let items=[];
+  try{
+    const data=await api('/api/branches?unit_type='+encodeURIComponent(unitType));
+    items=Array.isArray(data.items)?data.items:[];
+    const byId=new Map((branchCatalog.items||[]).map(b=>[String(b.id),b]));
+    items.forEach(b=>byId.set(String(b.id),b));
+    branchCatalog.items=Array.from(byId.values());
+  }catch(e){
+    if(branchCatalog.loaded)items=branchCatalog.items.filter(b=>b.unit_type===unitType);
+  }
+  if(!items.length){
+    select.innerHTML='<option value="">No '+esc(BRANCH_UNIT_LABELS[unitType]||'unit')+' branches available</option>';
+    select.disabled=true;
+    return false;
+  }
+  select.innerHTML='<option value="">— select branch —</option>'+items.map(b=>
+    `<option value="${esc(b.id)}">${esc(b.name)} — ${esc(b.region)}</option>`
+  ).join('');
+  select.value=items.some(b=>String(b.id)===String(previous))?String(previous):'';
+  select.disabled=false;
+  return true;
+}
 function mapPerson(p){
   const raw=[p.first_name??p.first,p.second_name??p.second,p.third_name??p.third,p.fourth_name??p.fourth].map(x=>x||'');
   const hasParts=raw.some(Boolean);
@@ -1450,7 +1525,7 @@ function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fou
   mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
-const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',crimes:'Crime / victim intake',admin:'User management',executive:'Global Executive Dashboard',oversight:'Stations Oversight & Regional Data',vehiclestatus:'Vehicle Status & Tracking',conduct:'Conduct, Promotions & Disciplinary Management'};
+const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',crimes:'Crime / victim intake',admin:'User management',branches:'Branch Management',executive:'Global Executive Dashboard',oversight:'Stations Oversight & Regional Data',vehiclestatus:'Vehicle Status & Tracking',conduct:'Conduct, Promotions & Disciplinary Management'};
 // Current session ----------------------------------------------------
 let sessionUser=null;          // {id,username,display_name,role,role_label,branch,location,location_scope,modules,active}
 let sessionVisibility=null;    // /api/me visibility
@@ -1464,13 +1539,16 @@ function homePage(){
 }
 // Pages that live under a module with a different name (the module list is
 // the server-issued RBAC contract; these are just extra views of it).
-const PAGE_MODULE={vehiclestatus:'cars',caseworkspace:'cid'};
+const PAGE_MODULE={vehiclestatus:'cars',caseworkspace:'cid',branches:'admin'};
 function pageModule(page){return PAGE_MODULE[page]||page}
 function go(page){
   if(page==='home') page = homePage();
   const mods = effectiveModules();          // unit denylist applied (no Central Police Search for Airport / CID)
   if(!sessionUser){
     if(!ALLOWED_PAGES_WITHOUT_AUTH.has(page)) return;
+  } else if((page==='admin'||page==='branches') && !(sessionVisibility && sessionVisibility.is_admin)){
+    // The administration pages are reserved for an authenticated SystemAdmin.
+    page = homePage();
   } else if(mods.indexOf(pageModule(page))===-1){
     // RBAC: redirect to the first page the user is allowed to see.
     page = (mods.indexOf('dashboard')!==-1) ? homePage() : (mods[0] || 'dashboard');
@@ -1489,6 +1567,7 @@ function go(page){
   document.getElementById('pageTitle').textContent=TITLES[page]||'';
   if(page==='cid') renderCases();
   if(page==='admin') renderUserTable();
+  if(page==='branches') refreshBranchManagement();
   if(page==='policesearch') renderPoliceSearch();
   if(page==='stations') renderStationsTable();
   if(page==='officers'){ renderOfficersTable(); refreshHrSelects(); loadHrRecords(true); hrTab(hrActiveTab); }
@@ -1533,7 +1612,7 @@ document.querySelectorAll('#nav button[data-page]').forEach(b=>b.onclick=()=>go(
 //   * admin         — Administration (SystemAdmin only)
 // Open/closed state persists across reloads (sentinelNavGroups); opening a
 // page always expands the group that contains it (see go()).
-const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',officers:'personnel',conduct:'personnel',cars:'transport',vehiclestatus:'transport',executive:'command',oversight:'command',stations:'registrations',crimes:'registrations',admin:'admin'};
+const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',officers:'personnel',conduct:'personnel',cars:'transport',vehiclestatus:'transport',executive:'command',oversight:'command',stations:'registrations',crimes:'registrations',admin:'admin',branches:'admin'};
 const NAV_GROUPS_KEY='sentinelNavGroups';
 function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
 function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
@@ -2102,6 +2181,8 @@ function openEntryModal(id){
   if(ov)ov.classList.add('on');
   d.classList.add('open');
   document.body.classList.add('modal-open');
+  const branchForms={fpDrawer:['fpBranch','fingerprint'],airDrawer:['airBranch','airport'],crmDrawer:['crmBranch','crime']};
+  if(branchForms[id])refreshBranchSelect(branchForms[id][0],branchForms[id][1]);
   const body=d.querySelector('.cm-body');
   if(body)body.scrollTop=0;
   const first=d.querySelector('input:not([readonly]):not([disabled]),select,textarea');
@@ -2938,7 +3019,7 @@ function renderCheckpointTable(){
   const searchedCheckpoints = cpq ? visibleCheckpoints.filter(x => {
     const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
     const p = person(x.person);
-    return [x.time, locLabel, p && p.name, x.person, x.guardianName, x.guardianRelationship, x.screen, x.action, x.notes].some(v => normTxt(v).includes(cpq));
+    return [x.time, locLabel, x.branch, p && p.name, x.person, x.guardianName, x.guardianRelationship, x.screen, x.action, x.notes].some(v => normTxt(v).includes(cpq));
   }) : visibleCheckpoints;
   const empty = document.getElementById('cpEmpty');
   const count = document.getElementById('cpTableCount');
@@ -2974,7 +3055,7 @@ function renderCheckpointTable(){
   tbody.innerHTML = searchedCheckpoints.map(x => {
     const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
     return `<tr data-event-id="${esc(x.event_id||x.id||'')}" data-loc="${esc(x.location_code||'')}">
-      <td>${esc(x.time)}</td><td>${esc(locLabel||'—')}</td>
+      <td>${esc(x.time)}</td><td>${esc(locLabel||'—')}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td>
       <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
       <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
       <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
@@ -3459,10 +3540,10 @@ function renderFingerprintTable(){
   const list=(db.fingerprint||[]).filter(x=>{
     if(!q)return true;
     const p=person(x.person);
-    return [x.id,x.purpose,x.status,x.certificate,p&&p.name,x.person].some(v=>normTxt(v).includes(q));
+    return [x.id,x.purpose,x.status,x.certificate,x.branch,p&&p.name,x.person].some(v=>normTxt(v).includes(q));
   });
   fpTable.innerHTML=list.map(x=>{const p=person(x.person);
-   return `<tr><td>${esc(x.id)}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
+   return `<tr><td>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
    <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td class="actions">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
@@ -3476,9 +3557,9 @@ function renderAirportTable(){
     if(!q)return true;
     const p=person(x.person);
     const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));
-    return [p&&p.name,x.person,x.move,x.date,x.flight,x.airline,route].some(v=>normTxt(v).includes(q));
+    return [p&&p.name,x.person,x.move,x.date,x.flight,x.airline,route,x.branch].some(v=>normTxt(v).includes(q));
   });
-  airTable.innerHTML=list.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No passengers match that search':'No passenger records'}</td></tr>`;
+  airTable.innerHTML=list.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small>${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No passengers match that search':'No passenger records'}</td></tr>`;
 }
 function renderSuspectTable(){
   const q=normTxt((document.getElementById('suspectSearch')||{}).value||'');
@@ -3492,10 +3573,10 @@ function renderSuspectTable(){
 function renderCases(){
   if(!window.caseTable)return;
   const q=normTxt((document.getElementById('caseSearch')||{}).value||'');
-  const list=(db.cases||[]).filter(c=>!q||[c.id,c.category,c.location,c.status,c.summary].some(v=>normTxt(v).includes(q)));
+  const list=(db.cases||[]).filter(c=>!q||[c.id,c.category,c.location,c.branch,c.status,c.summary].some(v=>normTxt(v).includes(q)));
   caseTable.innerHTML=list.map(c=>{
     const parts=c.participants?c.participants.length:(db.suspects.filter(s=>s.case===c.id).length);
-    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td><td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openCase('${esc(c.id)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No cases match that search':'No cases yet'}</td></tr>`;
+    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}${c.branch?`<br><small class="muted">${esc(c.branch)}</small>`:''}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td><td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openCase('${esc(c.id)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No cases match that search':'No cases yet'}</td></tr>`;
 }
 
 // ============================ fingerprint ============================
@@ -3510,6 +3591,8 @@ async function saveFingerprint(e){
   e.preventDefault();
   clearInvalid();
   const d=window._identityWires.fp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'fp',names:['first','second','third','fourth','dob','mother','address'],notice:'fpNotice'});return}
+  const branchId=val('fpBranch');
+  if(!branchId){showFormError('Select a Fingerprint Unit branch.',{names:['fpBranch'],notice:'fpNotice'});return}
   const appDocs=collectFiles('appDoc',4),guardDocs=collectFiles('guardDoc',3);
   if(!gName.value.trim()){showFormError('Guardian full name is required.',{names:['gName'],notice:'fpNotice'});return}
   if(appDocs.length<2){showFormError('Attach at least 2 applicant documents.',{notice:'fpNotice'});return}
@@ -3518,7 +3601,7 @@ async function saveFingerprint(e){
     if(serverOn){
       const photo=document.getElementById('fp-photo').files[0];
       const fd=new FormData();
-      Object.entries({...identityServer(d),person_id:matchedPersonId('fp'),purpose:fpPurpose.value,sex:fpSex.value,email:fpEmail.value.trim(),guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
+      Object.entries({...identityServer(d),person_id:matchedPersonId('fp'),branch_id:branchId,purpose:fpPurpose.value,sex:fpSex.value,email:fpEmail.value.trim(),guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
       appDocs.forEach((f,i)=>fd.append('doc_app_'+i,f));guardDocs.forEach((f,i)=>fd.append('doc_guard_'+i,f));if(photo)fd.append('photo',photo);
       const r=await api('/api/clearance-applications',{method:'POST',body:fd});
       const m=r.identity&&r.identity.matched?'matched to existing central record '+r.identity.person_id:'new central person '+r.person_id+' created';
@@ -3595,13 +3678,15 @@ async function saveAirport(e){
   e.preventDefault();
   clearInvalid();
   const d=window._identityWires.air.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'air',names:['first','second','third','fourth','dob','mother','address'],notice:'airNotice'});return}
+  const branchId=val('airBranch');
+  if(!branchId){showFormError('Select an Airport Unit branch.',{names:['airBranch'],notice:'airNotice'});return}
   const origin=airOrigin.value.trim()||'',dest=airDest.value.trim()||'';
   const route=[origin,dest].filter(Boolean).join(' / ');
   const airline=airAirline.value.trim();
   try{
     let p;
     if(serverOn){
-      const payload={...identityServer(d),person_id:matchedPersonId('air'),movement:airMove.value,
+      const payload={...identityServer(d),person_id:matchedPersonId('air'),branch_id:branchId,movement:airMove.value,
         travel_date:airDate.value,flight_number:airFlight.value.trim(),airline,
         origin_city:origin,destination_city:dest,route:route,notes:airNotes.value};
       const r=await api('/api/airport-records',{method:'POST',body:JSON.stringify(payload)});
@@ -3625,16 +3710,20 @@ function openCaseDrawer(){
    <form class="form" id="caseDrawerForm">
     <div class="grid2"><div class="field"><label>Category *</label><input id="cdCategory" placeholder="Theft, Fraud…"></div>
     <div class="field"><label>Location</label><input id="cdLocation" placeholder="Hargeisa"></div></div>
+    <div class="field"><label>Crime branch *</label><select id="caseBranch" data-branch-unit="crime" required><option value="">Loading branches…</option></select></div>
     <div class="field"><label>Status</label><select id="cdStatus"><option>Reported</option><option>Under Investigation</option><option>Submitted for Prosecution</option></select></div>
     <div class="field"><label>Incident summary</label><textarea id="cdSummary" placeholder="What happened, when, key facts…"></textarea></div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCaseDrawer()">Create case</button>`);
+  refreshBranchSelect('caseBranch','crime');
 }
 async function submitCaseDrawer(){
   if(guardReadOnly('Creating a crime case')) return;
   clearInvalid();
   if(!val('cdCategory')){showFormError('Category is required to create a case.',{prefix:'cd',names:['category'],title:'Unable to Save'});return}
-  const payload={category:val('cdCategory'),location:val('cdLocation')||'Not specified',status:val('cdStatus'),incident_summary:val('cdSummary')};
+  const branchId=val('caseBranch');
+  if(!branchId){showFormError('Select a crime branch.',{names:['caseBranch'],title:'Unable to Save'});return}
+  const payload={category:val('cdCategory'),branch_id:branchId,location:val('cdLocation')||'Not specified',status:val('cdStatus'),incident_summary:val('cdSummary')};
   try{
     let id;
     if(serverOn){const r=await api('/api/crime-cases',{method:'POST',body:JSON.stringify(payload)});id=r.case_id}
@@ -3724,13 +3813,15 @@ function openCheckpointDrawer(){
     <div class="section-label">Guardian — next of kin / companion</div>
     ${guardianFormHTML('gd')}
     <div class="section-label">Checkpoint screening</div>
-    <div class="grid2">
-     <div class="field"><label>Checkpoint</label><select id="cpLoc" ${!isAdmin && scope ? 'disabled' : ''}>${opts}</select></div>
+    <div class="grid3">
+     <div class="field"><label>Checkpoint branch *</label><select id="cpBranch" data-branch-unit="checkpoint" required><option value="">Loading branches…</option></select></div>
+     <div class="field"><label>Checkpoint location *</label><select id="cpLoc" ${!isAdmin && scope ? 'disabled' : ''}>${opts}</select></div>
      <div class="field"><label>Officer notes (optional)</label><input id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></div>
     </div>
     <div class="hint" id="cpScreenHint">Screening runs automatically against active suspect alerts.</div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
+  refreshBranchSelect('cpBranch','checkpoint');
   buildFileSlots('cpDocs','tdoc',2,['Traveler document 1 *','Traveler document 2 (optional)']);
   buildFileSlots('gdDocs','gdoc',2,['Guardian document 1 *','Guardian document 2 (optional)']);
   wireIdentity('cp');
@@ -3746,6 +3837,8 @@ async function submitCheckpoint(){
   clearInvalid();
   const d=window._identityWires.cp.read(),v=validateTraveler(d);if(!v.ok){showFormError(v.msg,{prefix:'cp',names:['first','second','third','fourth','dob','address','permanent','purpose']});return}
   const gd=window._identityWires.gd.read(),gv=validateGuardian(gd);if(!gv.ok){showFormError(gv.msg,{prefix:'gd',names:['first','second','third','fourth','relationship','phone','permanent','occupation']});return}
+  const branchId=val('cpBranch');
+  if(!branchId){showFormError('Select a Checkpoint Unit branch.',{names:['cpBranch'],title:'Unable to Save'});return}
   const trDocs=collectFiles('tdoc',2),gdDocs=collectFiles('gdoc',2);
   if(trDocs.length<1){showFormError('Attach at least 1 traveler document.',{title:'Unable to Save'});return}
   if(gdDocs.length<1){showFormError('Attach at least 1 guardian document.',{title:'Unable to Save'});return}
@@ -3755,7 +3848,7 @@ async function submitCheckpoint(){
   try{
     if(serverOn){
       const fd=new FormData();
-      const fields={...identityServer(d),person_id:matchedPersonId('cp'),current_address:d.address,permanent_address:d.permanent,
+      const fields={...identityServer(d),person_id:matchedPersonId('cp'),branch_id:branchId,current_address:d.address,permanent_address:d.permanent,
         purpose_of_visit:d.purpose,location:cpLoc.value,notes:cpNotes.value,
         guardian_first_name:gd.first,guardian_second_name:gd.second,guardian_third_name:gd.third,
         guardian_fourth_name:gd.fourth,guardian_name:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
@@ -3927,6 +4020,7 @@ async function syncServer(){
       hasModule('officers') ? safeItems('/api/officers/discipline') : Promise.resolve({ok:false,items:[]}),
       hasModule('crimes')     ? safeItems('/api/crimes')                  : Promise.resolve({ok:false,items:[]}),
       (hasModule('cars') || hasModule('policesearch') || hasModule('checkpoints') || hasModule('crimes')) ? safeItems('/api/vehicles') : Promise.resolve({ok:false,items:[]}),
+      api('/api/branches').catch(()=>null),
       api('/api/dashboard').catch(()=>null),
     ];
     const results = await Promise.all(fetches);
@@ -3942,6 +4036,7 @@ async function syncServer(){
     const dsc = results.shift();
     const crm = results.shift();
     const veh = results.shift();
+    const branches = results.shift();
     const dash = results.shift();
     // NOTE: the conduct register is deliberately NOT fetched here — it has
     // its own loader (refreshConduct()/loadHrRecords()) gated on the
@@ -3950,6 +4045,9 @@ async function syncServer(){
     // BEFORE any register (db.fingerprint included) was updated — the cause
     // of the dead Approve/Print buttons for every role.
     if(dash) db.dashboard = dash;
+    if(branches&&Array.isArray(branches.items)){
+      branchCatalog={loaded:true,items:branches.items,regions:branches.regions||[],unit_types:branches.unit_types||[]};
+    }
     if(ps.ok) db.people=ps.items.map(mapPerson);
     // Rebuild the per-person unit pills only from collections that actually
     // answered (ok=true). A failed fetch keeps the previous local array and
@@ -3982,12 +4080,12 @@ async function syncServer(){
       }
       if(!p.units.length){p.units.push('Central');p.units_explicit.push('Central');}
     });
-    if(ars.ok) db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,notes:x.notes}));
+    if(ars.ok) db.airport=ars.items.map(x=>({id:x.record_id,person:x.person_id,move:x.movement,date:x.travel_date,flight:x.flight_number,airline:x.airline,origin:x.origin_city,dest:x.destination_city,route:x.route,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',notes:x.notes}));
     // The review payload carries the 12-hour mandatory-review window state
     // (and whether the signed-in user may approve right now), so the register
     // can show why an approval is still locked.
-    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at}));
-    if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,summary:x.incident_summary,created_at:x.created_at||'',participants:[],evidence:[]}));
+    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at}));
+    if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',summary:x.incident_summary,created_at:x.created_at||'',participants:[],evidence:[]}));
     if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     // Police Registrations: stations + officers now sync from the central DB.
     // A failed fetch keeps the previous local arrays (never clobbered by a
@@ -4006,7 +4104,7 @@ async function syncServer(){
     const parseDocs=s=>{try{return JSON.parse(s||'[]')}catch(e){return[]}};
     const newCheckpoints = cps.items.map(x=>({time:(x.created_at||'').replace('T',' ').slice(0,16),
       location:x.location,location_code:x.location_code,checkpoint_location:x.checkpoint_location,
-      person:x.person_id,event_id:x.event_id,
+      person:x.person_id,event_id:x.event_id,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',
       screen:x.screening_result,action:x.action_taken,notes:x.notes,purpose:x.purpose_of_visit,
       currentAddress:x.current_address,permanentAddress:x.permanent_address,photo:x.traveler_photo,
       travelerDocs:parseDocs(x.traveler_docs).length,guardianDocs:parseDocs(x.guardian_docs).length,
@@ -4271,7 +4369,7 @@ async function initApp(){
 //   DEP. OF TRANSPORT                                cars · vehiclestatus
 //   CHIEF COMMANDER OF POLICE OFFICE (HQ / COMMAND)  executive · oversight
 //   REGISTERS                                        stations · crimes
-//   ADMINISTRATION                                   admin (SystemAdmin only)
+//   ADMINISTRATION                                   admin · branches (SystemAdmin only)
 //
 // Every button carries the module it belongs to (`data-modules`), so one pass
 // over the server-issued module list decides the whole menu: a unit officer
@@ -4879,6 +4977,68 @@ function renderVehicleStatusTable(){
 }
 
 // ============================ user management =============================
+function setBranchNotice(message,error=false){
+  const notice=document.getElementById('branchNotice');
+  if(!notice)return;
+  notice.className=error?'notice err show':'notice';
+  notice.style.display=message?'block':'none';
+  notice.textContent=message||'';
+}
+async function refreshBranchManagement(force=false){
+  const table=document.getElementById('branchTable');
+  const regionSelect=document.getElementById('branchRegion');
+  if(!table||!regionSelect)return;
+  const previousRegion=regionSelect.value;
+  try{
+    const catalog=await loadBranchCatalog(force);
+    const regions=Array.from(new Set([...(catalog.regions||[]),...(catalog.items||[]).map(b=>b.region)]))
+      .filter(Boolean).sort((a,b)=>a.localeCompare(b));
+    regionSelect.innerHTML='<option value="">— select region —</option>'+regions.map(region=>
+      `<option value="${esc(region)}">${esc(region)}</option>`).join('');
+    if(regions.includes(previousRegion))regionSelect.value=previousRegion;
+    const rows=(catalog.items||[]).slice().sort((a,b)=>
+      String(a.region).localeCompare(String(b.region))||String(a.name).localeCompare(String(b.name))||
+      String(a.unit_type).localeCompare(String(b.unit_type)));
+    table.innerHTML=rows.map(branch=>`<tr><td><b>${esc(branch.name)}</b></td>
+      <td>${esc(branch.region)}</td><td><span class="badge blue">${esc(BRANCH_UNIT_LABELS[branch.unit_type]||branch.unit_type)}</span></td></tr>`).join('')
+      ||'<tr><td class="empty" colspan="3">No branches have been configured.</td></tr>';
+    if(!force)setBranchNotice('');
+    return true;
+  }catch(e){
+    table.innerHTML='<tr><td class="empty" colspan="3">Branch catalogue unavailable. Check the server connection and refresh.</td></tr>';
+    regionSelect.innerHTML='<option value="">Regions unavailable</option>';
+    setBranchNotice(e.message||'Could not load the branch catalogue.',true);
+    return false;
+  }
+}
+async function saveBranch(e){
+  if(e&&e.preventDefault)e.preventDefault();
+  if(guardReadOnly('Adding a police branch'))return;
+  const name=(document.getElementById('branchName').value||'').trim();
+  const region=document.getElementById('branchRegion').value;
+  const unitType=document.getElementById('branchUnitType').value;
+  if(!name||!region||!BRANCH_UNIT_LABELS[unitType]){
+    setBranchNotice('Enter a branch name, select a region and choose a unit department.',true);
+    return;
+  }
+  const button=document.querySelector('#branchForm button[type="submit"]');
+  if(button)button.disabled=true;
+  setBranchNotice('Saving branch…');
+  try{
+    const result=await api('/api/branches',{method:'POST',body:JSON.stringify({name,region,unit_type:unitType})});
+    await refreshBranchManagement(true);
+    const form=document.getElementById('branchForm');
+    if(form)form.reset();
+    document.getElementById('branchRegion').value=region;
+    document.getElementById('branchUnitType').value=unitType;
+    setBranchNotice((result.branch&&result.branch.name||name)+' added to '+BRANCH_UNIT_LABELS[unitType]+' for '+region+'.');
+    toast('Branch added',name+' · '+region);
+  }catch(err){
+    setBranchNotice(err.message||'Could not add the branch.',true);
+  }finally{
+    if(button)button.disabled=false;
+  }
+}
 async function renderUserTable(){
   if(!sessionUser || !(sessionVisibility && sessionVisibility.can_manage_users)){
     go('dashboard'); return;
@@ -5579,16 +5739,18 @@ function fillCrimeSelects(){
 function renderCrimesTable(){
   const tb=document.getElementById('crimesTable'); if(!tb) return;
   const q=normTxt((document.getElementById('crmSearch')||{}).value||'');
-  const list=(db.crimes||[]).filter(x=>!q||[x.file_number,x.category,x.station_code,
+  const list=(db.crimes||[]).filter(x=>!q||[x.file_number,x.category,x.station_code,x.branch_name,x.branch_region,
     x.officer_name,x.officer_service_id,x.case_status].some(v=>normTxt(v).includes(q)));
   const rows=list.map(x=>`<tr><td><b>${esc(x.file_number)}</b></td><td>${esc(x.category)}</td>
-    <td>${esc(x.station_code||'')}</td><td>${esc(x.officer_name||x.officer_service_id||'')}</td>
+    <td>${esc(x.station_code||'')}${x.branch_name?`<br><small class="muted">${esc(x.branch_name)} · ${esc(x.branch_region||'')}</small>`:''}</td><td>${esc(x.officer_name||x.officer_service_id||'')}</td>
     <td>${esc(x.case_status||'')}</td></tr>`).join('');
   tb.innerHTML=rows||`<tr><td colspan="5" class="empty">${q?'No crime files match that search':'No crime files yet'}</td></tr>`;
 }
 async function saveCrime(e){
   e.preventDefault(); clearInvalid();
   const station=crmStation.value, officer=crmOfficer.value, cat=crmCat.value, when=crmWhen.value, loc=crmLoc.value.trim(), desc=crmDesc.value.trim();
+  const branchId=val('crmBranch');
+  if(!branchId){showFormError('Select a Crime Unit branch.',{names:['crmBranch'],notice:'crmNotice'});return}
   if(!station){showFormError('Select a station.',{names:['crmStation'],notice:'crmNotice'});return}
   if(!officer){showFormError('Select the desk officer.',{names:['crmOfficer'],notice:'crmNotice'});return}
   if(!cat){showFormError('Category is required.',{names:['crmCat'],notice:'crmNotice'});return}
@@ -5597,7 +5759,7 @@ async function saveCrime(e){
   if(!desc){showFormError('Description is required.',{names:['crmDesc'],notice:'crmNotice'});return}
   try{
     const fd=new FormData();
-    fd.append('station_id',station); fd.append('officer_id',officer); fd.append('category',cat);
+    fd.append('branch_id',branchId); fd.append('station_id',station); fd.append('officer_id',officer); fd.append('category',cat);
     fd.append('incident_at',when); fd.append('location',loc); fd.append('description',desc);
     fd.append('severity',crmSev.value); fd.append('case_status',crmStatus.value);
     fd.append('reporting_party_type',crmParty.value); fd.append('victim_anonymous',crmAnon.value);
