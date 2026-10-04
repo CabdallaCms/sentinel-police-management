@@ -5018,7 +5018,37 @@ class API(BaseHTTPRequestHandler):
                                             'conduct_action_types':list(CONDUCT_ACTION_TYPES),
                                             'conduct_classifications':{k: list(v) for k, v in CONDUCT_CLASSIFICATIONS.items()},
                                             'conduct_statuses':list(CONDUCT_STATUSES)})
-            user = require_auth(self); c = get_db_connection()
+            user = require_auth(self)
+            # The branch catalogue has a dedicated early dispatch: keep it
+            # ahead of the generic register router so `/api/branches` and its
+            # canonicalized aliases can never fall through to the catch-all 404.
+            if p.path == '/api/branches':
+                c = get_db_connection()
+                query = parse_qs(p.query)
+                raw_unit_type = str(query.get('unit_type', [''])[0] or '').strip()
+                unit_type = normalize_branch_unit_type(raw_unit_type) if raw_unit_type else None
+                region = re.sub(r'\s+', ' ', str(query.get('region', [''])[0] or '')).strip()
+                where, args = [], []
+                if unit_type:
+                    where.append('unit_type=%s'); args.append(unit_type)
+                if region:
+                    where.append('LOWER(region)=LOWER(%s)'); args.append(region)
+                sql = 'SELECT id,name,region,unit_type FROM police_branches'
+                if where:
+                    sql += ' WHERE ' + ' AND '.join(where)
+                sql += ' ORDER BY region,name,id'
+                rows = c.execute(sql, args).fetchall()
+                regions = c.execute('''SELECT DISTINCT region FROM police_branches
+                                       ORDER BY region''').fetchall()
+                result = {
+                    'items': [branch_view(r) for r in rows],
+                    'regions': [r['region'] for r in regions],
+                    'unit_types': list(BRANCH_UNIT_TYPES),
+                    'unit_labels': BRANCH_UNIT_LABELS,
+                }
+                c.close()
+                return self.send_json(200, result)
+            c = get_db_connection()
             # RBAC module-gating. Every authenticated user can see /api/me and
             # the central /api/persons registry, but each unit endpoint is
             # restricted to the roles that operate that module.
@@ -5055,29 +5085,6 @@ class API(BaseHTTPRequestHandler):
                           'roles': list(ALL_ROLES),
                           'role_labels': ROLE_LABELS,
                           'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
-            elif p.path == '/api/branches':
-                query = parse_qs(p.query)
-                raw_unit_type = str(query.get('unit_type', [''])[0] or '').strip()
-                unit_type = normalize_branch_unit_type(raw_unit_type) if raw_unit_type else None
-                region = re.sub(r'\s+', ' ', str(query.get('region', [''])[0] or '')).strip()
-                where, args = [], []
-                if unit_type:
-                    where.append('unit_type=%s'); args.append(unit_type)
-                if region:
-                    where.append('LOWER(region)=LOWER(%s)'); args.append(region)
-                sql = 'SELECT id,name,region,unit_type FROM police_branches'
-                if where:
-                    sql += ' WHERE ' + ' AND '.join(where)
-                sql += ' ORDER BY region,name,id'
-                rows = c.execute(sql, args).fetchall()
-                regions = c.execute('''SELECT DISTINCT region FROM police_branches
-                                       ORDER BY region''').fetchall()
-                result = {
-                    'items': [branch_view(r) for r in rows],
-                    'regions': [r['region'] for r in regions],
-                    'unit_types': list(BRANCH_UNIT_TYPES),
-                    'unit_labels': BRANCH_UNIT_LABELS,
-                }
             elif p.path == '/api/persons':
                 q = re.sub(r'\s+', ' ', parse_qs(p.query).get('q',[''])[0]).strip()
                 like = f'%{q}%'
@@ -5452,6 +5459,39 @@ class API(BaseHTTPRequestHandler):
             # route-specific logic (login / logout above stay exempt so the
             # role can still open and close a session).
             enforce_read_only(user, 'POST', p.path)
+            # Keep branch creation out of the generic route table: normalize
+            # `/branches`, `/branches/`, and `/api/branches/` first, then
+            # dispatch the canonical path here before any catch-all handling.
+            if p.path == '/api/branches':
+                require_module(user, 'admin')
+                c = get_db_connection()
+                data = body_json(self)
+                name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()
+                region = re.sub(r'\s+', ' ', str(data.get('region') or '')).strip()
+                unit_type = normalize_branch_unit_type(data.get('unit_type'))
+                if not name:
+                    raise ValueError('Branch name is required')
+                if len(name) > 160:
+                    raise ValueError('Branch name must be 160 characters or fewer')
+                if not region:
+                    raise ValueError('Branch region is required')
+                if len(region) > 100:
+                    raise ValueError('Branch region must be 100 characters or fewer')
+                duplicate = c.execute('''SELECT id FROM police_branches
+                    WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND unit_type=%s''',
+                    (name, region, unit_type)).fetchone()
+                if duplicate:
+                    self.send_json(409, {'error': 'This branch already exists for that unit and region'})
+                    c.close(); return
+                row = c.execute('''INSERT INTO police_branches(name,region,unit_type)
+                    VALUES(%s,%s,%s) RETURNING id,name,region,unit_type''',
+                    (name, region, unit_type)).fetchone()
+                branch = branch_view(row)
+                audit(c, user, 'CREATE', 'police_branch', str(branch['id']),
+                      f"{branch['name']} · {branch['region']} · {branch['unit_type']}")
+                c.commit()
+                c.close()
+                return self.send_json(201, {'branch': branch})
             c = get_db_connection()
             # RBAC: same module gate for the POST/PATCH handlers.
             # Writes follow the documented ownership of each register: the
@@ -5467,7 +5507,6 @@ class API(BaseHTTPRequestHandler):
                 '/api/crime-cases': 'cid',
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
-                '/api/branches': 'admin',
                 '/api/admin/users': 'admin',
                 '/api/stations': 'admin',
                 '/api/officers': 'officers',
@@ -5494,34 +5533,7 @@ class API(BaseHTTPRequestHandler):
                         break
                     require_module(user, mod)
                     break
-            if p.path == '/api/branches':
-                data = body_json(self)
-                name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()
-                region = re.sub(r'\s+', ' ', str(data.get('region') or '')).strip()
-                unit_type = normalize_branch_unit_type(data.get('unit_type'))
-                if not name:
-                    raise ValueError('Branch name is required')
-                if len(name) > 160:
-                    raise ValueError('Branch name must be 160 characters or fewer')
-                if not region:
-                    raise ValueError('Branch region is required')
-                if len(region) > 100:
-                    raise ValueError('Branch region must be 100 characters or fewer')
-                duplicate = c.execute('''SELECT id FROM police_branches
-                    WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND unit_type=%s''',
-                    (name, region, unit_type)).fetchone()
-                if duplicate:
-                    self.send_json(409, {'error': 'This branch already exists for that unit and region'})
-                    c.close(); return
-                row = c.execute('''INSERT INTO police_branches(name,region,unit_type)
-                    VALUES(%s,%s,%s) RETURNING id,name,region,unit_type''',
-                    (name, region, unit_type)).fetchone()
-                branch = branch_view(row)
-                audit(c, user, 'CREATE', 'police_branch', str(branch['id']),
-                      f"{branch['name']} · {branch['region']} · {branch['unit_type']}")
-                c.commit()
-                result = {'branch': branch}
-            elif p.path == '/api/persons':
+            if p.path == '/api/persons':
                 data = body_json(self)
                 if not build_full_name(data):
                     raise ValueError('full_name or a 4-part name is required')
