@@ -442,11 +442,33 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 FINGERPRINT_API_ALIAS = '/api/fingerprint/applications'
 CLEARANCE_API = '/api/clearance-applications'
 
+# /api/branches* is the branch-catalogue spelling of the police-station
+# register. Branch officers call the directory by its branch name while the
+# register itself is served under /api/stations; both prefixes resolve to the
+# same handlers (GET list, POST create) and the same `stations` module gate,
+# so the two spellings can never drift into two different catalogues.
+BRANCHES_API_ALIAS = '/api/branches'
+STATIONS_API = '/api/stations'
+
+# Every alias -> canonical prefix pair, surfaced by /api/health so an operator
+# can confirm at a glance that the running process carries the alias table.
+API_ALIASES = {FINGERPRINT_API_ALIAS: CLEARANCE_API,
+               BRANCHES_API_ALIAS: STATIONS_API}
+
 
 def canonical_api_path(path):
-    """Resolve the /api/fingerprint/applications alias onto /api/clearance-applications."""
-    if path == FINGERPRINT_API_ALIAS or path.startswith(FINGERPRINT_API_ALIAS + '/'):
-        return CLEARANCE_API + path[len(FINGERPRINT_API_ALIAS):]
+    """Resolve the spec-facing aliases onto their canonical API routes.
+
+    * /api/fingerprint/applications* -> /api/clearance-applications*
+    * /api/branches*                -> /api/stations*  (branch catalogue)
+
+    Called by do_GET / do_POST BEFORE routing and BEFORE the RBAC module gate,
+    so an alias inherits the canonical route's handler and permissions
+    exactly. Any other path is returned untouched.
+    """
+    for alias, canonical in API_ALIASES.items():
+        if path == alias or path.startswith(alias + '/'):
+            return canonical + path[len(alias):]
     return path
 
 
@@ -4893,6 +4915,11 @@ class API(BaseHTTPRequestHandler):
                                             'database':'postgresql',
                                             'database_name':os.environ.get('SENTINEL_DB_NAME', 'sentinel_police'),
                                             'build':BUILD_TAG,
+                                            # Alias -> canonical route table, so a
+                                            # caller can tell whether /api/branches
+                                            # (and the other spec spellings) resolve
+                                            # on the process actually answering.
+                                            'api_aliases':dict(API_ALIASES),
                                             # Live proof the gate is armed: the
                                             # boot self-test is re-run on every
                                             # health call, so a response saying
