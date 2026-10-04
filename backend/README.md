@@ -161,8 +161,8 @@ and SystemAdmin-only.
 - `POST /api/logout` (authenticated)
 - `GET /api/health`
 - `GET /api/me` (authenticated)
-- `GET /api/branches?unit_type=fingerprint|crime|checkpoint|airport&region=...` (authenticated — filters the dynamic branch catalogue by department and/or region; returns `items`, available `regions`, and unit labels)
-- `POST /api/branches` (SystemAdmin only — `{name, region, unit_type}`; adds a branch immediately, rejects case-insensitive duplicates with 409)
+- `GET /api/branches?unit_type=fingerprint|crime|checkpoint|airport&region=...` (authenticated — filters the dynamic branch catalogue by department and/or region; returns `items`, available `regions`, and unit labels; `/branches` and `/api/branches/` are normalized aliases)
+- `POST /api/branches` (SystemAdmin only — `{name, region, unit_type}`; adds a branch immediately, rejects case-insensitive duplicates with 409; `/branches` and `/api/branches/` are normalized aliases)
 - `GET /api/persons?q=...` (authenticated — searches name parts, full name, National ID, passport, phone, mother's name, Person ID)
 - `POST /api/persons` (authenticated — strict create, 409 if the National ID/passport already exists)
 - `POST /api/persons/resolve` (authenticated — Tier 1/2/3/4 smart identity resolution with flexible partial-name matching and dropdown `suggestions`)

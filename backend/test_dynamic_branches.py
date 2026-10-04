@@ -110,6 +110,8 @@ def check(condition, message):
 def run_api_suite(base):
     status, unauthenticated = request(base, 'GET', '/api/branches')
     check(status == 401, 'branch catalogue requires an authenticated session')
+    status, bare_unauthenticated = request(base, 'GET', '/branches')
+    check(status == 401, 'bare /branches alias reaches the authenticated branch handler')
 
     tokens = {}
     for username in ('admin', 'fp.officer', 'cid.officer'):
@@ -121,6 +123,12 @@ def run_api_suite(base):
     admin, fp, cid = tokens['admin'], tokens['fp.officer'], tokens['cid.officer']
     status, catalogue = request(base, 'GET', '/api/branches', admin)
     check(status == 200, 'administrator reads the branch catalogue')
+    status, bare_catalogue = request(base, 'GET', '/branches', admin)
+    check(status == 200 and bare_catalogue.get('items') == catalogue.get('items'),
+          'GET /branches alias maps to the /api/branches catalogue')
+    status, slash_catalogue = request(base, 'GET', '/api/branches/', admin)
+    check(status == 200 and slash_catalogue.get('items') == catalogue.get('items'),
+          'GET /api/branches/ trailing-slash path maps to the catalogue')
     branches = catalogue['items']
     expected = {
         ('East Togdheer', 'Buuhoodle Branch'),
@@ -147,6 +155,15 @@ def run_api_suite(base):
     status, denied = request(base, 'POST', '/api/branches', fp, {
         'name': 'Unauthorized Branch', 'region': 'Sool', 'unit_type': 'fingerprint'})
     check(status == 401, 'non-admin unit officer cannot create branches')
+    status, alias_denied = request(base, 'POST', '/branches', fp, {
+        'name': 'Unauthorized Alias Branch', 'region': 'Sool', 'unit_type': 'fingerprint'})
+    check(status == 401, 'POST /branches alias preserves the SystemAdmin-only write gate')
+
+    alias_branch_name = f'Arena Alias Branch {time.time_ns()}'
+    status, alias_created = request(base, 'POST', '/branches', admin, {
+        'name': alias_branch_name, 'region': 'Sanaag', 'unit_type': 'airport'})
+    check(status == 201 and alias_created.get('branch', {}).get('name') == alias_branch_name,
+          'POST /branches alias maps to the admin branch creation handler')
 
     branch_name=f'Arena Test Branch {time.time_ns()}'
     status, created = request(base, 'POST', '/api/branches', admin, {

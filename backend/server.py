@@ -476,7 +476,13 @@ CLEARANCE_API = '/api/clearance-applications'
 
 
 def canonical_api_path(path):
-    """Resolve the /api/fingerprint/applications alias onto /api/clearance-applications."""
+    """Normalize compatibility aliases to their canonical API routes."""
+    # Branch clients have existed with and without the `/api` prefix, and
+    # some local proxies append a trailing slash. Route every spelling through
+    # the same authenticated handler (and the same SystemAdmin write gate).
+    branch_path = path.rstrip('/')
+    if branch_path in ('/branches', '/api/branches'):
+        return '/api/branches'
     if path == FINGERPRINT_API_ALIAS or path.startswith(FINGERPRINT_API_ALIAS + '/'):
         return CLEARANCE_API + path[len(FINGERPRINT_API_ALIAS):]
     return path
