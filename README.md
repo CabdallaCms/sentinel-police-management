@@ -460,7 +460,7 @@ asserts the **exact arithmetic** of every department endpoint:
   aliases, `module=all`, a `400` for an unknown module, and the per-module RBAC matrix
   (including that `module=all` silently omits bundles the caller may not see).
 
-Review-gate regression suite (standard library only; boots the server against a temporary database):
+Review-gate regression suite (PostgreSQL; uses the configured test database or a temporary `pgserver` cluster, and performs timestamp backdating through the application's connection adapter):
 
 ```bash
 python3 backend/test_review_gate.py

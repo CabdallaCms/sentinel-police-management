@@ -2524,21 +2524,6 @@ def main():
         assert stations['items'][0]['station_id'] == 'ST-001', stations['items'][0]
         assert stations['items'][0]['region'] in ('Sool', 'Sanaag', 'East Togdheer'), stations['items'][0]
 
-        # /api/branches is the branch-catalogue alias for the same register:
-        # canonical_api_path() resolves it before routing, so GET returns the
-        # identical catalogue, POST reaches the same validator (a body missing
-        # the required fields answers 400, never the 404 fall-through), and the
-        # `stations` module gate is inherited unchanged.
-        s, branches = request(base, 'GET', '/api/branches', tokens['admin'])
-        assert s == 200 and branches['items'] == stations['items'], (s, branches)
-        s, r = request(base, 'POST', '/api/branches', tokens['admin'], {})
-        assert s == 400 and 'name' in r['error'].lower(), (s, r)
-        s, r = request(base, 'GET', '/api/branches', tokens['fp.officer'])
-        assert s == 401, ('branch catalogue is gated like the station register', s, r)
-        # Everything else still falls through to the 404 handler.
-        s, r = request(base, 'GET', '/api/branches/nope/nope', tokens['admin'])
-        assert s == 404 and r['error'] == 'Not found', (s, r)
-
         s, officers = request(base, 'GET', '/api/officers', tokens['admin'])
         assert s == 200 and officers['items'] == [], (s, officers)
 

@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Focused regression tests for the clearance approve/print gate.
+"""Focused PostgreSQL regression tests for the clearance approve/print gate.
 
-Standard library only. Boots backend/server.py against a temporary SQLite
-database and verifies the three mandated rules end to end over HTTP:
+Uses the configured PostgreSQL database (SENTINEL_DATABASE_URL or individual
+SENTINEL_DB_* settings) when present, otherwise provisions an isolated temporary
+PostgreSQL cluster with `pgserver`. The application server and direct test
+updates both use backend.server.get_db_connection().
+
+Verifies the three mandated rules end to end over HTTP:
 
   1. 12-HOUR RULE — a standard officer (FingerprintUnit / any non-admin)
      cannot approve a freshly submitted application: HTTP 400 with the
      spec-mandated detail, and the lock only releases once
      created_at + 12h has elapsed (11.9h blocked, 12.1h allowed).
-  2. ADMIN BYYPASS — administrators ('admin' alias / canonical SystemAdmin)
+  2. ADMIN BYPASS — administrators ('admin' alias / canonical SystemAdmin)
      approve instantly, review_period_bypassed=true, certificate issued.
   3. NO ERRORS ON THE HAPPY PATHS — both route spellings
      (/api/fingerprint/applications/<id>/approve and the legacy
@@ -23,8 +27,10 @@ Usage:
 import datetime
 import json
 import os
+import secrets
+import selectors
+import shutil
 import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -34,9 +40,107 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SERVER = os.path.join(ROOT, 'server.py')
+sys.path.insert(0, ROOT)
+
+try:
+    import server as sentinel_server
+except ModuleNotFoundError as error:
+    if error.name == 'psycopg2':
+        print('SKIP: install the backend PostgreSQL driver (psycopg2-binary) first.')
+        sys.exit(0)
+    raise
 
 REVIEW_LOCK_MESSAGE = ('Review period active. Standard officers must wait 12 hours '
                        'before approving.')
+
+PG_SERVE = '''
+import pathlib, sys, pgserver
+data = pathlib.Path(sys.argv[1]); data.mkdir(parents=True, exist_ok=True)
+pgserver.get_server(str(data))
+print(data, flush=True)
+sys.stdin.read()
+'''
+
+DB_ENV_KEYS = ('SENTINEL_DB_HOST', 'SENTINEL_DB_PORT', 'SENTINEL_DB_USER',
+               'SENTINEL_DB_PASSWORD', 'SENTINEL_DB_NAME')
+
+
+def has_database_config():
+    return bool(os.environ.get('SENTINEL_DATABASE_URL', '').strip()
+                or any(os.environ.get(key) for key in DB_ENV_KEYS))
+
+
+def provision_database(tmp):
+    """Use the configured PostgreSQL connection or an isolated pgserver cluster.
+
+    Returns (env_overrides, stop_callable, description), or None when no
+    PostgreSQL test engine is available.
+    """
+    if has_database_config():
+        source = ('SENTINEL_DATABASE_URL' if os.environ.get('SENTINEL_DATABASE_URL')
+                  else 'SENTINEL_DB_* settings')
+        return {}, lambda: None, f'configured PostgreSQL ({source})'
+    try:
+        import pgserver  # noqa: F401
+    except ImportError:
+        return None
+    proc = subprocess.Popen(
+        [sys.executable, '-u', '-c', PG_SERVE, os.path.join(tmp, 'pgdata')],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    socket_dir = ''
+    deadline = time.time() + 90
+    selector = selectors.DefaultSelector()
+    selector.register(proc.stdout, selectors.EVENT_READ)
+    try:
+        while time.time() < deadline and proc.poll() is None:
+            events = selector.select(timeout=min(1.0, max(0, deadline - time.time())))
+            if not events:
+                continue
+            line = proc.stdout.readline().strip()
+            if line.startswith('/'):
+                socket_dir = line
+                break
+            if not line and proc.poll() is not None:
+                break
+    finally:
+        selector.close()
+    if not socket_dir:
+        proc.kill()
+        proc.wait(timeout=10)
+        return None
+    env = {'SENTINEL_DB_HOST': socket_dir, 'SENTINEL_DB_NAME': 'postgres',
+           'SENTINEL_DB_USER': 'postgres', 'SENTINEL_DB_PASSWORD': '',
+           'SENTINEL_DB_PORT': '5432'}
+    os.environ.update(env)
+
+    def stop():
+        if proc.poll() is None:
+            if proc.stdin:
+                proc.stdin.close()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+
+    return env, stop, f'temporary pgserver PostgreSQL cluster at {socket_dir}'
+
+
+def backdate_application(application_id, created_at):
+    """Update one review timestamp through the application's PostgreSQL adapter."""
+    conn = sentinel_server.get_db_connection()
+    try:
+        cursor = conn.execute(
+            'UPDATE clearance_applications SET created_at=%s WHERE application_id=%s',
+            (created_at, application_id))
+        if cursor.rowcount != 1:
+            raise AssertionError(f'expected to backdate one application, updated {cursor.rowcount}')
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def free_port():
@@ -82,25 +186,96 @@ def multipart_request(base, path, token=None, fields=None, files=None):
         return e.code, json.loads(e.read().decode())
 
 
+def cleanup_test_fixtures(application_ids, national_ids, usernames, tokens):
+    """Remove only fixtures created by this run from a configured test database."""
+    if not (application_ids or national_ids or usernames or tokens):
+        return
+    conn = None
+    try:
+        conn = sentinel_server.get_db_connection()
+        alias_ids = []
+        if usernames:
+            alias_ids = [row['id'] for row in conn.execute(
+                'SELECT id FROM users WHERE username = ANY(%s)', (usernames,)).fetchall()]
+        person_ids = []
+        person_codes = []
+        if application_ids:
+            person_rows = conn.execute(
+                'SELECT DISTINCT p.id, p.person_id FROM clearance_applications ca '
+                'JOIN persons p ON p.id=ca.person_id WHERE ca.application_id = ANY(%s)',
+                (application_ids,)).fetchall()
+            person_ids = [row['id'] for row in person_rows]
+            person_codes = [row['person_id'] for row in person_rows]
+            conn.execute('DELETE FROM audit_events WHERE entity_id = ANY(%s)', (application_ids,))
+            if person_codes:
+                conn.execute('DELETE FROM audit_events WHERE entity = %s AND entity_id = ANY(%s)',
+                             ('person', person_codes))
+        if tokens:
+            conn.execute('DELETE FROM sessions WHERE token = ANY(%s)', (tokens,))
+        if alias_ids:
+            alias_id_text = [str(user_id) for user_id in alias_ids]
+            conn.execute('DELETE FROM audit_events WHERE user_id = ANY(%s) '
+                         'OR entity_id = ANY(%s)', (alias_ids, alias_id_text))
+            conn.execute('DELETE FROM sessions WHERE user_id = ANY(%s)', (alias_ids,))
+        if application_ids:
+            conn.execute('DELETE FROM clearance_applications WHERE application_id = ANY(%s)',
+                         (application_ids,))
+        if person_ids and national_ids:
+            conn.execute('DELETE FROM persons WHERE id = ANY(%s) AND national_id = ANY(%s)',
+                         (person_ids, national_ids))
+        if alias_ids:
+            conn.execute('DELETE FROM users WHERE id = ANY(%s)', (alias_ids,))
+        conn.commit()
+    except Exception as error:
+        if conn is not None:
+            conn.rollback()
+        print(f'WARNING: unable to clean review-gate test fixtures: {error}')
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def main():
     port = free_port()
     tmp = tempfile.mkdtemp(prefix='sentinel-gate-')
-    db_path = os.path.join(tmp, 'db.sqlite')
-    env = {**os.environ, 'SENTINEL_DB': db_path,
-           'SENTINEL_UPLOADS': os.path.join(tmp, 'uploads'),
-           'PORT': str(port), 'SENTINEL_NO_PORT_TAKEOVER': '1'}
-    proc = subprocess.Popen([sys.executable, SERVER], env=env,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    base = f'http://127.0.0.1:{port}'
+    database_stop = lambda: None
+    proc = None
+    server_log = None
+    test_application_ids = []
+    test_national_ids = []
+    test_usernames = []
+    test_tokens = []
     try:
-        for _ in range(50):
+        database = provision_database(tmp)
+        if database is None:
+            print('SKIP: no PostgreSQL test database available.')
+            print('      Set SENTINEL_DATABASE_URL or SENTINEL_DB_* variables,')
+            print('      or install pgserver with: python -m pip install pgserver')
+            return 0
+        database_env, database_stop, database_label = database
+        print('using ' + database_label)
+        env = {**os.environ, **database_env,
+               'SENTINEL_UPLOADS': os.path.join(tmp, 'uploads'),
+               'PORT': str(port), 'SENTINEL_NO_PORT_TAKEOVER': '1'}
+        server_log = open(os.path.join(tmp, 'server.log'), 'w+', encoding='utf-8')
+        proc = subprocess.Popen([sys.executable, SERVER], env=env,
+                                stdout=server_log, stderr=subprocess.STDOUT,
+                                text=True)
+        base = f'http://127.0.0.1:{port}'
+        server_ready = False
+        deadline = time.time() + 60
+        while time.time() < deadline and proc.poll() is None:
             try:
                 if request(base, 'GET', '/api/health')[0] == 200:
+                    server_ready = True
                     break
             except Exception:
                 time.sleep(0.2)
-        else:
-            raise RuntimeError('server did not start')
+        if not server_ready:
+            server_log.flush()
+            server_log.seek(0)
+            details = server_log.read().strip()
+            raise RuntimeError('server did not start' + (f':\n{details}' if details else ''))
 
         # ---- 0) /api/health proves the review-lock build is running --------
         s, health = request(base, 'GET', '/api/health')
@@ -114,6 +289,7 @@ def main():
             s, r = request(base, 'POST', '/api/login',
                            body={'username': username, 'password': password})
             assert s == 200 and r.get('token'), (username, s, r)
+            test_tokens.append(r['token'])
             return r['token'], r['user']
 
         admin_token, admin_user = login('admin')
@@ -122,31 +298,37 @@ def main():
         assert officer_user['role'] == 'FingerprintUnit', officer_user
 
         # Alias users created through the admin API: 'admin' -> SystemAdmin
-        # (bypass) and 'fingerprint_officer' -> FingerprintUnit (gated).
+        # (bypass) and 'fingerprint_officer' -> FingerprintUnit (gated). Add a
+        # per-run suffix so this can run repeatedly against a shared test DB.
+        run_tag = secrets.token_hex(4)
+        admin_alias = f'gate_admin_{run_tag}'
+        fp_alias = f'gate_fp_{run_tag}'
+        test_usernames.extend((admin_alias, fp_alias))
         s, r = request(base, 'POST', '/api/admin/users', admin_token, {
-            'username': 'gate.admin.alias', 'display_name': 'Gate Admin Alias',
+            'username': admin_alias, 'display_name': f'Gate Admin Alias {run_tag}',
             'password': 'secret123', 'role': 'admin'})
         assert s == 201 and r['user']['role'] == 'SystemAdmin', (s, r)
-        alias_admin_token, _ = login('gate.admin.alias', 'secret123')
+        alias_admin_token, _ = login(admin_alias, 'secret123')
         s, r = request(base, 'POST', '/api/admin/users', admin_token, {
-            'username': 'gate.fp.alias', 'display_name': 'Gate FP Alias',
+            'username': fp_alias, 'display_name': f'Gate FP Alias {run_tag}',
             'password': 'secret123', 'role': 'fingerprint_officer'})
         assert s == 201 and r['user']['role'] == 'FingerprintUnit', (s, r)
-        alias_officer_token, _ = login('gate.fp.alias', 'secret123')
+        alias_officer_token, _ = login(fp_alias, 'secret123')
         print('ok 0b: alias roles normalise (admin->SystemAdmin, '
               'fingerprint_officer->FingerprintUnit)')
 
         seq = [0]
+        national_id_prefix = f'{secrets.randbelow(100_000_000):08d}'
 
         def new_application(purpose='Employment'):
             seq[0] += 1
             fields = {'first_name': 'Gate', 'second_name': 'Rule',
-                      'third_name': 'Test', 'fourth_name': str(seq[0]),
+                      'third_name': 'Test', 'fourth_name': f'{run_tag}-{seq[0]}',
                       'date_of_birth': '1995-03-03',
-                      'national_id': f'777{seq[0]:05d}',
+                      'national_id': f'{national_id_prefix}{seq[0]:02d}',
                       'mother_name': 'Hooyo Gate', 'residence': 'Hargeisa',
                       'phone': '+252 63 555 0900', 'sex': 'Male',
-                      'email': 'gate@example.com', 'purpose': purpose,
+                      'email': f'gate-{run_tag}@example.com', 'purpose': purpose,
                       'guardian_name': 'Guardian Gate',
                       'guardian_relationship': 'Uncle', 'guardian_id': 'GD-7788',
                       'guardian_occupation': 'Teacher',
@@ -157,18 +339,14 @@ def main():
                                      officer_token, fields, files)
             assert s == 201, (s, r)
             assert r['created_at'] and r['review_window_hours'] == 12, r
+            test_application_ids.append(r['application_id'])
+            test_national_ids.append(fields['national_id'])
             return r['application_id']
 
         def backdate(application_id, hours):
             stamp = (datetime.datetime.now(datetime.timezone.utc)
                      - datetime.timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
-            conn = sqlite3.connect(db_path, timeout=10)
-            try:
-                conn.execute('UPDATE clearance_applications SET created_at=? '
-                             'WHERE application_id=?', (stamp, application_id))
-                conn.commit()
-            finally:
-                conn.close()
+            backdate_application(application_id, stamp)
 
         def approve(token, aid, route='spec'):
             prefix = ('/api/fingerprint/applications' if route == 'spec'
@@ -239,13 +417,7 @@ def main():
 
         # ---- 3) fail-closed: missing stamp locks officers, not admins ------
         app4 = new_application(purpose='Citizenship')
-        conn = sqlite3.connect(db_path, timeout=10)
-        try:
-            conn.execute('UPDATE clearance_applications SET created_at=NULL '
-                         'WHERE application_id=?', (app4,))
-            conn.commit()
-        finally:
-            conn.close()
+        backdate_application(app4, None)
         s, r = approve(officer_token, app4)
         assert s == 400 and r.get('code') == 'review_period_active', (s, r)
         assert r.get('reason') == 'submission timestamp missing', r
@@ -279,22 +451,29 @@ def main():
         print('ok 5: re-approving an approved row is idempotent (same certificate)')
 
         # ---- 6) the gate survives a server restart (persistent sessions) ---
-        # Sessions live in SQLite, so a signed-in browser keeps its token
+        # Sessions live in PostgreSQL, so a signed-in browser keeps its token
         # across a restart — and the review lock must still be enforced
         # against it (an in-memory token map used to 401 every browser and
         # push the frontend into its offline fallbacks).
         app6 = new_application(purpose='Education')
         proc.terminate(); proc.wait(timeout=10)
         proc = subprocess.Popen([sys.executable, SERVER], env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(50):
+                                stdout=server_log, stderr=subprocess.STDOUT,
+                                text=True)
+        restarted = False
+        deadline = time.time() + 60
+        while time.time() < deadline and proc.poll() is None:
             try:
                 if request(base, 'GET', '/api/health')[0] == 200:
+                    restarted = True
                     break
             except Exception:
                 time.sleep(0.2)
-        else:
-            raise RuntimeError('server did not restart')
+        if not restarted:
+            server_log.flush()
+            server_log.seek(0)
+            details = server_log.read().strip()
+            raise RuntimeError('server did not restart' + (f':\n{details}' if details else ''))
         s, me = request(base, 'GET', '/api/me', officer_token)
         assert s == 200 and me['username'] == 'fp.officer', (s, me)
         s, r = approve(officer_token, app6)
@@ -306,8 +485,19 @@ def main():
         print('ALL REVIEW-GATE TESTS PASSED')
         return 0
     finally:
-        proc.terminate()
-        proc.wait(timeout=10)
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+        cleanup_test_fixtures(test_application_ids, test_national_ids,
+                              test_usernames, test_tokens)
+        if server_log is not None:
+            server_log.close()
+        database_stop()
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == '__main__':

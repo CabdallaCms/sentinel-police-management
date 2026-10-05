@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Frontend session smoke test (standard-library backend + Node VM, no browser).
+ * Frontend session smoke test (PostgreSQL backend + Node VM, no browser).
  *
- * Boots backend/server.py against a temporary SQLite database, then executes
- * the real inline <script> from index.html inside a Node VM sandbox with a
+ * Boots backend/server.py against configured PostgreSQL or an isolated
+ * temporary PostgreSQL cluster, then executes the real inline <script> from
+ * index.html inside a Node VM sandbox with a
  * minimal DOM stub. It simulates the exact officer journey from the bug
  * report:
  *
@@ -19,7 +20,7 @@
  * Usage:  node backend/test_frontend_session.mjs
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -32,8 +33,8 @@ const PROJECT_ROOT = path.dirname(ROOT);
 // PostgreSQL test database.
 //
 // The backend serves PostgreSQL only. The suite therefore runs against either
-//   (a) an explicitly configured server  — SENTINEL_DB_HOST / _NAME / _USER /
-//       _PASSWORD / _PORT in the environment, or
+//   (a) an explicitly configured server  — SENTINEL_DATABASE_URL or the
+//       SENTINEL_DB_HOST / _NAME / _USER / _PASSWORD / _PORT variables, or
 //   (b) a throwaway cluster booted with the `pgserver` pip package
 //       (`pip install pgserver`) inside a per-run temporary directory.
 // When neither is available the suite prints SKIP and exits 0 rather than
@@ -47,18 +48,35 @@ print(d, flush=True)          # unix-socket directory
 sys.stdin.read()              # stay alive until the parent closes stdin
 `;
 
-function provisionDatabase(tmp) {
-  if (process.env.SENTINEL_DB_HOST || process.env.SENTINEL_DB_NAME) {
+function databaseEnvironment() {
+  const env = { ...process.env };
+  const envPath = path.join(PROJECT_ROOT, '.env');
+  if (existsSync(envPath)) {
+    for (const raw of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || !line.includes('=')) continue;
+      const i = line.indexOf('=');
+      const key = line.slice(0, i).trim();
+      if (key && env[key] === undefined) env[key] = line.slice(i + 1).trim();
+    }
+  }
+  return env;
+}
+
+function provisionDatabase(tmp, databaseEnv) {
+  if (databaseEnv.SENTINEL_DATABASE_URL?.trim()) {
     return {
-      env: {
-        SENTINEL_DB_HOST: process.env.SENTINEL_DB_HOST || 'localhost',
-        SENTINEL_DB_NAME: process.env.SENTINEL_DB_NAME || 'sentinel_police',
-        SENTINEL_DB_USER: process.env.SENTINEL_DB_USER || 'postgres',
-        SENTINEL_DB_PASSWORD: process.env.SENTINEL_DB_PASSWORD || '',
-        SENTINEL_DB_PORT: process.env.SENTINEL_DB_PORT || '5432',
-      },
+      env: databaseEnv,
       stop: () => {},
-      label: 'configured PostgreSQL (' + (process.env.SENTINEL_DB_NAME || 'sentinel_police') + ')',
+      label: 'configured PostgreSQL (SENTINEL_DATABASE_URL)',
+    };
+  }
+  if (['SENTINEL_DB_HOST', 'SENTINEL_DB_PORT', 'SENTINEL_DB_USER',
+       'SENTINEL_DB_PASSWORD', 'SENTINEL_DB_NAME'].some((key) => databaseEnv[key])) {
+    return {
+      env: databaseEnv,
+      stop: () => {},
+      label: 'configured PostgreSQL (' + (databaseEnv.SENTINEL_DB_NAME || 'sentinel_police') + ')',
     };
   }
   const probe = spawnSync('python3', ['-c', 'import pgserver'], { stdio: 'ignore' });
@@ -286,7 +304,8 @@ const NAV_SECTIONS = [
             ['oversight', 'oversight', 'Stations Oversight & Regional Data']] },
   { group: 'registrations', label: 'Registers',
     pages: [['stations', 'stations', 'Police Stations'], ['crimes', 'crimes', 'Register Crime']] },
-  { group: 'admin', label: 'Administration', pages: [['admin', 'admin', 'User Management']] },
+  { group: 'admin', label: 'Administration',
+    pages: [['admin', 'admin', 'User Management'], ['branches', 'admin', 'Branch Management']] },
 ];
 // Operational pages are clean: no per-unit analytics strips anywhere (the
 // only full analytics surface is the Global Executive Dashboard), and every
@@ -532,10 +551,12 @@ async function main() {
   const port = await freePort();
   const tmp = `/tmp/sentinel-fe-test-${Date.now()}`;
   mkdirSync(tmp, { recursive: true });
-  const pg = await provisionDatabase(tmp);
+  const dbEnv = databaseEnvironment();
+  const pg = await provisionDatabase(tmp, dbEnv);
   if (!pg) {
     console.log('SKIP: no PostgreSQL test database available.');
-    console.log('      Set SENTINEL_DB_HOST / SENTINEL_DB_NAME (and _USER / _PASSWORD / _PORT)');
+    console.log('      Set SENTINEL_DATABASE_URL or SENTINEL_DB_HOST / SENTINEL_DB_NAME');
+    console.log('      (and optionally SENTINEL_DB_USER / _PASSWORD / _PORT)');
     console.log('      or install the bundled engine with:  pip install pgserver');
     return 0;
   }
@@ -782,6 +803,32 @@ async function main() {
     if (!admin.row) throw new Error('application row missing from the admin register');
     if (/disabled="disabled"/.test(admin.row)) throw new Error('admin Approve button must be enabled: ' + admin.row);
     if (!/Approve/.test(admin.row)) throw new Error('admin Approve button is missing: ' + admin.row);
+
+    // Branch Management is an admin-only page and should load the live
+    // PostgreSQL-backed catalogue when opened by a System Administrator.
+    if (probe(admin.sb.sandbox, 'sessionVisibility && sessionVisibility.is_admin') !== true)
+      throw new Error('admin session must be marked as is_admin');
+    await probe(admin.sb.sandbox, "go('branches')");
+    await waitFor(() => admin.sb.getElementById('branchTable').innerHTML.includes('Buuhoodle Branch'),
+      'admin branch catalogue render');
+    if (admin.sb.getElementById('pageTitle').textContent !== 'Branch Management')
+      throw new Error('admin branch route must set the Branch Management page title');
+    const branchRows = admin.sb.getElementById('branchTable').innerHTML;
+    if (!branchRows.includes('East Togdheer') || !branchRows.includes('Fingerprint Unit'))
+      throw new Error('branch view must render Region and Unit department fields: ' + branchRows);
+    const uiBranchName = 'Frontend Managed Branch ' + Date.now();
+    admin.sb.getElementById('branchName').value = uiBranchName;
+    admin.sb.getElementById('branchRegion').value = 'Sool';
+    admin.sb.getElementById('branchUnitType').value = 'crime';
+    await probe(admin.sb.sandbox, 'saveBranch({preventDefault(){}})');
+    await waitFor(() => admin.sb.getElementById('branchTable').innerHTML.includes(uiBranchName),
+      'new branch appears after the admin form submits');
+    if (!admin.sb.getElementById('branchTable').innerHTML.includes('Crime Unit'))
+      throw new Error('new branch row must include its Unit department');
+    await probe(officer.sb.sandbox, "go('branches')");
+    if (officer.sb.getElementById('pageTitle').textContent === 'Branch Management')
+      throw new Error('non-admin route must not enter Branch Management');
+    console.log('ok 8b: SystemAdmin loads/saves Branch Management; fingerprint officer is redirected');
     console.log('ok 8: fingerprint 12h review lock — officer Approve disabled/"Review Locked (12h)"/no API call/400, admin enabled');
 
     // ---- 9) STALE BACKEND guard -------------------------------------------
