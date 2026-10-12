@@ -300,7 +300,7 @@ const NAV_SECTIONS = [
   { group: 'personnel', label: 'Dep. of Police Personnel (Registration Police Office)',
     pages: [['officers', 'officers', 'Registration Office'],
             ['conduct', 'conduct', 'Conduct, Promotions & Disciplinary Management']] },
-  { group: 'transport', label: 'Dep. of Transport',
+  { group: 'transport', label: 'Dep. Of Transport',
     pages: [['cars', 'cars', 'Vehicle Registry'], ['vehiclestatus', 'cars', 'Vehicle Status & Tracking']] },
   { group: 'command', label: 'Chief Commander of Police Office (HQ / Command)',
     pages: [['executive', 'executive', 'Global Executive Dashboard'],

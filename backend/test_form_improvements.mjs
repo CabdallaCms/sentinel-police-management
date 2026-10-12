@@ -63,6 +63,9 @@ try{
   await tick();
   assert.equal($('off-step-2').classList.contains('active'),true);
   assert.equal(w.document.activeElement.id,'offName');
+  // The modal's delayed initial focus must not undo the validation focus.
+  await new Promise(resolve=>setTimeout(resolve,300));
+  assert.equal(w.document.activeElement.id,'offName');
   console.log('ok: hidden officer step is revealed and focused');
 
   // Group requirement focuses the file input, not the top of the modal.

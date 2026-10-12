@@ -12,6 +12,7 @@ python3 -m venv .venv
 npm install --no-save --package-lock=false jsdom@26
 
 node backend/test_form_improvements.mjs
+node backend/test_shell_workflow_integration.mjs
 .venv/bin/python backend/test_linked_records.py
 .venv/bin/python backend/test_review_gate.py
 PYTHON="$PWD/.venv/bin/python" node backend/test_approval_flow.mjs
@@ -67,3 +68,30 @@ storage and is not part of this PostgreSQL test set.
    - Nearby/current proximity is **Not determined**: residence and dated record
      locations are not live coordinates. Uploader account branch is explicitly
      current metadata, not a historical snapshot.
+
+
+## Combined UI / workflow integration (2026-10-12)
+
+Remote inspection found the workflow commit `c90f397` already at `origin/main`.
+The more recent UI commits `ca23e99` and `25a36ef` were on
+`origin/arena/05b7c962-sentinel-police-management`, branched before those workflow
+fixes. This testing branch merges both histories; it does not replace the new
+UI with an older copy of `index.html`, and it does not modify `main`.
+
+Preserved UI includes the refreshed command navigation, responsive mobile
+sidebar, dashboard quick-action styling, and the user profile/sign-out controls
+in the **top header**, not the sidebar. The new shell/workflow DOM test protects
+these alongside role scoping, wizard error focus and identity provenance.
+
+Verification also exposed a modal-animation focus race. A delayed opening focus
+could take focus back from a validation error, or focus a closed modal after
+switching forms. Pending initial focus is now cancelled on validation,
+modal switches and close; regression checks wait past the opening animation.
+
+Additional manual UI checks:
+- Open the mobile navigation, select a page, press Escape, and resize to desktop;
+  confirm navigation dismisses correctly and the header profile stays in place.
+- Quickly press Save after opening an incomplete officer form. Its first error
+  must keep focus even after the modal animation finishes.
+- Switch roles and check that checkpoint submenu labels and administration
+  actions appear only for permitted sessions.
