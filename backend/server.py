@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS police_branches(
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   region TEXT NOT NULL,
+  district TEXT,
   unit_type TEXT NOT NULL CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport','police_station')),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
@@ -428,6 +429,9 @@ ADDED_COLUMNS = {
     ],
     'crime_incidents': [
         ('branch_id', "ALTER TABLE crime_incidents ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
+    ],
+    'police_branches': [
+        ('district', "ALTER TABLE police_branches ADD COLUMN district TEXT"),
     ],
     'police_stations': [
         ('station_tier', "ALTER TABLE police_stations ADD COLUMN station_tier TEXT"),
@@ -1019,9 +1023,9 @@ BRANCH_UNIT_LABELS = {
     'police_station': 'Police Stations',
 }
 DEFAULT_POLICE_BRANCHES = (
-    ('Buuhoodle Branch', 'East Togdheer'),
-    ('Lasanod Branch', 'Sool'),
-    ('Erigavo Branch', 'Sanaag'),
+    ('Buuhoodle Branch', 'East Togdheer', 'Buuhoodle'),
+    ('Lasanod Branch', 'Sool', 'Laascaanood'),
+    ('Erigavo Branch', 'Sanaag', 'Ceerigaabo'),
 )
 
 # ---------------------------------------------------------------------------
@@ -1878,6 +1882,51 @@ def migrate(c):
                 EXCEPTION WHEN duplicate_object THEN NULL;
                 END;
             END $$;''')
+    # Backfill district for branches created before the district column existed.
+    if 'police_branches' in tables:
+        try:
+            # Ensure column exists (added via ADDED_COLUMNS); then fill nulls
+            cols = {r['name'] for r in c.execute(
+                "SELECT column_name AS name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='police_branches'")}
+            if 'district' in cols:
+                rows = c.execute(
+                    "SELECT id, name, region FROM police_branches "
+                    "WHERE district IS NULL OR TRIM(COALESCE(district,'')) = ''").fetchall()
+                for r in rows:
+                    region = (r['region'] or '').strip()
+                    name = (r['name'] or '').lower()
+                    district = region  # fallback
+                    if region == 'Sool':
+                        if 'lasanod' in name:
+                            district = 'Laascaanood'
+                        elif 'caynabo' in name:
+                            district = 'Caynabo'
+                        elif 'xudun' in name:
+                            district = 'Xudun'
+                        else:
+                            district = STATION_DISTRICTS.get('Sool', (region,))[0]
+                    elif region == 'Sanaag':
+                        if 'erigavo' in name or 'ceerigaabo' in name:
+                            district = 'Ceerigaabo'
+                        elif 'badhan' in name:
+                            district = 'Badhan'
+                        elif 'ceel' in name:
+                            district = 'Ceel Afweyn'
+                        else:
+                            district = STATION_DISTRICTS.get('Sanaag', (region,))[0]
+                    elif region == 'East Togdheer':
+                        if 'buuhoodle' in name:
+                            district = 'Buuhoodle'
+                        elif 'burao' in name:
+                            district = 'Burao'
+                        elif 'oodweyne' in name:
+                            district = 'Oodweyne'
+                        else:
+                            district = STATION_DISTRICTS.get('East Togdheer', (region,))[0]
+                    c.execute("UPDATE police_branches SET district=%s WHERE id=%s", (district, r['id']))
+        except Exception:
+            pass
     # Circular foreign key closure: police_stations.commander_id / deputy_id
     # point at officers(id) while officers.station_id points back at
     # police_stations(id). The CREATE TABLE script must declare them as plain
@@ -1936,11 +1985,11 @@ def init_db():
     migrate(c)
     # Seed the three default regional branches for each CID unit. Inserts are
     # idempotent and the expression index protects against case-only duplicates.
-    for branch_name, region in DEFAULT_POLICE_BRANCHES:
+    for branch_name, region, district in DEFAULT_POLICE_BRANCHES:
         for unit_type in BRANCH_UNIT_TYPES:
-            c.execute('''INSERT INTO police_branches(name,region,unit_type)
-                         VALUES(%s,%s,%s) ON CONFLICT DO NOTHING''',
-                      (branch_name, region, unit_type))
+            c.execute('''INSERT INTO police_branches(name,region,district,unit_type)
+                         VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
+                      (branch_name, region, district, unit_type))
     # Canonical checkpoint locations — referenced by both the data and the RBAC layer.
     if c.execute('SELECT COUNT(*) FROM locations').fetchone()[0] == 0:
         for code, label in (('South', 'South Checkpoint'),
@@ -2036,10 +2085,16 @@ def branch_view(row):
     """Public branch catalogue shape used by `/api/branches` and intake rows."""
     if not row:
         return None
+    # district may be missing on pre-migration rows or older cursor shapes
+    try:
+        district = row['district'] if 'district' in row else None
+    except Exception:
+        district = row.get('district') if hasattr(row, 'get') else None
     return {
         'id': row['id'],
         'name': row['name'],
         'region': row['region'],
+        'district': district,
         'unit_type': row['unit_type'],
     }
 
@@ -2085,7 +2140,7 @@ def resolve_branch(c, branch_id, expected_unit_type, required=False):
         return None
     if not raw.isdigit() or int(raw) < 1:
         raise ValueError('branch_id must be a positive integer')
-    branch = c.execute('''SELECT id,name,region,unit_type FROM police_branches WHERE id=%s''',
+    branch = c.execute('''SELECT id,name,region,district,unit_type FROM police_branches WHERE id=%s''',
                        (int(raw),)).fetchone()
     if not branch:
         raise ValueError('Selected branch does not exist; reload the branch list and try again')
@@ -2339,17 +2394,21 @@ def resolve_station_with_branch(c, station_code):
             branch_id = int(station_code[3:])
             branch = c.execute('SELECT * FROM police_branches WHERE id=%s AND unit_type=%s', (branch_id, 'police_station')).fetchone()
             if branch:
-                station = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)', (branch['name'], branch['region'])).fetchone()
+                b_district = (branch['district'] or '').strip() if 'district' in branch and branch['district'] else None
+                if not b_district:
+                    b_district = (STATION_DISTRICTS.get(branch['region'], (branch['region'],))[0] if branch['region'] in STATION_DISTRICTS else branch['region'])
+                station = c.execute(
+                    'SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND COALESCE(LOWER(district),\'\')=COALESCE(LOWER(%s),\'\')',
+                    (branch['name'], branch['region'], b_district)).fetchone()
                 if station:
                     return station
-                district = (STATION_DISTRICTS.get(branch['region'], (branch['region'],))[0] if branch['region'] in STATION_DISTRICTS else branch['region'])
-                village = re.sub(r'\s+branch\s*$', '', branch['name'], flags=re.I).strip() or district
+                village = re.sub(r'\s+branch\s*$', '', branch['name'], flags=re.I).strip() or b_district
                 st_code = new_station_code(c, branch['region'] if branch['region'] in REGION_CODES else branch['region'])
                 st_id = new_station_id(c)
                 c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
                     station_tier,operational_status,notes,created_by)
                     VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (st_id, branch['name'], st_code, branch['region'], district, village, 'District HQ', 'Active', f'Mirrored from branch {branch["id"]} (auto)', None))
+                    (st_id, branch['name'], st_code, branch['region'], b_district, village, 'District HQ', 'Active', f'Mirrored from branch {branch["id"]} (auto)', None))
                 return c.execute('SELECT * FROM police_stations WHERE station_id=%s', (st_id,)).fetchone()
         except Exception:
             pass
@@ -2358,9 +2417,23 @@ def resolve_station_with_branch(c, station_code):
         try:
             branch = c.execute('SELECT * FROM police_branches WHERE id=%s AND unit_type=%s', (int(station_code), 'police_station')).fetchone()
             if branch:
-                station = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)', (branch['name'], branch['region'])).fetchone()
+                b_district = (branch['district'] or '').strip() if 'district' in branch and branch['district'] else None
+                if not b_district:
+                    b_district = (STATION_DISTRICTS.get(branch['region'], (branch['region'],))[0] if branch['region'] in STATION_DISTRICTS else branch['region'])
+                station = c.execute(
+                    'SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND COALESCE(LOWER(district),\'\')=COALESCE(LOWER(%s),\'\')',
+                    (branch['name'], branch['region'], b_district)).fetchone()
                 if station:
                     return station
+                # Auto-mirror for numeric fallback as well
+                village = re.sub(r'\s+branch\s*$', '', branch['name'], flags=re.I).strip() or b_district
+                st_code = new_station_code(c, branch['region'] if branch['region'] in REGION_CODES else branch['region'])
+                st_id = new_station_id(c)
+                c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
+                    station_tier,operational_status,notes,created_by)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (st_id, branch['name'], st_code, branch['region'], b_district, village, 'District HQ', 'Active', f'Mirrored from branch {branch["id"]} (auto numeric)', None))
+                return c.execute('SELECT * FROM police_stations WHERE station_id=%s', (st_id,)).fetchone()
         except Exception:
             pass
     return None
@@ -5219,21 +5292,28 @@ class API(BaseHTTPRequestHandler):
                 raw_unit_type = str(query.get('unit_type', [''])[0] or '').strip()
                 unit_type = normalize_branch_unit_type(raw_unit_type) if raw_unit_type else None
                 region = re.sub(r'\s+', ' ', str(query.get('region', [''])[0] or '')).strip()
+                district_q = re.sub(r'\s+', ' ', str(query.get('district', [''])[0] or '')).strip()
                 where, args = [], []
                 if unit_type:
                     where.append('unit_type=%s'); args.append(unit_type)
                 if region:
                     where.append('LOWER(region)=LOWER(%s)'); args.append(region)
-                sql = 'SELECT id,name,region,unit_type FROM police_branches'
+                if district_q:
+                    where.append('LOWER(district)=LOWER(%s)'); args.append(district_q)
+                sql = 'SELECT id,name,region,district,unit_type FROM police_branches'
                 if where:
                     sql += ' WHERE ' + ' AND '.join(where)
-                sql += ' ORDER BY region,name,id'
+                sql += ' ORDER BY region,district,name,id'
                 rows = c.execute(sql, args).fetchall()
                 regions = c.execute('''SELECT DISTINCT region FROM police_branches
                                        ORDER BY region''').fetchall()
+                districts = c.execute('''SELECT DISTINCT district FROM police_branches
+                                       WHERE district IS NOT NULL AND TRIM(district) <> ''
+                                       ORDER BY district''').fetchall()
                 result = {
                     'items': [branch_view(r) for r in rows],
                     'regions': [r['region'] for r in regions],
+                    'districts': [r['district'] for r in districts if r['district']],
                     'unit_types': list(BRANCH_UNIT_TYPES),
                     'unit_labels': BRANCH_UNIT_LABELS,
                 }
@@ -5665,6 +5745,7 @@ class API(BaseHTTPRequestHandler):
                 data = body_json(self)
                 name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()
                 region = re.sub(r'\s+', ' ', str(data.get('region') or '')).strip()
+                district = re.sub(r'\s+', ' ', str(data.get('district') or '')).strip()
                 unit_type = normalize_branch_unit_type(data.get('unit_type'))
                 if not name:
                     raise ValueError('Branch name is required')
@@ -5674,18 +5755,24 @@ class API(BaseHTTPRequestHandler):
                     raise ValueError('Branch region is required')
                 if len(region) > 100:
                     raise ValueError('Branch region must be 100 characters or fewer')
+                if not district:
+                    raise ValueError('District is required')
+                if len(district) > 100:
+                    raise ValueError('District must be 100 characters or fewer')
                 duplicate = c.execute('''SELECT id FROM police_branches
-                    WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND unit_type=%s''',
-                    (name, region, unit_type)).fetchone()
+                    WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)
+                      AND COALESCE(LOWER(district),'')=COALESCE(LOWER(%s),'')
+                      AND unit_type=%s''',
+                    (name, region, district, unit_type)).fetchone()
                 if duplicate:
-                    self.send_json(409, {'error': 'This branch already exists for that unit and region'})
+                    self.send_json(409, {'error': 'This branch already exists for that unit, region and district'})
                     c.close(); return
-                row = c.execute('''INSERT INTO police_branches(name,region,unit_type)
-                    VALUES(%s,%s,%s) RETURNING id,name,region,unit_type''',
-                    (name, region, unit_type)).fetchone()
+                row = c.execute('''INSERT INTO police_branches(name,region,district,unit_type)
+                    VALUES(%s,%s,%s,%s) RETURNING id,name,region,district,unit_type''',
+                    (name, region, district, unit_type)).fetchone()
                 branch = branch_view(row)
                 audit(c, user, 'CREATE', 'police_branch', str(branch['id']),
-                      f"{branch['name']} · {branch['region']} · {branch['unit_type']}")
+                      f"{branch['name']} · {branch['region']} · {branch['district']} · {branch['unit_type']}")
                 # When a Police Stations branch is created, mirror it as a
                 # police station so it immediately appears in station
                 # dropdowns (Police Personnel / Registration forms and
@@ -5695,19 +5782,20 @@ class API(BaseHTTPRequestHandler):
                 if unit_type == 'police_station':
                     try:
                         existing_station = c.execute(
-                            'SELECT id FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)',
-                            (name, region)).fetchone()
+                            'SELECT id FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND COALESCE(LOWER(district),\'\')=COALESCE(LOWER(%s),\'\')',
+                            (name, region, district)).fetchone()
                         if not existing_station:
-                            district = (STATION_DISTRICTS.get(region, (region,))[0]
+                            # Use the explicit branch district; fall back to region default only if empty
+                            st_district = district or (STATION_DISTRICTS.get(region, (region,))[0]
                                         if region in STATION_DISTRICTS else region)
-                            village = re.sub(r'\s+branch\s*$', '', name, flags=re.I).strip() or district
+                            village = re.sub(r'\s+branch\s*$', '', name, flags=re.I).strip() or st_district
                             st_code = new_station_code(c, region if region in REGION_CODES else 'Sool')
                             st_tier = 'District HQ'
                             st_id = new_station_id(c)
                             c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
                                 station_tier,operational_status,notes,created_by)
                                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                                (st_id, name, st_code, region, district, village,
+                                (st_id, name, st_code, region, st_district, village,
                                  st_tier, 'Active', f'Mirrored from branch {branch["id"]}', user['id']))
                     except Exception:
                         pass

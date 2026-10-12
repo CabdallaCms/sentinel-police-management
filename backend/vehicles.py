@@ -98,17 +98,14 @@ def register_vehicle(c, user, fields, files, helpers):
                     bid = int(scode[3:])
                     br = c.execute('SELECT * FROM police_branches WHERE id=%s AND unit_type=%s', (bid, 'police_station')).fetchone()
                     if br:
-                        station = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)', (br['name'], br['region'])).fetchone()
+                        b_district = (br['district'] or '').strip() if 'district' in br and br['district'] else None
+                        if not b_district:
+                            b_district = br['region']
+                        station = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND COALESCE(LOWER(district),\'\')=COALESCE(LOWER(%s),\'\')', (br['name'], br['region'], b_district)).fetchone()
                         if not station:
-                            # Auto-mirror branch as station
-                            district = br['region']
-                            # Try to find a valid district mapping; fallback to region
-                            try:
-                                # Reuse server helper if available via c, otherwise generic
-                                pass
-                            except Exception:
-                                pass
-                            village = br['name'].replace(' Branch','').strip() or district
+                            # Auto-mirror branch as station — district is the branch district
+                            district = b_district
+                            village = re.sub(r'\s+branch\s*$', '', br['name'], flags=re.I).strip() or district
                             # Generate a simple code
                             prefix = f"STN-{br['region'][:3].upper()}-"
                             n = 1

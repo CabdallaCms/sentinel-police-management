@@ -1452,9 +1452,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="hint" style="margin-bottom:16px">New branches are available immediately in the matching unit's intake dropdown. Add entries such as Buuhoodle Branch / East Togdheer, Lasanod Branch / Sool, or Erigavo Branch / Sanaag. Existing CID, personnel and regional navigation remains unchanged.</div>
   <button class="btn" id="branchFormOpen" hidden type="button" onclick="branchForm.hidden=false;this.hidden=true;branchName.focus()">＋ Add another branch</button>
   <form novalidate class="form" id="branchForm" onsubmit="saveBranch(event)">
-    <div class="grid3">
+    <div class="grid2">
       <div class="field"><label for="branchName">Branch Name *</label><input id="branchName" required maxlength="160" placeholder="e.g. Buuhoodle Branch"></div>
-      <div class="field"><label for="branchRegion">Region *</label><select id="branchRegion" required><option value="">Loading regions…</option></select></div>
+      <div class="field"><label for="branchRegion">Region *</label><select id="branchRegion" required onchange="populateBranchDistrictSelect()"><option value="">Loading regions…</option></select></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="branchDistrict">District *</label><select id="branchDistrict" required><option value="">Select region first</option></select></div>
       <div class="field"><label for="branchUnitType">Unit Department *</label><select id="branchUnitType" required>
         <option value="fingerprint">Fingerprint Unit</option><option value="crime">Crime Unit</option>
         <option value="checkpoint">Checkpoint Unit</option><option value="airport">Airport Unit</option>
@@ -1465,8 +1468,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   </form>
   <div class="notice" id="branchNotice" aria-live="polite"></div>
   <div class="table-wrap" style="margin-top:14px">
-    <table class="table"><thead><tr><th>Branch Name</th><th>Region</th><th>Unit Department</th></tr></thead>
-    <tbody id="branchTable"><tr><td class="empty" colspan="3">Loading branches…</td></tr></tbody></table>
+    <table class="table"><thead><tr><th>Branch Name</th><th>Region</th><th>District</th><th>Unit Department</th></tr></thead>
+    <tbody id="branchTable"><tr><td class="empty" colspan="4">Loading branches…</td></tr></tbody></table>
   </div>
 </div>
 </section>
@@ -1840,12 +1843,49 @@ async function api(path,options={}){
 // Live branch catalogue. Branch names/regions come only from /api/branches;
 // the client never carries a parallel hardcoded list of branch choices.
 const BRANCH_UNIT_LABELS={fingerprint:'Fingerprint Unit',crime:'Crime Unit',checkpoint:'Checkpoint Unit',airport:'Airport Unit',police_station:'Police Stations'};
-let branchCatalog={loaded:false,items:[],regions:[],unit_types:[]};
+const BRANCH_DISTRICTS={
+  'Sool': ['Laascaanood','Caynabo','Xudun','Taleex'],
+  'Sanaag': ['Ceerigaabo','Ceel Afweyn','Garadag','Badhan','Dhahar'],
+  'East Togdheer': ['Burao','Oodweyne','Buuhoodle'],
+  'Togdheer': ['Burao','Oodweyne','Buuhoodle'],
+  'Awdal': ['Borama','Baki','Lughaya','Zeila'],
+  'Woqooyi Galbeed': ['Hargeisa','Berbera','Gabiley'],
+  'Bari': ['Bosaso','Qardho','Iskushuban','Caluula'],
+  'Nugaal': ['Garowe','Eyl','Burtinle'],
+  'Mudug': ['Gaalkacyo','Jariiban','Hobyo']
+};
+function populateBranchDistrictSelect(){
+  const regionEl=document.getElementById('branchRegion');
+  const districtEl=document.getElementById('branchDistrict');
+  if(!regionEl||!districtEl) return;
+  const region=regionEl.value;
+  const previous=districtEl.value;
+  const districts=BRANCH_DISTRICTS[region] || (region ? [region] : []);
+  if(!region){
+    districtEl.innerHTML='<option value=\"\">Select region first</option>';
+    districtEl.disabled=true;
+    return;
+  }
+  if(!districts.length){
+    // free-text fallback: keep previous or allow typing via input? For now offer region as district
+    districtEl.innerHTML=`<option value=\"\">— select district —</option><option value=\"${esc(region)}\">${esc(region)}</option>`;
+  } else {
+    districtEl.innerHTML='<option value=\"\">— select district —</option>'+districts.map(d=>`<option value=\"${esc(d)}\">${esc(d)}</option>`).join('');
+    // also preserve any previously loaded district that is not in the known list (custom district)
+    if(previous && !districts.includes(previous)){
+      districtEl.innerHTML+=`<option value=\"${esc(previous)}\" selected>${esc(previous)} (custom)</option>`;
+    }
+  }
+  if(districts.includes(previous)) districtEl.value=previous;
+  districtEl.disabled=false;
+}
+let branchCatalog={loaded:false,items:[],regions:[],unit_types:[],districts:[]};
 async function loadBranchCatalog(force=false){
   if(branchCatalog.loaded&&!force)return branchCatalog;
   const data=await api('/api/branches');
   branchCatalog={loaded:true,items:Array.isArray(data.items)?data.items:[],
     regions:Array.isArray(data.regions)?data.regions:[],
+    districts:Array.isArray(data.districts)?data.districts:[],
     unit_types:Array.isArray(data.unit_types)?data.unit_types:[]};
   try{ refreshUserBranchDatalist(); }catch(_){}
   try{ if(typeof refreshStationSelects==='function') refreshStationSelects(); }catch(_){}
@@ -1872,9 +1912,10 @@ async function refreshBranchSelect(selectId,unitType){
     select.disabled=true;
     return false;
   }
-  select.innerHTML='<option value="">— select branch —</option>'+items.map(b=>
-    `<option value="${esc(b.id)}">${esc(b.name)} — ${esc(b.region)}</option>`
-  ).join('');
+  select.innerHTML='<option value="">— select branch —</option>'+items.map(b=>{
+    const d=b.district?` \u00b7 ${esc(b.district)}`:'';
+    return `<option value="${esc(b.id)}">${esc(b.name)} \u2014 ${esc(b.region)}${d}</option>`;
+  }).join('');
   select.value=items.some(b=>String(b.id)===String(previous))?String(previous):'';
   select.disabled=false;
   return true;
@@ -5477,8 +5518,10 @@ function setBranchNotice(message,error=false){
 async function refreshBranchManagement(force=false){
   const table=document.getElementById('branchTable');
   const regionSelect=document.getElementById('branchRegion');
+  const districtSelect=document.getElementById('branchDistrict');
   if(!table||!regionSelect)return;
   const previousRegion=regionSelect.value;
+  const previousDistrict=districtSelect?districtSelect.value:'';
   try{
     const catalog=await loadBranchCatalog(force);
     const regions=Array.from(new Set([...(catalog.regions||[]),...(catalog.items||[]).map(b=>b.region)]))
@@ -5486,17 +5529,28 @@ async function refreshBranchManagement(force=false){
     regionSelect.innerHTML='<option value="">— select region —</option>'+regions.map(region=>
       `<option value="${esc(region)}">${esc(region)}</option>`).join('');
     if(regions.includes(previousRegion))regionSelect.value=previousRegion;
+    if(districtSelect){
+      populateBranchDistrictSelect();
+      if(previousDistrict) districtSelect.value=previousDistrict;
+      // if previous district was custom and not in list, ensure it stays
+      if(previousDistrict && districtSelect.value!==previousDistrict){
+        districtSelect.innerHTML+=`<option value="${esc(previousDistrict)}" selected>${esc(previousDistrict)} (custom)</option>`;
+        districtSelect.value=previousDistrict;
+      }
+    }
     const rows=(catalog.items||[]).slice().sort((a,b)=>
-      String(a.region).localeCompare(String(b.region))||String(a.name).localeCompare(String(b.name))||
+      String(a.region).localeCompare(String(b.region))||String(a.district||'').localeCompare(String(b.district||''))||
+      String(a.name).localeCompare(String(b.name))||
       String(a.unit_type).localeCompare(String(b.unit_type)));
     table.innerHTML=rows.map(branch=>`<tr><td><b>${esc(branch.name)}</b></td>
-      <td>${esc(branch.region)}</td><td><span class="badge blue">${esc(BRANCH_UNIT_LABELS[branch.unit_type]||branch.unit_type)}</span></td></tr>`).join('')
-      ||'<tr><td class="empty" colspan="3">No branches have been configured.</td></tr>';
+      <td>${esc(branch.region)}</td><td>${esc(branch.district||'—')}</td><td><span class="badge blue">${esc(BRANCH_UNIT_LABELS[branch.unit_type]||branch.unit_type)}</span></td></tr>`).join('')
+      ||'<tr><td class="empty" colspan="4">No branches have been configured.</td></tr>';
     if(!force)setBranchNotice('');
     return true;
   }catch(e){
-    table.innerHTML='<tr><td class="empty" colspan="3">Branch catalogue unavailable. Check the server connection and refresh.</td></tr>';
+    table.innerHTML='<tr><td class="empty" colspan="4">Branch catalogue unavailable. Check the server connection and refresh.</td></tr>';
     regionSelect.innerHTML='<option value="">Regions unavailable</option>';
+    if(districtSelect) districtSelect.innerHTML='<option value="">District unavailable</option>';
     setBranchNotice(e.message||'Could not load the branch catalogue.',true);
     return false;
   }
@@ -5506,23 +5560,26 @@ async function saveBranch(e){
   if(guardReadOnly('Adding a police branch'))return;
   const name=(document.getElementById('branchName').value||'').trim();
   const region=document.getElementById('branchRegion').value;
+  const district=(document.getElementById('branchDistrict')||{}).value||'';
   const unitType=document.getElementById('branchUnitType').value;
-  if(!name||!region||!BRANCH_UNIT_LABELS[unitType]){
-    showFormError('Enter a branch name, select a region and choose a unit department.',{names:['branchName','branchRegion','branchUnitType'].filter(id=>!val(id)),notice:'branchNotice'});
+  if(!name||!region||!district||!BRANCH_UNIT_LABELS[unitType]){
+    showFormError('Enter a branch name, select a region, choose a district and pick a unit department.',{names:['branchName','branchRegion','branchDistrict','branchUnitType'].filter(id=>!val(id)),notice:'branchNotice'});
     return;
   }
   const button=document.querySelector('#branchForm button[type="submit"]');
   if(button)button.disabled=true;
   setBranchNotice('Saving branch…');
   try{
-    const result=await api('/api/branches',{method:'POST',body:JSON.stringify({name,region,unit_type:unitType})});
+    const result=await api('/api/branches',{method:'POST',body:JSON.stringify({name,region,district,unit_type:unitType})});
     await refreshBranchManagement(true);
     const form=document.getElementById('branchForm');
     if(form){form.reset();form.hidden=true;document.getElementById('branchFormOpen').hidden=false}
     document.getElementById('branchRegion').value=region;
+    populateBranchDistrictSelect();
+    document.getElementById('branchDistrict').value=district;
     document.getElementById('branchUnitType').value=unitType;
-    setBranchNotice((result.branch&&result.branch.name||name)+' added to '+BRANCH_UNIT_LABELS[unitType]+' for '+region+'.');
-    toast('Branch added',name+' · '+region);
+    setBranchNotice((result.branch&&result.branch.name||name)+' added to '+BRANCH_UNIT_LABELS[unitType]+' for '+region+' · '+district+'.');
+    toast('Branch added',name+' \u00b7 '+region+' \u00b7 '+district);
   }catch(err){
     showFormError(err.message||'Could not add the branch.',{notice:'branchNotice'});
   }finally{
@@ -5622,9 +5679,12 @@ function refreshUserBranchDatalist(){
   const staticOpts=['Central HQ','HR Directorate','Fingerprint Unit','Airport Control','CID Unit'];
   staticOpts.forEach(v=>{ if(!seen.has(v)){ seen.add(v); opts.push(`<option value="${esc(v)}">`); }});
   branches.forEach(b=>{
+    const withDistrict=b.district?`${b.name} · ${b.district} · ${b.region}`:`${b.name} · ${b.region}`;
     const label=`${b.name} · ${b.region}`;
+    if(!seen.has(withDistrict)){ seen.add(withDistrict); opts.push(`<option value="${esc(withDistrict)}">`); }
     if(!seen.has(label)){ seen.add(label); opts.push(`<option value="${esc(label)}">`); }
     if(!seen.has(b.name)){ seen.add(b.name); opts.push(`<option value="${esc(b.name)}">`); }
+    if(b.district && !seen.has(b.district)){ seen.add(b.district); opts.push(`<option value="${esc(b.district)}">`); }
   });
   dl.innerHTML=opts.join('');
 }
@@ -7013,7 +7073,7 @@ try{
       const base=b.name.replace(/\s*branch\s*$/i,'').trim();
       const nameInput=document.getElementById('stName');
       if(nameInput && !nameInput.value.trim()) nameInput.value=base+' Station';
-      setLocation('st',{region:b.region,district:'',village:base});
+      setLocation('st',{region:b.region,district:b.district||'',village:base});
     });
   }
 }catch(_){}

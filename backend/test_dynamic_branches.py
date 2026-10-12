@@ -131,16 +131,18 @@ def run_api_suite(base):
           'GET /api/branches/ trailing-slash path maps to the catalogue')
     branches = catalogue['items']
     expected = {
-        ('East Togdheer', 'Buuhoodle Branch'),
-        ('Sool', 'Lasanod Branch'),
-        ('Sanaag', 'Erigavo Branch'),
+        ('East Togdheer', 'Buuhoodle Branch', 'Buuhoodle'),
+        ('Sool', 'Lasanod Branch', 'Laascaanood'),
+        ('Sanaag', 'Erigavo Branch', 'Ceerigaabo'),
     }
-    seeded = {(row['region'], row['name']) for row in branches}
-    check(all(pair in seeded for pair in expected), 'three requested regional branch names are seeded')
-    default_rows={(name,region,unit) for region,name in expected
+    seeded = {(row['region'], row['name'], row.get('district')) for row in branches}
+    check(all(pair in seeded for pair in expected), 'three requested regional branch names are seeded with district')
+    # district should be present on every branch
+    check(all(row.get('district') for row in branches), 'every branch record carries a district')
+    default_rows={(name,region,district,unit) for region,name,district in expected
                   for unit in ('fingerprint','crime','checkpoint','airport','police_station')}
-    actual_rows={(row['name'],row['region'],row['unit_type']) for row in branches}
-    check(default_rows.issubset(actual_rows), 'each default branch is seeded for all five unit departments (including Police Stations)')
+    actual_rows={(row['name'],row['region'],row.get('district'),row['unit_type']) for row in branches}
+    check(default_rows.issubset(actual_rows), 'each default branch is seeded for all five unit departments with district (including Police Stations)')
 
     status, filtered = request(base, 'GET', '/api/branches?unit_type=crime&region=Sool', cid)
     check(status == 200 and len(filtered['items']) == 1
@@ -157,27 +159,40 @@ def run_api_suite(base):
     check(status == 400, 'unknown unit_type is rejected with HTTP 400')
 
     status, denied = request(base, 'POST', '/api/branches', fp, {
-        'name': 'Unauthorized Branch', 'region': 'Sool', 'unit_type': 'fingerprint'})
+        'name': 'Unauthorized Branch', 'region': 'Sool', 'district': 'Laascaanood', 'unit_type': 'fingerprint'})
     check(status == 401, 'non-admin unit officer cannot create branches')
     status, alias_denied = request(base, 'POST', '/branches', fp, {
-        'name': 'Unauthorized Alias Branch', 'region': 'Sool', 'unit_type': 'fingerprint'})
+        'name': 'Unauthorized Alias Branch', 'region': 'Sool', 'district': 'Laascaanood', 'unit_type': 'fingerprint'})
     check(status == 401, 'POST /branches alias preserves the SystemAdmin-only write gate')
 
     alias_branch_name = f'Arena Alias Branch {time.time_ns()}'
     status, alias_created = request(base, 'POST', '/branches', admin, {
-        'name': alias_branch_name, 'region': 'Sanaag', 'unit_type': 'airport'})
+        'name': alias_branch_name, 'region': 'Sanaag', 'district': 'Ceerigaabo', 'unit_type': 'airport'})
     check(status == 201 and alias_created.get('branch', {}).get('name') == alias_branch_name,
           'POST /branches alias maps to the admin branch creation handler')
+    check(alias_created.get('branch', {}).get('district') == 'Ceerigaabo',
+          'branch creation stores district (Ceerigaabo) and returns it')
 
     branch_name=f'Arena Test Branch {time.time_ns()}'
+    branch_district='Laascaanood'
     status, created = request(base, 'POST', '/api/branches', admin, {
-        'name': branch_name, 'region': 'Sool', 'unit_type': 'crime'})
+        'name': branch_name, 'region': 'Sool', 'district': branch_district, 'unit_type': 'crime'})
     check(status == 201 and created.get('branch', {}).get('unit_type') == 'crime',
           'administrator creates a branch for one unit')
+    check(created.get('branch', {}).get('district') == branch_district,
+          'created branch persists district (Laascaanood)')
     branch = created['branch']
     status, duplicate = request(base, 'POST', '/api/branches', admin, {
-        'name': branch_name.lower(), 'region': 'sool', 'unit_type': 'crime'})
-    check(status == 409, 'duplicate branch names are rejected case-insensitively')
+        'name': branch_name.lower(), 'region': 'sool', 'district': branch_district.lower(), 'unit_type': 'crime'})
+    check(status == 409, 'duplicate branch names are rejected case-insensitively (including district)')
+    # district is required — missing district is 400
+    status, missing_district = request(base, 'POST', '/api/branches', admin, {
+        'name': f'Arena Missing District {time.time_ns()}', 'region': 'Sool', 'unit_type': 'crime'})
+    check(status == 400, 'branch creation without district is rejected with HTTP 400')
+    # district + region appears in branch table and unit filter
+    status, district_filtered = request(base, 'GET', '/api/branches?district=Laascaanood', admin)
+    check(status == 200 and any(r['id']==branch['id'] for r in district_filtered['items']),
+          'GET district filter returns branches for Laascaanood')
     status, visible = request(base, 'GET', '/api/branches?unit_type=crime&region=Sool', cid)
     check(status == 200 and any(row['id'] == branch['id'] for row in visible['items']),
           'new branch is immediately visible to the matching unit')
@@ -198,10 +213,13 @@ def run_api_suite(base):
 
     # ── 5th department — Police Stations branch mirroring & synthetic station handling ──
     ps_branch_name = f'Arena Police Station Branch {time.time_ns()}'
+    ps_branch_district='Taleex'
     status, ps_created = request(base, 'POST', '/api/branches', admin, {
-        'name': ps_branch_name, 'region': 'Sool', 'unit_type': 'police_station'})
+        'name': ps_branch_name, 'region': 'Sool', 'district': ps_branch_district, 'unit_type': 'police_station'})
     check(status == 201 and ps_created.get('branch', {}).get('unit_type') == 'police_station',
           'administrator creates a Police Stations branch')
+    check(ps_created.get('branch', {}).get('district') == ps_branch_district,
+          'Police Stations branch stores its district (Taleex)')
     ps_branch = ps_created['branch']
     status, ps_filtered = request(base, 'GET', '/api/branches?unit_type=police_station&region=Sool', admin)
     check(status == 200 and any(r['id'] == ps_branch['id'] for r in ps_filtered['items']),
@@ -241,9 +259,15 @@ def run_frontend_contract():
     check('+ Add New Branch' in html and '<section id="branches" class="page">' in html
           and 'data-page="branches" data-modules="admin"' in html,
           'SystemAdmin Administration navigation exposes a dedicated Branch Management page')
-    check('<th>Branch Name</th>' in html and '<th>Region</th>' in html
+    check('<th>Branch Name</th>' in html and '<th>Region</th>' in html and '<th>District</th>' in html
           and '<th>Unit Department</th>' in html,
-          'Branch Management lists Branch Name, Region and Unit Department')
+          'Branch Management lists Branch Name, Region, District and Unit Department')
+    check('id="branchDistrict"' in html and 'populateBranchDistrictSelect' in html,
+          'Branch Management form has a District dropdown wired to the region')
+    check('BRANCH_DISTRICTS' in html and "'Sool'" in html and "'Laascaanood'" in html,
+          'frontend knows Sool / Laascaanood district mapping for branches')
+    check('b.district' in html and 'district' in html.lower(),
+          'branch dropdowns and station synthesis include the district')
     check("branches:'admin'" in html
           and "(page==='admin'||page==='branches') && !(sessionVisibility && sessionVisibility.is_admin)" in html,
           'Branch Management is routed and guarded as SystemAdmin-only')
