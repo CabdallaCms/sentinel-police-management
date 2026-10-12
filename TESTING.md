@@ -115,3 +115,98 @@ Branch: `arena/4d7dbf9c-sentinel-police-management`. Do not merge until UAT is a
 
 ### Automated
 `python backend/test_dynamic_branches.py` — seeded-row, filtering (now 5 rows per region including `police_station`), admin-gate, duplicate, Police Stations mirroring and the frontend-contract (now 6 selectors + `stBranch:police_station` + datalist + synthetic `BR-` merge) — all checks pass (SKIP only without `SENTINEL_DB_*` / `pgserver`).
+
+## Registered Stations — View / Edit row actions & admin-only edit authority (2026-10-12)
+
+Branch: `arena/70d3d88b-sentinel-police-management`. Do not merge until UAT is approved.
+Restart the backend and hard-refresh the browser when testing this branch.
+Use a test database and synthetic identities/documents only.
+
+### What changed
+- **Actions column.** `renderStationsTable()` now paints a final **Actions** column: **View** on every
+  row and **Edit** on every persisted registry row. `View` is a read surface (`data-view="1"`); `Edit`
+  carries `.admin-edit` + `data-write="1"`.
+- **View drawer** (`#stViewModal`, `openStationView()` / `paintStationView()`): station name, code and
+  id, **Region → District → Village**, operational status, station tier, contact phone, cell capacity,
+  commander / deputy (resolved to the officer record), notes, `created_at` / `updated_at`, the
+  **officer** and **vehicle** deployment counters and the **mirrored Police Stations branch lineage**.
+  It renders instantly from the locally merged registry row and is then replaced by the authoritative
+  `GET /api/stations/<id>` payload (`station_detail_view()`), which returns `officer_count` /
+  `vehicle_count` from the `officers` / `vehicles` registers, the `branch` catalogue row, `mirrored` /
+  `persisted` flags and the per-session `can_edit` decision. Open to SystemAdmin, the HR Directorate
+  and the read-only Commander (`stViewModal` joined `READ_ONLY_VIEW_MODALS`); a session without the
+  `stations` module still gets 401.
+- **Edit modal** (`#stEditModal`, `openStationEdit()` / `saveStationEdit()`): station name, Region →
+  District → Village (cascading dropdowns, same validator as registration), operational status, plus
+  optional tier / contact phone / cell capacity / notes. Saves with `PATCH /api/stations/<id>`
+  (`PUT /api/stations[/<id>]` is served too), merges the saved row into `db.stations` (so officer /
+  vehicle postings, the search panes, the counters and the drawer all follow), re-renders and toasts.
+  Validation runs before any request leaves the browser; offline saves are stored locally and reported
+  as an unsynced draft.
+- **Role enforcement (server-authoritative).** `require_records_admin(user)` → **403 Forbidden**
+  (`code: admin_only`) for every non-admin caller of `PUT` / `PATCH /api/stations[/<id>]` — including
+  the HR Directorate, which may read the register, and any unit / checkpoint officer. The read-only
+  Commander is refused even earlier (`code: read_only_role`). `POST /api/stations` keeps its existing
+  admin module gate and now also calls the same role check. `station_detail_view()` returns
+  `can_edit: false` + `edit_disabled_reason` for non-admins; the session payload (`user_view`) and the
+  visibility block expose `can_edit_records` / `can_edit_stations` for the UI, and
+  `canEditRecords()` / `canEditStations()` in `index.html` gate every inline Edit control. A `BR-<id>`
+  synthetic mirror is view-only for everyone (edited in Branch Management); a persisted mirrored row
+  stays editable by an admin and keeps its branch lineage in the payload.
+- **Audit + provenance.** Every accepted station edit writes `audit_events`
+  (`action=UPDATE`, `entity=police_station`, `entity_id=<station id>`, changed fields in `details`) and
+  stamps `police_stations.updated_at` / `updated_by` (new columns, added by the idempotent migration).
+
+### Automated
+```sh
+python3 -m venv .venv
+.venv/bin/pip install psycopg2-binary pgserver
+npm install --no-save --package-lock=false jsdom@26
+
+.venv/bin/python backend/test_station_actions.py     # 123 checks: View payload, edit validation,
+                                                     # admin-only PUT/PATCH (403), mirrors, audit
+node backend/test_station_frontend.mjs               # Actions column, View drawer, Edit modal,
+                                                     # non-admin / read-only gating, offline draft
+PYTHON="$PWD/.venv/bin/python" node backend/test_station_integration.mjs
+                                                     # real page script + real API + real database:
+                                                     # admin View/Edit round-trip, HR 403, Commander 403
+.venv/bin/python backend/test_read_only_rbac.py      # unchanged Commander firewall still holds
+.venv/bin/python backend/test_dynamic_branches.py
+```
+All three suites cover their own provisioning: `test_station_actions.py` uses configured
+`SENTINEL_DB_*` settings or a throwaway `pgserver` cluster and SKIPs (exit 0) when neither is
+available; never point them at operational data.
+
+### Officer UAT checklist
+1. **SystemAdmin (`admin` / `ChangeMe123!`) → Police Stations → Registered stations.**
+   - The table shows the **Actions** column with **View** and **Edit** on every row.
+   - **View**: the drawer shows the station code, name, Region → District → Village, operational
+     status, tier, phone, cell capacity, commander/deputy, notes, officer count, vehicle count and the
+     mirrored branch line. Compare the values with the register row and (for a mirrored branch) with
+     **Branch Management**.
+   - **Edit**: rename the station, move it to another Region → District, change the village, switch
+     the status to *Maintenance*, save — the table, the **Police Stations** counters, the officer /
+     vehicle station dropdowns and **Central Police Search → Stations** all show the new values after
+     saving. Reload the page: the values persist (they are in the database, not only in the browser).
+   - **Edit validation**: leave the name blank → red field, no request; pick a district from another
+     region → the district dropdown resets with the region; try *District HQ* etc. and confirm the
+     tier/status lists are the register's own.
+   - **Mirrored branch entry** (`BR-…` row, if any): View opens, Edit is not offered; hitting the API
+     directly answers *“This registry entry is a Police Stations branch mirror — edit the branch
+     itself in Branch Management.”*
+2. **HR Directorate (`hr.officer`) → Police Stations.**
+   - The register stays readable (postings), **View** works, and there is **no Edit button** anywhere
+     in the table or in the drawer (the drawer explains that editing is a System Administrator action).
+   - With the browser devtools open run
+     `fetch('/api/stations/ST-001',{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':'Bearer '+JSON.parse(localStorage.getItem('sentinel_token'))},body:JSON.stringify({name:'Nope'})})`
+     → **403** with `{"code":"admin_only"}` and the station name unchanged in the register.
+3. **Checkpoint officer (`cp.south`)** — the Police Stations page is not in the sidebar; a direct
+   `PATCH` / `PUT /api/stations` answers **403** (`admin_only`) and a direct `GET /api/stations/<id>`
+   answers **401**.
+4. **Commander (`chief`) — read-only oversight.** View opens for the station record; no Edit control
+   is painted and a direct `PATCH` / `PUT` answers **403** with `{"code":"read_only_role"}`.
+5. **Cross-check the mirrors**: create a **Police Stations** branch in **Branch Management**, confirm
+   the register gains the mirrored entry, open **View** and confirm the *Mirrored branch lineage* line
+   names that branch; the mirrored persisted row can still be edited by the administrator.
+6. Confirm the audit trail after an edit (`audit_events`: `action=UPDATE`, `entity=police_station`,
+   `details` listing the changed fields) and that `updated_at` / `updated_by` moved on the row.

@@ -328,6 +328,21 @@ body.modal-open{overflow:hidden}
 body:not(.is-admin):not(.can-manage-stations) .admin-write{display:none !important}
 .admin-write-note{display:none}
 body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
+/* Row-level EDIT action on a management table (Registered Stations → Actions).
+   Editing an existing record is a System Administrator / Admin capability
+   ONLY: the class is gated on `body.can-edit-records`, which
+   `applyRecordEditMode()` drives from `canEditRecords()` — the Admin role
+   check (+ not read-only), never from `can-manage-stations`. A standard officer
+   whose role may read the register (HR Directorate, unit officer, checkpoint
+   officer) and the globally read-only Commander therefore never see an Edit
+   control. The matching write routes (`PUT` / `PATCH /api/stations`)
+   independently answer 403 Forbidden, so hiding the button is never the only
+   control. */
+body:not(.can-edit-records) .admin-edit{display:none !important}
+.row-actions{display:flex;gap:6px;align-items:center;white-space:nowrap}
+.row-actions .btn{padding:5px 10px;font-size:12px}
+.station-deploy-list{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:#33415c}
+.station-deploy-list li{margin:2px 0}
 /* ==== Global read-only role (Commander / High Command) ====
    The Commander holds universal READ-ONLY visibility: every register renders
    in strict view-only mode. Each write control carries `data-write` (or the
@@ -1019,7 +1034,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="panel">
 <div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="stCount" style="display:none">0</span><button class="btn admin-write" data-write="1" onclick="openEntryModal('stDrawer')">＋ Register Station</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="stSearch" placeholder="Central Station Search — name, code, region, district or village…" oninput="renderStationsTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Actions</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register police station (SystemAdmin / stations:manage only) -->
@@ -1046,6 +1061,46 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="field"><label>Police Stations branch <small class="muted">(auto-matched to station)</small></label><select id="stBranch" data-branch-unit="police_station"><option value="">Loading branches…</option></select></div>
 <div class="field"><label>Notes</label><textarea id="stNotes" placeholder="Coverage area, shift details…"></textarea></div>
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" data-write="1" type="submit">Register station</button></div>
+</form>
+</div>
+</div>
+</div>
+
+<!-- Station record (Actions → View). READ-ONLY detail drawer, open to every
+     session that may read the station register (SystemAdmin, HR Directorate,
+     Commander). The Edit action inside the footer renders from the server's
+     per-station `can_edit` flag, so a non-admin sees the record without a write
+     control. -->
+<div class="cmodal-ov" id="stViewOv" onclick="closeEntryModal('stViewModal')"></div>
+<div class="cmodal" id="stViewModal" role="dialog" aria-modal="true" aria-labelledby="stViewTitle">
+<div class="cm-head"><div><h3 id="stViewTitle">Station record</h3><div class="sub">Registered stations · full metadata, deployment counts and mirrored branch lineage</div></div><button class="iconbtn" onclick="closeEntryModal('stViewModal')" aria-label="Close">✕</button></div>
+<div class="cm-body"><div id="stViewBody" aria-live="polite"></div></div>
+</div>
+
+<!-- Edit police station (Actions → Edit · SystemAdmin / Admin only). The write
+     itself is re-authorised on the server: PUT / PATCH /api/stations answer
+     403 Forbidden for a non-admin session. -->
+<div class="admin-edit">
+<div class="cmodal-ov" id="stEditOv" onclick="closeEntryModal('stEditModal')"></div>
+<div class="cmodal" id="stEditModal" role="dialog" aria-modal="true" aria-labelledby="stEditTitle">
+<div class="cm-head"><div><h3 id="stEditTitle">Edit police station</h3><div class="sub">System Administrator action — the register, officer postings and deployment matrix update together</div></div><button class="iconbtn" onclick="closeEntryModal('stEditModal')" aria-label="Close">✕</button></div>
+<div class="cm-body">
+<div id="stEditNotice" class="notice"></div>
+<form novalidate class="form" id="stEditForm" onsubmit="saveStationEdit(event)">
+<input type="hidden" id="stEditId">
+<div class="hint" id="stEditIdentity" style="margin-bottom:14px"></div>
+<div class="grid2">
+<div class="field"><label>Station name *</label><input id="stEditName" placeholder="e.g. Burao Central Station"></div>
+<div class="field"><label>Station code <small class="muted">(read-only)</small></label><input id="stEditCode" readonly style="background:#f3f6fb;color:#526075"></div>
+<div class="field"><label>Operational status *</label><select id="stEditStatus"><option>Active</option><option>Inactive</option><option>Maintenance</option></select></div>
+<div class="field"><label>Station tier</label><select id="stEditTier"><option value="">— keep current —</option><option>Regional HQ</option><option>District HQ</option><option>Outpost</option><option>Checkpoint</option><option>Border Post</option></select></div>
+<div class="field"><label>Contact phone</label><input id="stEditPhone" placeholder="+252 …"></div>
+<div class="field"><label>Cell capacity</label><input id="stEditCells" type="number" min="0" placeholder="optional"></div>
+</div>
+<div class="section-label">Location — Sool · Sanaag · East Togdheer</div>
+<div id="ste-loc" class="loc-grid"></div>
+<div class="field"><label>Notes</label><textarea id="stEditNotes" placeholder="Coverage area, shift details…"></textarea></div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="closeEntryModal('stEditModal')">Cancel</button><button class="btn" data-write="1" type="submit" id="stEditSave">Save changes</button></div>
 </form>
 </div>
 </div>
@@ -2662,7 +2717,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElement
 // exactly as it did when the form was inline on the page.
 // Modals that stay available to a read-only (Commander / High Command)
 // session: the identity profile popup is a pure VIEW surface.
-const READ_ONLY_VIEW_MODALS=new Set(['pvModal']);
+const READ_ONLY_VIEW_MODALS=new Set(['pvModal', 'stViewModal']);
 function openEntryModal(id){
   // Read-only role: entry/registration modals are refused; the read-only
   // identity-profile popup ('pvModal') still opens.
@@ -3227,7 +3282,7 @@ function guardReadOnly(action){
 // them when a write-capable officer signs in on the same tab. A MutationObserver
 // re-runs it after every repaint, so a newly rendered button can never slip
 // through — on any department page.
-const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal")|openPersonDrawer|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
+const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal"|'stViewModal'|"stViewModal")|openStationEdit|openPersonDrawer|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
 // The visible label of a mutation action: "+ New case", "＋ Add suspect",
 // "Approve", "Edit", "Save", "Delete", "New", "Register …", "Nominate",
 // "Record …", "Upload", "Submit", "Verify", "Confirm", "Reject", "Enable" /
@@ -4644,7 +4699,10 @@ async function syncServer(){
     // A failed fetch keeps the previous local arrays (never clobbered by a
     // transient error). Officer payloads already match the register's shape.
     if(sts.ok && sts.items.length) db.stations=sts.items.map(s=>({id:s.station_id,name:s.name,code:s.code,region:s.region,district:s.district,village:s.village,notes:s.notes||'',
-      station_tier:s.station_tier||'',operational_status:s.operational_status||'Active',cell_capacity:s.cell_capacity||0}));
+      station_tier:s.station_tier||'',operational_status:s.operational_status||'Active',cell_capacity:s.cell_capacity||0,
+      // Registry metadata the View drawer / Edit modal render (SystemAdmin edit path).
+      contact_phone:s.contact_phone||'',commander_id:s.commander_id||null,deputy_id:s.deputy_id||null,
+      created_at:s.created_at||'',updated_at:s.updated_at||''}));
     // Merge synthetic Police Stations branches into the main registry so a branch
     // created under Police Stations immediately appears in the Registered
     // Stations table (and counters) even when the server has not yet
@@ -5137,6 +5195,11 @@ function applyReadOnlyMode(){
   if(badge) badge.style.display = ro ? '' : 'none';
   const banner = document.getElementById('roBanner');
   if(banner) banner.style.display = ro ? 'flex' : 'none';
+  // Management-table ROW EDITS (Registered Stations → Actions → Edit, and the
+  // other registers that follow the same pattern) are SystemAdmin / Admin only.
+  // The document class is repainted in the same pass as the read-only mode, so
+  // a role switch can never leave a stale edit capability on screen.
+  applyRecordEditMode();
   applyUiBuildLabel();
   // Hard enforcement: hide every write control *in the DOM* (not only through
   // the CSS class) and keep watching for controls painted later by any
@@ -6245,9 +6308,322 @@ function renderStationsTable(){
     <td><b>${esc(s.name)}</b>${s.notes?`<br><small class="muted">${esc(s.notes)}</small>`:''}</td>
     <td>${esc(s.code)}</td>
     <td><span class="badge blue">${esc(s.region)}</span></td>
-    <td>${esc(s.district)}</td><td>${esc(s.village)}</td></tr>`).join('');
-  tb.innerHTML=rows||`<tr><td colspan="5" class="empty">${q?'No station matches that search':'No stations registered yet'}</td></tr>`;
+    <td>${esc(s.district)}</td><td>${esc(s.village)}</td>
+    <td>${stationRowActions(s)}</td></tr>`).join('');
+  tb.innerHTML=rows||`<tr><td colspan="6" class="empty">${q?'No station matches that search':'No stations registered yet'}</td></tr>`;
   paintTableCount('stCount',list,all.length);
+}
+
+// ================= Registered Stations · row actions (View / Edit) ============
+// The Actions column renders for every station row:
+//
+//   * VIEW — opens the read-only station record drawer (full metadata,
+//     deployment counters, mirrored branch lineage). Available to ANY session
+//     that may open the station register, including the globally read-only
+//     Commander role — hence `data-view="1"`, which keeps the read-only DOM
+//     hardening from sweeping the button away.
+//   * EDIT — opens the administration edit modal. Rendered ONLY for the
+//     System Administrator / Admin role (`body.is-admin` + canEditRecords());
+//     the server independently re-checks the same rule and answers 403
+//     Forbidden on PUT / PATCH /api/stations for every other role.
+function canEditRecords(){
+  if(!canWrite()) return false;                    // global read-only (Commander)
+  const u=sessionUser||currentUser||null;
+  const v=sessionVisibility||null;
+  const role=(u&&u.role)||(v&&v.role)||'';
+  // The authority is the ROLE (System Administrator / Admin), corroborated by
+  // the server's `is_admin` flag. A stray `can_edit_records: true` on a
+  // non-admin session is ignored; an explicit `false` is honoured, so a
+  // stale/partial session fails closed.
+  const adminRole=isAdminRole(role)||!!(u&&u.is_admin===true)||!!(v&&v.is_admin===true);
+  if(!adminRole) return false;
+  if(u&&u.can_edit_records===false) return false;
+  if(v&&v.can_edit_records===false) return false;
+  return true;
+}
+// Paints the document-level switch the `.admin-edit` CSS rule (and every
+// management-table row action) keys off. Called from applyReadOnlyMode(), i.e.
+// on every session change — sign-in, /api/me refresh, re-hydrated session,
+// sign-out and the read-only toggle.
+function applyRecordEditMode(){
+  const canEdit=canEditRecords();
+  if(document.body&&document.body.classList) document.body.classList.toggle('can-edit-records',canEdit);
+  return canEdit;
+}
+// Station edits are the station-registry half of the same administration
+// authority (the spec's "admins retain full access to edit records across all
+// application management tables").
+function canEditStations(){ return canEditRecords(); }
+// A synthetic `BR-<id>` row exists only because a Police Stations branch has
+// not been mirrored into the register yet — it is edited in Branch Management,
+// not here (the API refuses with a 400 explaining exactly that).
+function stationIsEditable(s){ return !(s&&(s.isBranch||/^BR-/i.test(String(s.id||s.station_id||'')))) }
+// Station ids are registry identifiers (ST-xxx / BR-x); the action handlers are
+// quoted inside an attribute, so anything outside that alphabet is dropped
+// rather than escaped into the inline handler.
+function stationActionId(s){ return String((s&&(s.id||s.station_id))||'').replace(/[^A-Za-z0-9_-]/g,'') }
+function stationRowActions(s){
+  const id=stationActionId(s);
+  const buttons=[`<button type="button" class="btn secondary small" data-view="1" data-station-action="view" onclick="openStationView('${id}')">View</button>`];
+  if(canEditStations()&&stationIsEditable(s)){
+    buttons.push(`<button type="button" class="btn small admin-edit" data-write="1" data-station-action="edit" onclick="openStationEdit('${id}')">Edit</button>`);
+  }
+  return `<div class="row-actions">${buttons.join('')}</div>`;
+}
+function stationStatusBadge(status){
+  const v=status||'Active';
+  const cls=v==='Active'?'green':(v==='Maintenance'?'amber':'gray');
+  return `<span class="badge ${cls}">${esc(v)}</span>`;
+}
+// Local fallback lineage: match the registry row against the Police Stations
+// branch catalogue (same rule the register merge uses), so the drawer shows
+// the branch even before GET /api/stations/<id> answers.
+function stationBranchLineageLocal(s){
+  const id=String((s&&(s.id||s.station_id))||'');
+  const direct=(branchCatalog.items||[]).find(b=>'BR-'+b.id===id&&b.unit_type==='police_station');
+  if(direct) return direct;
+  if(!branchCatalog.loaded||!s) return null;
+  const base=String(s.name||'').replace(/\s*branch\s*$/i,'').trim().toLowerCase();
+  const village=String(s.village||'').trim().toLowerCase();
+  const region=String(s.region||'').trim().toLowerCase();
+  return (branchCatalog.items||[]).find(b=>b.unit_type==='police_station'
+    && String(b.region||'').trim().toLowerCase()===region
+    && [String(b.name||'').trim().toLowerCase(),
+        String(b.name||'').replace(/\s*branch\s*$/i,'').trim().toLowerCase()]
+        .some(n=>n&&(n===base||n===village)))||null;
+}
+function localStationCounts(id){
+  const officers=(db.officers||[]).filter(o=>String(o.station_id||o.station||'')===String(id));
+  const vehicles=(db.cars||[]).filter(c=>String(c.station||c.station_id||'')===String(id));
+  return {officers:officers.length,vehicles:vehicles.length,
+    officerList:officers.slice(0,10),vehicleList:vehicles.slice(0,10)};
+}
+// ---- Actions → View: the station record drawer -------------------------------
+// Paints immediately from the merged local registry row (works offline and
+// before the server answers), then upgrades to the authoritative
+// GET /api/stations/<id> payload — registry fields, officer / vehicle
+// deployment counters and the mirrored Police Stations branch lineage.
+let stationViewToken=0;
+function openStationView(id){
+  const s=stationById(id);
+  if(!s){toast('Station not found','No registry row matches '+id);return}
+  stationViewToken++;
+  window._viewingStation=s;
+  document.getElementById('stViewTitle').textContent='Station record · '+(s.code||s.id||'');
+  paintStationView(s,null,localStationCounts(id));
+  openEntryModal('stViewModal');
+  loadStationDetail(id,stationViewToken);
+}
+async function loadStationDetail(id,token){
+  if(!serverOn) return;
+  try{
+    const data=await api('/api/stations/'+encodeURIComponent(id));
+    if(token!==stationViewToken||!data||!data.station) return;
+    // Cache the authoritative record so the Edit modal (opened from either the
+    // drawer or the table) prefills from it instead of the last synced row.
+    window._stationDetailCache=window._stationDetailCache||{};
+    window._stationDetailCache[String(id)]=data.station;
+    paintStationView(data.station,data.station,null);
+  }catch(e){
+    // Offline / not a persisted row: the locally merged record stands.
+    if(token===stationViewToken&&/Network unavailable/i.test(e&&e.message||'')) toast('Offline record','Deployment counts come from the local register cache.');
+  }
+}
+function paintStationView(station,detail,local){
+  const body=document.getElementById('stViewBody'); if(!body) return;
+  const s=detail||station||{};
+  const counts=local||{};
+  const officers=(detail&&detail.officer_count!=null)?detail.officer_count:(counts.officers||0);
+  const vehicles=(detail&&detail.vehicle_count!=null)?detail.vehicle_count:(counts.vehicles||0);
+  const personLine=(person,fallbackId)=>{
+    if(person&&typeof person==='object') return `${esc(person.full_name||'')} · ${esc(person.rank||'')} <small class="muted">(${esc(person.service_id||'')})</small>`;
+    return fallbackId?esc(String(fallbackId)):'—';
+  };
+  const lineage=stationBranchLineageLocal(s);
+  const branchText=(detail&&detail.branch_lineage)?detail.branch_lineage
+    :(lineage?`Mirrored from the Police Stations branch ${lineage.name} (BR-${lineage.id})`
+             :'Registered directly in the station registry — no mirrored branch');
+  const branchMeta=lineage?[lineage.region,lineage.district].filter(Boolean).join(' · '):'';
+  const grid=[
+    ['Station name',esc(s.name||'—'),'full'],
+    ['Station code',esc(s.code||'—')],
+    ['Station ID',esc(s.id||s.station_id||'—')],
+    ['Operational status',stationStatusBadge(s.operational_status)],
+    ['Station tier',esc(s.station_tier||'—')],
+    ['Region',`<span class="badge blue">${esc(s.region||'—')}</span>`],
+    ['District',esc(s.district||'—')],
+    ['Village / Town',esc(s.village||'—')],
+    ['Contact phone',esc(s.contact_phone||'—')],
+    ['Cell capacity',(s.cell_capacity==null||s.cell_capacity==='')?'—':esc(String(s.cell_capacity))],
+    ['Commander',personLine(detail&&detail.commander,s.commander_id)],
+    ['Deputy commander',personLine(detail&&detail.deputy,s.deputy_id)],
+    ['Registered',esc(s.created_at||'—')],
+    ['Last updated',esc(s.updated_at||'—')]
+  ];
+  const deployList=(kind)=>{
+    const rows=(counts&&counts[kind])||[];
+    if(!rows.length) return '';
+    const items=kind==='officerList'
+      ? rows.map(o=>`<li><b>${esc(o.full_name||o.service_id||'')}</b> <small class="muted">${esc(o.rank||'')} · ${esc(o.service_id||'')}</small></li>`).join('')
+      : rows.map(c=>`<li><b>${esc(c.plate||c.id||'')}</b> <small class="muted">${esc(c.make||c.type||'')}</small></li>`).join('');
+    return `<ul class="station-deploy-list">${items}</ul>`;
+  };
+  const deployBlock=`
+   <section class="pv-units" style="margin-top:16px">
+     <h3>Deployment</h3>
+     <div class="pv-grid" style="grid-template-columns:1fr 1fr">
+       <div class="pv-field"><small>Officers deployed</small><b>${officers}</b></div>
+       <div class="pv-field"><small>Vehicles assigned</small><b>${vehicles}</b></div>
+     </div>
+     ${deployList('officerList')}${deployList('vehicleList')}
+   </section>`;
+  const lineageBlock=`
+   <section class="pv-units" style="margin-top:16px">
+     <h3>Mirrored branch lineage</h3>
+     <div class="pv-field full"><small>Police Stations branch</small><b>${esc(branchText)}</b>
+       ${branchMeta?`<small class="muted" style="text-transform:none;letter-spacing:0">${esc(branchMeta)}</small>`:''}</div>
+   </section>`;
+  const notesBlock=s.notes?`<section class="pv-units" style="margin-top:16px"><h3>Notes</h3><div class="pv-field full"><b>${esc(s.notes)}</b></div></section>`:'';
+  const canEdit=(detail&&typeof detail.can_edit!=='undefined')?detail.can_edit===true:(canEditStations()&&stationIsEditable(s));
+  const denied=detail&&detail.edit_disabled_reason?`<small class="muted" style="display:block;margin-top:8px">${esc(detail.edit_disabled_reason)}</small>`:'';
+  const foot=`<div class="pv-foot">
+     <button class="btn ghost" onclick="closeEntryModal('stViewModal')">Close</button>
+     ${canEdit?`<button class="btn admin-edit" data-write="1" onclick="closeEntryModal('stViewModal');openStationEdit('${stationActionId(s)}')">Edit station</button>`:''}
+   </div>${canEdit?'':denied}`;
+  body.innerHTML=`
+   <div class="pv-headcard">
+     <span class="pv-personid" aria-hidden="true">🏛</span>
+     <div class="pv-id">
+       <b>${esc(s.name||'Station record')}</b>
+       <div class="muted">${esc(s.code||'')} · ${esc(s.region||'')}${s.district?' → '+esc(s.district):''}${s.village?' → '+esc(s.village):''}</div>
+       ${stationStatusBadge(s.operational_status)}
+     </div>
+   </div>
+   <div class="pv-grid">${grid.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${v}</b></div>`).join('')}</div>
+   ${deployBlock}${lineageBlock}${notesBlock}${foot}`;
+}
+// ---- Actions → Edit: the administration edit modal (SystemAdmin only) --------
+function fillStationEditForm(s){
+  const set=(elId,v)=>{const el=document.getElementById(elId);if(el)el.value=v};
+  set('stEditId',String(s.id||s.station_id||''));
+  set('stEditName',s.name||'');
+  set('stEditCode',s.code||'');
+  const status=document.getElementById('stEditStatus');
+  if(status) status.value=s.operational_status||'Active';
+  const tier=document.getElementById('stEditTier');
+  if(tier){
+    const known=Array.from(tier.options).some(o=>o.value===s.station_tier);
+    tier.value=known?(s.station_tier||''):'';
+  }
+  set('stEditPhone',s.contact_phone||'');
+  set('stEditCells',(s.cell_capacity==null||s.cell_capacity===''?'':String(s.cell_capacity)));
+  set('stEditNotes',s.notes||'');
+  const identity=document.getElementById('stEditIdentity');
+  if(identity) identity.innerHTML=`<b>${esc(s.name||'')}</b> · ${esc(s.code||'')} — <span class="muted">Region → District → Village are the station defaults reused by every officer posting and vehicle record.</span>`;
+  if(!window._locWires||!window._locWires['ste']) locationDropdowns('ste',{container:'ste-loc'});
+  setLocation('ste',{region:s.region||'',district:s.district||'',village:s.village||''});
+}
+function openStationEdit(id){
+  if(guardReadOnly('Editing a station record')) return;
+  if(!canEditStations()){
+    toast('Administrator only','Editing a station record is restricted to the System Administrator (Admin) role.');
+    return;
+  }
+  const local=stationById(id);
+  const cached=(window._stationDetailCache||{})[String(id)]||null;
+  // The authoritative detail (when the drawer has already fetched it) wins
+  // over the last synced register row; otherwise the local row is used.
+  const s=cached?{...(local||{}),...cached}:local;
+  if(!s){toast('Station not found','No registry row matches '+id);return}
+  if(!stationIsEditable(s)){
+    toast('Mirrored branch','This register entry mirrors a Police Stations branch — edit the branch itself in Branch Management.');
+    return;
+  }
+  window._editingStation=s;
+  fillStationEditForm(s);
+  const notice=document.getElementById('stEditNotice');
+  if(notice){notice.className='notice';notice.style.display='none'}
+  openEntryModal('stEditModal');
+}
+function resetStationEditForm(){
+  ['stEditId','stEditName','stEditCode','stEditPhone','stEditCells','stEditNotes'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  const tier=document.getElementById('stEditTier'); if(tier) tier.value='';
+  const status=document.getElementById('stEditStatus'); if(status) status.value='Active';
+  const notice=document.getElementById('stEditNotice');
+  if(notice){notice.className='notice';notice.style.display='none'}
+}
+// Merge the saved row back into the local register (the drawer, the officer /
+// vehicle posting dropdowns and the counters all read from it).
+function applyStationUpdate(updated){
+  if(!updated) return;
+  const id=String(updated.id||updated.station_id||'');
+  if(!id) return;
+  const fields=['name','code','region','district','village','notes','station_tier',
+                'operational_status','cell_capacity','contact_phone','updated_at'];
+  const list=(db.stations||[]).slice();
+  const i=list.findIndex(s=>String(s.id||s.station_id)===id);
+  if(i>=0){
+    const merged={...list[i]};
+    fields.forEach(f=>{if(typeof updated[f]!=='undefined') merged[f]=updated[f]});
+    merged.id=id; merged.station_id=id;
+    list[i]=merged;
+  }else{
+    const merged={id,station_id:id};
+    fields.forEach(f=>{if(typeof updated[f]!=='undefined') merged[f]=updated[f]});
+    list.push(merged);
+  }
+  db.stations=list;
+  try{persist()}catch(_){}
+}
+async function saveStationEdit(e){
+  e.preventDefault(); clearInvalid();
+  if(guardReadOnly('Saving a station record')) return;
+  if(!canEditStations()){
+    showFormError('Editing a station record is restricted to the System Administrator (Admin) role.',
+                  {notice:'stEditNotice',title:'Administrator only'});
+    return;
+  }
+  const id=val('stEditId');
+  const name=val('stEditName');
+  const status=(document.getElementById('stEditStatus')||{}).value||'Active';
+  const tier=(document.getElementById('stEditTier')||{}).value||'';
+  const phone=val('stEditPhone');
+  const cells=val('stEditCells');
+  const notes=(document.getElementById('stEditNotes')||{}).value||'';
+  if(!id){showFormError('Reopen the station from the register and try again.',{notice:'stEditNotice',title:'Unable to Save'});return}
+  if(!name){showFormError('Station name is required.',{names:['stEditName'],notice:'stEditNotice'});return}
+  const rl=requireLocation('ste');
+  if(!rl.ok){showFormError(rl.msg,{prefix:'ste',names:['region','district','village'].filter(k=>!readLocation('ste')[k]),notice:'stEditNotice'});return}
+  const payload={name:name,region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,
+                 operational_status:status,notes:notes.trim()};
+  if(tier) payload.station_tier=tier;
+  if(phone) payload.contact_phone=phone;
+  payload.cell_capacity=(cells===''?'':cells);
+  try{
+    let saved=null;
+    if(serverOn){
+      const r=await api('/api/stations/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(payload)});
+      saved=r.station||null;
+      applyStationUpdate(saved||{id:id,name:name,region:rl.loc.region,district:rl.loc.district,
+        village:rl.loc.village,operational_status:status,notes:notes.trim()});
+    }else{
+      // Offline draft: keep the register usable and say so, exactly like the
+      // other registers' local-demo path.
+      saved={id:id,name:name,region:rl.loc.region,district:rl.loc.district,village:rl.loc.village,
+             operational_status:status,notes:notes.trim()};
+      applyStationUpdate(saved);
+    }
+    resetStationEditForm();
+    closeEntryModal('stEditModal');
+    renderStationsTable(); renderPoliceSearch(); renderUnitStats(); refreshStationSelects();
+    toast(serverOn?'Station updated':'Saved offline',
+          name+' · '+rl.loc.region+' → '+rl.loc.district+' — '+(serverOn?'the register, postings and deployment matrix are refreshed.':'it is filed with the registry once the server is reachable.'));
+    if(window._viewingStation&&String(window._viewingStation.id)===id) openStationView(id);
+  }catch(err){
+    showFormError(err.message||'The station could not be updated.',{notice:'stEditNotice',title:'Unable to Save'});
+  }
 }
 function dutyBadge(s){
   const v=s||'Active';

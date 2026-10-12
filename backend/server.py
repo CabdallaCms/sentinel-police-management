@@ -249,6 +249,9 @@ CREATE TABLE IF NOT EXISTS police_stations(
   deputy_id INTEGER, contact_phone TEXT,
   cell_capacity INTEGER, operational_status TEXT DEFAULT 'Active',
   notes TEXT, created_by INTEGER REFERENCES users(id),
+  -- Administration edits (View / Edit station drawer): who last changed the
+  -- record and when. Written only by the SystemAdmin-only update path.
+  updated_at TEXT, updated_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS officers(
@@ -440,6 +443,11 @@ ADDED_COLUMNS = {
         ('contact_phone', "ALTER TABLE police_stations ADD COLUMN contact_phone TEXT"),
         ('cell_capacity', "ALTER TABLE police_stations ADD COLUMN cell_capacity INTEGER"),
         ('operational_status', "ALTER TABLE police_stations ADD COLUMN operational_status TEXT DEFAULT 'Active'"),
+        # Administration edit provenance (View / Edit station drawer). Existing
+        # databases gain the columns in place; the values stay NULL until the
+        # station is edited by a SystemAdmin.
+        ('updated_at', "ALTER TABLE police_stations ADD COLUMN updated_at TEXT"),
+        ('updated_by', "ALTER TABLE police_stations ADD COLUMN updated_by INTEGER REFERENCES users(id)"),
     ],
 }
 
@@ -582,6 +590,58 @@ def is_admin_user(user):
     keys = {_role_key(role), _role_key(user.get('role_alias')),
             _role_key(normalize_role(role or ''))}
     return bool(keys & ADMIN_ROLE_KEYS)
+
+
+# ---- administration edit authority (management tables) ----------------------
+# Editing a record that already EXISTS in an application management table (the
+# Police Stations registry, and the other registers that follow the same
+# pattern) is a System Administrator / Admin capability. Everyone else —
+# including a standard officer whose role can READ the register, and the
+# globally read-only Commander role — may open the record but never alter it.
+#
+# The rule is enforced in three places so it cannot drift:
+#   * `require_records_admin()` is called by every management-table write route
+#     before it touches a row and answers **403 Forbidden** (never the 401 used
+#     for a missing/insufficient session) for a non-admin caller,
+#   * the session payload carries `can_edit_records` / `can_edit_stations`
+#     (plus the existing `can_manage_stations`), which the UI renders from, and
+#   * the frontend hides/disables the Edit control for a non-admin session.
+ADMIN_ONLY_CODE = 'admin_only'
+
+
+class AdminOnlyWriteError(PermissionError):
+    """A non-admin attempted to edit an existing management-table record.
+
+    Carries its own HTTP status so the request handlers answer **403
+    Forbidden** instead of the 401 used for ordinary permission failures.
+    """
+
+    status_code = 403
+    http_status = 403
+    code = ADMIN_ONLY_CODE
+
+
+def is_records_admin(user):
+    """True only for the System Administrator / Admin role.
+
+    Accepts the canonical 'SystemAdmin' role and the spec's 'Admin' /
+    'admin' spellings (case/format-insensitive), exactly like
+    `is_admin_user()` — which is the single role check used by the whole
+    application. Every other role, including the read-only Commander, is a
+    non-admin for management-table edits.
+    """
+    return is_admin_user(user)
+
+
+def require_records_admin(user, action='Editing this record'):
+    """Raise `AdminOnlyWriteError` (HTTP 403) unless `user` is an Admin."""
+    if is_records_admin(user):
+        return
+    role = (user or {}).get('role') or ''
+    label = ROLE_LABELS.get(canonical_unit_role(role), role or 'this role')
+    raise AdminOnlyWriteError(
+        f'{action} requires the System Administrator (Admin) role — '
+        f'{label} has view-only access to this register.')
 
 
 def citizenship_wait_exempt(app):
@@ -1655,6 +1715,15 @@ def user_view(user):
         'location': location,
         'modules': sorted(modules),
         'permissions': sorted(user_permissions(user)),
+        # Management-table ROW EDITS (the Actions → Edit action on the
+        # Registered Stations table and every register that follows the same
+        # pattern) are SystemAdmin / Admin only. `can_manage_records` and
+        # `can_edit_records` are the same authority under both names the UI
+        # and the spec use; a non-admin session renders View only.
+        'is_admin': is_records_admin(user),
+        'can_edit_records': is_records_admin(user) and not is_read_only_role(raw_role),
+        'can_edit_stations': is_records_admin(user) and not is_read_only_role(raw_role),
+        'can_manage_records': is_records_admin(user) and not is_read_only_role(raw_role),
         # Global read-only contract (Commander / High Command): the frontend
         # renders every module in strict view-only mode when this is true.
         'read_only': is_read_only_role(raw_role),
@@ -1764,6 +1833,7 @@ def filter_visibility(user):
     is_admin = canonical_unit_role(role) == ROLE_ADMIN
     chief = canonical_unit_role(role) == ROLE_CHIEF
     read_only = is_read_only_role(role)
+    edit_records = is_records_admin(user) and not read_only
     return {
         'is_admin': is_admin,
         'is_chief_commander': chief,
@@ -1773,6 +1843,12 @@ def filter_visibility(user):
         # The Commander monitors the station registry read-only, so the
         # station write form stays hidden for it (SystemAdmin only).
         'can_manage_stations': is_admin or has_permission(user, PERM_STATIONS_MANAGE),
+        # ---- management-table edit authority (View / Edit row actions) -----
+        # SystemAdmin / Admin only: the Actions → Edit control on every
+        # management table renders from this flag, and the write routes
+        # independently answer 403 Forbidden for a non-admin caller.
+        'can_edit_records': edit_records,
+        'can_edit_stations': edit_records,
         # ---- global read-only contract (Commander / High Command) ----------
         # `read_only` is the single switch the frontend keys every write
         # control off; `can_write` is its inverse for readability.
@@ -2357,6 +2433,8 @@ def station_view(row):
         'contact_phone': col('contact_phone'),
         'cell_capacity': col('cell_capacity'),
         'operational_status': col('operational_status') or 'Active',
+        'updated_at': col('updated_at'),
+        'updated_by': col('updated_by'),
         'created_at': row['created_at'],
     }
 
@@ -2667,6 +2745,329 @@ def register_station(c, user, data):
     row = c.execute('SELECT * FROM police_stations WHERE station_id=%s',
                     (station_id,)).fetchone()
     return station_view(row)
+
+
+# ---- station registry: View detail + SystemAdmin Edit ------------------------
+# The Registered Stations table exposes two row actions:
+#   * VIEW — reads the full station record (registry fields, deployment
+#     counters, mirrored-branch lineage) and is available to ANY session that
+#     may open the station register, and
+#   * EDIT — the administration write, restricted to the System Administrator
+#     (Admin) role by `require_records_admin()` (HTTP 403 for everyone else).
+def _branch_base_name(name):
+    """'Lasanod Branch' -> 'Lasanod' — the station name a branch mirrors."""
+    return re.sub(r'\s+branch\s*$', '', str(name or '').strip(), flags=re.I).strip()
+
+
+def synthetic_station_from_branch_row(branch):
+    """Public station shape for a Police Stations branch mirrored as a station.
+
+    Identical to the `BR-<id>` rows `GET /api/stations` appends for branches
+    that have no persisted `police_stations` row yet, so the View drawer and
+    the register table describe the same entry.
+    """
+    district = (branch['district'] or '').strip() if 'district' in branch and branch['district'] else ''
+    if not district:
+        region = (branch['region'] or '').strip()
+        district = (STATION_DISTRICTS.get(region, (region,))[0] if region in STATION_DISTRICTS else region)
+    base = _branch_base_name(branch['name']) or district
+    return {
+        'id': f"BR-{branch['id']}",
+        'station_id': f"BR-{branch['id']}",
+        'name': branch['name'],
+        'code': f"BR-{branch['id']}",
+        'region': branch['region'],
+        'district': district,
+        'village': base,
+        'notes': f"Mirrored from branch BR-{branch['id']}",
+        'station_tier': 'Mirrored Branch',
+        'commander_id': None,
+        'deputy_id': None,
+        'contact_phone': None,
+        'cell_capacity': 0,
+        'operational_status': 'Active',
+        'updated_at': None,
+        'updated_by': None,
+        'created_at': (branch['created_at'] if 'created_at' in branch else None),
+    }
+
+
+def mirrored_station_row_for_branch(c, branch):
+    """The `police_stations` row a Police Stations branch was mirrored into.
+
+    Resolution order: the explicit marker the mirroring write stamps into
+    `notes` ('Mirrored from branch <id>'), then the name/region match used
+    everywhere else in this module. Returns None when the branch has not been
+    mirrored yet (the register renders it as a synthetic `BR-<id>` row).
+    """
+    try:
+        branch_id = int(branch['id'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    rows = c.execute("SELECT * FROM police_stations WHERE notes ILIKE %s",
+                     ('%mirrored from branch%',)).fetchall()
+    for row in rows:
+        m = re.search(r'mirrored from branch\s+(?:BR-)?(\d+)', str(row['notes'] or ''), flags=re.I)
+        if m and int(m.group(1)) == branch_id:
+            return row
+    b_name = str(branch['name'] or '').strip().lower()
+    base = _branch_base_name(branch['name']).lower()
+    for row in c.execute('SELECT * FROM police_stations WHERE LOWER(region)=LOWER(%s)',
+                         (branch['region'],)).fetchall():
+        s_name = str(row['name'] or '').strip().lower()
+        s_village = str(row['village'] or '').strip().lower()
+        if s_name in (b_name, base) or (base and base in s_name) or s_village in (b_name, base):
+            return row
+    return None
+
+
+def station_branch_lineage(c, station):
+    """The Police Stations branch a registry row mirrors, or None.
+
+    Reads the branch explicitly (a synthetic `BR-<id>` id or the 'Mirrored
+    from branch <id>' note) before falling back to the name/region/village
+    match the rest of the codebase uses, so the drawer's 'mirrored branch
+    lineage' is the real catalogue row whenever one exists.
+    """
+    station = station or {}
+    sid = str(station.get('id') or station.get('station_id') or '').strip()
+    branch = None
+    if re.fullmatch(r'BR-\d+', sid, flags=re.I):
+        branch = c.execute('SELECT * FROM police_branches WHERE id=%s', (int(sid[3:]),)).fetchone()
+    if branch is None:
+        m = re.search(r'mirrored from branch\s+(?:BR-)?(\d+)',
+                      str(station.get('notes') or ''), flags=re.I)
+        if m:
+            branch = c.execute('SELECT * FROM police_branches WHERE id=%s', (int(m.group(1)),)).fetchone()
+    if branch is not None and branch['unit_type'] != 'police_station':
+        branch = None
+    if branch is None:
+        region = str(station.get('region') or '').strip()
+        names = {str(station.get('name') or '').strip().lower(),
+                 _branch_base_name(station.get('name')).lower(),
+                 str(station.get('village') or '').strip().lower()}
+        names.discard('')
+        if region and names:
+            for b in c.execute('SELECT * FROM police_branches WHERE unit_type=%s '
+                               'AND LOWER(region)=LOWER(%s)', ('police_station', region)).fetchall():
+                b_names = {str(b['name'] or '').strip().lower(), _branch_base_name(b['name']).lower()}
+                if names & b_names:
+                    branch = b
+                    break
+    return branch
+
+
+def resolve_station_record(c, identifier):
+    """Resolve a registry identifier to a station record.
+
+    Accepts the station id ('ST-001'), the numeric primary key, the station
+    code ('SAN-C-01') and the synthetic mirrored-branch id ('BR-12'). Returns
+    {'station': public view, 'row_id': int|None, 'branch': branch row|None} or
+    None when nothing matches. `row_id` is None for an entry that exists only
+    as a Police Stations branch mirror.
+    """
+    ident = str(identifier or '').strip()
+    if not ident:
+        return None
+    if re.fullmatch(r'BR-\d+', ident, flags=re.I):
+        branch = c.execute('SELECT * FROM police_branches WHERE id=%s', (int(ident[3:]),)).fetchone()
+        if not branch or branch['unit_type'] != 'police_station':
+            return None
+        row = mirrored_station_row_for_branch(c, branch)
+        station = station_view(row) if row else synthetic_station_from_branch_row(branch)
+        return {'station': station, 'row_id': row['id'] if row else None, 'branch': branch}
+    row = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (ident,)).fetchone()
+    if row is None and ident.isdigit():
+        row = c.execute('SELECT * FROM police_stations WHERE id=%s', (int(ident),)).fetchone()
+    if row is None:
+        row = c.execute('SELECT * FROM police_stations WHERE LOWER(code)=LOWER(%s)', (ident,)).fetchone()
+    if row is None:
+        return None
+    station = station_view(row)
+    return {'station': station, 'row_id': row['id'],
+            'branch': station_branch_lineage(c, station)}
+
+
+def station_officer_count(c, row_id):
+    """Officers deployed at a station (officers.station_id is the row id)."""
+    if row_id is None:
+        return 0
+    count = c.execute('SELECT COUNT(*) FROM officers WHERE station_id=%s', (row_id,)).fetchone()[0]
+    return int(count or 0)
+
+
+def station_vehicle_count(c, row_id):
+    """Vehicles assigned to a station (vehicles.station_id is the row id)."""
+    if row_id is None:
+        return 0
+    count = c.execute('SELECT COUNT(*) FROM vehicles WHERE station_id=%s', (row_id,)).fetchone()[0]
+    return int(count or 0)
+
+
+def _station_officer_brief(c, officer_id):
+    """Small officer summary used for the station commander / deputy fields."""
+    if not officer_id:
+        return None
+    row = c.execute('SELECT service_id, full_name, rank, duty_status FROM officers WHERE id=%s',
+                    (officer_id,)).fetchone()
+    if not row:
+        return None
+    return {'service_id': row['service_id'], 'full_name': row['full_name'],
+            'rank': row['rank'], 'duty_status': row['duty_status']}
+
+
+def station_detail_view(c, identifier, user=None):
+    """Full station record for the View drawer (GET /api/stations/<id>).
+
+    Extends the register shape with the full metadata the drawer prints —
+    station id/code, name, Region → District → Village, operational status,
+    tier, contact phone, cell capacity, commander / deputy, notes, the
+    officer and vehicle deployment counters, and the mirrored Police Stations
+    branch lineage — plus the per-session edit capability so the drawer and
+    the API agree on whether Edit is available. Returns None when no station
+    matches `identifier`.
+    """
+    record = resolve_station_record(c, identifier)
+    if record is None:
+        return None
+    station = dict(record['station'])
+    branch = record['branch']
+    row_id = record['row_id']
+    admin = is_records_admin(user)
+    station['officer_count'] = station_officer_count(c, row_id)
+    station['vehicle_count'] = station_vehicle_count(c, row_id)
+    station['commander'] = _station_officer_brief(c, station.get('commander_id'))
+    station['deputy'] = _station_officer_brief(c, station.get('deputy_id'))
+    station['branch'] = branch_view(branch) if branch else None
+    station['branch_lineage'] = (
+        f"Mirrored from the Police Stations branch {branch['name']} (BR-{branch['id']})"
+        if branch else 'Registered directly in the station registry — no mirrored branch')
+    station['mirrored'] = bool(branch)
+    station['persisted'] = row_id is not None
+    # The edit capability is decided ON THE SERVER (Admin role + a persisted
+    # row). The drawer renders the Edit action from this flag, and the write
+    # route re-checks it, so hiding the button is never the only control.
+    station['can_edit'] = bool(admin and row_id is not None)
+    if row_id is None:
+        station['edit_disabled_reason'] = ('This registry entry is a Police Stations branch mirror — '
+                                           'edit the branch itself in Branch Management.')
+    elif not admin:
+        station['edit_disabled_reason'] = ('Editing a station record is restricted to the '
+                                           'System Administrator (Admin) role.')
+    else:
+        station['edit_disabled_reason'] = None
+    return station
+
+
+def update_station(c, user, identifier, data):
+    """Apply a SystemAdmin edit to a police-station row. Returns the view.
+
+    PATCH semantics: only the fields present in `data` are written. The Edit
+    drawer sends station name, region, district, village and operational
+    status; station tier, contact phone, cell capacity, notes and the
+    commander / deputy links are editable too. Validation mirrors
+    `register_station()`, so an edited record can never hold a value the
+    registration form would have rejected.
+    """
+    data = data or {}
+    record = resolve_station_record(c, identifier)
+    if record is None:
+        raise LookupError(f'Station "{identifier}" does not exist')
+    if record['row_id'] is None:
+        raise ValueError('This registry entry is a Police Stations branch mirror — '
+                         'edit the branch itself in Branch Management.')
+    row = c.execute('SELECT * FROM police_stations WHERE id=%s', (record['row_id'],)).fetchone()
+
+    def supplied(*keys):
+        return [k for k in keys if k in data]
+
+    def value(*keys):
+        for key in keys:
+            if key in data:
+                return data[key]
+        return None
+
+    region = row['region']
+    if supplied('region'):
+        region = normalise_choice(data.get('region'), STATION_REGIONS)
+        if not region:
+            raise ValueError('Station region must be one of: ' + ', '.join(STATION_REGIONS))
+    district = row['district']
+    if supplied('district'):
+        district = str(data.get('district') or '').strip()
+    allowed = STATION_DISTRICTS.get(region, ())
+    if district not in allowed:
+        raise ValueError(f'District must belong to {region}: ' + ', '.join(allowed))
+
+    updates, params, changed = [], [], []
+    def put(column, val):
+        updates.append(f'{column}=%s')
+        params.append(val)
+        changed.append(column)
+
+    if supplied('name', 'station_name'):
+        name = str(value('name', 'station_name') or '').strip()
+        if not name:
+            raise ValueError('Station name is required')
+        put('name', name)
+    if supplied('region'):
+        put('region', region)
+    if supplied('district'):
+        put('district', district)
+    if supplied('village', 'town_village'):
+        village = str(value('village', 'town_village') or '').strip()
+        if not village:
+            raise ValueError('Village/Town is required')
+        put('village', village)
+    if supplied('operational_status', 'status'):
+        status = normalise_choice(value('operational_status', 'status'), STATION_STATUSES)
+        if not status:
+            raise ValueError('Operational status must be one of: ' + ', '.join(STATION_STATUSES))
+        put('operational_status', status)
+    if supplied('station_tier', 'tier'):
+        tier = normalise_choice(value('station_tier', 'tier'), STATION_TIERS)
+        if not tier:
+            raise ValueError('Station tier must be one of: ' + ', '.join(STATION_TIERS))
+        put('station_tier', tier)
+    if supplied('contact_phone', 'phone'):
+        phone = str(value('contact_phone', 'phone') or '').strip()
+        if not phone:
+            raise ValueError('Contact phone is required')
+        put('contact_phone', phone)
+    if supplied('cell_capacity'):
+        cap_raw = data.get('cell_capacity')
+        if cap_raw in (None, ''):
+            put('cell_capacity', None)
+        else:
+            try:
+                capacity = int(cap_raw)
+            except (TypeError, ValueError):
+                raise ValueError('Cell capacity must be an integer')
+            if capacity < 0:
+                raise ValueError('Cell capacity must be zero or greater')
+            put('cell_capacity', capacity)
+    if 'notes' in data:
+        put('notes', str(data.get('notes') or '').strip() or None)
+    if supplied('commander_id', 'commander'):
+        commander = resolve_officer_row(c, value('commander_id', 'commander'))
+        if commander and commander['rank'] not in COMMANDER_RANKS:
+            raise ValueError('Commander must hold rank Inspector or above')
+        put('commander_id', commander['id'] if commander else None)
+    if supplied('deputy_id', 'deputy'):
+        deputy = resolve_officer_row(c, value('deputy_id', 'deputy'))
+        put('deputy_id', deputy['id'] if deputy else None)
+
+    if not updates:
+        raise ValueError('No editable station field was supplied — send name, region, '
+                         'district, village or operational status.')
+    put('updated_at', utc_now_stamp())
+    put('updated_by', user['id'])
+    params.append(row['id'])
+    c.execute(f"UPDATE police_stations SET {', '.join(updates)} WHERE id=%s", params)
+    saved = c.execute('SELECT * FROM police_stations WHERE id=%s', (row['id'],)).fetchone()
+    view = station_view(saved)
+    view['changed_fields'] = sorted({f for f in changed if f not in ('updated_at', 'updated_by')})
+    return view
 
 
 def register_crime(c, user, fields, files):
@@ -5266,6 +5667,17 @@ class API(BaseHTTPRequestHandler):
         self.send_json(403, {'error': str(exc), 'code': 'read_only_role',
                              'read_only': True, 'path': path or self.path})
 
+    def admin_only_403(self, exc, path=None):
+        """Answer an HTTP 403 Forbidden for a non-admin management edit.
+
+        Every existing-record write goes through `require_records_admin()`,
+        so this is the single response shape the management tables return to
+        a standard officer / unit role that may READ the register but may not
+        alter it (`code: admin_only`).
+        """
+        self.send_json(403, {'error': str(exc), 'code': ADMIN_ONLY_CODE,
+                             'admin_only': True, 'path': path or self.path})
+
     # ---- static pages & uploads --------------------------------------------
     def serve_static(self, path):
         p = urlparse(path)
@@ -5332,6 +5744,12 @@ class API(BaseHTTPRequestHandler):
                                             'officer_units':list(OFFICER_UNITS),
                                             'officer_duty_statuses':list(OFFICER_DUTY_STATUSES),
                                             'station_tiers':list(STATION_TIERS),
+                                            'station_statuses':list(STATION_STATUSES),
+                                            # Station View is register-read; station Edit is
+                                            # SystemAdmin/Admin only (403 for every other role,
+                                            # including the read-only Commander).
+                                            'station_edit_roles':['SystemAdmin','admin'],
+                                            'station_write_verbs':['POST','PUT','PATCH'],
                                             'crime_categories':list(CRIME_CATEGORIES),
                                             'conduct_action_types':list(CONDUCT_ACTION_TYPES),
                                             'conduct_classifications':{k: list(v) for k, v in CONDUCT_CLASSIFICATIONS.items()},
@@ -5657,6 +6075,19 @@ class API(BaseHTTPRequestHandler):
                 result = {'items': items,
                           'scope': scope,
                           'visible_locations': [scope] if scope else list(CHECKPOINT_LOCATIONS)}
+            elif p.path.startswith('/api/stations/'):
+                # ---- station detail (the Actions → View drawer) ------------
+                # Full record: registry fields, deployment counters and the
+                # mirrored Police Stations branch lineage, plus the per-session
+                # `can_edit` flag the drawer renders the Edit action from.
+                # Any session that may open the station register can read it;
+                # the module gate above already refused everyone else.
+                identifier = p.path[len('/api/stations/'):].strip('/')
+                station = station_detail_view(c, identifier, user)
+                if station is None:
+                    self.send_json(404, {'error': f'Station "{identifier}" does not exist'})
+                    c.close(); return
+                result = {'station': station}
             elif p.path == '/api/stations':
                 rows = c.execute('SELECT * FROM police_stations ORDER BY id ASC').fetchall()
                 stations = [station_view(r) for r in rows]
@@ -5700,28 +6131,9 @@ class API(BaseHTTPRequestHandler):
                     for b in branches:
                         if _branch_is_mirrored(b):
                             continue
-                        b_district = (b['district'] or '').strip() if 'district' in b and b['district'] else None
-                        if not b_district:
-                            b_district = (STATION_DISTRICTS.get(b['region'], (b['region'],))[0] if b['region'] in STATION_DISTRICTS else b['region'])
-                        base = re.sub(r'\s+branch\s*$', '', b['name'], flags=re.I).strip() or b_district
-                        synth = {
-                            'id': f"BR-{b['id']}",
-                            'station_id': f"BR-{b['id']}",
-                            'name': b['name'],
-                            'code': f"BR-{b['id']}",
-                            'region': b['region'],
-                            'district': b_district,
-                            'village': base,
-                            'notes': f"Mirrored from branch BR-{b['id']}",
-                            'station_tier': 'Mirrored Branch',
-                            'commander_id': None,
-                            'deputy_id': None,
-                            'contact_phone': None,
-                            'cell_capacity': 0,
-                            'operational_status': 'Active',
-                            'created_at': b.get('created_at') if hasattr(b, 'get') else None,
-                        }
-                        stations.append(synth)
+                        # Same shape the View drawer / detail route builds for a
+                        # mirrored branch (see synthetic_station_from_branch_row).
+                        stations.append(synthetic_station_from_branch_row(b))
                 except Exception:
                     pass
                 result = {'items': stations}
@@ -6353,6 +6765,12 @@ class API(BaseHTTPRequestHandler):
                           'traveler_docs':len(tr_docs),'guardian_docs':len(gd_docs),
                           'identity':identity_result(c,data,person)}
             elif p.path == '/api/stations':
+                # Management-table write: SystemAdmin only. The module gate
+                # above already restricts the route to the 'admin' module /
+                # the `stations:manage` capability; this explicit role check
+                # makes the administration rule the same one every register
+                # edit uses (`require_records_admin`).
+                require_records_admin(user, 'Registering a police station')
                 data = body_json(self)
                 station = register_station(c, user, data)
                 audit(c, user, 'CREATE', 'police_station', station['station_id'], station['code'])
@@ -6459,6 +6877,10 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(201, result)
+        except AdminOnlyWriteError as e:
+            # Management-table write attempted by a non-admin role → 403.
+            if c: c.close()
+            self.admin_only_403(e)
         except ReadOnlyRoleError as e:
             # Read-only role (Commander / High Command) attempted a write.
             if c: c.close()
@@ -6499,6 +6921,14 @@ class API(BaseHTTPRequestHandler):
                 # HR Directorate writes (promotion verification, …) belong to
                 # the Police Officers Registration Office module.
                 require_module(user, 'officers')
+            # Management-table edits (Police Stations registry): the Admin
+            # role only. Checked here, ahead of the route body, so no branch
+            # of the station update can run for a non-admin session.
+            if p.path == '/api/stations' or p.path.startswith('/api/stations/'):
+                # Admin role first (403 for every non-admin, whether or not the
+                # caller could read the register), then the route module.
+                require_records_admin(user, 'Editing a station record')
+                require_module(user, 'stations')
             if p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 row = c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone()
@@ -6602,9 +7032,36 @@ class API(BaseHTTPRequestHandler):
                 c.commit()
                 updated = rowdict(c.execute('SELECT * FROM users WHERE id=%s', (int(uid),)).fetchone())
                 result = {'user': user_view(updated)}
+            elif p.path == '/api/stations' or p.path.startswith('/api/stations/'):
+                # ---- station edit (the Actions → Edit drawer) --------------
+                # Admin-only (403 for every other role is raised ahead of this
+                # branch). `station_id` in the body identifies the record when
+                # the collection path is used; the member path carries it.
+                identifier = p.path[len('/api/stations'):].strip('/') or \
+                    str(data.get('station_id') or data.get('id') or data.get('code') or '').strip()
+                if not identifier:
+                    raise ValueError('station_id (or id / code) is required to update a station')
+                before = resolve_station_record(c, identifier)
+                station = update_station(c, user, identifier, data)
+                audit(c, user, 'UPDATE', 'police_station', station['station_id'],
+                      '; '.join(f'{f}={station.get(f)}' for f in station.get('changed_fields', []))
+                      or 'no field changed')
+                c.commit()
+                result = {'station': station, 'updated': True,
+                          'station_id': station['station_id'],
+                          'changed_fields': station.get('changed_fields', []),
+                          'previous': (before or {}).get('station')}
+                if before is not None:
+                    # The detail payload (counters + lineage) the drawer
+                    # repaints from after a successful save.
+                    result['detail'] = station_detail_view(c, station['station_id'], user)
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
+        except AdminOnlyWriteError as e:
+            # Management-table edit attempted by a non-admin role → 403.
+            if c: c.close()
+            self.admin_only_403(e)
         except ReadOnlyRoleError as e:
             # Read-only role (Commander / High Command) attempted a write.
             if c: c.close()
@@ -6651,25 +7108,71 @@ class API(BaseHTTPRequestHandler):
     def do_PUT(self):
         """PUT surface — the global read-only firewall covers it too.
 
-        No route of this API is served over PUT (updates use PATCH), but a
-        Commander / High Command caller must never be able to probe the method
-        either: the firewall answers **403 Forbidden** (`code:
-        read_only_role`) before any routing. Every other role receives an
-        explicit 405 naming the verb, so nothing falls through to the stdlib's
-        opaque 501.
+        Two behaviours, decided by the path:
+
+          * `PUT /api/stations[/<id>]` is a management-table edit, so it is
+            served exactly like the PATCH route — but only for the System
+            Administrator (Admin) role. Any other authenticated role receives
+            **403 Forbidden** (`code: admin_only`), never a 405: the
+            station registry is an administration table and a non-admin must
+            not be able to alter it through either verb. A Commander is
+            refused even earlier by the read-only firewall
+            (`code: read_only_role`).
+          * every other path keeps the explicit 405 naming the verb, so
+            nothing falls through to the stdlib's opaque 501.
         """
+        c = None
         try:
             p = urlparse(self.path)
             user = require_auth(self)
             enforce_read_only(user, 'PUT', p.path)
+            if p.path == '/api/stations' or p.path.startswith('/api/stations/'):
+                # Admin role first → 403 for every non-admin caller, whatever
+                # module set it holds; then the management-table module gate.
+                require_records_admin(user, 'Editing a station record')
+                require_module(user, 'stations')
+                data = body_json(self); c = get_db_connection()
+                identifier = p.path[len('/api/stations'):].strip('/') or \
+                    str(data.get('station_id') or data.get('id') or data.get('code') or '').strip()
+                if not identifier:
+                    raise ValueError('station_id (or id / code) is required to update a station')
+                before = resolve_station_record(c, identifier)
+                station = update_station(c, user, identifier, data)
+                audit(c, user, 'UPDATE', 'police_station', station['station_id'],
+                      '; '.join(f'{f}={station.get(f)}' for f in station.get('changed_fields', []))
+                      or 'no field changed')
+                c.commit()
+                result = {'station': station, 'updated': True, 'method': 'PUT',
+                          'station_id': station['station_id'],
+                          'changed_fields': station.get('changed_fields', []),
+                          'previous': (before or {}).get('station')}
+                if before is not None:
+                    result['detail'] = station_detail_view(c, station['station_id'], user)
+                c.close(); c = None
+                self.send_json(200, result); return
             self.send_json(405, {'error': 'Method PUT is not supported by this API',
                                  'method': 'PUT', 'path': p.path},
                            extra_headers=[('Allow', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')])
+        except AdminOnlyWriteError as e:
+            if c: c.close()
+            self.admin_only_403(e)
         except ReadOnlyRoleError as e:
+            if c: c.close()
             self.read_only_403(e)
         except PermissionError as e:
+            if c: c.close()
             self.send_json(401, {'error': str(e)})
+        except LookupError as e:
+            if c: c.close()
+            self.send_json(404, {'error': str(e)})
+        except ValueError as e:
+            if c: c.close()
+            self.send_json(400, {'error': str(e)})
+        except psycopg2.IntegrityError as e:
+            if c: c.close()
+            self.send_json(409, {'error': 'Database constraint failed', 'details': str(e)})
         except Exception as e:
+            if c: c.close()
             self.send_json(500, {'error': str(e)})
 
 
