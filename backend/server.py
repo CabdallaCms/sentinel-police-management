@@ -4299,6 +4299,60 @@ def build_station_analytics(c, user):
               WHERE o.station_id = s.id AND o.duty_status = 'Active') AS active_officer_count,
             (SELECT COUNT(*) FROM vehicles v WHERE v.station_id = s.id) AS vehicle_count
         FROM police_stations s ORDER BY s.id''').fetchall()
+    # Merge synthetic Police Stations branches so station analytics (total/active counters,
+    # tier/status breakdowns, deployment matrix) reflect the branch catalogue even when
+    # a physical police_stations row has not yet been persisted (e.g. immediately
+    # after branch creation or for BR- prefixed synthetic stations).
+    try:
+        # Convert RealDictRows to plain dicts for easy appending
+        rows = [dict(r) for r in rows]
+        branches = c.execute("SELECT * FROM police_branches WHERE unit_type=%s", ('police_station',)).fetchall()
+        def _is_mirrored_for_analytics(b):
+            b_name = (b['name'] or '').strip()
+            b_region = (b['region'] or '').strip()
+            b_district = (b['district'] or '').strip() if 'district' in b and b['district'] else b_region
+            base = re.sub(r'\s+branch\s*$', '', b_name, flags=re.I).strip()
+            for s in rows:
+                s_region = (s.get('region') or '').strip()
+                if s_region.lower() != b_region.lower():
+                    continue
+                s_name = (s.get('name') or '').strip()
+                s_village = (s.get('village') or '').strip()
+                s_district = (s.get('district') or '').strip()
+                # require district match if both present
+                if b_district and s_district and b_district.lower() not in s_district.lower() and s_district.lower() not in b_district.lower():
+                    # allow if name/village strongly matches but skip otherwise
+                    if s_name.lower() not in (b_name.lower(), base.lower()) and base.lower() not in s_name.lower():
+                        continue
+                if s_name.lower() == b_name.lower() or s_name.lower() == base.lower() or base.lower() in s_name.lower() or b_name.lower() in s_name.lower() or s_village.lower() == base.lower():
+                    return True
+            return False
+        for b in branches:
+            if _is_mirrored_for_analytics(b):
+                continue
+            b_district = (b['district'] or '').strip() if 'district' in b and b['district'] else None
+            if not b_district:
+                b_district = (STATION_DISTRICTS.get(b['region'], (b['region'],))[0] if b['region'] in STATION_DISTRICTS else b['region'])
+            base = re.sub(r'\s+branch\s*$', '', b['name'], flags=re.I).strip() or b_district
+            rows.append({
+                'id': f"BR-{b['id']}",
+                'station_id': f"BR-{b['id']}",
+                'name': b['name'],
+                'code': f"BR-{b['id']}",
+                'region': b['region'],
+                'district': b_district,
+                'village': base,
+                'station_tier': 'Mirrored Branch',
+                'operational_status': 'Active',
+                'cell_capacity': 0,
+                'officer_count': 0,
+                'active_officer_count': 0,
+                'vehicle_count': 0,
+                'notes': f"Mirrored from branch BR-{b['id']}",
+                'created_at': b.get('created_at') if hasattr(b, 'get') else None,
+            })
+    except Exception:
+        pass
     total = len(rows)
     tiers = count_by(rows, 'station_tier', 'Unclassified')
     statuses = count_by(rows, 'operational_status', 'Active')
@@ -5605,7 +5659,72 @@ class API(BaseHTTPRequestHandler):
                           'visible_locations': [scope] if scope else list(CHECKPOINT_LOCATIONS)}
             elif p.path == '/api/stations':
                 rows = c.execute('SELECT * FROM police_stations ORDER BY id ASC').fetchall()
-                result = {'items': [station_view(r) for r in rows]}
+                stations = [station_view(r) for r in rows]
+                # Merge synthetic Police Stations branches so a branch created under
+                # the Police Stations department immediately appears in the
+                # Registered Stations table (and counters) even before a
+                # physical police_stations row is persisted. This mirrors the
+                # frontend's stationOptions() synthetic handling and satisfies
+                # GET /api/stations callers that render the main registry.
+                try:
+                    branches = c.execute("SELECT * FROM police_branches WHERE unit_type=%s", ('police_station',)).fetchall()
+                    def _branch_is_mirrored(b):
+                        b_name = (b['name'] or '').strip()
+                        b_region = (b['region'] or '').strip()
+                        b_district = (b['district'] or '').strip() if 'district' in b and b['district'] else b_region
+                        base = re.sub(r'\s+branch\s*$', '', b_name, flags=re.I).strip()
+                        base_l = base.lower()
+                        b_name_l = b_name.lower()
+                        b_district_l = b_district.lower()
+                        for s in stations:
+                            s_region = (s.get('region') or '').strip()
+                            if s_region.lower() != b_region.lower():
+                                continue
+                            s_district = (s.get('district') or '').strip().lower()
+                            # if both have district, require match (allow substring to handle Laascaanood vs Lasanod)
+                            if b_district and s_district and b_district_l != s_district and b_district_l not in s_district and s_district not in b_district_l:
+                                # still allow if name/village matches strongly, but prefer district match
+                                # check name before skipping
+                                s_name_l = (s.get('name') or '').strip().lower()
+                                s_village_l = (s.get('village') or '').strip().lower()
+                                if s_name_l not in (b_name_l, base_l) and base_l not in s_name_l and s_village_l not in (b_name_l, base_l):
+                                    continue
+                                # if district mismatches and name not strong, skip
+                                if s_name_l != b_name_l and s_name_l != base_l:
+                                    continue
+                            s_name_l = (s.get('name') or '').strip().lower()
+                            s_village_l = (s.get('village') or '').strip().lower()
+                            if s_name_l == b_name_l or s_name_l == base_l or base_l in s_name_l or b_name_l in s_name_l or s_village_l == base_l or s_village_l == b_name_l:
+                                return True
+                        return False
+                    for b in branches:
+                        if _branch_is_mirrored(b):
+                            continue
+                        b_district = (b['district'] or '').strip() if 'district' in b and b['district'] else None
+                        if not b_district:
+                            b_district = (STATION_DISTRICTS.get(b['region'], (b['region'],))[0] if b['region'] in STATION_DISTRICTS else b['region'])
+                        base = re.sub(r'\s+branch\s*$', '', b['name'], flags=re.I).strip() or b_district
+                        synth = {
+                            'id': f"BR-{b['id']}",
+                            'station_id': f"BR-{b['id']}",
+                            'name': b['name'],
+                            'code': f"BR-{b['id']}",
+                            'region': b['region'],
+                            'district': b_district,
+                            'village': base,
+                            'notes': f"Mirrored from branch BR-{b['id']}",
+                            'station_tier': 'Mirrored Branch',
+                            'commander_id': None,
+                            'deputy_id': None,
+                            'contact_phone': None,
+                            'cell_capacity': 0,
+                            'operational_status': 'Active',
+                            'created_at': b.get('created_at') if hasattr(b, 'get') else None,
+                        }
+                        stations.append(synth)
+                except Exception:
+                    pass
+                result = {'items': stations}
             elif p.path == '/api/officers':
                 result = {'items': [officer_view(r) for r in officer_rows(c)]}
             elif p.path == '/api/crimes':

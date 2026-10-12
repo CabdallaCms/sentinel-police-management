@@ -2268,7 +2268,9 @@ function requireLocation(prefix){
 function policeStationBranches(){ return (branchCatalog.items||[]).filter(b=>b.unit_type==='police_station'); }
 function syntheticStationFromBranch(b){
   // A branch mirrored as a station before the server sync has created the real station row
-  return {id:'BR-'+b.id, code:'BR-'+b.id, name:b.name, region:b.region, district:b.region, village:b.name, station_tier:'Mirrored Branch', operational_status:'Active', isBranch:true, branchId:b.id};
+  const d=b.district || b.region;
+  const base=b.name.replace(/\s*branch\s*$/i,'').trim() || d;
+  return {id:'BR-'+b.id, code:'BR-'+b.id, name:b.name, region:b.region, district:d, village:base, station_tier:'Mirrored Branch', operational_status:'Active', isBranch:true, branchId:b.id};
 }
 function stationById(id){
   let s=(db.stations||[]).find(x=>x.id===id)||null;
@@ -2281,7 +2283,15 @@ function stationOptions(selectedId){
   const stations=(db.stations||[]);
   function branchIsMirrored(b){
     const base=b.name.replace(/\s*branch\s*$/i,'').trim().toLowerCase();
+    const bDistrict=(b.district||b.region||'').toLowerCase();
     return stations.some(s=>{
+      const sDistrict=(s.district||'').toLowerCase();
+      if(bDistrict && sDistrict && bDistrict!==sDistrict && !sDistrict.includes(bDistrict) && !bDistrict.includes(sDistrict)){
+        // If district mismatches, only consider mirrored if name/village strongly matches
+        const sn2=(s.name||'').toLowerCase();
+        const sv2=(s.village||'').toLowerCase();
+        if(sn2!==b.name.toLowerCase() && sn2!==base && !sn2.includes(base) && sv2!==base) return false;
+      }
       const sr=(s.region||'').toLowerCase();
       if(sr!==String(b.region||'').toLowerCase()) return false;
       const sn=(s.name||'').toLowerCase();
@@ -3951,7 +3961,25 @@ const UNIT_STATS={
     ].join('');
   },
   stations:()=>{
-    const rows=db.stations||[];
+    // Merge synthetic Police Stations branches into the counter so the
+    // STATIONS / Active tiles include BR- branches even before the
+    // server has persisted a physical police_stations row.
+    let rows=db.stations||[];
+    try{
+      if(branchCatalog && branchCatalog.loaded){
+        const seen=new Set(rows.map(s=>String(s.id).toLowerCase()));
+        const hasRealFor=(b)=>{
+          const base=b.name.replace(/\s*branch\s*$/i,'').trim().toLowerCase();
+          return rows.some(s=> (s.name||'').toLowerCase()===b.name.toLowerCase() || (s.name||'').toLowerCase()===base || (s.village||'').toLowerCase()===base);
+        };
+        const synth=(branchCatalog.items||[]).filter(b=>b.unit_type==='police_station' && !seen.has(('BR-'+b.id).toLowerCase()) && !hasRealFor(b)).map(b=>{
+          const d=b.district||b.region;
+          const base=b.name.replace(/\s*branch\s*$/i,'').trim()||d;
+          return {id:'BR-'+b.id,station_id:'BR-'+b.id,name:b.name,code:'BR-'+b.id,region:b.region,district:d,village:base,operational_status:'Active'};
+        });
+        if(synth.length) rows=[...rows, ...synth];
+      }
+    }catch(_){}
     return [
       usTile(rows.length,'Stations','🏛','blue'),
       usTile(rows.filter(s=>String(s.operational_status||'Active')==='Active').length,'Active','✓','green'),
@@ -4617,6 +4645,42 @@ async function syncServer(){
     // transient error). Officer payloads already match the register's shape.
     if(sts.ok && sts.items.length) db.stations=sts.items.map(s=>({id:s.station_id,name:s.name,code:s.code,region:s.region,district:s.district,village:s.village,notes:s.notes||'',
       station_tier:s.station_tier||'',operational_status:s.operational_status||'Active',cell_capacity:s.cell_capacity||0}));
+    // Merge synthetic Police Stations branches into the main registry so a branch
+    // created under Police Stations immediately appears in the Registered
+    // Stations table (and counters) even when the server has not yet
+    // persisted a physical police_stations row. Mirrors stationOptions()
+    // but for the db.stations array itself.
+    try{
+      if(branchCatalog && branchCatalog.loaded){
+        const existing = new Set((db.stations||[]).map(s=>String(s.id).toLowerCase()));
+        // also consider name+region+district dedup for already-mirrored real rows
+        const hasReal = (b)=>{
+          const base=b.name.replace(/\s*branch\s*$/i,'').trim().toLowerCase();
+          const bDistrict=(b.district||b.region||'').toLowerCase();
+          return (db.stations||[]).some(s=>{
+            const sr=(s.region||'').toLowerCase();
+            if(sr!==String(b.region||'').toLowerCase()) return false;
+            const sDistrict=(s.district||'').toLowerCase();
+            if(bDistrict && sDistrict && bDistrict!==sDistrict && !sDistrict.includes(bDistrict) && !bDistrict.includes(sDistrict)){
+              const sName=(s.name||'').toLowerCase();
+              if(sName!==b.name.toLowerCase() && sName!==base) return false;
+            }
+            const sn=(s.name||'').toLowerCase();
+            const sv=(s.village||'').toLowerCase();
+            return sn===b.name.toLowerCase() || sn===base || sn.includes(base) || sv===base;
+          });
+        };
+        (branchCatalog.items||[]).filter(b=>b.unit_type==='police_station').forEach(b=>{
+          const synthId='BR-'+b.id;
+          if(existing.has(synthId.toLowerCase())) return;
+          if(hasReal(b)) return;
+          const d=b.district || b.region;
+          const base=b.name.replace(/\s*branch\s*$/i,'').trim() || d;
+          db.stations.push({id:synthId,name:b.name,code:synthId,region:b.region,district:d,village:base,notes:'Mirrored from branch '+synthId,station_tier:'Mirrored Branch',operational_status:'Active',cell_capacity:0});
+          existing.add(synthId.toLowerCase());
+        });
+      }
+    }catch(_){}
     if(offs.ok) db.officers=offs.items.map(o=>({...o}));
     // HR Directorate badge queues (green promotions / red discipline). Both are
     // server-backed; a failed fetch keeps the cached rows exactly like the
@@ -5572,6 +5636,26 @@ async function saveBranch(e){
   try{
     const result=await api('/api/branches',{method:'POST',body:JSON.stringify({name,region,district,unit_type:unitType})});
     await refreshBranchManagement(true);
+    // Immediately surface Police Stations branches in the main registry table/counters
+    // so the UI does not require a manual refresh or next sync to see BR-215.
+    try{
+      if(result.branch && result.branch.unit_type==='police_station'){
+        const b=result.branch;
+        const synthId='BR-'+b.id;
+        const exists=(db.stations||[]).some(s=> String(s.id).toLowerCase()===synthId.toLowerCase() || ((s.name||'').toLowerCase()===String(b.name||'').toLowerCase() && (s.region||'').toLowerCase()===String(b.region||'').toLowerCase() && (s.district||'').toLowerCase()===String(b.district||b.region||'').toLowerCase()));
+        if(!exists){
+          const d=b.district || b.region;
+          const base=String(b.name||'').replace(/\s*branch\s*$/i,'').trim()||d;
+          if(!db.stations) db.stations=[];
+          db.stations.push({id:synthId,name:b.name,code:synthId,region:b.region,district:d,village:base,notes:'Mirrored from branch '+synthId,station_tier:'Mirrored Branch',operational_status:'Active',cell_capacity:0});
+          try{ if(typeof persist==='function') persist(); }catch(_){}
+          try{ renderStationsTable(); }catch(_){}
+          try{ if(typeof renderUnitStats==='function') renderUnitStats(); }catch(_){}
+          try{ if(typeof refreshStationSelects==='function') refreshStationSelects(); }catch(_){}
+          try{ if(typeof refreshUserBranchDatalist==='function') refreshUserBranchDatalist(); }catch(_){}
+        }
+      }
+    }catch(_){}
     const form=document.getElementById('branchForm');
     if(form){form.reset();form.hidden=true;document.getElementById('branchFormOpen').hidden=false}
     document.getElementById('branchRegion').value=region;
@@ -6127,7 +6211,33 @@ async function setDisciplineStatus(actionId, status){
 
 function renderStationsTable(){
   const tb=document.getElementById('stationsTable');if(!tb)return;
-  const all=db.stations||[];
+  // Ensure synthetic Police Stations branches are visible in the main registry table
+  // even if the last /api/stations sync raced branchCatalog or the server has
+  // not yet persisted the mirrored row. We build a merged view without mutating
+  // db.stations persistently (the sync merge above is persistent).
+  let all=db.stations||[];
+  try{
+    if(branchCatalog && branchCatalog.loaded){
+      const seen=new Set(all.map(s=>String(s.id).toLowerCase()));
+      const hasRealFor=(b)=>{
+        const base=b.name.replace(/\s*branch\s*$/i,'').trim().toLowerCase();
+        const bDistrict=(b.district||b.region||'').toLowerCase();
+        return all.some(s=>{
+          const sr=(s.region||'').toLowerCase();
+          if(sr!==String(b.region||'').toLowerCase()) return false;
+          const sn=(s.name||'').toLowerCase();
+          const sv=(s.village||'').toLowerCase();
+          return sn===b.name.toLowerCase() || sn===base || sn.includes(base) || sv===base;
+        });
+      };
+      const synthetic=(branchCatalog.items||[]).filter(b=>b.unit_type==='police_station' && !seen.has(('BR-'+b.id).toLowerCase()) && !hasRealFor(b)).map(b=>{
+        const d=b.district || b.region;
+        const base=b.name.replace(/\s*branch\s*$/i,'').trim() || d;
+        return {id:'BR-'+b.id,name:b.name,code:'BR-'+b.id,region:b.region,district:d,village:base,notes:'Mirrored from branch BR-'+b.id,station_tier:'Mirrored Branch',operational_status:'Active',cell_capacity:0};
+      });
+      if(synthetic.length) all=[...all, ...synthetic];
+    }
+  }catch(_){}
   const q=searchValue('stSearch');
   const list=all.filter(s=>!q||[s.name,s.code,s.region,s.district,s.village,s.station_tier,s.notes]
     .some(v=>normTxt(v).includes(q)));
