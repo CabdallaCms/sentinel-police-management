@@ -338,7 +338,7 @@ def main():
             s, r = multipart_request(base, '/api/clearance-applications',
                                      officer_token, fields, files)
             assert s == 201, (s, r)
-            assert r['created_at'] and r['review_window_hours'] == 12, r
+            assert r['created_at'] and r['review_window_hours'] == (0 if purpose == 'Citizenship' else 12), r
             test_application_ids.append(r['application_id'])
             test_national_ids.append(fields['national_id'])
             return r['application_id']
@@ -394,6 +394,36 @@ def main():
         print('ok 1b: 11.9h locked / 12.1h released — officer approval issues the '
               'certificate and unlocks the printable page')
 
+        # Citizenship exempts only the wait, never authentication/module gates.
+        for route in ('fingerprint', 'legacy'):
+            citizen = new_application(purpose='Citizenship')
+            s, detail = request(base, 'GET', f'/api/clearance-applications/{citizen}', officer_token)
+            assert s == 200 and detail['can_approve'] is True, detail
+            assert detail['review']['review_locked'] is False, detail
+            assert detail['review']['hours_remaining'] == 0, detail
+            s, r = approve(officer_token, citizen, route=route)
+            assert s == 201 and r['status'] == 'Approved' and r['certificate_number'], (s, r)
+            s, printed = request(base, 'GET', f'/api/clearance-applications/{citizen}', officer_token)
+            assert printed['certificate_number'] == r['certificate_number'], printed
+        citizen = new_application(purpose='Citizenship')
+        backdate_application(citizen, None)
+        s, r = approve(alias_officer_token, citizen)
+        assert s == 201 and r['status'] == 'Approved', (s, r)
+        # All four other reasons retain the lock, even if a caller spoofs a purpose.
+        for reason in ('Education', 'Travel', 'Employment', 'Licence'):
+            other = new_application(purpose=reason)
+            s, r = request(base, 'POST', f'/api/fingerprint/applications/{other}/approve',
+                           officer_token, {'purpose': 'Citizenship'})
+            assert s == 400 and r.get('code') == 'review_period_active', (reason, s, r)
+        citizen = new_application(purpose='Citizenship')
+        foreign_token, _ = login('ap.officer')
+        s, r = approve(foreign_token, citizen)
+        assert s == 401, (s, r)
+        s, r = approve('', citizen)
+        assert s == 401, (s, r)
+        print('ok: Citizenship is immediately printable after officer approval on both routes; '
+              'other purposes and access controls are unchanged')
+
         # ---- 2) ADMIN BYPASS: instant approval on a fresh application ------
         app2 = new_application(purpose='Travel')
         s, r = approve(admin_token, app2)
@@ -416,7 +446,7 @@ def main():
               '(review_period_bypassed=true), can_approve=true while locked')
 
         # ---- 3) fail-closed: missing stamp locks officers, not admins ------
-        app4 = new_application(purpose='Citizenship')
+        app4 = new_application(purpose='Travel')
         backdate_application(app4, None)
         s, r = approve(officer_token, app4)
         assert s == 400 and r.get('code') == 'review_period_active', (s, r)

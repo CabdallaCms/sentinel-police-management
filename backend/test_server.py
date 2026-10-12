@@ -2429,7 +2429,7 @@ def main():
         assert s == 200 and detail['status'] == 'Approved' and detail['certificate_number'], detail
 
         # --- The legacy /api/clearance-applications route behaves identically ---
-        s, created = new_clearance(tokens['admin'], '55500033', purpose='Citizenship')
+        s, created = new_clearance(tokens['admin'], '55500033', purpose='Licence')
         assert s == 201, created
         legacy_app = created['application_id']
         s, r = request(base, 'POST', f'/api/clearance-applications/{legacy_app}/approve',

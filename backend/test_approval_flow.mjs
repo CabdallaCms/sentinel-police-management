@@ -192,6 +192,9 @@ function makeElement(id) {
     querySelectorAll() { return []; },
     querySelector() { return null; },
     closest() { return null; },
+    matches() { return false; },
+    hasAttribute(k) { return this.getAttribute(k) !== null; },
+    scrollIntoView() {},
     appendChild(child) { (this._children ||= []).push(child); return child; },
     insertBefore(child) { (this._children ||= []).unshift(child); return child; },
     remove() { this._removed = true; },
@@ -415,7 +418,7 @@ async function main() {
 
     let seq = 0;
     const runSuffix = String(Math.floor(Math.random() * 100_000_000)).padStart(8, '0');
-    const createClearance = async (user) => {
+    const createClearance = async (user, purpose = 'Employment') => {
       const auth = typeof user === 'string' ? await loginAs(user) : user;
       seq += 1;
       const fd = new FormData();
@@ -424,7 +427,7 @@ async function main() {
         date_of_birth: '1992-02-02', national_id: `88${runSuffix}${String(seq).padStart(2, '0')}`,
         mother_name: 'Hooyo Flow', residence: 'Hargeisa, Flow Ward',
         phone: '+252 63 555 0100', sex: 'Male', email: `flow-${runSuffix}@example.com`,
-        purpose: 'Employment',
+        purpose,
         guardian_name: 'Guardian Flow', guardian_relationship: 'Uncle', guardian_id: 'GD-2',
         guardian_occupation: 'Trader', guardian_address: 'Burao', guardian_phone: '+252 63 555 0101',
       };
@@ -717,6 +720,27 @@ async function main() {
     if (!/^CL-/.test(pgC2.getElementById('certNumber').innerHTML))
       throw new Error('certificate number must render, got: ' + pgC2.getElementById('certNumber').innerHTML);
     console.log('ok E: certificate.html — Print locked while pending, unlocked with CL-number after approval');
+
+    // F) Citizenship: immediate officer approval from the printable page,
+    // with no 12h warning, then a real unlocked certificate.
+    const citizen = await createClearance('fp.officer', 'Citizenship');
+    const citizenPage = buildPageSandbox({file:'application.html',port,storageDump:officerStorage,
+      search:'?id='+citizen.application_id,consoleSink:[]});
+    vm.runInContext(extractInlineScript('application.html'),citizenPage.sandbox);
+    await waitFor(()=>probe(citizenPage.sandbox,'!!app'),'citizenship application loaded');
+    if(citizenPage.getElementById('approveBtn').disabled)
+      throw new Error('Citizenship must be immediately approvable by the officer');
+    if(probe(citizenPage.sandbox,'reviewLock(app).locked'))
+      throw new Error('Citizenship must not have a waiting-period lock');
+    await probe(citizenPage.sandbox,'approve()');
+    await waitFor(()=>citizenPage.getElementById('statusBadge').textContent==='Approved','citizenship approved');
+    const citizenCert = buildPageSandbox({file:'certificate.html',port,storageDump:officerStorage,
+      search:'?id='+citizen.application_id,consoleSink:[]});
+    vm.runInContext(extractInlineScript('certificate.html'),citizenCert.sandbox);
+    await waitFor(()=>citizenCert.getElementById('printBtn').style.display==='','citizenship certificate printable');
+    if(!/^CL-/.test(citizenCert.getElementById('certNumber').innerHTML))
+      throw new Error('Citizenship certificate number missing');
+    console.log('ok F: Citizenship — officer approves immediately and certificate Print unlocks');
 
     console.log('ALL APPROVAL-FRONTEND TESTS PASSED');
     return 0;

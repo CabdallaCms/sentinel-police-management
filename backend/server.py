@@ -565,8 +565,8 @@ REVIEW_LOCK_MESSAGE = ('Review period active. Standard officers must wait 12 hou
 
 
 def is_admin_user(user):
-    """True only for administrators — the ONLY role allowed to bypass the
-    mandatory 12-hour fingerprint review window.
+    """True only for administrators — the only ROLE-based review-window bypass.
+    Citizenship applications have a separate purpose-based exemption.
 
     Accepts the canonical 'SystemAdmin' role and the spec's 'admin' alias
     (case/format-insensitive). Everything else (`FingerprintUnit`,
@@ -580,6 +580,11 @@ def is_admin_user(user):
     return bool(keys & ADMIN_ROLE_KEYS)
 
 
+def citizenship_wait_exempt(app):
+    """Only the stored clearance purpose grants the exemption, never request data."""
+    return normalise_reason((app or {}).get('purpose')) == 'Citizenship'
+
+
 def review_gate_decision(app_row, user):
     """Gate an approval request. Returns None when it may proceed, otherwise
     (status_code, payload) for the rejection.
@@ -587,7 +592,7 @@ def review_gate_decision(app_row, user):
     FAIL-CLOSED — mirroring the mandated implementation:
 
         is_admin  = user.role in ('admin', 'SystemAdmin')
-        if not is_admin:
+        if not is_admin and purpose != Citizenship:
             if not created_at:                -> 400 (missing stamp = locked)
             hours_elapsed = (utc_now - created_at) / 3600
             if hours_elapsed < 12.0:          -> 400
@@ -595,7 +600,7 @@ def review_gate_decision(app_row, user):
     The decision uses ONLY the stored row and the server-side role, never
     anything the client supplied.
     """
-    if is_admin_user(user):
+    if is_admin_user(user) or citizenship_wait_exempt(app_row):
         return None
     created_at = parse_created_at((app_row or {}).get('created_at'))
     reason = 'submission timestamp missing' if created_at is None else 'review window open'
@@ -678,9 +683,14 @@ def fingerprint_review_state(app, now=None):
     `review_locked` is True while `created_at + 12h` is still in the future.
     Fail-closed: a row with a missing / unparseable `created_at` cannot prove
     that the mandatory window has elapsed, so it stays locked. Admins remain
-    exempt — the bypass is applied by the caller, not by this helper.
+    exempt — their role-based bypass is applied by the caller. Citizenship
+    applications are exempt here regardless of submission timestamp.
     """
     hours = FINGERPRINT_REVIEW_WINDOW_HOURS
+    if citizenship_wait_exempt(app):
+        return {'review_window_hours': 0, 'review_eligible_at': app.get('created_at'),
+                'hours_elapsed': None, 'hours_remaining': 0, 'review_locked': False,
+                'wait_exemption': 'Citizenship', 'submitted_at': app.get('created_at')}
     created = parse_stamp(app.get('created_at') if app else None)
     if created is None:
         return {'review_window_hours': hours, 'review_eligible_at': None,
@@ -3076,6 +3086,58 @@ def ensure_person(c, data, photo_path=None, allow_no_id=False):
         return upsert_person(c, data, photo_path, allow_no_id)
     raise ValueError('A person_id or person identity fields are required')
 
+def linked_person_records(c, person, user):
+    """Provenance metadata only, filtered by the caller's unit/location scope.
+
+    Branches have a region, not coordinates. Never infer a nearest branch or
+    current whereabouts from an upload, an incident or a historical movement.
+    The uploader branch is the user's current registered branch; the unit
+    branch is the actual foreign key on the original record.
+    """
+    modules = user_module_set(user)
+    items = []
+    sources = [
+        ('airport', 'Airport Unit', 'airport_passengers', 'record_id',
+         "a.origin_city || ' → ' || a.destination_city"),
+        ('fingerprint', 'Fingerprint Unit', 'clearance_applications', 'application_id', 'NULL'),
+        ('checkpoints', 'Checkpoint Unit', 'checkpoint_events', 'event_id',
+         "COALESCE(NULLIF(a.checkpoint_location,''),a.location)"),
+        ('cid', 'CID / Suspect Link', 'suspect_alerts', 'alert_id', 'cc.location'),
+    ]
+    for module, label, table, record_key, context in sources:
+        if module not in modules:
+            continue
+        case_join = 'LEFT JOIN crime_cases cc ON cc.id=a.case_id' if module == 'cid' else ''
+        branch_ref = 'cc.branch_id' if module == 'cid' else 'a.branch_id'
+        extra, params = '', ()
+        if module == 'checkpoints':
+            where, params = checkpoint_scope_sql(checkpoint_scope(user), 'a')
+            extra = ' AND ' + where.removeprefix('WHERE ') if where else ''
+        rows = c.execute(f"""SELECT a.{record_key} AS record_id,a.created_at,
+            b.id AS branch_id,b.name AS branch_name,b.region AS branch_region,
+            u.display_name AS uploaded_by,u.branch AS uploader_branch,
+            {context} AS location_context
+            FROM {table} a {case_join}
+            LEFT JOIN police_branches b ON b.id={branch_ref}
+            LEFT JOIN users u ON u.id=a.created_by
+            WHERE a.person_id=%s {extra} ORDER BY a.created_at DESC,a.id DESC""",
+            (person['id'], *params)).fetchall()
+        for row in rows:
+            item = rowdict(row)
+            item.update(unit=label, source_table=table,
+                        branch_source=('crime_cases.branch_id via suspect_alerts.case_id'
+                                       if module == 'cid' else table + '.branch_id'),
+                        uploader_source=table + '.created_by → users (current account details)')
+            items.append(item)
+    items.sort(key=lambda item: (item.get('created_at') or '', item['record_id']), reverse=True)
+    return {'person_id': person['person_id'], 'items': items,
+            'residence': person.get('residence'),
+            'nearby_branch': None,
+            'proximity_note': 'Not determined — no live location or branch coordinates are recorded. '
+                              'Recorded branches and locations below are historical context, not proof of current proximity.',
+            'scope_note': 'Only records permitted for your unit and checkpoint location are shown.'}
+
+
 def identity_result(c, data, person):
     """Small match summary returned with unit record POST responses."""
     row, tier, reason, _ = resolve_person(c, data)
@@ -5116,6 +5178,12 @@ class API(BaseHTTPRequestHandler):
                     OR first_name ILIKE %s OR second_name ILIKE %s OR third_name ILIKE %s OR fourth_name ILIKE %s
                     ORDER BY id DESC''', (like,like,like,like,like,like,like,like,like,like)).fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
+            elif p.path.startswith('/api/persons/') and p.path.endswith('/linked-records'):
+                pid = p.path.split('/')[3]
+                person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s', (pid,)).fetchone())
+                if not person:
+                    self.send_json(404, {'error': 'Person not found'}); c.close(); return
+                result = linked_person_records(c, person, user)
             elif p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone())
@@ -5643,12 +5711,12 @@ class API(BaseHTTPRequestHandler):
                 audit(c,user,'CREATE','clearance_application',aid,person['person_id']); c.commit()
                 result = {'application_id':aid,'person_id':person['person_id'],
                           'status':'Pending Review','created_at':submitted_at,'purpose':purpose,
-                          'review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
-                          'review_eligible_at':fingerprint_review_state({'created_at':submitted_at})['review_eligible_at'],
+                          'review_window_hours':0 if purpose == 'Citizenship' else FINGERPRINT_REVIEW_WINDOW_HOURS,
+                          'review_eligible_at':fingerprint_review_state({'created_at':submitted_at,'purpose':purpose})['review_eligible_at'],
                           'identity':identity_result(c,fields,person)}
             elif p.path.startswith('/api/clearance-applications/') and p.path.endswith('/approve'):
                 aid = p.path.split('/')[3]
-                row = c.execute('SELECT application_id,status,certificate_number,created_at '
+                row = c.execute('SELECT application_id,status,certificate_number,created_at,purpose '
                                 'FROM clearance_applications WHERE application_id=%s', (aid,)).fetchone()
                 if not row:
                     self.send_json(404, {'error':'Application not found'}); c.close(); return
@@ -5656,17 +5724,17 @@ class API(BaseHTTPRequestHandler):
                 # ---- 12-hour mandatory review period ----------------------
                 # HARD LOCK, evaluated purely server-side from the stored row
                 # and the caller's role. System Administrators bypass the gate;
-                # every other role must wait until created_at + 12h, and a row
-                # without a usable timestamp stays locked (fail-closed).
+                # other roles must wait unless the stored purpose is Citizenship. A row
+                # without a usable timestamp stays locked for non-exempt purposes.
                 verdict = review_gate_decision(app_row, user)
                 if verdict is not None:
                     self.send_json(verdict[0], verdict[1]); c.close(); return
                 # ---- second, independent lock (defence in depth) ----------
                 # Even if review_gate_decision() above were edited or disabled,
                 # this write is refused unless the caller is an administrator
-                # or the full window has elapsed. Intentionally spelled out
+                # or Citizenship is stored, or the full window has elapsed. Spelled out
                 # rather than factored away.
-                bypassed = is_admin_user(user)
+                bypassed = is_admin_user(user) or citizenship_wait_exempt(app_row)
                 if not bypassed:
                     _created = parse_created_at(app_row.get('created_at'))
                     _elapsed = (None if _created is None else
@@ -5688,7 +5756,7 @@ class API(BaseHTTPRequestHandler):
                       f"{cert} by {user.get('role')}"
                       + (' (review period bypassed)' if bypassed else '')); c.commit()
                 result = {'application_id':aid,'certificate_number':cert,'status':'Approved',
-                          'review_window_hours':FINGERPRINT_REVIEW_WINDOW_HOURS,
+                          'review_window_hours':0 if citizenship_wait_exempt(app_row) else FINGERPRINT_REVIEW_WINDOW_HOURS,
                           'review_period_bypassed':bypassed,
                           'approved_by_role':user.get('role'),
                           'reviewer_is_fingerprint_officer':is_fingerprint_officer(user)}

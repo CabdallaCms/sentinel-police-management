@@ -56,7 +56,7 @@ The interface uses **no native browser dialogs**. All create/edit actions happen
 
 ### In-modal errors and the global toast
 
-- Form submission errors, validation warnings and backend API errors are **never** shown as floating toasts. Inside a modal they render as an **inline red alert banner** directly under the modal title (icon + action instructions); the modal body auto-scrolls to the top and any invalid fields get a red border. On the inline page forms they render in the form's own notice area (red variant) — and any other page-level failure shows a transient top-of-page alert.
+- Form submission errors, validation warnings and backend API errors are **never** shown as floating toasts. Inside a modal they render as an **inline red alert banner** directly under the modal title (icon + action instructions); the modal body scrolls to and focuses the first invalid field (opening its wizard step if needed). Only failed fields get red borders; valid siblings and optional empty fields remain neutral. Attachment minimums use a single group indicator rather than flagging every optional slot. On the inline page forms they render in the form's own notice area (red variant) — and any other page-level failure shows a transient top-of-page alert.
 - The **bottom-right global toast** is reserved exclusively for **success/system notifications** (e.g. "Record saved successfully"). It is redesigned with a check icon, drop shadow, proper padding, crisp typography and an auto-dismiss animation after 4 seconds.
 
 ### Fingerprint application, review and certificate
@@ -66,7 +66,7 @@ The interface uses **no native browser dialogs**. All create/edit actions happen
 - **`application.html`** — the printable Day-1 application form (A4, Somali, from the official source blueprint): **"CODSIGA SHAHAADADA DAMBI-LA'AANTA"** with the Northeastern Police Force / CID masthead (`PCC-2026-DIGITAL-01`), the police emblem **only as the centred low-opacity watermark** (top 52% / left 50%, opacity 0.08, z-index 2 behind the content), passport photo box, and QAYBTA 01–03 mapping every registration field (identity, purpose, guardian/guarantor) with Somali declarations and signature lines in QAYBTA 04. The Django-style blueprint is bound client-side: all `{{ application.* }}` slots carry ids filled by the preserved fetch/auth/12-hour-lock script.
 - **`certificate.html`** — the official Day-2 **Certificate of Good Conduct (Police Clearance Certificate)** from the official source blueprint: cream sheet, bilingual letterhead (English left, police crest centred, Arabic right), the emblem **also as the centred watermark**, "TO WHOM IT MAY CONCERN" certification, a 65% details table beside the photo box, the **NO ADVERSE CRIMINAL RECORD FOUND** search result, purpose/six-month validity lines, the Chief of Fingerprint Unit signature block and the blue absolute footer bar. Locked until an officer approves, then unlocked for printing.
 - **A4 print contract (both documents).** Blueprint `@page` rules (`application`: `size:A4; margin:0` with `.page{padding:6mm 8mm 4mm 8mm}` on paper; `certificate`: `size: A4 portrait; margin: 0`), plus `print-color-adjust: exact` and all web chrome (toolbar, buttons, badges, banners, toasts) hidden when printing. The application sheet drops `min-height` on paper (the single-sheet guarantee — a 297mm-tall box with zero `@page` margin spills a blank second page on engine rounding). The certificate fills the sheet (11pt/1.52 body, centered 11.5pt signature block pushed toward the footer bar) and QAYBTA 01 is a strict side-by-side executive grid (tinted 25% label cells, uppercase titles, equal-width entries). `backend/test_print_fit.py` — runnable as `python -m unittest backend.test_print_fit` or `python3 backend/test_print_fit.py` — pins the rules, the emblem placement (opacity band 0.08–0.12), blueprint wording verbatim (Somali + Arabic), every DOM binding/endpoint/lock hook, the transparent RGBA seal asset, and worst-case single-page height budgets (application 244.1mm ≤ 265mm envelope; certificate 281.1mm inside the 270–284mm filled-page envelope vs 297mm usable).
-- **Mandatory 12-hour review period.** A clearance application can only be approved once `created_at + 12 hours` has elapsed. A **Fingerprint Officer** attempting an earlier approval gets HTTP 400 `Application is under mandatory 12-hour review period.`; a **System Administrator** bypasses the wait and can approve immediately. The lock is enforced in **three** places:
+- **Mandatory 12-hour review period.** Except for **Citizenship**, a clearance application can only be approved once `created_at + 12 hours` has elapsed. **Citizenship** is exempt from this wait: an authorized Fingerprint Officer can approve it immediately and then print the certificate. Approval, authentication and role checks are still required; the exemption is based on the stored purpose, not approval-request data. A **Fingerprint Officer** attempting an earlier approval gets HTTP 400 `Application is under mandatory 12-hour review period.`; a **System Administrator** bypasses the wait and can approve immediately. The lock is enforced in **three** places:
   - the backend gate on `POST /api/fingerprint/applications/{id}/approve`;
   - the **Fingerprint register table** in `index.html`, where the Approve button is disabled and replaced by a `🔒 Review Lock (12h Required) - X hours remaining` badge the moment the application is created (admins see an enabled button with an "Admin bypass" label);
   - `application.html`, which reads `created_at` and the signed-in role and blocks the approve call client-side before any request is sent.
@@ -506,6 +506,7 @@ Pins the official-template rules for `application.html` / `certificate.html`: th
 2. Open **Fingerprint Unit** and type the same identity; an exact match auto-fills the applicant fields.
 3. Complete clearance reason, guardian details, and attach **at least 2 applicant and 2 guardian documents** (plus an optional photo), then save.
 4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**. Sign in as `fp.officer` and the button is disabled with a "review lock" note until the mandatory 12-hour period has elapsed; sign in as `admin` and the same application can be approved instantly.
+   **Citizenship exception:** no 12-hour delay applies; approve and print immediately. All other reasons keep the existing waiting period.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
 6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. The **Suspect reason / alert details** field is **mandatory when no Crime Case is linked**; when a case IS linked it can be left empty and automatically defaults to `Linked to CID case {code} — {category}`. Submitting with an exact match reuses the existing central record.
 7. Open a case workspace: edit the incident summary (tab 1), link participants (tab 2 — choosing *Suspect* raises a checkpoint/airport alert; the case is optional, and a participant note is required when no case is linked), and upload evidence (tab 3).
@@ -551,3 +552,26 @@ The local-storage fallback in the frontend is for demo convenience only and is
 not appropriate for live police operations or multiple computers.
 
 The current data model is intentionally compatible with a relational implementation using tables such as `persons`, `unit_records`, `airport_passengers`, `clearance_applications`, `crime_cases`, `case_participants`, `suspect_alerts`, `checkpoint_events`, `locations`, `users`, and `audit_events`.
+
+
+## Form and identity-profile improvements (testing branch)
+
+- Submit validation is shared by inline forms, entry modals and modal-footer
+  save buttons. It combines HTML validity with conditional identity, document,
+  officer, vehicle and other registration requirements; scroll/focus follows DOM
+  order, including hidden officer wizard steps. Errors clear as fields become
+  valid or conditional requirements no longer apply.
+- Successful registration closes its entry modal. Successful case-workspace
+  saves return to the CID register. Branch Management hides the saved form and
+  offers **Add another branch**. API/validation failures leave entries open.
+- **Identity profile → Linked Unit Records** fetches
+  `GET /api/persons/{person_id}/linked-records`: source record/table, recording
+  branch, branch region, uploader/account branch, UTC timestamp and recorded
+  location context. Results respect the caller's unit and checkpoint scope.
+- **Proximity is not fabricated.** There are no live person or branch coordinates
+  in this data model. Nearby/current branch is explicitly **Not determined**;
+  dated unit locations and recorded residence are context, not live tracking.
+  Uploader branch reflects the user's **current account details**, not a
+  historical upload-branch snapshot. Missing legacy branch data is labelled.
+
+See [TESTING.md](TESTING.md) for the focused automated tests and officer UAT checklist.

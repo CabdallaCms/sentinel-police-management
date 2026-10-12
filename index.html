@@ -96,8 +96,11 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .alert .a-body{flex:1;min-width:0}
 .alert.error .a-ico{color:#c0392b}
 .alert.success .a-ico{color:#16856b}
-/* invalid field highlight */
-.field.invalid input,.field.invalid select,.field.invalid textarea,input.invalid,select.invalid,textarea.invalid,.fileslot.invalid{border-color:var(--red)!important;box-shadow:0 0 0 3px #d84f5a24!important;background:#fff7f7}
+[hidden]{display:none!important}
+/* Invalid controls only; optional/valid siblings remain neutral. */
+.docgrid.invalid{outline:2px solid var(--red);outline-offset:4px;border-radius:6px}
+.invalid{scroll-margin-block:80px}
+input.invalid,select.invalid,textarea.invalid,.docgrid.invalid,.fileslot.invalid{border-color:var(--red)!important;box-shadow:0 0 0 3px #d84f5a24!important;background:#fff7f7}
 /* unified identity form + real-time match banners */
 .match-banner{border-radius:10px;padding:12px 14px;font-size:13px;font-weight:600;line-height:1.55;display:none;margin-bottom:4px}
 .match-banner.show{display:block}
@@ -399,7 +402,7 @@ body.readonly-mode .ro-banner{display:flex}
     </div>
     <h1>Officer sign-in</h1>
     <div class="lsub">Use your assigned role to sign in. Central admins see all units; unit officers see only their module; checkpoint officers see only their assigned location.</div>
-    <form class="form login-form" id="loginForm" onsubmit="return submitLogin(event)">
+    <form novalidate class="form login-form" id="loginForm" onsubmit="return submitLogin(event)">
       <div class="field"><label>Username</label><input id="loginUser" autocomplete="username" required></div>
       <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div>
       <div class="login-error" id="loginError"></div>
@@ -553,7 +556,7 @@ body.readonly-mode .ro-banner{display:flex}
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="fpSearch" placeholder="Search application, person, purpose or status…" oninput="renderFingerprintTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('fpDrawer')">＋ New Clearance Application</button></div></div>
-<div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> a Fingerprint Officer can only approve once the 12-hour review period has elapsed; a System Administrator can approve immediately.</div>
+<div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> Citizenship applications can be approved and printed immediately. Other reasons require a 12-hour review period; a System Administrator can approve immediately.</div>
 <div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
 </section>
@@ -564,7 +567,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="fpNotice" class="notice"></div>
 <div class="record-type">Unit-specific record: guardian, clearance reason and supporting legal documents are stored here — the applicant’s identity is matched/updated in the Central Person Registry.</div>
-<form class="form" id="fpForm" onsubmit="saveFingerprint(event)">
+<form novalidate class="form" id="fpForm" onsubmit="saveFingerprint(event)">
 <div class="section-label">Applicant identity — Central Person Registry</div>
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>: an exact match (National ID/passport or 4-part name + DOB) auto-fills the existing record; if no match exists a new Central Person is created automatically on save.</div>
 <div id="fpIdentity"></div>
@@ -572,9 +575,9 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Education</option><option>Travel</option><option>Employment</option><option>Citizenship</option><option>Licence</option></select></div>
 <div class="grid2">
 <div class="field"><label>Gender</label><select id="fpSex"><option value="">Not stated</option><option>Male</option><option>Female</option></select></div>
-<div class="field"><label>Email</label><input id="fpEmail" placeholder="applicant@example.com"></div>
+<div class="field"><label>Email</label><input id="fpEmail" type="email" placeholder="applicant@example.com"></div>
 </div>
-<div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs"></div></div>
+<div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs" data-min-files="2"></div></div>
 <div class="section-label">Guardian / next of kin</div>
 <div class="grid2">
 <div class="field"><label>Guardian full name *</label><input id="gName" required placeholder="Guardian / relative name"></div>
@@ -584,7 +587,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="field"><label>Address</label><input id="gAddress" placeholder="Guardian address"></div>
 <div class="field"><label>Contact number</label><input id="gPhone" placeholder="Guardian phone"></div>
 </div>
-<div class="field"><label>Guardian attachments — upload 3, <span class="req">at least 2 required</span></label><div class="docgrid" id="guardDocs"></div></div>
+<div class="field"><label>Guardian attachments — upload 3, <span class="req">at least 2 required</span></label><div class="docgrid" id="guardDocs" data-min-files="2"></div></div>
 <div class="field"><label>Supporting document notes</label><textarea id="fpNotes" placeholder="Document types, issuing authority, additional notes"></textarea></div>
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetFpForm()">Clear</button><button class="btn" data-write="1" type="submit">Save application</button></div>
 </form>
@@ -610,7 +613,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="airNotice" class="notice"></div>
 
-<form class="form" id="airForm" onsubmit="saveAirport(event)">
+<form novalidate class="form" id="airForm" onsubmit="saveAirport(event)">
 <div class="section-label">Passenger identity — Central Person Registry</div>
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
 <div id="airIdentity"></div>
@@ -786,7 +789,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="stNotice" class="notice"></div>
 
-<form class="form" id="stForm" onsubmit="saveStation(event)">
+<form novalidate class="form" id="stForm" onsubmit="saveStation(event)">
 <div class="grid2">
 <div class="field"><label>Station name *</label><input id="stName" placeholder="e.g. Burao Central Station"></div>
 <div class="field"><label>Station code (auto)</label><input id="stCode" readonly placeholder="STN-REG-XXX" style="background:#f3f6fb;color:#526075"></div>
@@ -858,7 +861,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="offNotice" class="notice"></div>
 
-<form class="form" id="offForm" onsubmit="saveOfficer(event)">
+<form novalidate class="form" id="offForm" onsubmit="saveOfficer(event)">
 <div class="tabs" id="offStepTabs">
 <button type="button" class="tab active" data-step="1" onclick="offStep(1)">1 · Official &amp; System</button>
 <button type="button" class="tab" data-step="2" onclick="offStep(2)">2 · Personal ID</button>
@@ -944,7 +947,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="prmNotice" class="notice"></div>
 
-<form class="form" id="prmForm" onsubmit="savePromotionNomination(event)">
+<form novalidate class="form" id="prmForm" onsubmit="savePromotionNomination(event)">
 <div class="grid2">
 <div class="field"><label>Officer *</label><select id="prmOfficer"></select></div>
 <div class="field"><label>Proposed rank *</label><select id="prmRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
@@ -963,7 +966,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="dscNotice" class="notice"></div>
 
-<form class="form" id="dscForm" onsubmit="saveDisciplineAction(event)">
+<form novalidate class="form" id="dscForm" onsubmit="saveDisciplineAction(event)">
 <div class="grid2">
 <div class="field"><label>Officer *</label><select id="dscOfficer"></select></div>
 <div class="field"><label>Action type *</label><select id="dscType" onchange="disciplineTypeChanged()"><option value="">— select —</option><option>Misconduct</option><option>Suspension</option><option>Demotion</option><option>Warning</option><option>Investigation</option></select></div>
@@ -1066,7 +1069,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="crmNotice" class="notice"></div>
 
-<form class="form" id="crmForm" onsubmit="saveCrime(event)">
+<form novalidate class="form" id="crmForm" onsubmit="saveCrime(event)">
 <div class="section-label">1 · Station &amp; desk officer</div>
 <div class="grid2">
 <div class="field"><label>Police station *</label><select id="crmStation"></select></div>
@@ -1126,7 +1129,7 @@ body.readonly-mode .ro-banner{display:flex}
 <div class="cm-body">
 <div id="carNotice" class="notice"></div>
 
-<form class="form" id="carForm" onsubmit="saveCar(event)">
+<form novalidate class="form" id="carForm" onsubmit="saveCar(event)">
 <div class="grid2">
 <div class="field"><label>Category *</label><select id="carCategory" onchange="toggleCarCategory()"><option value="Police Fleet">Police Fleet</option><option value="Civilian / Commercial">Civilian / Commercial</option></select></div>
 <div class="field"><label>Plate number *</label><input id="carPlate" placeholder="e.g. SL-1010-26" style="text-transform:uppercase"></div>
@@ -1205,7 +1208,8 @@ body.readonly-mode .ro-banner{display:flex}
     <button class="btn ghost small" type="button" onclick="refreshBranchManagement(true)">↻ Refresh branches</button>
   </div>
   <div class="hint" style="margin-bottom:16px">New branches are available immediately in the matching unit's intake dropdown. Add entries such as Buuhoodle Branch / East Togdheer, Lasanod Branch / Sool, or Erigavo Branch / Sanaag. Existing CID, personnel and regional navigation remains unchanged.</div>
-  <form class="form" id="branchForm" onsubmit="saveBranch(event)">
+  <button class="btn" id="branchFormOpen" hidden type="button" onclick="branchForm.hidden=false;this.hidden=true;branchName.focus()">＋ Add another branch</button>
+  <form novalidate class="form" id="branchForm" onsubmit="saveBranch(event)">
     <div class="grid3">
       <div class="field"><label for="branchName">Branch Name *</label><input id="branchName" required maxlength="160" placeholder="e.g. Buuhoodle Branch"></div>
       <div class="field"><label for="branchRegion">Region *</label><select id="branchRegion" required><option value="">Loading regions…</option></select></div>
@@ -1405,16 +1409,152 @@ function toast(s,sub){let t=document.getElementById('toast');const ico='<span cl
 // Inline banner shown directly under the modal title. err=true renders a soft-red error.
 function showModalAlert(msg,err=true,title){const el=document.getElementById('modalError');if(!el)return;const icon=err?'⚠️':'✅';el.className='alert '+(err?'error':'success')+' show';el.innerHTML='<span class="a-ico">'+icon+'</span><div class="a-body"><b>'+(title||(err?'Unable to Save':'Success'))+'</b><span>'+esc(msg)+'</span></div>'}
 function hideModalAlert(){const el=document.getElementById('modalError');if(el)el.className='alert error'}
-// Mark a set of fields invalid (red border). Handles prefixed ids (`prefix-field`) and direct ids (`field`).
-function markInvalid(prefix,fieldNames){const list=fieldNames||[];list.forEach(f=>{let el=prefix?document.getElementById(prefix+'-'+f):null;if(!el)el=document.getElementById(f);if(!el)return;const wrap=el.closest('.field')||el;wrap.classList.add('invalid')})}
-function clearInvalid(root){((root&&root.querySelectorAll?root:document).querySelectorAll('.invalid')).forEach(el=>el.classList.remove('invalid'))}
-// Unified error reporter: active modal -> in-modal banner; page form -> its notice; else transient page alert. No floating toast on error.
-function showFormError(msg,opts={}){const{prefix,names,title,notice}=opts;if(prefix||names)markInvalid(prefix,names);const modal=document.getElementById('drawer');if(modal&&modal.classList.contains('on')){showModalAlert(msg,true,title);const body=document.getElementById('drawerBody');if(body){body.scrollTop=0;try{body.scrollTo({top:0,behavior:'smooth'})}catch(e){}}return}
+// Validation targets are explicit: never color a whole field wrapper (which may
+// contain valid or optional siblings). Groups such as "at least two files" get
+// one group indicator rather than marking every optional file as required.
+function markInvalid(prefix,fieldNames){
+  return (fieldNames||[]).map(f=>{
+    const el=(prefix&&document.getElementById(prefix+'-'+f))||document.getElementById(f);
+    if(!el)return null;
+    el.classList.add('invalid');el.setAttribute('aria-invalid','true');return el;
+  }).filter(Boolean);
+}
+function clearInvalid(root){
+  ((root&&root.querySelectorAll?root:document).querySelectorAll('.invalid')).forEach(el=>{
+    el.classList.remove('invalid');el.removeAttribute('aria-invalid');
+  });
+}
+function focusFormError(root,fallback){
+  // DOM order, not validator order; reveal wizard steps/tabs before focusing.
+  const first=root.querySelector('.invalid')||fallback;
+  if(!first)return;
+  const step=first.closest('[id^="off-step-"]');
+  if(step)offStep(Number(step.dataset.step||step.id.replace(/\D/g,'')));
+  const pane=first.closest('.tabpane');
+  if(pane&&pane.id.startsWith('cw-'))cwTab(pane.id.slice(3));
+  const missingFile=first.hasAttribute('data-min-files')
+    ?[...first.querySelectorAll('input[type=file]')].find(el=>!el.disabled&&!el.files.length):null;
+  const control=missingFile||(first.matches('input,select,textarea,button')?first:
+    (first.querySelector('input:not([disabled]),select:not([disabled]),textarea:not([disabled])')||first));
+  if(!control.hasAttribute('tabindex')&&!control.matches('input,select,textarea,button'))control.tabIndex=-1;
+  try{control.focus({preventScroll:true});control.scrollIntoView({block:'center',behavior:'smooth'})}catch(_){}
+}
+// Unified error reporter: keep alerts in the owning modal/form, then jump to
+// the actual error, not the top of the page. General API failures have no field
+// attribution and therefore do not turn otherwise-valid fields red.
+function showFormError(msg,opts={}){
+  const{prefix,names,title,notice}=opts;
+  const targets=markInvalid(prefix,names);
   const n=notice&&document.getElementById(notice);
-  if(n){n.className='notice err show';n.style.display='block';n.textContent=msg;try{window.scrollTo({top:0,behavior:'smooth'})}catch(e){}return}
-  const page=document.querySelector('.page.active')||document.body;
-  const a=document.createElement('div');a.className='alert error show';a.innerHTML='<span class="a-ico">⚠️</span><div class="a-body"><b>'+(title||'Unable to Save')+'</b><span>'+esc(msg)+'</span></div>';
-  page.insertBefore(a,page.firstChild);a._t=setTimeout(()=>a.remove(),6000)}
+  const drawer=document.getElementById('drawer');
+  const root=(targets[0]&&(targets[0].closest('.cmodal, #drawer')||targets[0].closest('form, .page')))||
+    (n&&n.closest('.cmodal, #drawer, .page'))||
+    (drawer&&drawer.classList.contains('on')?drawer:null)||
+    document.querySelector('.cmodal.open:not(.closing)')||document.querySelector('.page.active')||document.body;
+  let alert=n;
+  if(root===drawer){showModalAlert(msg,true,title);alert=document.getElementById('modalError')}
+  else if(n){n.className='notice err show';n.style.display='block';n.textContent=msg}
+  else{
+    alert=root.querySelector('.validation-alert');
+    if(!alert){alert=document.createElement('div');alert.className='alert error show validation-alert';const body=root.querySelector('.cm-body')||root;body.insertBefore(alert,body.firstChild)}
+    alert.textContent=(title||'Unable to Save')+': '+msg;
+  }
+  if(alert){alert.setAttribute('role','alert');alert.tabIndex=-1}
+  // Wait until caller-driven wizard/tab changes have finished.
+  setTimeout(()=>focusFormError(root,alert),0);
+}
+// Native HTML validation fires before submit handlers. Capture it globally,
+// including dynamically inserted forms and internally scrolling modals.
+let nativeValidationTimer;
+document.addEventListener('invalid',e=>{
+  e.preventDefault();markInvalid(null,[e.target.id]);
+  clearTimeout(nativeValidationTimer);
+  nativeValidationTimer=setTimeout(()=>showFormError(e.target.validationMessage||'Complete the highlighted fields.',{names:[e.target.id]}),0);
+},true);
+// Shared preflight combines HTML validity with the business constraints used
+// by the save handlers, so a later native-required control never takes focus
+// ahead of an earlier custom-required field. Pure: safe to reuse while editing.
+function invalidFormFields(root){
+  const bad=new Set();
+  const field=id=>root.querySelector('[id="'+id+'"]');
+  const value=id=>String(field(id)?.value||'').trim();
+  const requireField=id=>{if(field(id)&&!field(id).disabled&&!value(id))bad.add(id)};
+  root.querySelectorAll('input,select,textarea').forEach(el=>{
+    if(!el.disabled&&el.willValidate&&(!el.validity.valid||(el.required&&!String(el.value).trim())))bad.add(el.id);
+  });
+  Object.entries(window._identityWires||{}).forEach(([prefix,wire])=>{
+    if(!field(prefix+'-first'))return;
+    const validator=prefix==='cp'?validateTraveler:prefix==='gd'?validateGuardian:validateIdentity;
+    (validator(wire.read()).names||[]).forEach(name=>bad.add(prefix+'-'+name));
+  });
+  const required=['gName','fpBranch','airBranch','cdCategory','caseBranch','cpBranch',
+    'stName','stTier','stPhone','st-region','st-district','st-village',
+    'offRank','offUnit','offStation','offEnlist','offName','offMother','offDob','offPob','offPhone',
+    'offGuarName','offGuarAddr','offGuarPhone','offDoc1Type',
+    'prmOfficer','prmRank','prmReason','dscOfficer','dscType','dscSummary',
+    'crmBranch','crmStation','crmOfficer','crmCat','crmWhen','crmLoc','crmDesc',
+    'carPlate','carVin','carEngine','carMake','branchName','branchRegion','branchUnitType',
+    'nu-username','nu-display','nu-role','nu-password','cdType','cdClassification','cdSubmittedAt'];
+  required.forEach(requireField);
+  if(field('spCase')&&!value('spCase'))requireField('spNote');
+  if(field('cwCaseSel')&&!value('cwCaseSel'))requireField('cwPartNote');
+  if(value('dscType')==='Demotion')requireField('dscToRank');
+  if(field('prmRank')&&value('prmRank')&&officerByServiceId(value('prmOfficer'))?.rank===value('prmRank'))bad.add('prmRank');
+  if(value('offOriginDistrict')&&!value('offOriginRegion'))bad.add('offOriginRegion');
+  if(value('offTown')&&!value('offOriginDistrict'))bad.add('offOriginDistrict');
+  if(field('carCategory')){
+    (value('carCategory')==='Police Fleet'?['carStation']:['carOwnerName','carOwnerPhone','carOwnerNid']).forEach(requireField);
+    if(value('carAlert')!=='Clean / Normal')requireField('carAlertReason');
+  }
+  if(field('cdOfficerSearch')){
+    if(!cdSelectedOfficer)bad.add('cdOfficerSearch');
+    if(value('cdNarrative').length<20)bad.add('cdNarrative');
+    if(CD_RANK_CLASSES.includes(value('cdClassification')))requireField('cdRank');
+    if(!value('cdStation')&&!value('cdCommander')){bad.add('cdStation');bad.add('cdCommander')}
+  }
+  const fileRules=[['offPhoto',true,/\.(jpe?g|png)$/i,5],['offGuarPhoto',false,/\.(jpe?g|png)$/i,5],
+    ['offDoc1File',true,/\.(pdf|jpe?g|png)$/i],['offDoc2File',!!value('offDoc2Type'),/\.(pdf|jpe?g|png)$/i],
+    ['cdDoc1',false,/\.(pdf|jpe?g)$/i,5],['cdDoc2',false,/\.(pdf|jpe?g)$/i,5],
+    ['cp-photo',true],['evFile',true]];
+  fileRules.forEach(([id,required,ext,mb])=>{
+    const el=field(id);if(!el)return;const file=el.files[0];
+    if((required&&!file)||(file&&((ext&&!ext.test(file.name))||(mb&&file.size>mb*1024*1024))))bad.add(id);
+  });
+  if(field('offDoc2File')?.files[0])requireField('offDoc2Type');
+  root.querySelectorAll('[data-min-files]').forEach(group=>{
+    if([...group.querySelectorAll('input[type=file]')].filter(i=>i.files.length).length<Number(group.dataset.minFiles))bad.add(group.id);
+  });
+  return [...bad].filter(Boolean);
+}
+function clearEditedError(e){
+  if(!e.target.matches('input,select,textarea'))return;
+  const root=e.target.closest('form,.form,#drawerBody')||document;
+  const bad=new Set(invalidFormFields(root));
+  root.querySelectorAll('.invalid').forEach(el=>{
+    if(!bad.has(el.id)){el.classList.remove('invalid');el.removeAttribute('aria-invalid')}
+  });
+}
+document.addEventListener('input',clearEditedError);
+document.addEventListener('change',clearEditedError);
+document.addEventListener('reset',e=>clearInvalid(e.target),true);
+function validateFormBeforeSave(root){
+  clearInvalid(root);
+  const bad=invalidFormFields(root);
+  if(bad.length){showFormError('Please correct the highlighted fields before saving. Check required values and document types / size limits.',{names:bad});return false}
+  return true;
+}
+document.addEventListener('submit',e=>{
+  if(!validateFormBeforeSave(e.target)){e.preventDefault();e.stopImmediatePropagation()}
+},true);
+// Footer and workspace action buttons do not submit an HTML form. Use the
+// same preflight for those controls, including dynamically created modals.
+document.addEventListener('click',e=>{
+  const button=e.target.closest('button');
+  if(!button||(button.type==='submit'&&button.form)||!/submit|save|addParticipant|uploadEvidence/.test(button.getAttribute('onclick')||''))return;
+  const root=button.closest('#drawerFoot')?document.getElementById('drawerBody'):
+    button.closest('form,.form');
+  if(root&&!validateFormBeforeSave(root)){e.preventDefault();e.stopImmediatePropagation()}
+},true);
 
 // ============================ api ============================
 // Every request automatically carries `Authorization: Bearer ${token}` once a
@@ -1941,6 +2081,7 @@ function fillIdentity(prefix,p){
   });
   const pv=document.getElementById(prefix+'-photoPrev');
   if(pv){const src=p.photoPath||p.photoUrl||'';if(src){pv.src=src;pv.style.display='block'}else pv.style.display='none'}
+  const first=document.getElementById(prefix+'-first');if(first)clearEditedError({target:first});
 }
 function clearIdentity(prefix,p){
   ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{
@@ -1951,13 +2092,14 @@ function clearIdentity(prefix,p){
   renderMatchList(prefix,null);
   setMatch(prefix,null);
 }
+function missingFields(d,fields,msg){
+  const names=fields.filter(k=>!String(d[k]??'').trim());
+  return names.length?{ok:false,names,msg}:{ok:true,names:[]};
+}
 function validateIdentity(d){
-  if(!d.first||!d.second||!d.third||!d.fourth)return{ok:false,msg:'Enter the full 4-part name (first, second, third and fourth names)'};
-  if(!d.dob)return{ok:false,msg:'Date of birth is required'};
-  if(!d.national&&!d.passport)return{ok:false,msg:'National ID or Passport ID is required'};
-  if(!d.mother)return{ok:false,msg:"Mother's name is required"};
-  if(!d.address)return{ok:false,msg:'Address is required'};
-  return{ok:true};
+  const result=missingFields(d,['first','second','third','fourth','dob','mother','address'],'Complete the required identity fields (four-part name, date of birth, mother’s name and address).');
+  if(!d.national&&!d.passport){result.names.push('national','passport');result.ok=false;result.msg='Complete the required identity fields, including National ID or Passport ID.'}
+  return result;
 }
 function identityAvatar(p){return (p.photoPath||p.photoUrl)?`<img class="m-face" src="${esc(p.photoPath||p.photoUrl)}" alt="person photo">`:''}
 // Fields that may arrive blank/null on a matched record and are worth completing.
@@ -2041,7 +2183,7 @@ function travelerFormHTML(prefix){
    </div>
    <div id="${prefix}-matchlist" class="m-matchlist"></div>
    <div id="${prefix}-match" class="match-banner"></div>
-   <div class="field"><label>Traveler documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs"></div></div>
+   <div class="field"><label>Traveler documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs" data-min-files="1"></div></div>
   </div>`;
 }
 function guardianFormHTML(prefix){
@@ -2061,7 +2203,7 @@ function guardianFormHTML(prefix){
    </div>
    <div id="${prefix}-matchlist" class="m-matchlist"></div>
    <div id="${prefix}-match" class="match-banner"></div>
-   <div class="field"><label>Guardian documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs"></div></div>
+   <div class="field"><label>Guardian documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs" data-min-files="1"></div></div>
   </div>`;
 }
 function fillGuardian(prefix,p){
@@ -2072,22 +2214,13 @@ function fillGuardian(prefix,p){
   set(prefix+'-permanent',p.residence||'');
   set(prefix+'-phone',p.phone||'');
   set(prefix+'-occupation',p.occupation||'');
+  const first=document.getElementById(prefix+'-first');if(first)clearEditedError({target:first});
 }
 function validateTraveler(d){
-  if(!d.first||!d.second||!d.third||!d.fourth)return{ok:false,msg:'Enter the traveler full name (first, second, third and fourth names)'};
-  if(!d.dob)return{ok:false,msg:'Traveler date of birth is required'};
-  if(!d.address)return{ok:false,msg:'Traveler current address is required'};
-  if(!d.permanent)return{ok:false,msg:'Traveler permanent address is required'};
-  if(!d.purpose)return{ok:false,msg:'Purpose of visit is required'};
-  return{ok:true};
+  return missingFields(d,['first','second','third','fourth','dob','address','permanent','purpose'],'Complete the required traveler name, birth date, addresses and purpose of visit.');
 }
 function validateGuardian(d){
-  if(!d.first||!d.second||!d.third||!d.fourth)return{ok:false,msg:'Enter the guardian full name (first, second, third and fourth names)'};
-  if(!d.relationship)return{ok:false,msg:'Guardian relationship is required'};
-  if(!d.phone)return{ok:false,msg:'Guardian contact number is required'};
-  if(!d.permanent)return{ok:false,msg:'Guardian permanent address is required'};
-  if(!d.occupation)return{ok:false,msg:'Guardian occupation is required'};
-  return{ok:true};
+  return missingFields(d,['first','second','third','fourth','relationship','phone','permanent','occupation'],'Complete the required guardian name, relationship, contact, permanent address and occupation.');
 }
 function wireIdentity(prefix,opts={}){
   window._identityWires=window._identityWires||{};
@@ -2175,6 +2308,7 @@ function openEntryModal(id){
   // identity-profile popup ('pvModal') still opens.
   if(!READ_ONLY_VIEW_MODALS.has(id) && guardReadOnly('Opening an entry form')) return;
   const d=document.getElementById(id);if(!d)return;
+  clearInvalid(d);
   const ov=document.getElementById(id+'Ov');
   clearTimeout(d._closeT);
   d.classList.remove('closing');
@@ -2198,7 +2332,7 @@ function closeEntryModal(id){
   d._closeT=setTimeout(()=>{
     d.classList.remove('open','closing');
     const modal=document.getElementById('drawer');
-    if(!modal||!modal.classList.contains('on'))document.body.classList.remove('modal-open');
+    if((!modal||!modal.classList.contains('on'))&&!document.querySelector('.cmodal.open'))document.body.classList.remove('modal-open');
   },220);
 }
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
@@ -2212,7 +2346,7 @@ function openPersonDrawer(prefill,onSaved){
   const p=prefill&&prefill.id?prefill:null;
   const body=`
   <div class="hint" style="margin-bottom:14px">${p?'Edit or append to this existing identity — the Central Person Registry is matched in real time and the profile is merged, never duplicated.':'Enter the identity below. The Central Person Registry is matched <b>in real time</b>; an exact match auto-fills existing data, otherwise a new Central Person record is created on save.'}</div>
-  <form class="form" id="personDrawerForm">${identityFormHTML('pd')}</form>`;
+  <form novalidate class="form" id="personDrawerForm">${identityFormHTML('pd')}</form>`;
   openDrawer(p?'Update identity profile':'New central person',body,
     `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitPersonDrawer(${p?`'${p.id}'`:'null'})">${p?'Save updates':'Save person'}</button>`);
   if(p)fillIdentity('pd',p);
@@ -2222,7 +2356,7 @@ function openPersonDrawer(prefill,onSaved){
 async function submitPersonDrawer(existingId){
   if(guardReadOnly('Saving a person record')) return;
   clearInvalid();
-  const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'pd',names:['first','second','third','fourth','dob','mother','address']});return}
+  const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'pd',names:v.names});return}
   const data={name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),first:d.first,second:d.second,third:d.third,fourth:d.fourth,
     nationalId:d.national,passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation};
   if(!data.nationalId&&!data.passportId){showFormError('National ID or Passport ID is required.',{prefix:'pd',names:['national','passport'],title:'Unable to Save'});return}
@@ -2302,11 +2436,45 @@ function openPersonView(id){
     ['Occupation',p.occupation]
   ];
   const grid=`<div class="pv-grid">${fields.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${esc(v||'—')}</b></div>`).join('')}</div>`;
-  const unitsBlock=`<div class="pv-units"><small>Linked unit records</small><div>${units||'<span class="muted">Central only — no unit registers linked yet</span>'}</div></div>`;
+  const unitsBlock=`<section class="pv-units"><h3>Linked Unit Records</h3><div>${units}</div><div id="pvLinkedRecords" aria-live="polite"><p class="muted">Loading branch and source details…</p></div></section>`;
   const foot=`<div class="pv-foot"><button class="btn ghost" onclick="closeEntryModal('pvModal')">Close</button>${canWrite()?`<button class="btn secondary" onclick="closeEntryModal('pvModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button>`:''}</div>`;
   document.getElementById('pvModalTitle').textContent='Identity profile · '+p.id;
   document.getElementById('pvModalBody').innerHTML=head+grid+unitsBlock+foot;
   openEntryModal('pvModal');
+  loadPersonLinkedRecords(p.id);
+}
+
+// Fetch authoritative provenance instead of guessing from unit badges or a
+// partially synced local cache. Ignore stale responses after switching people.
+let personLinkedRequest=0;
+async function loadPersonLinkedRecords(id){
+  const request=++personLinkedRequest;
+  try{
+    if(!serverOn)throw new Error('Branch/source details are unavailable offline. Reconnect to load verified linked records.');
+    const data=await api('/api/persons/'+encodeURIComponent(id)+'/linked-records');
+    if(request!==personLinkedRequest||window._viewingPerson?.id!==id)return;
+    const target=document.getElementById('pvLinkedRecords');if(!target)return;
+    target.innerHTML=renderPersonLinkedRecords(data);
+  }catch(e){
+    if(request!==personLinkedRequest||window._viewingPerson?.id!==id)return;
+    const target=document.getElementById('pvLinkedRecords');
+    if(target)target.innerHTML='<p class="notice err show">'+esc(e.message||'Could not load linked records. Close and reopen the profile to retry.')+'</p>';
+  }
+}
+function renderPersonLinkedRecords(data){
+  const rows=data.items||[];
+  return `<div class="pv-grid" style="margin-top:14px">
+    <div class="pv-field"><small>Recorded residence · Central Person Registry</small><b>${esc(data.residence||'Not recorded')}</b></div>
+    <div class="pv-field"><small>Nearby branch / current proximity</small><b>Not determined</b></div>
+  </div><p class="hint">${esc(data.proximity_note)}</p><p class="muted">${esc(data.scope_note)}</p>`+
+  (rows.length?rows.map(r=>`<article class="panel" style="margin:12px 0;padding:16px;box-shadow:none">
+    <b>${esc(r.unit)} · ${esc(r.record_id)}</b>
+    <div class="pv-grid" style="margin-top:12px">
+      <div class="pv-field"><small>Recording unit branch</small><b>${esc(r.branch_name||'Not recorded (legacy / unassigned)')}</b><small>${esc(r.branch_source)} → police_branches</small></div>
+      <div class="pv-field"><small>Geographic context</small><b>${esc(r.branch_region||'Region not recorded')}</b><span>${esc(r.location_context||'No additional location recorded')}</span></div>
+      <div class="pv-field"><small>Uploaded by / current account branch</small><b>${esc(r.uploaded_by||'Not recorded')} · ${esc(r.uploader_branch||'Branch not recorded')}</b><small>${esc(r.uploader_source)}</small></div>
+      <div class="pv-field"><small>Source record / recorded at (UTC)</small><b>${esc(r.source_table)} · ${esc(r.record_id)}</b><span>${esc(r.created_at||'Time not recorded')}</span></div>
+    </div></article>`).join(''):'<p class="empty">No linked unit records are available within your access scope.</p>');
 }
 
 // ---- add suspect (optional linked case) ----
@@ -2318,7 +2486,7 @@ function openAddSuspect(){
   if(guardReadOnly('Adding a suspect')) return;
   openDrawer('Add suspect',`
    <div class="hint" style="margin-bottom:14px">Type the identity below — the Central Person Registry is matched <b>in real time</b>. An exact match auto-fills the existing record; if no match exists, a new Central Person is created automatically before the suspect record is attached. The linked case is <b>optional</b>.</div>
-   <form class="form" id="addSuspectForm">
+   <form novalidate class="form" id="addSuspectForm">
     ${identityFormHTML('sp')}
     <div class="section-label">Suspect record</div>
     <div class="grid2">
@@ -2345,10 +2513,10 @@ function openAddSuspect(){
 async function submitAddSuspect(){
   if(guardReadOnly('Adding a suspect')) return;
   clearInvalid();
-  const d=window._identityWires.sp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'sp',names:['first','second','third','fourth','dob','mother','address']});return}
+  const d=window._identityWires.sp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'sp',names:v.names});return}
   const caseId=val('spCase'),origin=caseId?'Case Link':val('spOrigin');
   const reason=val('spNote');
-  if(!caseId&&!reason){showFormError('Suspect reason / alert details is required for unlinked suspects.',{prefix:'sp',names:['note'],title:'Unable to Save'});return}
+  if(!caseId&&!reason){showFormError('Suspect reason / alert details is required for unlinked suspects.',{names:['spNote'],title:'Unable to Save'});return}
   const payload={...identityServer(d),person_id:matchedPersonId('sp'),case_id:caseId||null,role:'Suspect',origin,notes:reason};
   try{
     let msg;
@@ -3302,9 +3470,10 @@ const STANDARD_ROLE='fingerprint_officer';
 function signedInRole(){
   return (currentUser&&currentUser.role)||(sessionUser&&sessionUser.role)||STANDARD_ROLE;
 }
+function citizenshipExempt(x){return String(x&&x.purpose||'').trim().toLowerCase()==='citizenship'}
 function reviewLockState(x){
   // Admins are exempt: the Approve action is always available to them.
-  if(isAdminRole(signedInRole())) return {locked:false,hoursRemaining:0,label:'',eligibleAt:null};
+  if(isAdminRole(signedInRole())||citizenshipExempt(x)) return {locked:false,hoursRemaining:0,label:'',eligibleAt:null};
   let remaining=0, eligibleAt=null;
   const created=stampToTime(x&&x.created_at);
   if(created!==null){
@@ -3346,7 +3515,7 @@ function renderRegisterRow(item,currentUser){
   // A stale backend cannot be trusted to enforce the window, so nothing is
   // approvable until /api/health proves the running build carries the lock.
   const staleBuild = backendIsStale();
-  const isLocked = staleBuild || (!isAdmin && (hoursElapsed < REVIEW_LOCK_HOURS || !(createdAtTime>0)));
+  const isLocked = staleBuild || (!isAdmin && !citizenshipExempt(item) && (hoursElapsed < REVIEW_LOCK_HOURS || !(createdAtTime>0)));
   const approved = !staleBuild && (item.status==='Approved' || item.status==='APPROVED');
 
   // Global read-only role (Commander / High Command): the register renders
@@ -3590,13 +3759,13 @@ function resetFpForm(){fpForm.reset();fpPurpose.value='Education';fpSex.value=''
 async function saveFingerprint(e){
   e.preventDefault();
   clearInvalid();
-  const d=window._identityWires.fp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'fp',names:['first','second','third','fourth','dob','mother','address'],notice:'fpNotice'});return}
+  const d=window._identityWires.fp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'fp',names:v.names,notice:'fpNotice'});return}
   const branchId=val('fpBranch');
   if(!branchId){showFormError('Select a Fingerprint Unit branch.',{names:['fpBranch'],notice:'fpNotice'});return}
   const appDocs=collectFiles('appDoc',4),guardDocs=collectFiles('guardDoc',3);
   if(!gName.value.trim()){showFormError('Guardian full name is required.',{names:['gName'],notice:'fpNotice'});return}
-  if(appDocs.length<2){showFormError('Attach at least 2 applicant documents.',{notice:'fpNotice'});return}
-  if(guardDocs.length<2){showFormError('Attach at least 2 guardian documents.',{notice:'fpNotice'});return}
+  if(appDocs.length<2){showFormError('Attach at least 2 applicant documents.',{names:['appDocs'],notice:'fpNotice'});return}
+  if(guardDocs.length<2){showFormError('Attach at least 2 guardian documents.',{names:['guardDocs'],notice:'fpNotice'});return}
   try{
     if(serverOn){
       const photo=document.getElementById('fp-photo').files[0];
@@ -3613,7 +3782,7 @@ async function saveFingerprint(e){
       db.fingerprint.unshift({id:'FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0'),person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim(),created_at:new Date().toISOString()});
       persist();fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application saved (local demo) and linked to '+person.id+'.';
     }
-    fpNotice.className='notice';fpNotice.style.display='block';resetFpForm();await syncServer();toast('Clearance application saved');
+    fpNotice.className='notice';fpNotice.style.display='block';resetFpForm();closeEntryModal('fpDrawer');await syncServer();toast('Clearance application saved');
   }catch(err){showFormError(err.message||'The clearance application could not be saved.',{notice:'fpNotice',title:'Unable to Save'})}
 }
 async function approveFP(id){
@@ -3642,7 +3811,7 @@ async function approveFP(id){
   const createdAt=stampToTime(rec&&rec.created_at);
   const hoursElapsed=(createdAt!==null&&createdAt>0)?(Date.now()-createdAt)/3600000:0;
   const known=!!rec&&rec.status!=='Approved'&&rec.status!=='APPROVED';
-  if(!isAdmin && (!known || !(createdAt>0) || hoursElapsed<REVIEW_LOCK_HOURS)){
+  if(!isAdmin && !citizenshipExempt(rec) && (!known || !(createdAt>0) || hoursElapsed<REVIEW_LOCK_HOURS)){
     const remaining=(!known||!(createdAt>0))?REVIEW_LOCK_HOURS:Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed);
     showFormError(`Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${remaining.toFixed(1)} hours remaining`+
       ' — this application cannot be approved until the mandatory review period has elapsed.',
@@ -3660,7 +3829,7 @@ async function approveFP(id){
     // Offline / demo path — the mandatory review window still applies here,
     // otherwise signing out of the API would hand out instant approvals.
     let x=db.fingerprint.find(a=>a.id===id);
-    if(!isAdmin){
+    if(!isAdmin&&!citizenshipExempt(x)){
       const c2=stampToTime(x&&x.created_at);
       const h2=(c2!==null&&c2>0)?(Date.now()-c2)/3600000:0;
       if(!x||!(c2>0)||h2<REVIEW_LOCK_HOURS){
@@ -3677,7 +3846,7 @@ async function approveFP(id){
 async function saveAirport(e){
   e.preventDefault();
   clearInvalid();
-  const d=window._identityWires.air.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'air',names:['first','second','third','fourth','dob','mother','address'],notice:'airNotice'});return}
+  const d=window._identityWires.air.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'air',names:v.names,notice:'airNotice'});return}
   const branchId=val('airBranch');
   if(!branchId){showFormError('Select an Airport Unit branch.',{names:['airBranch'],notice:'airNotice'});return}
   const origin=airOrigin.value.trim()||'',dest=airDest.value.trim()||'';
@@ -3698,7 +3867,7 @@ async function saveAirport(e){
       db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p,move:airMove.value,date:airDate.value,flight:airFlight.value.trim(),airline,origin,dest,route,notes:airNotes.value});persist();
       airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved and linked to '+p+' in the Central Person Registry (local demo).';
     }
-    airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';await syncServer();toast('Airport unit record saved');
+    airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';closeEntryModal('airDrawer');await syncServer();toast('Airport unit record saved');
   }catch(err){showFormError(err.message||'The passenger record could not be saved.',{notice:'airNotice',title:'Unable to Save'})}
 }
 
@@ -3707,7 +3876,7 @@ let cwCase=null;
 function openCaseDrawer(){
   if(guardReadOnly('Opening a new crime case')) return;
   openDrawer('New crime case',`
-   <form class="form" id="caseDrawerForm">
+   <form novalidate class="form" id="caseDrawerForm">
     <div class="grid2"><div class="field"><label>Category *</label><input id="cdCategory" placeholder="Theft, Fraud…"></div>
     <div class="field"><label>Location</label><input id="cdLocation" placeholder="Hargeisa"></div></div>
     <div class="field"><label>Crime branch *</label><select id="caseBranch" data-branch-unit="crime" required><option value="">Loading branches…</option></select></div>
@@ -3720,7 +3889,7 @@ function openCaseDrawer(){
 async function submitCaseDrawer(){
   if(guardReadOnly('Creating a crime case')) return;
   clearInvalid();
-  if(!val('cdCategory')){showFormError('Category is required to create a case.',{prefix:'cd',names:['category'],title:'Unable to Save'});return}
+  if(!val('cdCategory')){showFormError('Category is required to create a case.',{names:['cdCategory'],title:'Unable to Save'});return}
   const branchId=val('caseBranch');
   if(!branchId){showFormError('Select a crime branch.',{names:['caseBranch'],title:'Unable to Save'});return}
   const payload={category:val('cdCategory'),branch_id:branchId,location:val('cdLocation')||'Not specified',status:val('cdStatus'),incident_summary:val('cdSummary')};
@@ -3728,7 +3897,7 @@ async function submitCaseDrawer(){
     let id;
     if(serverOn){const r=await api('/api/crime-cases',{method:'POST',body:JSON.stringify(payload)});id=r.case_id}
     else{id='CID-2026-'+String(db.cases.length+8).padStart(3,'0');db.cases.unshift({id,category:payload.category,location:payload.location,status:payload.status,summary:payload.incident_summary,participants:[],evidence:[]});persist()}
-    closeDrawer();renderAll();toast('Case '+id+' created');openCase(id);
+    closeDrawer();renderAll();toast('Case '+id+' created');go('cid');
   }catch(e){showFormError(e.message||'The case could not be created.',{title:'Unable to Save'})}
 }
 function cwTab(t){document.querySelectorAll('[data-cwtab]').forEach(b=>b.classList.toggle('active',b.dataset.cwtab===t));document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));document.getElementById('cw-'+t).classList.add('active')}
@@ -3762,7 +3931,7 @@ function renderCwEvidence(list){
 async function addParticipant(){
   if(guardReadOnly('Linking a case participant')) return;
   clearInvalid();
-  const d=window._identityWires.cw.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'cw',names:['first','second','third','fourth','dob','mother','address'],notice:'cwAlert'});return}
+  const d=window._identityWires.cw.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'cw',names:v.names,notice:'cwAlert'});return}
   const role=cwRole.value,note=cwPartNote.value.trim(),caseId=val('cwCaseSel')||null;
   if(!caseId&&!note){showFormError('Participant note / reason is required when no case is linked.',{names:['cwPartNote'],notice:'cwAlert'});return}
   try{
@@ -3771,7 +3940,7 @@ async function addParticipant(){
       if(c){if(!c.participants)c.participants=[];c.participants.push({person:p.id,role,note});}
       if(role==='Suspect')db.suspects.unshift({person:p.id,case:caseId||'',role,alert:'Active alert',origin:caseId?'Case Link':'Direct Intelligence Listing'});
       persist()}
-    cwPartNote.value='';window._identityWires.cw.clear();toast(role+' linked'+(caseId?' to '+caseId:' without a linked case'));openCase(cwCase);
+    cwPartNote.value='';window._identityWires.cw.clear();toast(role+' linked'+(caseId?' to '+caseId:' without a linked case'));go('cid');
   }catch(e){showFormError(e.message||'The participant could not be linked.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 async function saveCaseDetails(){
@@ -3781,16 +3950,16 @@ async function saveCaseDetails(){
   try{
     if(serverOn)await api('/api/crime-cases/'+cwCase,{method:'PATCH',body:JSON.stringify(payload)});
     else{const c=db.cases.find(x=>x.id===cwCase);Object.assign(c,{status:payload.status,category:payload.category,location:payload.location,summary:payload.incident_summary,notes:payload.notes});persist()}
-    renderAll();toast('Case details saved');
+    renderAll();toast('Case details saved');go('cid');
   }catch(e){showFormError(e.message||'The case details could not be saved.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 async function uploadEvidence(){
   if(guardReadOnly('Uploading evidence')) return;
-  const f=evFile.files[0];if(!f){showFormError('Choose a file to upload.',{notice:'cwAlert',title:'Unable to Save'});return}
+  const f=evFile.files[0];if(!f){showFormError('Choose a file to upload.',{names:['evFile'],notice:'cwAlert',title:'Unable to Save'});return}
   try{
     if(serverOn){const fd=new FormData();fd.append('caption',evCaption.value.trim());fd.append('file_type',evType.value);fd.append('file',f);await api('/api/crime-cases/'+cwCase+'/evidence',{method:'POST',body:fd})}
     else{const c=db.cases.find(x=>x.id===cwCase);const url=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(f)});c.evidence.push({caption:evCaption.value.trim()||f.name,file_type:evType.value,file_name:f.name,url});persist()}
-    evCaption.value='';evFile.value='';toast('Evidence uploaded');openCase(cwCase);
+    evCaption.value='';evFile.value='';toast('Evidence uploaded');go('cid');
   }catch(e){showFormError(e.message||'The evidence could not be uploaded.',{notice:'cwAlert',title:'Unable to Save'})}
 }
 
@@ -3807,7 +3976,7 @@ function openCheckpointDrawer(){
   openDrawer('Record checkpoint stop',`
    <div class="hint" style="margin-bottom:14px">Structured screening: both the <b>traveler</b> and the <b>guardian</b> are matched against the Central Person Registry <b>in real time</b> — select a match to auto-fill, or type a new identity.</div>
    ${lockHint}
-   <form class="form" id="cpForm">
+   <form novalidate class="form" id="cpForm">
     <div class="section-label">Traveler — screening &amp; identity</div>
     ${travelerFormHTML('cp')}
     <div class="section-label">Guardian — next of kin / companion</div>
@@ -3835,15 +4004,15 @@ function openCheckpointDrawer(){
 }
 async function submitCheckpoint(){
   clearInvalid();
-  const d=window._identityWires.cp.read(),v=validateTraveler(d);if(!v.ok){showFormError(v.msg,{prefix:'cp',names:['first','second','third','fourth','dob','address','permanent','purpose']});return}
-  const gd=window._identityWires.gd.read(),gv=validateGuardian(gd);if(!gv.ok){showFormError(gv.msg,{prefix:'gd',names:['first','second','third','fourth','relationship','phone','permanent','occupation']});return}
+  const d=window._identityWires.cp.read(),v=validateTraveler(d);if(!v.ok){showFormError(v.msg,{prefix:'cp',names:v.names});return}
+  const gd=window._identityWires.gd.read(),gv=validateGuardian(gd);if(!gv.ok){showFormError(gv.msg,{prefix:'gd',names:gv.names});return}
   const branchId=val('cpBranch');
   if(!branchId){showFormError('Select a Checkpoint Unit branch.',{names:['cpBranch'],title:'Unable to Save'});return}
   const trDocs=collectFiles('tdoc',2),gdDocs=collectFiles('gdoc',2);
-  if(trDocs.length<1){showFormError('Attach at least 1 traveler document.',{title:'Unable to Save'});return}
-  if(gdDocs.length<1){showFormError('Attach at least 1 guardian document.',{title:'Unable to Save'});return}
+  if(trDocs.length<1){showFormError('Attach at least 1 traveler document.',{names:['cpDocs'],title:'Unable to Save'});return}
+  if(gdDocs.length<1){showFormError('Attach at least 1 guardian document.',{names:['gdDocs'],title:'Unable to Save'});return}
   const photo=document.getElementById('cp-photo').files[0];
-  if(!photo){showFormError('Real-time traveler photo is required.',{title:'Unable to Save'});return}
+  if(!photo){showFormError('Real-time traveler photo is required.',{names:['cp-photo'],title:'Unable to Save'});return}
   const gmatched=(window._identityMatches&&window._identityMatches.gd)||null;
   try{
     if(serverOn){
@@ -5018,7 +5187,7 @@ async function saveBranch(e){
   const region=document.getElementById('branchRegion').value;
   const unitType=document.getElementById('branchUnitType').value;
   if(!name||!region||!BRANCH_UNIT_LABELS[unitType]){
-    setBranchNotice('Enter a branch name, select a region and choose a unit department.',true);
+    showFormError('Enter a branch name, select a region and choose a unit department.',{names:['branchName','branchRegion','branchUnitType'].filter(id=>!val(id)),notice:'branchNotice'});
     return;
   }
   const button=document.querySelector('#branchForm button[type="submit"]');
@@ -5028,13 +5197,13 @@ async function saveBranch(e){
     const result=await api('/api/branches',{method:'POST',body:JSON.stringify({name,region,unit_type:unitType})});
     await refreshBranchManagement(true);
     const form=document.getElementById('branchForm');
-    if(form)form.reset();
+    if(form){form.reset();form.hidden=true;document.getElementById('branchFormOpen').hidden=false}
     document.getElementById('branchRegion').value=region;
     document.getElementById('branchUnitType').value=unitType;
     setBranchNotice((result.branch&&result.branch.name||name)+' added to '+BRANCH_UNIT_LABELS[unitType]+' for '+region+'.');
     toast('Branch added',name+' · '+region);
   }catch(err){
-    setBranchNotice(err.message||'Could not add the branch.',true);
+    showFormError(err.message||'Could not add the branch.',{notice:'branchNotice'});
   }finally{
     if(button)button.disabled=false;
   }
@@ -5083,7 +5252,7 @@ function openNewUserDrawer(){
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
   const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
   const body = `
-    <form id="newUserForm" class="form">
+    <form novalidate id="newUserForm" class="form">
       <div class="grid2">
         <div class="field"><label>Username *</label><input id="nu-username" required></div>
         <div class="field"><label>Display name *</label><input id="nu-display" required placeholder="e.g. Officer H. Xasan"></div>
@@ -5131,7 +5300,7 @@ async function submitNewUser(){
     active: true,
   };
   if(!data.username || !data.display_name || !data.role || !data.password){
-    showFormError('Please fill username, display name, role and password.'); return;
+    showFormError('Please fill username, display name, role and password.',{names:['nu-username','nu-display','nu-role','nu-password'].filter(id=>!val(id))}); return;
   }
   try{
     await api('/api/admin/users', {method:'POST', body: JSON.stringify(data)});
@@ -5145,7 +5314,7 @@ function openEditUserDrawer(u){
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
   const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
   const body = `
-    <form id="editUserForm" class="form">
+    <form novalidate id="editUserForm" class="form">
       <div class="grid2">
         <div class="field"><label>Username</label><input value="${esc(u.username)}" disabled></div>
         <div class="field"><label>Display name</label><input id="eu-display" value="${esc(u.display_name)}"></div>
@@ -5408,7 +5577,7 @@ async function savePromotionNomination(e){
   const effective = (document.getElementById('prmDate') || {}).value || '';
   if(!sid || !rank || !reason){
     showFormError('Select the officer and the proposed rank, and give the reason / commendation.',
-                  {names: ['prmOfficer', 'prmRank', 'prmReason'], notice: 'prmNotice'});
+                  {names: ['prmOfficer', 'prmRank', 'prmReason'].filter(id=>!val(id)), notice: 'prmNotice'});
     return;
   }
   const officer = officerByServiceId(sid);
@@ -5426,6 +5595,7 @@ async function savePromotionNomination(e){
       awaiting_verification: true, nominated_by: (sessionUser && sessionUser.display_name) || 'Offline',
       verified_by: null, verified_at: null, created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')}].concat(db.promotions || []);
     try{ persist(); }catch(_){}
+    closeEntryModal('prmDrawer');resetPromotionForm();
     hrNotice('prmNotice', 'Offline draft ' + nid + ' stored locally — it is submitted to the commander queue once the server is reachable.');
     renderHrPanels();
     return;
@@ -5436,7 +5606,7 @@ async function savePromotionNomination(e){
     try{ persist(); }catch(_){}
     resetPromotionForm();
     hrNotice('prmNotice', 'Nomination ' + r.nomination_id + ' submitted — awaiting commander verification.');
-    toast('Nomination submitted', r.nomination_id + ' is on the green badge queue');
+    closeEntryModal('prmDrawer');toast('Nomination submitted', r.nomination_id + ' is on the green badge queue');
     loadHrRecords(true);
   }catch(err){
     showFormError(err.message || 'Unable to submit the nomination.', {notice: 'prmNotice'});
@@ -5481,7 +5651,7 @@ async function saveDisciplineAction(e){
   const summary = String((document.getElementById('dscSummary') || {}).value || '').trim();
   if(!sid || !type || !summary){
     showFormError('Select the officer and the action type, and describe the incident.',
-                  {names: ['dscOfficer', 'dscType', 'dscSummary'], notice: 'dscNotice'});
+                  {names: ['dscOfficer', 'dscType', 'dscSummary'].filter(id=>!val(id)), notice: 'dscNotice'});
     return;
   }
   const officer = officerByServiceId(sid);
@@ -5509,6 +5679,7 @@ async function saveDisciplineAction(e){
       created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
       open: DISCIPLINE_OPEN.includes(status)}].concat(db.discipline || []);
     try{ persist(); }catch(_){}
+    closeEntryModal('dscDrawer');
     hrNotice('dscNotice', 'Offline draft ' + aid + ' stored locally — it is filed with the HR Directorate once the server is reachable.');
     resetDisciplineForm();
     renderHrPanels();
@@ -5520,7 +5691,7 @@ async function saveDisciplineAction(e){
     try{ persist(); }catch(_){}
     resetDisciplineForm();
     hrNotice('dscNotice', 'Disciplinary action ' + r.action_id + ' recorded (' + type + ' · ' + status + ').');
-    toast('Action recorded', r.action_id + ' is on the red badge queue');
+    closeEntryModal('dscDrawer');toast('Action recorded', r.action_id + ' is on the red badge queue');
     if(status === 'Confirmed') await syncServer();   // suspension / demotion already applied
     loadHrRecords(true);
     renderOfficersTable();
@@ -5696,7 +5867,7 @@ async function saveStation(e){
   if(!tier){showFormError('Station tier is required.',{names:['stTier'],notice:'stNotice'});return}
   if(!phone.trim()){showFormError('Contact phone is required.',{names:['stPhone'],notice:'stNotice'});return}
   const rl=requireLocation('st');
-  if(!rl.ok){showFormError(rl.msg,{notice:'stNotice'});return}
+  if(!rl.ok){showFormError(rl.msg,{prefix:'st',names:['region','district','village'].filter(k=>!readLocation('st')[k]),notice:'stNotice'});return}
   try{
     if(serverOn){
       const r=await api('/api/stations',{method:'POST',body:JSON.stringify({
@@ -5717,7 +5888,7 @@ async function saveStation(e){
     }
     persist();resetStationForm();refreshStationSelects();
     renderStationsTable();renderPoliceSearch();
-    toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
+    closeEntryModal('stDrawer');toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
   }catch(err){showFormError(err.message||'The station could not be registered.',{notice:'stNotice',title:'Unable to Save'})}
 }
 
@@ -5773,7 +5944,7 @@ async function saveCrime(e){
     db.crimes=(db.crimes||[]).concat(r.crime);
     crmNotice.className='notice'; crmNotice.style.display='block';
     crmNotice.textContent='Filed '+r.file_number+'.';
-    renderCrimesTable(); toast('Crime file created', r.file_number);
+    renderCrimesTable(); closeEntryModal('crmDrawer');toast('Crime file created', r.file_number);
   }catch(err){showFormError(err.message||'Could not file the incident.',{notice:'crmNotice',title:'Unable to Save'})}
 }
 
@@ -5847,8 +6018,8 @@ function validateOfficerForm(d){
   if(!/\.(jpe?g|png)$/i.test(photo.name))return err('Officer picture must be JPEG or PNG.',['offPhoto'],2);
   if(photo.size>5*1024*1024)return err('Officer picture exceeds the 5MB limit.',['offPhoto'],2);
   // Step 3 — Regional & origin data (optional, but cascading must be coherent)
-  if(d.district_of_origin&&!d.region_of_origin)return err('Select the Region of origin before the District of origin.',['offOriginRegion','offOriginDistrict'],3);
-  if(d.town_village&&!d.district_of_origin)return err('Select the District of origin before entering the Town / Village.',['offOriginDistrict','offTown'],3);
+  if(d.district_of_origin&&!d.region_of_origin)return err('Select the Region of origin before the District of origin.',['offOriginRegion'],3);
+  if(d.town_village&&!d.district_of_origin)return err('Select the District of origin before entering the Town / Village.',['offOriginDistrict'],3);
   // Step 4 — Guarantor / emergency contact
   if(!d.guarantor_name)return err('Guarantor name is required.',['offGuarName'],4);
   if(!d.guarantor_address)return err('Guarantor permanent address is required.',['offGuarAddr'],4);
@@ -5911,7 +6082,7 @@ async function saveOfficer(e){
     }
     persist();resetOfficerForm();refreshStationSelects();
     renderOfficersTable();renderPoliceSearch();
-    toast('Officer registered',d.full_name+' · '+d.rank+' — assigned to '+(st?st.name:d.station_id));
+    closeEntryModal('offDrawer');toast('Officer registered',d.full_name+' · '+d.rank+' — assigned to '+(st?st.name:d.station_id));
   }catch(err){showFormError(err.message||'The officer could not be registered.',{notice:'offNotice',title:'Unable to Save'})}
 }
 function resetOfficerForm(){
@@ -6121,7 +6292,7 @@ function openConductModal(){
   const p=n=>String(n).padStart(2,'0');
   const nowLocal=now.getFullYear()+'-'+p(now.getMonth()+1)+'-'+p(now.getDate())+'T'+p(now.getHours())+':'+p(now.getMinutes());
   const body=`
-  <form id="cdForm" class="form" onsubmit="return submitConductAction(event)">
+  <form novalidate id="cdForm" class="form" onsubmit="return submitConductAction(event)">
     <div class="section-label">1 · Target officer <span style="color:var(--red)">(mandatory)</span></div>
     <div class="cd-officer-search">
       <div class="field"><label>Search by Service ID (POL-YYYY-XXXX) or name *</label>
@@ -6278,7 +6449,7 @@ function submitConductAction(ev){
   const d1err=cdValidateDoc(document.getElementById('cdDoc1'),'Document 1');
   const d2err=cdValidateDoc(document.getElementById('cdDoc2'),'Document 2');
   if(bad.length){showFormError('Complete the required fields: target officer, category, classification'+(isRank?', proposed rank':'')+', a detailed narrative (min 20 characters) and the submitting station or commander.',{names:bad});return}
-  if(d1err||d2err){showFormError(d1err||d2err);return}
+  if(d1err||d2err){showFormError(d1err||d2err,{names:[d1err?'cdDoc1':null,d2err?'cdDoc2':null].filter(Boolean)});return}
   const fd=new FormData();
   fd.append('officer_id',cdSelectedOfficer);
   fd.append('action_type',type);
@@ -6426,9 +6597,9 @@ async function saveCar(e){
   if(category==='Police Fleet' && !carStation.value){
     showFormError('Assigned station is required for fleet vehicles.',{names:['carStation'],notice:'carNotice'});return}
   if(category!=='Police Fleet'){
-    if(!document.getElementById('carOwnerName').value.trim()){showFormError('Owner name is required.',{notice:'carNotice'});return}
-    if(!document.getElementById('carOwnerPhone').value.trim()){showFormError('Owner phone is required.',{notice:'carNotice'});return}
-    if(!document.getElementById('carOwnerNid').value.trim()){showFormError('Owner ID is required.',{notice:'carNotice'});return}
+    if(!document.getElementById('carOwnerName').value.trim()){showFormError('Owner name is required.',{names:['carOwnerName'],notice:'carNotice'});return}
+    if(!document.getElementById('carOwnerPhone').value.trim()){showFormError('Owner phone is required.',{names:['carOwnerPhone'],notice:'carNotice'});return}
+    if(!document.getElementById('carOwnerNid').value.trim()){showFormError('Owner ID is required.',{names:['carOwnerNid'],notice:'carNotice'});return}
   }
   try{
     if(serverOn){
@@ -6462,7 +6633,7 @@ async function saveCar(e){
       db.cars=(db.cars||[]).concat({id:'local',plate,type:document.getElementById('carType').value,make,station:carStation.value,category,security_alert:alertSt,vin});
     }
     persist();resetCarForm();renderCarsTable();renderPoliceSearch();
-    toast('Vehicle registered',plate);
+    closeEntryModal('carDrawer');toast('Vehicle registered',plate);
   }catch(err){
     showFormError(err.message||String(err),{notice:'carNotice'});
   }

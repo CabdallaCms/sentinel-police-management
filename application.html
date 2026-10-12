@@ -314,7 +314,7 @@ function storedUser(){
 }
 // Returns {locked, hoursRemaining, label}.
 function reviewLock(a){
-  if(isAdmin) return {locked:false,hoursRemaining:0,label:''};
+  if(isAdmin||String(a&&a.purpose||'').trim().toLowerCase()==='citizenship') return {locked:false,hoursRemaining:0,label:''};
   const created=stampToTime(a&&a.created_at);
   let remaining;
   if(created!==null){
