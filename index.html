@@ -387,6 +387,206 @@ body.readonly-mode .ro-banner{display:flex}
 .user-pill .urole{color:var(--muted);font-size:11px}
 .user-pill .logout{background:transparent;color:var(--muted);font-size:11px;padding:4px 8px;border-radius:7px;cursor:pointer}
 .user-pill .logout:hover{background:#fff;color:var(--red)}
+
+/* ==== Sentinel command-center shell refresh ==== */
+:root{
+  --navy:#0f172a;--blue:#2563eb;--cyan:#0f9b91;--bg:#f3f6fb;--ink:#172033;
+  --muted:#64748b;--line:#e1e7f0;--red:#c2414b;--amber:#a7650d;--green:#0f7a5e;
+  --shadow:0 10px 32px rgba(15,23,42,.055);--shell-border:#25354d;
+}
+html{scroll-behavior:smooth}
+body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+.app{min-height:100vh;width:100%}
+.side{
+  position:fixed;inset:0 auto 0 0;z-index:1100;display:flex;flex-direction:column;
+  width:286px;height:100vh;height:100dvh;min-width:286px;overflow:hidden;
+  padding:20px 14px 14px;background:linear-gradient(180deg,#0d1729 0%,#101d32 100%);
+  border-right:1px solid var(--shell-border);box-shadow:8px 0 26px rgba(15,23,42,.055);
+}
+.brand{gap:11px;padding:3px 7px 17px;min-height:55px;font-size:18px;letter-spacing:-.35px}
+.brand .crest{width:40px;height:40px;flex:none;border-radius:12px;background:linear-gradient(140deg,#3b82f6,#0f9b91);box-shadow:0 7px 18px rgba(37,99,235,.25);font-size:17px}
+.brand-copy{display:flex;flex-direction:column;gap:1px;min-width:0;color:#f8fafc;line-height:1.15}
+.brand-copy>span{font-size:17px;font-weight:800;letter-spacing:-.35px}
+.brand-copy small{color:#91a4c0;font-size:9px;font-weight:750;letter-spacing:1.35px}
+.brand-tag{margin-left:auto;padding:4px 7px;border:1px solid #34465f;border-radius:6px;background:#1a2b43;color:#a9bfdc;font-size:9px;font-weight:800;letter-spacing:.75px}
+.side-divider{height:1px;flex:none;background:linear-gradient(90deg,#ffffff20,#ffffff05);margin:0 5px}
+.nav{display:grid;align-content:start;gap:3px;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin:12px -3px 12px;padding:0 3px 10px;scrollbar-width:thin;scrollbar-color:#344761 transparent}
+.nav::-webkit-scrollbar{width:5px}.nav::-webkit-scrollbar-thumb{background:#344761;border-radius:99px}
+.nav-section-title{padding:5px 11px 7px;color:#7186a3;font-size:9px;font-weight:850;letter-spacing:1.25px;text-transform:uppercase}
+.nav-section-title-spaced{margin-top:8px}
+.nav button{
+  position:relative;display:flex;align-items:center;gap:11px;width:100%;min-height:41px;
+  padding:9px 11px;border-radius:9px;background:transparent;color:#b7c6da;text-align:left;
+  font-size:12.5px;font-weight:600;line-height:1.35;transition:background .16s ease,color .16s ease,transform .16s ease;
+}
+.nav button span{min-width:0}
+.nav button i{
+  display:grid;place-items:center;flex:none;width:21px;height:21px;border-radius:6px;
+  background:rgba(255,255,255,.055);color:#a8bdd8;font-size:14px;font-style:normal;line-height:1;
+}
+.nav button:hover{background:#182a43;color:#fff}
+.nav button:active{transform:translateY(1px)}
+.nav button.active{
+  background:linear-gradient(90deg,rgba(55,112,185,.34),rgba(37,99,235,.12));
+  color:#fff;box-shadow:inset 3px 0 #60a5fa,0 4px 12px rgba(2,8,23,.12);
+}
+.nav button.active i{background:#2c4d74;color:#bfdbfe}
+.nav-group{margin-top:2px}
+.nav-group-toggle{
+  min-height:40px!important;padding:9px 10px!important;border-radius:9px!important;
+  background:transparent!important;color:#91a4c0!important;font-size:11px!important;
+  font-weight:800!important;letter-spacing:.35px!important;text-transform:none!important;
+}
+.nav-group-toggle:hover{background:#17283f!important;color:#e5edf8!important}
+.nav-group-toggle i{width:21px!important;height:21px!important;background:#ffffff08!important;color:#8199b9!important;font-size:14px!important}
+.nav-group-toggle>span:first-of-type{display:none}
+.nav-group-modern-title{display:block;overflow:hidden;color:inherit;font-size:11.75px;font-weight:800;letter-spacing:.1px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}
+.nav-chev{display:block;margin-left:auto;color:#647a98;font-size:10px;transition:transform .18s ease}
+.nav-group.open .nav-chev{transform:rotate(180deg)}
+.nav-group-body{display:none;gap:4px;margin:3px 0 9px 14px;border-left:1px solid #2b3c55;padding:4px 0 3px 11px}
+.nav-group.open .nav-group-body{display:grid}
+.nav-group-body button{min-height:40px;padding:8px 11px 8px 10px;gap:10px;font-size:12.25px;font-weight:600;line-height:1.35}
+.nav-group-body button i{width:20px;height:20px;background:transparent;color:#8095b2;font-size:13px}
+.nav-group-body button.active{background:#1d3654;color:#f8fafc;box-shadow:inset 3px 0 #60a5fa}
+.nav-group-body button.active i{color:#bfdbfe}
+.nav-subgroup-label{padding:8px 10px 2px 11px;color:#7186a3;font-size:8.5px;font-weight:850;letter-spacing:1px;line-height:1.25;text-transform:uppercase}
+.side-footer{flex:none;margin:0;padding:12px 3px 0;border-top:1px solid rgba(255,255,255,.09);color:#92a5bf;font-size:11px;line-height:1.45}
+.side-profile{width:100%;margin:0 0 12px;padding:9px;border:1px solid #2b3d56;border-radius:11px;background:linear-gradient(135deg,#192b43,#142238);color:#f8fafc;gap:9px}
+.side-profile .avatar{width:36px;height:36px;flex:none;border-radius:10px;background:linear-gradient(140deg,#3b82f6,#0f9b91);color:#fff;font-size:12px}
+.side-profile-copy{flex:1;min-width:0}
+.side-profile .uname{max-width:100%;overflow:hidden;color:#f4f7fb;font-size:12px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
+.side-profile .urole{max-width:100%;overflow:hidden;color:#9aadc7;font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.side-profile .logout{display:grid;place-items:center;flex:none;width:29px;height:29px;padding:0;border:1px solid #334761;border-radius:8px;color:#aebfd5;font-size:15px}
+.side-profile .logout:hover{background:#233951;color:#fff}
+.side-footer-meta{display:grid;gap:5px;padding:0 6px}
+.side-footer-label{color:#7186a3;font-size:8.5px;font-weight:850;letter-spacing:1.15px;text-transform:uppercase}
+.side-env{display:flex;align-items:center;gap:7px;min-width:0;color:#99abc3;font-size:10.5px}
+.side-env-dot{color:#34d399;font-size:8px;flex:none}
+#envBadge{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#uiBuild{display:block;color:#7186a3!important;font-size:9.5px!important;opacity:.82!important}
+.main{width:calc(100% - 286px);min-width:0;margin-left:286px;padding:27px clamp(22px,3.2vw,44px);transition:margin .2s ease,width .2s ease}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid #dfe6ef}
+.top-heading{display:flex;align-items:center;gap:14px;min-width:0}
+.top h1{margin:3px 0 0;color:#122039;font-size:27px;font-weight:760;letter-spacing:-.85px;line-height:1.2}
+.eyebrow{color:#3566a4;font-size:10px;font-weight:850;letter-spacing:1.2px}
+.sidebar-toggle{display:none;place-items:center;width:40px;height:40px;flex:none;border:1px solid #dce4ee;border-radius:10px;background:#fff;color:#263b59;font-size:17px;box-shadow:0 2px 5px rgba(15,23,42,.04)}
+.sidebar-toggle:hover{background:#eef4fc;border-color:#c7d6ea}
+.ro-badge{margin-left:auto}
+.page.active{animation:sentinel-page-in .18s ease-out}
+@keyframes sentinel-page-in{from{opacity:.65;transform:translateY(3px)}to{opacity:1;transform:none}}
+.card,.panel,.chart-card{border-color:#e0e7f0;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.045)}
+.card{padding:20px}
+.panel{padding:22px;margin-top:18px}
+.panel-head{margin-bottom:16px}
+.panel h2,.chart-card h2{color:#1d2b42;font-size:16px;font-weight:750;letter-spacing:-.2px}
+.sub{color:#718096;font-size:12px;line-height:1.5}
+.cards{gap:14px}
+.metric{color:#15233a;font-size:28px;letter-spacing:-.6px}
+.label{letter-spacing:.1px}
+.btn{min-height:38px;border-radius:8px;background:#2563eb;font-weight:700;box-shadow:0 1px 2px rgba(15,23,42,.08);transition:filter .15s ease,transform .15s ease,box-shadow .15s ease}
+.btn:hover{filter:brightness(1.035);box-shadow:0 4px 11px rgba(37,99,235,.17);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn.secondary{background:#eaf1ff;color:#2456ad;box-shadow:none}
+.btn.ghost{background:#f1f4f8;color:#475569;box-shadow:none}
+.btn.danger{background:#fff0f1;color:#b4232f;box-shadow:none}
+.btn.green{background:#e5f6ef;color:#137456;box-shadow:none}
+#quickActions{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:10px}
+#quickActions>.btn{
+  display:flex;align-items:center;justify-content:flex-start;width:100%;min-height:46px;padding:11px 14px;
+  border:1px solid #1f55c7;border-radius:9px;background:#2563eb;color:#fff;
+  font-size:12.5px;font-weight:750;line-height:1.35;text-align:left;white-space:normal;
+  box-shadow:0 3px 9px rgba(37,99,235,.13)
+}
+#quickActions>.btn:not(:disabled):hover{
+  border-color:#1949b4;background:#1d4ed8;color:#fff;filter:none;
+  box-shadow:0 5px 13px rgba(37,99,235,.22);transform:translateY(-1px)
+}
+#quickActions>.btn.secondary{border-color:#d4e0f1;background:#f7faff;color:#28539a;box-shadow:none}
+#quickActions>.btn.secondary:not(:disabled):hover{border-color:#b7cbed;background:#eaf2ff;color:#1f4f9e;box-shadow:0 3px 9px rgba(37,99,235,.1)}
+#quickActions>.btn:disabled{border-color:#e0e6ef;background:#edf1f6;color:#7a8799;opacity:1;filter:none;box-shadow:none}
+#quickActions>.btn:only-child{grid-column:1/-1}
+.field{gap:7px}
+.field label{color:#40516a;font-size:12px;font-weight:750}
+.field input,.field select,.field textarea,.role-select select{
+  min-height:41px;border:1px solid #d8e1ec;border-radius:9px;background:#fff;color:#172033;
+  padding:10px 12px;transition:border-color .15s ease,box-shadow .15s ease;
+}
+.field input::placeholder,.field textarea::placeholder,.search input::placeholder{color:#94a3b8}
+.field input:focus,.field select:focus,.field textarea:focus,.search input:focus,.role-select select:focus{
+  border-color:#6a98ed;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none
+}
+.field textarea{min-height:82px;line-height:1.5}
+.form{gap:15px}
+.section-label{color:#315f9f;border-bottom-color:#e7eef8;font-size:11px;letter-spacing:.9px}
+.search input{min-height:42px;border-color:#dce4ee;border-radius:9px;background:#fff;color:var(--ink);font-size:13px}
+.search span{top:11px;color:#8493a8}
+.table-wrap{border-color:#e0e7f0;border-radius:12px;box-shadow:0 5px 16px rgba(15,23,42,.035)}
+.table{font-size:12.5px}
+.table th{background:#f7f9fc;color:#66768d;font-size:10px;font-weight:850;letter-spacing:.75px;padding:12px 13px;border-bottom-color:#e1e8f1}
+.table td{padding:12px 13px;border-bottom-color:#edf1f6;color:#334155;line-height:1.45}
+.table tr.clickable:hover td{background:#f3f7fd}
+.badge{padding:4px 9px;font-size:10.5px;font-weight:800;letter-spacing:.05px}
+.badge.green{background:#dcf5e9;color:#116a4c}
+.badge.amber{background:#fff0c9;color:#82530a}
+.badge.red{background:#ffe3e5;color:#a62431}
+.badge.blue{background:#e3edff;color:#1e4fa6}
+.badge.gray{background:#e9eef5;color:#4b5b70}
+.badge.purple{background:#eee8ff;color:#5b36b8}
+.cp-loc-chip{border-color:#d7e1ed;background:#f5f8fc;color:#33445e}
+.cp-loc-chip.active{background:#2563eb;color:#fff;border-color:#2563eb}
+.notice,.alert,.hint{line-height:1.55}
+.toast{border-radius:12px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:3px solid rgba(59,130,246,.6);outline-offset:2px
+}
+.sidebar-scrim{display:none}
+@media(max-width:1240px){
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:950px){
+  .side{width:min(302px,calc(100vw - 48px));min-width:0;transform:translateX(-105%);transition:transform .23s cubic-bezier(.2,.8,.2,1);box-shadow:18px 0 42px rgba(5,14,30,.24)}
+  .side.is-open{transform:translateX(0)}
+  .main{width:100%;margin-left:0;padding:22px 24px}
+  .sidebar-toggle{display:grid}
+  .sidebar-scrim{display:block;position:fixed;inset:0;z-index:1090;width:100%;height:100%;padding:0;background:rgba(9,19,35,.48);opacity:0;pointer-events:none;transition:opacity .2s ease}
+  body.nav-open .sidebar-scrim{opacity:1;pointer-events:auto}
+  body.nav-open{overflow:hidden}
+  .brand span{display:inline}
+  .brand .brand-copy>span{display:block}
+  .brand-copy small{display:block}
+  .nav button span{display:block}
+  .side-footer{display:block}
+  .nav-group-toggle{display:flex!important}
+  .nav-group-body{display:none;margin:3px 0 9px 14px;border-left:1px solid #2b3c55;padding:4px 0 3px 11px}
+  .nav-group.open .nav-group-body{display:grid}
+}
+@media(max-width:680px){
+  #quickActions{grid-template-columns:1fr}
+  .main{padding:18px 15px}
+  .top{align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:18px;padding-bottom:13px}
+  .top-heading{width:100%;gap:10px}
+  .top h1{font-size:23px;letter-spacing:-.55px}
+  .eyebrow{font-size:9px;letter-spacing:.95px}
+  .ro-badge{margin-left:50px;font-size:10px}
+  .cards,.grid2,.grid3,.docgrid,.chart-row{grid-template-columns:1fr}
+  .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .panel{padding:16px;margin-top:14px}
+  .panel-head{align-items:flex-start}
+  .table-wrap{max-height:calc(100vh - 240px)}
+  .chart-card{padding:16px}
+  .form-actions{justify-content:stretch}
+  .form-actions .btn{flex:1;justify-content:center}
+}
+@media(max-width:420px){
+  .main{padding-inline:12px}
+  .kpi-row{grid-template-columns:1fr}
+  .user-pill .urole{max-width:180px}
+  .top h1{font-size:21px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
 </style>
 </head>
 <body>
@@ -414,81 +614,102 @@ body.readonly-mode .ro-banner{display:flex}
   </div>
 </div>
 <div class="app">
-<aside class="side"><div class="brand"><div class="crest">S</div><span>Sentinel</span></div>
-<nav class="nav" id="nav">
-<button class="active" data-page="dashboard" data-modules="dashboard"><i>▦</i><span>Dashboard</span></button>
+<aside class="side" id="sidebar" aria-label="Primary navigation">
+  <div class="brand">
+    <div class="crest" aria-hidden="true">S</div>
+    <div class="brand-copy"><span>Sentinel</span><small>POLICE MANAGEMENT</small></div>
+    <span class="brand-tag">COMMAND</span>
+  </div>
+  <div class="side-divider"></div>
+  <nav class="nav" id="nav">
+    <div class="nav-section-title">Command center</div>
+    <button class="active" data-page="dashboard" data-modules="dashboard"><i>▦</i><span>Dashboard</span></button>
 
-<div class="nav-group open" data-group="search">
-<button type="button" class="nav-group-toggle" data-group-toggle="search"><i>⌕</i><span>Central Search</span><span class="nav-chev">▾</span></button>
-<div class="nav-group-body" data-group-body="search">
-<button data-page="people" data-modules="people"><i>◉</i><span>Central Person Search</span></button>
-<button data-page="policesearch" data-modules="policesearch"><i>⌕</i><span>Central Police Search</span></button>
+    <div class="nav-section-title nav-section-title-spaced">Agency systems</div>
+    <div class="nav-group open" data-group="search">
+    <button type="button" class="nav-group-toggle" data-group-toggle="search"><i>⌕</i><span>Central Search</span><span class="nav-group-modern-title">Search &amp; Intelligence</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group-body" data-group-body="search">
+    <button data-page="people" data-modules="people"><i>◉</i><span>Central Person Search</span></button>
+    <button data-page="policesearch" data-modules="policesearch"><i>⌕</i><span>Central Police Search</span></button>
 </div>
-</div>
+    </div>
 
-<div class="nav-group open" data-group="cid">
-<button type="button" class="nav-group-toggle" data-group-toggle="cid"><i>⌂</i><span>Dep. Of CID</span><span class="nav-chev">▾</span></button>
-<div class="nav-group-body" data-group-body="cid">
-<button data-page="fingerprint" data-modules="fingerprint"><i>⌁</i><span>Fingerprint Unit</span></button>
-<button data-page="cid" data-modules="cid"><i>⚖</i><span>Crime Unit</span></button>
-<button data-page="checkpoints" data-modules="checkpoints"><i>⊙</i><span>Checkpoint Unit</span></button>
-<button data-page="airport" data-modules="airport"><i>✈</i><span>Airport Unit</span></button>
+    <div class="nav-group open" data-group="cid">
+    <button type="button" class="nav-group-toggle" data-group-toggle="cid"><i>⌘</i><span>Dep. Of CID</span><span class="nav-group-modern-title">CID</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group-body" data-group-body="cid">
+    <button data-page="fingerprint" data-modules="fingerprint"><i>⌁</i><span>Fingerprint Unit</span></button>
+    <button data-page="cid" data-modules="cid"><i>⚖</i><span>Crime Unit</span></button>
+    <div class="nav-subgroup-label" data-module-label="checkpoints">Checkpoint operations</div>
+    <button data-page="checkpoints" data-modules="checkpoints"><i>⊙</i><span>Checkpoint Unit</span></button>
+    <button data-page="airport" data-modules="airport"><i>✈</i><span>Airport Unit</span></button>
 </div>
-</div>
+    </div>
 
-<div class="nav-group open" data-group="personnel">
-<button type="button" class="nav-group-toggle" data-group-toggle="personnel"><i>👤</i><span>Dep. of Police Personnel (Registration Police Office)</span><span class="nav-chev">▾</span></button>
-<div class="nav-group-body" data-group-body="personnel">
-<button data-page="officers" data-modules="officers"><i>▤</i><span>Registration Office</span></button>
-<button data-page="conduct" data-modules="conduct"><i>🎖</i><span>Conduct, Promotions &amp; Disciplinary Management</span></button>
+    <div class="nav-group open" data-group="personnel">
+    <button type="button" class="nav-group-toggle" data-group-toggle="personnel"><i>♙</i><span>Dep. of Police Personnel (Registration Police Office)</span><span class="nav-group-modern-title">Police Personnel</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group-body" data-group-body="personnel">
+    <button data-page="officers" data-modules="officers"><i>▤</i><span>Registration Office</span></button>
+    <button data-page="conduct" data-modules="conduct"><i>★</i><span>Conduct, Promotions &amp; Disciplinary Management</span></button>
 </div>
-</div>
+    </div>
 
-<div class="nav-group open" data-group="transport">
-<button type="button" class="nav-group-toggle" data-group-toggle="transport"><i>🚓</i><span>Dep. of Transport</span><span class="nav-chev">▾</span></button>
-<div class="nav-group-body" data-group-body="transport">
-<button data-page="cars" data-modules="cars"><i>🚓</i><span>Vehicle Registry</span></button>
-<button data-page="vehiclestatus" data-modules="cars"><i>◎</i><span>Vehicle Status &amp; Tracking</span></button>
+    <div class="nav-group open" data-group="transport">
+    <button type="button" class="nav-group-toggle" data-group-toggle="transport"><i>▰</i><span>Dep. Of Transport</span><span class="nav-group-modern-title">Transport</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group-body" data-group-body="transport">
+    <button data-page="cars" data-modules="cars"><i>▣</i><span>Vehicle Registry</span></button>
+    <button data-page="vehiclestatus" data-modules="cars"><i>◎</i><span>Vehicle Status &amp; Tracking</span></button>
 </div>
-</div>
+    </div>
 
-<div class="nav-group open" data-group="command">
-<button type="button" class="nav-group-toggle" data-group-toggle="command"><i>★</i><span>Chief Commander of Police Office (HQ / Command)</span><span class="nav-chev">▾</span></button>
-<div class="nav-group-body" data-group-body="command">
-<button data-page="executive" data-modules="executive"><i>▦</i><span>Global Executive Dashboard</span></button>
-<button data-page="oversight" data-modules="oversight"><i>🏛</i><span>Stations Oversight &amp; Regional Data</span></button>
+    <div class="nav-group open" data-group="command">
+    <button type="button" class="nav-group-toggle" data-group-toggle="command"><i>★</i><span>Chief Commander of Police Office (HQ / Command)</span><span class="nav-group-modern-title">HQ Command</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group-body" data-group-body="command">
+    <button data-page="executive" data-modules="executive"><i>▦</i><span>Global Executive Dashboard</span></button>
+    <button data-page="oversight" data-modules="oversight"><i>⌖</i><span>Stations Oversight &amp; Regional Data</span></button>
 </div>
-</div>
+    </div>
 
-<div class="nav-group" data-group="registrations">
-<button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i>▤</i><span>Registers</span><span class="nav-chev">▾</span></button>
-<div class="nav-group-body" data-group-body="registrations">
-<button data-page="stations" data-modules="stations"><i>🏛</i><span>Police Stations</span></button>
-<button data-page="crimes" data-modules="crimes"><i>⚖</i><span>Register Crime</span></button>
+    <div class="nav-group" data-group="registrations">
+    <button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i>▤</i><span>Registers</span><span class="nav-group-modern-title">Registers</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group-body" data-group-body="registrations">
+    <button data-page="stations" data-modules="stations"><i>▦</i><span>Police Stations</span></button>
+    <button data-page="crimes" data-modules="crimes"><i>⚖</i><span>Register Crime</span></button>
 </div>
-</div>
+    </div>
 
-<div class="nav-group" data-group="admin" style="display:none">
-<button type="button" class="nav-group-toggle" data-group-toggle="admin"><i>⚙</i><span>Administration</span><span class="nav-chev">▾</span></button>
-<div class="nav-group-body" data-group-body="admin">
-<button data-page="admin" data-modules="admin"><i>⚙</i><span>User Management</span></button>
-<button data-page="branches" data-modules="admin"><i>⌂</i><span>Branch Management</span></button>
+    <div class="nav-group" data-group="admin" style="display:none">
+    <button type="button" class="nav-group-toggle" data-group-toggle="admin"><i>⚙</i><span>Administration</span><span class="nav-group-modern-title">System Administration</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group-body" data-group-body="admin">
+    <button data-page="admin" data-modules="admin"><i>⚙</i><span>User Management</span></button>
+    <button data-page="branches" data-modules="admin"><i>⌂</i><span>Branch Management</span></button>
 </div>
-</div>
-<!-- Analytics is not a standalone page: the only full analytics surface is
-     the Chief Commander's Global Executive Dashboard (HQ / Command). Operational
-     registers stay clean — a compact unit overview strip on top, full-width
-     tables with a search box, and centered entry modals for new records. -->
-</nav><div class="side-footer">Central person reference<br><span id="envBadge">Environment: connecting…</span><br><span id="uiBuild" class="muted" style="opacity:.7;font-size:10.5px"></span></div></aside>
+    </div>
+    <!-- Analytics is not a standalone page: the only full analytics surface is
+         the Chief Commander's Global Executive Dashboard (HQ / Command). Operational
+         registers stay clean — compact unit overviews and full-width data tables. -->
+  </nav>
+  <div class="side-footer">
+    <div class="user-pill side-profile" id="userPill" style="display:none">
+      <div class="avatar" id="userInitials">?</div>
+      <div class="side-profile-copy"><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
+      <button class="logout" id="logoutBtn" onclick="doLogout()" title="Sign out" aria-label="Sign out">↪</button>
+    </div>
+    <div class="side-footer-meta">
+      <div class="side-footer-label">Platform status</div>
+      <div class="side-env"><span class="side-env-dot" aria-hidden="true">●</span><span id="envBadge">Environment: connecting…</span></div>
+      <span id="uiBuild" class="muted"></span>
+    </div>
+  </div>
+</aside>
+<button class="sidebar-scrim" id="sidebarScrim" type="button" onclick="closeSidebar()" aria-label="Close navigation"></button>
 <main class="main">
-<header class="top" id="topbar"><div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
-<span class="ro-badge" id="roBadge" title="This role holds global read-only (view-only) access — every register is monitoring-only.">🔒 View-only · Commander</span>
-<div class="user-pill" id="userPill" style="display:none">
-  <div class="avatar" id="userInitials">?</div>
-  <div><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
-  <button class="logout admin-only" id="gotoAdmin" onclick="go('admin')" title="User management">⚙</button>
-  <button class="logout" id="logoutBtn" onclick="doLogout()" title="Sign out">↩ Sign out</button>
-</div></header>
+<header class="top" id="topbar">
+  <div class="top-heading">
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" onclick="toggleSidebar()" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation"><span aria-hidden="true">☰</span></button>
+    <div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
+  </div>
+  <span class="ro-badge" id="roBadge" title="This role holds global read-only (view-only) access — every register is monitoring-only.">🔒 View-only · Commander</span>
+</header>
 <!-- GLOBAL READ-ONLY NOTICE (Commander / High Command) — shown only in
      view-only mode; every write control is removed while it is visible. -->
 <div class="ro-banner" id="roBanner" role="status">
@@ -1564,6 +1785,7 @@ function go(page){
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===navPage));
   const g = PAGE_GROUP[navPage];
   if(g) setNavGroupOpen(g, true);
+  closeSidebar();
   document.getElementById('pageTitle').textContent=TITLES[page]||'';
   if(page==='cid') renderCases();
   if(page==='admin') renderUserTable();
@@ -1616,10 +1838,43 @@ const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'c
 const NAV_GROUPS_KEY='sentinelNavGroups';
 function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
 function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
+const NAV_GROUP_LABELS={
+  search:'Search and intelligence',cid:'CID',personnel:'Police personnel',
+  transport:'Transport',command:'Headquarters command',registrations:'Registers',admin:'System administration'
+};
 function setNavGroupOpen(name,open){
   const el=document.querySelector('.nav-group[data-group="'+name+'"]');
-  if(el) el.classList.toggle('open',!!open);
+  if(!el) return;
+  el.classList.toggle('open',!!open);
+  const toggle=el.querySelector('.nav-group-toggle');
+  const body=el.querySelector('.nav-group-body');
+  if(body){ if(!body.id) body.id='nav-group-'+name; }
+  if(toggle){
+    toggle.setAttribute('aria-expanded',String(!!open));
+    if(body&&body.id) toggle.setAttribute('aria-controls',body.id);
+    toggle.setAttribute('aria-label',NAV_GROUP_LABELS[name]||name);
+  }
 }
+function setSidebarOpen(open){
+  const side=document.getElementById('sidebar');
+  const toggle=document.getElementById('sidebarToggle');
+  if(!side) return;
+  const isMobile=typeof window.matchMedia==='function' && window.matchMedia('(max-width: 950px)').matches;
+  const expanded=!!open&&isMobile;
+  side.classList.toggle('is-open',expanded);
+  if(document.body&&document.body.classList) document.body.classList.toggle('nav-open',expanded);
+  if(toggle){
+    toggle.setAttribute('aria-expanded',String(expanded));
+    toggle.setAttribute('aria-label',expanded?'Close navigation':'Open navigation');
+  }
+}
+function toggleSidebar(){
+  const side=document.getElementById('sidebar');
+  setSidebarOpen(!(side&&side.classList.contains('is-open')));
+}
+function closeSidebar(){setSidebarOpen(false)}
+if(typeof document.addEventListener==='function') document.addEventListener('keydown',e=>{if(e.key==='Escape') closeSidebar()});
+if(typeof window.addEventListener==='function') window.addEventListener('resize',()=>{if(typeof window.matchMedia!=='function'||!window.matchMedia('(max-width: 950px)').matches) closeSidebar()});
 function toggleNavGroup(name){
   const s=navGroupsState();
   s[name]=(s[name]===undefined)?false:!s[name];
@@ -4475,6 +4730,12 @@ function applyNavForRole(){
   document.querySelectorAll('#nav button[data-page]').forEach(b => {
     const m = b.dataset.modules;
     b.style.display = (m === 'admin' ? isAdmin : mods.indexOf(m)!==-1) ? '' : 'none';
+  });
+  // The small Checkpoint subgroup label follows the same module gate as its
+  // link so roles without that unit do not see an empty navigation heading.
+  document.querySelectorAll('#nav .nav-subgroup-label[data-module-label]').forEach(label => {
+    const item = label.nextElementSibling;
+    label.style.display = item && item.dataset.modules === label.dataset.moduleLabel && item.style.display !== 'none' ? '' : 'none';
   });
   // Global read-only (Commander / High Command): apply view-only mode and
   // refresh the "View-only" pill in the same pass that paints the menu.
