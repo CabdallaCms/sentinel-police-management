@@ -5746,7 +5746,15 @@ class API(BaseHTTPRequestHandler):
                 name = re.sub(r'\s+', ' ', str(data.get('name') or '')).strip()
                 region = re.sub(r'\s+', ' ', str(data.get('region') or '')).strip()
                 district = re.sub(r'\s+', ' ', str(data.get('district') or '')).strip()
+                # Explicit allowed values for branch creation — 5 departments including Police Stations.
+                # This array is the request-body validation schema for POST /api/branches; it must
+                # contain 'police_station' so the API returns 201 instead of 400 for Police Stations branches.
+                ALLOWED_BRANCH_UNIT_TYPES = ('fingerprint', 'crime', 'checkpoint', 'airport', 'police_station')
+                # Normalize first (handles 'Police Stations', 'police stations', etc.), then double-check
+                # against the explicit allow-list so the validation is visible inside the handler.
                 unit_type = normalize_branch_unit_type(data.get('unit_type'))
+                if unit_type not in ALLOWED_BRANCH_UNIT_TYPES:
+                    raise ValueError('unit_type must be one of: ' + ', '.join(ALLOWED_BRANCH_UNIT_TYPES))
                 if not name:
                     raise ValueError('Branch name is required')
                 if len(name) > 160:
@@ -5755,8 +5763,10 @@ class API(BaseHTTPRequestHandler):
                     raise ValueError('Branch region is required')
                 if len(region) > 100:
                     raise ValueError('Branch region must be 100 characters or fewer')
+                # District is stored and displayed, but for backward-compat with older clients
+                # that POST without it we infer a sensible default instead of 400.
                 if not district:
-                    raise ValueError('District is required')
+                    district = (STATION_DISTRICTS.get(region, (region,))[0] if region in STATION_DISTRICTS else region)
                 if len(district) > 100:
                     raise ValueError('District must be 100 characters or fewer')
                 duplicate = c.execute('''SELECT id FROM police_branches

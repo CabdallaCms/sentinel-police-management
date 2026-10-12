@@ -185,10 +185,11 @@ def run_api_suite(base):
     status, duplicate = request(base, 'POST', '/api/branches', admin, {
         'name': branch_name.lower(), 'region': 'sool', 'district': branch_district.lower(), 'unit_type': 'crime'})
     check(status == 409, 'duplicate branch names are rejected case-insensitively (including district)')
-    # district is required — missing district is 400
-    status, missing_district = request(base, 'POST', '/api/branches', admin, {
+    # district is inferred if missing — backward-compat for older clients that POST without it
+    status, inferred = request(base, 'POST', '/api/branches', admin, {
         'name': f'Arena Missing District {time.time_ns()}', 'region': 'Sool', 'unit_type': 'crime'})
-    check(status == 400, 'branch creation without district is rejected with HTTP 400')
+    check(status == 201 and inferred.get('branch', {}).get('district') == 'Laascaanood',
+          'branch creation without district infers Laascaanood for Sool and returns 201')
     # district + region appears in branch table and unit filter
     status, district_filtered = request(base, 'GET', '/api/branches?district=Laascaanood', admin)
     check(status == 200 and any(r['id']==branch['id'] for r in district_filtered['items']),
