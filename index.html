@@ -1043,6 +1043,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 </div>
 <div class="section-label">Location — Sool · Sanaag · East Togdheer</div>
 <div id="st-loc" class="loc-grid"></div>
+<div class="field"><label>Police Stations branch <small class="muted">(auto-matched to station)</small></label><select id="stBranch" data-branch-unit="police_station"><option value="">Loading branches…</option></select></div>
 <div class="field"><label>Notes</label><textarea id="stNotes" placeholder="Coverage area, shift details…"></textarea></div>
 <div class="form-actions"><button class="btn ghost" type="button" onclick="resetStationForm()">Clear</button><button class="btn" data-write="1" type="submit">Register station</button></div>
 </form>
@@ -1444,7 +1445,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="panel-head">
     <div>
       <h2>Branch Management</h2>
-      <div class="sub">Manage the branch catalogue used by Fingerprint, Crime, Checkpoint and Airport intake forms.</div>
+      <div class="sub">Manage the branch catalogue used by Fingerprint, Crime, Checkpoint, Airport and Police Stations intake forms.</div>
     </div>
     <button class="btn ghost small" type="button" onclick="refreshBranchManagement(true)">↻ Refresh branches</button>
   </div>
@@ -1457,6 +1458,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="field"><label for="branchUnitType">Unit Department *</label><select id="branchUnitType" required>
         <option value="fingerprint">Fingerprint Unit</option><option value="crime">Crime Unit</option>
         <option value="checkpoint">Checkpoint Unit</option><option value="airport">Airport Unit</option>
+        <option value="police_station">Police Stations</option>
       </select></div>
     </div>
     <div class="form-actions"><button class="btn" data-write="1" type="submit">+ Add New Branch</button></div>
@@ -1539,6 +1541,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 </section>
 </main></div>
 
+<datalist id="branchDatalist"></datalist>
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
 <div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
@@ -1836,7 +1839,7 @@ async function api(path,options={}){
 
 // Live branch catalogue. Branch names/regions come only from /api/branches;
 // the client never carries a parallel hardcoded list of branch choices.
-const BRANCH_UNIT_LABELS={fingerprint:'Fingerprint Unit',crime:'Crime Unit',checkpoint:'Checkpoint Unit',airport:'Airport Unit'};
+const BRANCH_UNIT_LABELS={fingerprint:'Fingerprint Unit',crime:'Crime Unit',checkpoint:'Checkpoint Unit',airport:'Airport Unit',police_station:'Police Stations'};
 let branchCatalog={loaded:false,items:[],regions:[],unit_types:[]};
 async function loadBranchCatalog(force=false){
   if(branchCatalog.loaded&&!force)return branchCatalog;
@@ -1844,6 +1847,8 @@ async function loadBranchCatalog(force=false){
   branchCatalog={loaded:true,items:Array.isArray(data.items)?data.items:[],
     regions:Array.isArray(data.regions)?data.regions:[],
     unit_types:Array.isArray(data.unit_types)?data.unit_types:[]};
+  try{ refreshUserBranchDatalist(); }catch(_){}
+  try{ if(typeof refreshStationSelects==='function') refreshStationSelects(); }catch(_){}
   return branchCatalog;
 }
 async function refreshBranchSelect(selectId,unitType){
@@ -2219,15 +2224,39 @@ function requireLocation(prefix){
 // store their location EXPLICITLY (typed into the form, pre-filled from the
 // assigned station as a default, overridable) — see recordLocation(),
 // wireStationLocationDefaults() and saveOfficer()/saveCar().
-function stationById(id){return (db.stations||[]).find(s=>s.id===id)||null}
+function policeStationBranches(){ return (branchCatalog.items||[]).filter(b=>b.unit_type==='police_station'); }
+function syntheticStationFromBranch(b){
+  // A branch mirrored as a station before the server sync has created the real station row
+  return {id:'BR-'+b.id, code:'BR-'+b.id, name:b.name, region:b.region, district:b.region, village:b.name, station_tier:'Mirrored Branch', operational_status:'Active', isBranch:true, branchId:b.id};
+}
+function stationById(id){
+  let s=(db.stations||[]).find(x=>x.id===id)||null;
+  if(s) return s;
+  // Fallback: a Police Stations branch that has not yet been mirrored as a station (or offline)
+  const br=(branchCatalog.items||[]).find(b=>('BR-'+b.id)===id && b.unit_type==='police_station');
+  return br? syntheticStationFromBranch(br) : null;
+}
 function stationOptions(selectedId){
-  const list=db.stations||[];
+  const stations=(db.stations||[]);
+  function branchIsMirrored(b){
+    const base=b.name.replace(/\s*branch\s*$/i,'').trim().toLowerCase();
+    return stations.some(s=>{
+      const sr=(s.region||'').toLowerCase();
+      if(sr!==String(b.region||'').toLowerCase()) return false;
+      const sn=(s.name||'').toLowerCase();
+      const sv=(s.village||'').toLowerCase();
+      return sn===String(b.name||'').toLowerCase() || sn===base || sn.includes(base) || sv===base || sv===String(b.name||'').toLowerCase();
+    });
+  }
+  // Merge real stations with Police Stations branches that have not yet been mirrored (offline or pre-sync)
+  const branchStations=policeStationBranches().filter(b=>!branchIsMirrored(b)).map(syntheticStationFromBranch);
+  const list=[...stations, ...branchStations];
   return '<option value="">— select station —</option>'+list.map(s=>
-    `<option value="${esc(s.id)}"${s.id===selectedId?' selected':''}>${esc(s.name)} (${esc(s.code)}) — ${esc(locationLabel(s))}</option>`
+    `<option value="${esc(s.id)}"${s.id===selectedId?' selected':''}>${esc(s.name)} (${esc(s.code)}) — ${esc(locationLabel(s))}${s.isBranch?' · Police Stations branch':''}</option>`
   ).join('');
 }
 function refreshStationSelects(){
-  ['offStation','carStation'].forEach(id=>{
+  ['offStation','carStation','crmStation'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.innerHTML=stationOptions(el.value);
   });
@@ -2596,7 +2625,7 @@ function openEntryModal(id){
   if(ov)ov.classList.add('on');
   d.classList.add('open');
   document.body.classList.add('modal-open');
-  const branchForms={fpDrawer:['fpBranch','fingerprint'],airDrawer:['airBranch','airport'],crmDrawer:['crmBranch','crime']};
+  const branchForms={fpDrawer:['fpBranch','fingerprint'],airDrawer:['airBranch','airport'],crmDrawer:['crmBranch','crime'],stDrawer:['stBranch','police_station']};
   if(branchForms[id])refreshBranchSelect(branchForms[id][0],branchForms[id][1]);
   const body=d.querySelector('.cm-body');
   if(body)body.scrollTop=0;
@@ -5563,7 +5592,7 @@ function openNewUserDrawer(){
         </div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Branch</label><input id="nu-branch" placeholder="e.g. Fingerprint Unit"></div>
+        <div class="field"><label>Branch <small class="muted">(dynamic — Police Stations included)</small></label><input id="nu-branch" list="branchDatalist" placeholder="e.g. Buuhoodle Branch · Sool or Central HQ"></div>
         <div class="field"><label>Password *</label><input id="nu-password" type="password" required minlength="6" placeholder="At least 6 characters"></div>
       </div>
     </form>
@@ -5572,6 +5601,7 @@ function openNewUserDrawer(){
                 <button class="btn" onclick="submitNewUser()">Create officer</button>`;
   openDrawer('New officer', body, foot);
   refreshUserLocationOptions();
+  refreshUserBranchDatalist();
 }
 function refreshUserLocationOptions(){
   const role = document.getElementById('nu-role').value;
@@ -5579,6 +5609,24 @@ function refreshUserLocationOptions(){
   if(!scopeEl) return;
   scopeEl.disabled = !isCheckpointRole(role);
   if(!isCheckpointRole(role)) scopeEl.value = '';
+}
+function refreshUserBranchDatalist(){
+  const dl=document.getElementById('branchDatalist');
+  if(!dl) return;
+  // ensure catalogue is loaded — fire and forget if not
+  if(!branchCatalog.loaded){ loadBranchCatalog().then(()=>refreshUserBranchDatalist()); return; }
+  const branches=branchCatalog.items||[];
+  const seen=new Set();
+  const opts=[];
+  // keep Central HQ at top, then every branch (name · region)
+  const staticOpts=['Central HQ','HR Directorate','Fingerprint Unit','Airport Control','CID Unit'];
+  staticOpts.forEach(v=>{ if(!seen.has(v)){ seen.add(v); opts.push(`<option value="${esc(v)}">`); }});
+  branches.forEach(b=>{
+    const label=`${b.name} · ${b.region}`;
+    if(!seen.has(label)){ seen.add(label); opts.push(`<option value="${esc(label)}">`); }
+    if(!seen.has(b.name)){ seen.add(b.name); opts.push(`<option value="${esc(b.name)}">`); }
+  });
+  dl.innerHTML=opts.join('');
 }
 async function submitNewUser(){
   if(guardReadOnly('Registering a user')) return;
@@ -5625,7 +5673,7 @@ function openEditUserDrawer(u){
         </div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Branch</label><input id="eu-branch" value="${esc(u.branch||'')}"></div>
+        <div class="field"><label>Branch <small class="muted">(dynamic — Police Stations included)</small></label><input id="eu-branch" list="branchDatalist" value="${esc(u.branch||'')}"></div>
         <div class="field"><label>New password (optional)</label><input id="eu-password" type="password" minlength="6" placeholder="Leave blank to keep"></div>
       </div>
     </form>
@@ -5633,6 +5681,7 @@ function openEditUserDrawer(u){
   const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
                 <button class="btn" onclick="submitEditUser(${u.id})">Save changes</button>`;
   openDrawer('Edit officer · ' + u.username, body, foot);
+  refreshUserBranchDatalist();
 }
 async function submitEditUser(uid){
   if(guardReadOnly('Updating a user record')) return;
@@ -6953,6 +7002,21 @@ locationDropdowns('car');
 locationDropdowns('ps',{withAll:true,onchange:renderPoliceSearch});
 refreshStationSelects();
 wireStationLocationDefaults('carStation','car');
+// Police Stations branch → station form auto-fill: choosing a Police Stations branch pre-fills station name & location.
+try{
+  const sb=document.getElementById('stBranch');
+  if(sb){
+    sb.addEventListener('change',()=>{
+      const bid=sb.value;
+      const b=(branchCatalog.items||[]).find(x=>String(x.id)===String(bid));
+      if(!b) return;
+      const base=b.name.replace(/\s*branch\s*$/i,'').trim();
+      const nameInput=document.getElementById('stName');
+      if(nameInput && !nameInput.value.trim()) nameInput.value=base+' Station';
+      setLocation('st',{region:b.region,district:'',village:base});
+    });
+  }
+}catch(_){}
 initOriginDropdowns();
 offStep(1);
 applyUiBuildLabel();  // stamp the running frontend build in the sidebar

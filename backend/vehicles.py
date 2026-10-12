@@ -92,7 +92,48 @@ def register_vehicle(c, user, fields, files, helpers):
             raise ValueError('Assigned station is required for police fleet vehicles')
         station = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (scode,)).fetchone()
         if not station:
-            raise ValueError('Station "%s" does not exist' % scode)
+            # Fallback: accept Police Stations branch (e.g. BR-12) as station
+            if scode.startswith('BR-'):
+                try:
+                    bid = int(scode[3:])
+                    br = c.execute('SELECT * FROM police_branches WHERE id=%s AND unit_type=%s', (bid, 'police_station')).fetchone()
+                    if br:
+                        station = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)', (br['name'], br['region'])).fetchone()
+                        if not station:
+                            # Auto-mirror branch as station
+                            district = br['region']
+                            # Try to find a valid district mapping; fallback to region
+                            try:
+                                # Reuse server helper if available via c, otherwise generic
+                                pass
+                            except Exception:
+                                pass
+                            village = br['name'].replace(' Branch','').strip() or district
+                            # Generate a simple code
+                            prefix = f"STN-{br['region'][:3].upper()}-"
+                            n = 1
+                            for row in c.execute('SELECT code FROM police_stations WHERE code ILIKE %s', (prefix + '%',)):
+                                try:
+                                    n = max(n, int(str(row['code']).rsplit('-', 1)[1]) + 1)
+                                except Exception:
+                                    pass
+                            scode_gen = f'{prefix}{n:03d}'
+                            # Generate station_id
+                            row = c.execute('SELECT station_id FROM police_stations ORDER BY id DESC LIMIT 1').fetchone()
+                            try:
+                                sid_n = int(str(row['station_id']).rsplit('-', 1)[1]) + 1 if row else c.execute('SELECT COUNT(*) FROM police_stations').fetchone()[0] + 1
+                            except Exception:
+                                sid_n = 1
+                            sid = 'ST-' + str(sid_n).zfill(3)
+                            c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
+                                station_tier,operational_status,notes,created_by)
+                                VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                                (sid, br['name'], scode_gen, br['region'], district, village, 'District HQ', 'Active', f'Mirrored from branch {br["id"]} (auto vehicle)', user['id']))
+                            station = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (sid,)).fetchone()
+                except Exception:
+                    pass
+            if not station:
+                raise ValueError('Station "%s" does not exist' % scode)
         officer = resolve_officer_row(c, fields.get('officer_id'))
         if str(fields.get('officer_id') or '').strip() and not officer:
             raise ValueError('Assigned officer does not exist')

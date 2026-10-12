@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS police_branches(
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
   region TEXT NOT NULL,
-  unit_type TEXT NOT NULL CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport')),
+  unit_type TEXT NOT NULL CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport','police_station')),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_police_branches_name_region_unit
@@ -1010,12 +1010,13 @@ UNIT_ROLE_ALIASES = {
 CHECKPOINT_LOCATIONS = ('South', 'East', 'West')
 
 # Branch departments are stored as stable API values in `police_branches`.
-BRANCH_UNIT_TYPES = ('fingerprint', 'crime', 'checkpoint', 'airport')
+BRANCH_UNIT_TYPES = ('fingerprint', 'crime', 'checkpoint', 'airport', 'police_station')
 BRANCH_UNIT_LABELS = {
     'fingerprint': 'Fingerprint Unit',
     'crime': 'Crime Unit',
     'checkpoint': 'Checkpoint Unit',
     'airport': 'Airport Unit',
+    'police_station': 'Police Stations',
 }
 DEFAULT_POLICE_BRANCHES = (
     ('Buuhoodle Branch', 'East Togdheer'),
@@ -1844,6 +1845,39 @@ def migrate(c):
         for col, sql in cols:
             if col not in existing:
                 c.execute(sql)
+    # Branch catalogue evolution: Police Stations department was added
+    # after the initial four-unit schema. Existing databases carry a CHECK
+    # constraint limited to ('fingerprint','crime','checkpoint','airport');
+    # widen it idempotently so branches with unit_type='police_station'
+    # can be created without rebuilding the table.
+    if 'police_branches' in tables:
+        c.execute('''
+            DO $$
+            DECLARE
+                cname text;
+            BEGIN
+                SELECT conname INTO cname FROM pg_constraint
+                 WHERE conrelid='police_branches'::regclass AND contype='c'
+                 LIMIT 1;
+                IF cname IS NOT NULL THEN
+                    -- Only widen if the current check does not mention police_station
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                         WHERE conname=cname AND pg_get_constraintdef(oid) ILIKE '%police_station%'
+                    ) THEN
+                        EXECUTE 'ALTER TABLE police_branches DROP CONSTRAINT ' || quote_ident(cname);
+                        ALTER TABLE police_branches ADD CONSTRAINT police_branches_unit_type_check
+                          CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport','police_station'));
+                    END IF;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN
+                -- Fallback: ensure the widened check exists
+                BEGIN
+                    ALTER TABLE police_branches ADD CONSTRAINT police_branches_unit_type_check
+                      CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport','police_station'));
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END;
+            END $$;''')
     # Circular foreign key closure: police_stations.commander_id / deputy_id
     # point at officers(id) while officers.station_id points back at
     # police_stations(id). The CREATE TABLE script must declare them as plain
@@ -2011,10 +2045,29 @@ def branch_view(row):
 
 
 def normalize_branch_unit_type(value):
-    unit_type = str(value or '').strip().lower()
-    if unit_type not in BRANCH_UNIT_TYPES:
+    raw = str(value or '').strip().lower()
+    # Normalize common aliases for the Police Stations department
+    # so the Branch Management dropdown, API filters and intake
+    # validation all accept the same human-friendly spellings.
+    alias_map = {
+        'police station': 'police_station',
+        'police stations': 'police_station',
+        'police_station': 'police_station',
+        'police_stations': 'police_station',
+        'stations': 'police_station',
+        'station': 'police_station',
+        'policestation': 'police_station',
+        'policestations': 'police_station',
+    }
+    # Also handle space/underscore variations
+    key = re.sub(r'[^a-z]', '', raw)
+    for alias, canonical in alias_map.items():
+        if re.sub(r'[^a-z]', '', alias) == key:
+            raw = canonical
+            break
+    if raw not in BRANCH_UNIT_TYPES:
         raise ValueError('unit_type must be one of: ' + ', '.join(BRANCH_UNIT_TYPES))
-    return unit_type
+    return raw
 
 
 def resolve_branch(c, branch_id, expected_unit_type, required=False):
@@ -2254,7 +2307,8 @@ def station_view(row):
 
 
 def new_station_code(c, region):
-    prefix = f"STN-{REGION_CODES[region]}-"
+    # Fallback for custom regions not in REGION_CODES (e.g. a Police Stations branch region)
+    prefix = f"STN-{REGION_CODES.get(region, region[:3].upper() if region else 'GEN')}-"
     n = 1
     for row in c.execute('SELECT code FROM police_stations WHERE code ILIKE %s', (prefix + '%',)):
         try:
@@ -2262,6 +2316,54 @@ def new_station_code(c, region):
         except (ValueError, IndexError):
             pass
     return f'{prefix}{n:03d}'
+
+
+def resolve_station_with_branch(c, station_code):
+    """Resolve a station id, accepting Police Stations branches as stations.
+
+    The station dropdowns now include Police Stations branches (unit_type
+    'police_station') that are mirrored as stations. A value like 'BR-12'
+    refers to branch id 12; a plain station_id like 'ST-001' is the normal
+    police_stations.station_id. If a branch is referenced that has not yet
+    been mirrored as a station, it is auto-mirrored here so the FK remains
+    valid.
+    """
+    if not station_code:
+        return None
+    station = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (station_code,)).fetchone()
+    if station:
+        return station
+    # Synthetic branch station: BR-<branch_id>
+    if isinstance(station_code, str) and station_code.startswith('BR-'):
+        try:
+            branch_id = int(station_code[3:])
+            branch = c.execute('SELECT * FROM police_branches WHERE id=%s AND unit_type=%s', (branch_id, 'police_station')).fetchone()
+            if branch:
+                station = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)', (branch['name'], branch['region'])).fetchone()
+                if station:
+                    return station
+                district = (STATION_DISTRICTS.get(branch['region'], (branch['region'],))[0] if branch['region'] in STATION_DISTRICTS else branch['region'])
+                village = re.sub(r'\s+branch\s*$', '', branch['name'], flags=re.I).strip() or district
+                st_code = new_station_code(c, branch['region'] if branch['region'] in REGION_CODES else branch['region'])
+                st_id = new_station_id(c)
+                c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
+                    station_tier,operational_status,notes,created_by)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (st_id, branch['name'], st_code, branch['region'], district, village, 'District HQ', 'Active', f'Mirrored from branch {branch["id"]} (auto)', None))
+                return c.execute('SELECT * FROM police_stations WHERE station_id=%s', (st_id,)).fetchone()
+        except Exception:
+            pass
+    # Also accept a branch id passed as plain integer or numeric string (legacy)
+    if str(station_code).isdigit():
+        try:
+            branch = c.execute('SELECT * FROM police_branches WHERE id=%s AND unit_type=%s', (int(station_code), 'police_station')).fetchone()
+            if branch:
+                station = c.execute('SELECT * FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)', (branch['name'], branch['region'])).fetchone()
+                if station:
+                    return station
+        except Exception:
+            pass
+    return None
 
 
 def new_crime_file_number(c, station_code):
@@ -2357,6 +2459,8 @@ def register_officer(c, user, fields, files):
     station_code = req('station_id', 'Assigned station')
     station = c.execute('SELECT * FROM police_stations WHERE station_id=%s',
                         (station_code,)).fetchone()
+    if not station:
+        station = resolve_station_with_branch(c, station_code)
     if not station:
         raise ValueError(f'Assigned station "{station_code}" does not exist')
     date_of_enlistment = req('date_of_enlistment', 'Date of enlistment')
@@ -2498,6 +2602,8 @@ def register_crime(c, user, fields, files):
     if not station_code:
         raise ValueError('station_id is required')
     station = c.execute('SELECT * FROM police_stations WHERE station_id=%s', (station_code,)).fetchone()
+    if not station:
+        station = resolve_station_with_branch(c, station_code)
     if not station:
         raise ValueError(f'Station "{station_code}" does not exist')
     officer = resolve_officer_row(c, fields.get('officer_id'))
@@ -5580,6 +5686,31 @@ class API(BaseHTTPRequestHandler):
                 branch = branch_view(row)
                 audit(c, user, 'CREATE', 'police_branch', str(branch['id']),
                       f"{branch['name']} · {branch['region']} · {branch['unit_type']}")
+                # When a Police Stations branch is created, mirror it as a
+                # police station so it immediately appears in station
+                # dropdowns (Police Personnel / Registration forms and
+                # Station registers). This keeps the branch catalogue as the
+                # single source of truth while the normalized station table
+                # remains the FK target for officers / vehicles / crimes.
+                if unit_type == 'police_station':
+                    try:
+                        existing_station = c.execute(
+                            'SELECT id FROM police_stations WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s)',
+                            (name, region)).fetchone()
+                        if not existing_station:
+                            district = (STATION_DISTRICTS.get(region, (region,))[0]
+                                        if region in STATION_DISTRICTS else region)
+                            village = re.sub(r'\s+branch\s*$', '', name, flags=re.I).strip() or district
+                            st_code = new_station_code(c, region if region in REGION_CODES else 'Sool')
+                            st_tier = 'District HQ'
+                            st_id = new_station_id(c)
+                            c.execute('''INSERT INTO police_stations(station_id,name,code,region,district,village,
+                                station_tier,operational_status,notes,created_by)
+                                VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                                (st_id, name, st_code, region, district, village,
+                                 st_tier, 'Active', f'Mirrored from branch {branch["id"]}', user['id']))
+                    except Exception:
+                        pass
                 c.commit()
                 c.close()
                 return self.send_json(201, {'branch': branch})

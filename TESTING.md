@@ -95,3 +95,23 @@ Additional manual UI checks:
   must keep focus even after the modal animation finishes.
 - Switch roles and check that checkpoint submenu labels and administration
   actions appear only for permitted sessions.
+
+## Branch Management — 5th department (Police Stations) & station mirroring (2026-10-12)
+
+Branch: `arena/4d7dbf9c-sentinel-police-management`. Do not merge until UAT is approved.
+
+### What changed
+- `BRANCH_UNIT_TYPES` / `BRANCH_UNIT_LABELS` now include `police_station → Police Stations` (5th department). The `#branchUnitType` select and the **Station registry** `stBranch` intake (`data-branch-unit="police_station"`) are both wired to the catalogue (`refreshBranchSelect` → `GET /api/branches?unit_type=...`).
+- Database `police_branches.unit_type` CHECK widens to the five values with an idempotent `DO` migration for live databases; `POST /api/branches` with `unit_type=police_station` now mirrors a row into `police_stations` (district/village derived from `STATION_DISTRICTS`, code via `STN-REG-XXX`, id via `ST-*`) without failing the branch write, and the generic helper `resolve_station_with_branch(c, station_code)` handles both `BR-<branch_id>` synthetic ids and bare numeric branch ids (auto-mirrors on demand).
+- `register_officer`, `register_crime` (server.py) and `register_vehicle` (vehicles.py — Police Fleet path) all fall through to this helper before rejecting an unknown `station_id`, so enrolments that pick a *Police Stations branch* in the Station dropdown work even before the station row has been synchronised.
+- Frontend `stationById` / `stationOptions` now merge `db.stations` + unsynced `branchCatalog.items.filter(b=>b.unit_type==='police_station')` as `BR-<id>` synthetic entries (`· Police Stations branch` label, `branchIsMirrored` de-duplication by region + base name / village). `loadBranchCatalog` + `saveBranch` refresh the merge; `stBranch → stName / st-loc` pre-fill on change; `refreshStationSelects` now covers `offStation`, `carStation` **and** `crmStation`.
+- **User Management** branch field is now a dynamic `<input list="branchDatalist">` (datalist `#branchDatalist` populated by `refreshUserBranchDatalist()` from `branchCatalog` + static fallbacks). Open *New officer* / *Edit officer* and type — every Fingerprint / Crime / Checkpoint / Airport / **Police Stations** branch appears, so accounts can be associated with any dynamic branch location. Selecting a checkpoint role still gates `location_scope` via `refreshUserLocationOptions`.
+
+### Manual verification (no DB wipe)
+1. **Branch Management** as SystemAdmin → **Add branch** with **Unit Department = Police Stations**, Region = Sool `Lasanod Branch` (or a new name `Arena Police Branch · Sool`). Table shows the new row with blue *Police Stations* badge and the toast `… added to Police Stations`.
+2. **Station dropdowns** — open **Police Personnel → Register Officer** and **Transport → Register Vehicle (category Police Fleet)**: `Assigned Station` now lists the new branch as `Buuhoodle Branch (BR-12) — Sool · … · Police Stations branch`. Pick it, fill dates/plate, save — no *unknown station* error; the new officer/car appears in the registers and in **Central Police Search → Stations**. `GET /api/branches?unit_type=police_station&region=Sool` and `GET /api/stations` also contain the mirrored row (`ST-… / STN-SOO-…`).
+3. **5 intake dropdowns** — Fingerprint (`fpBranch`), Airport (`airBranch`), Crime `caseBranch` + `crmBranch`, Checkpoint (`cpBranch`) **and** the new Police Stations `stBranch` on **Stations → Register Station** each call `/api/branches?unit_type=…` and retain their selection on re-open (verified via Network tab).
+4. **User Management** — create / edit an account and type into **Branch**: the datalist offers every branch including the newly added *Police Stations* entries; save and reload — the saved `branch` string matches the selected dynamic location (e.g. `Buuhoodle Branch · East Togdheer`).
+
+### Automated
+`python backend/test_dynamic_branches.py` — seeded-row, filtering (now 5 rows per region including `police_station`), admin-gate, duplicate, Police Stations mirroring and the frontend-contract (now 6 selectors + `stBranch:police_station` + datalist + synthetic `BR-` merge) — all checks pass (SKIP only without `SENTINEL_DB_*` / `pgserver`).
