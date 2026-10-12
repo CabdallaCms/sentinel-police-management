@@ -451,13 +451,6 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .nav-group-body button.active i{color:#bfdbfe}
 .nav-subgroup-label{padding:8px 10px 2px 11px;color:#7186a3;font-size:8.5px;font-weight:850;letter-spacing:1px;line-height:1.25;text-transform:uppercase}
 .side-footer{flex:none;margin:0;padding:12px 3px 0;border-top:1px solid rgba(255,255,255,.09);color:#92a5bf;font-size:11px;line-height:1.45}
-.side-profile{width:100%;margin:0 0 12px;padding:9px;border:1px solid #2b3d56;border-radius:11px;background:linear-gradient(135deg,#192b43,#142238);color:#f8fafc;gap:9px}
-.side-profile .avatar{width:36px;height:36px;flex:none;border-radius:10px;background:linear-gradient(140deg,#3b82f6,#0f9b91);color:#fff;font-size:12px}
-.side-profile-copy{flex:1;min-width:0}
-.side-profile .uname{max-width:100%;overflow:hidden;color:#f4f7fb;font-size:12px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
-.side-profile .urole{max-width:100%;overflow:hidden;color:#9aadc7;font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
-.side-profile .logout{display:grid;place-items:center;flex:none;width:29px;height:29px;padding:0;border:1px solid #334761;border-radius:8px;color:#aebfd5;font-size:15px}
-.side-profile .logout:hover{background:#233951;color:#fff}
 .side-footer-meta{display:grid;gap:5px;padding:0 6px}
 .side-footer-label{color:#7186a3;font-size:8.5px;font-weight:850;letter-spacing:1.15px;text-transform:uppercase}
 .side-env{display:flex;align-items:center;gap:7px;min-width:0;color:#99abc3;font-size:10.5px}
@@ -466,7 +459,22 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 #uiBuild{display:block;color:#7186a3!important;font-size:9.5px!important;opacity:.82!important}
 .main{width:calc(100% - 286px);min-width:0;margin-left:286px;padding:27px clamp(22px,3.2vw,44px);transition:margin .2s ease,width .2s ease}
 .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid #dfe6ef}
-.top-heading{display:flex;align-items:center;gap:14px;min-width:0}
+.top-heading{display:flex;align-items:center;gap:14px;flex:1 1 auto;min-width:0}
+.top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex:0 1 auto;min-width:0}
+.top-actions .ro-badge{margin-left:0}
+.header-user{flex:none;min-height:46px;max-width:100%;gap:8px;padding:5px 7px 5px 5px;border:1px solid #dce4ee;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(15,23,42,.045)}
+.header-user .avatar{width:36px;height:36px;flex:none;border-radius:10px;background:linear-gradient(140deg,#3b82f6,#0f9b91);color:#fff;font-size:12px}
+.header-user-copy{flex:0 1 170px;min-width:82px;max-width:170px;overflow:hidden;line-height:1.2}
+.header-user .uname{overflow:hidden;color:#1d2b42;font-size:12px;font-weight:750;line-height:1.2;text-overflow:ellipsis;white-space:nowrap}
+.header-user .urole{overflow:hidden;color:#6b7b91;font-size:10px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}
+.top .header-user .admin-only{display:none}
+.top.is-admin .header-user .admin-only{display:inline-flex;align-items:center;justify-content:center}
+.header-user .logout:not(.admin-only){display:inline-flex;align-items:center;justify-content:center}
+.header-user .logout{flex:none;min-height:34px;height:34px;min-width:34px;padding:0 9px;border:1px solid #e1e7ef;border-radius:8px;background:#f8fafc;color:#475569;font-size:12px;font-weight:700;line-height:1;white-space:nowrap;transition:background .15s ease,border-color .15s ease,color .15s ease}
+.header-user .logout.admin-only{width:34px;padding:0;font-size:15px}
+.header-user .logout-signout{gap:6px;padding:0 10px}
+.header-user .logout:hover{border-color:#cbd8e8;background:#edf3fb;color:#1e4b86}
+.header-user .logout-signout:hover{border-color:#cbd8e8;background:#edf3fb;color:#1e4b86}
 .top h1{margin:3px 0 0;color:#122039;font-size:27px;font-weight:760;letter-spacing:-.85px;line-height:1.2}
 .eyebrow{color:#3566a4;font-size:10px;font-weight:850;letter-spacing:1.2px}
 .sidebar-toggle{display:none;place-items:center;width:40px;height:40px;flex:none;border:1px solid #dce4ee;border-radius:10px;background:#fff;color:#263b59;font-size:17px;box-shadow:0 2px 5px rgba(15,23,42,.04)}
@@ -545,6 +553,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:950px){
+  .top{flex-wrap:wrap}
+  .top-heading{flex:1 1 280px}
+  .top-actions{margin-left:auto}
   .side{width:min(302px,calc(100vw - 48px));min-width:0;transform:translateX(-105%);transition:transform .23s cubic-bezier(.2,.8,.2,1);box-shadow:18px 0 42px rgba(5,14,30,.24)}
   .side.is-open{transform:translateX(0)}
   .main{width:100%;margin-left:0;padding:22px 24px}
@@ -566,9 +577,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .main{padding:18px 15px}
   .top{align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:18px;padding-bottom:13px}
   .top-heading{width:100%;gap:10px}
+  .top-actions{width:100%;flex:1 0 100%;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+  .top-actions .ro-badge{margin-left:0}
+  .header-user{gap:7px;padding:5px 6px 5px 5px}
+  .header-user-copy{flex:0 1 150px;max-width:150px}
   .top h1{font-size:23px;letter-spacing:-.55px}
   .eyebrow{font-size:9px;letter-spacing:.95px}
-  .ro-badge{margin-left:50px;font-size:10px}
+  .ro-badge{margin-left:0;font-size:10px}
   .cards,.grid2,.grid3,.docgrid,.chart-row{grid-template-columns:1fr}
   .kpi-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
   .panel{padding:16px;margin-top:14px}
@@ -581,6 +596,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(max-width:420px){
   .main{padding-inline:12px}
   .kpi-row{grid-template-columns:1fr}
+  .header-user-copy{flex:0 1 115px;min-width:64px;max-width:115px}
+  .header-user .logout-signout{gap:4px;padding:0 8px}
   .user-pill .urole{max-width:180px}
   .top h1{font-size:21px}
 }
@@ -689,11 +706,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
          registers stay clean — compact unit overviews and full-width data tables. -->
   </nav>
   <div class="side-footer">
-    <div class="user-pill side-profile" id="userPill" style="display:none">
-      <div class="avatar" id="userInitials">?</div>
-      <div class="side-profile-copy"><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
-      <button class="logout" id="logoutBtn" onclick="doLogout()" title="Sign out" aria-label="Sign out">↪</button>
-    </div>
     <div class="side-footer-meta">
       <div class="side-footer-label">Platform status</div>
       <div class="side-env"><span class="side-env-dot" aria-hidden="true">●</span><span id="envBadge">Environment: connecting…</span></div>
@@ -708,7 +720,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     <button class="sidebar-toggle" id="sidebarToggle" type="button" onclick="toggleSidebar()" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation"><span aria-hidden="true">☰</span></button>
     <div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
   </div>
-  <span class="ro-badge" id="roBadge" title="This role holds global read-only (view-only) access — every register is monitoring-only.">🔒 View-only · Commander</span>
+  <div class="top-actions">
+    <span class="ro-badge" id="roBadge" title="This role holds global read-only (view-only) access — every register is monitoring-only.">🔒 View-only · Commander</span>
+    <div class="user-pill header-user" id="userPill" style="display:none">
+      <div class="avatar" id="userInitials">?</div>
+      <div class="header-user-copy"><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
+      <button class="logout admin-only" id="gotoAdmin" type="button" onclick="go('admin')" title="User management" aria-label="User management">⚙</button>
+      <button class="logout logout-signout" id="logoutBtn" type="button" onclick="doLogout()" title="Sign out" aria-label="Sign out"><span aria-hidden="true">↪</span><span>Sign out</span></button>
+    </div>
+  </div>
 </header>
 <!-- GLOBAL READ-ONLY NOTICE (Commander / High Command) — shown only in
      view-only mode; every write control is removed while it is visible. -->
