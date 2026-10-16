@@ -130,11 +130,23 @@ it prints `RBAC self-test: PASS — module denylist in force for FingerprintUnit
 CIDUnit` when it is serving the fixed code and refuses to start at all if the denylist is not in
 force.
 
-Still seeing the old menu or an action button after updating? That is a stale page, not a stale
-server (the backend prints its RBAC guarantees at start-up and answers 403 for every command-role
-write). Reload with a hard refresh — the sidebar footer shows *UI build sentinel-rbac-readonly-3*
-when you are on the current frontend; anything else is a cached tab under
-`Cache-Control: no-store`.
+Still seeing the old menu, or a Register without the Actions/View/Edit controls, after updating?
+Check which page the browser actually has before blaming the server:
+
+1. The sidebar footer shows *UI build …* (`window.SENTINEL_UI_BUILD`). It must end with the short
+   commit of the deployment (`sentinel-rbac-readonly-4-0f8552e` for the station View/Edit build) —
+   anything else is a page that was rendered before the update.
+2. `GET /api/health` answers `ui_build` (read from the `index.html` on disk) and `asset_version`
+   (`0f8552e`); if those differ from the footer, the tab is cached, not the server.
+3. Reload. Pages are served with `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`,
+   `Expires: 0` and `Pragma: no-cache`, and every static reference carries `?v=<asset_version>`
+   (`certificate.html?v=0f8552e&id=…`, `images/police_logo.png?v=0f8552e`), so an ordinary reload or
+   hard refresh (Ctrl+Shift+R) always lands on the current build. A proxy that ignores the headers
+   can still be flushed by opening the page with a changed parameter (`/?v=0f8552e`).
+
+The backend itself logs its RBAC guarantees at start-up and answers 403 for every command-role
+write, so a stale *server* is never the explanation for an old *page*: the stamp tells you which of
+the two you are looking at.
 
 ## 6. Still stuck?
 

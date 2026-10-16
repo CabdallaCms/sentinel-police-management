@@ -210,3 +210,57 @@ available; never point them at operational data.
    names that branch; the mirrored persisted row can still be edited by the administrator.
 6. Confirm the audit trail after an edit (`audit_events`: `action=UPDATE`, `entity=police_station`,
    `details` listing the changed fields) and that `updated_at` / `updated_by` moved on the row.
+
+## Static assets: version stamps + no-store headers (2026-10-16)
+
+The Registered Stations build is refused by nothing, but a **browser cache** was still able to keep
+serving the pre-Actions page. Three mechanisms now make that impossible, and all three are asserted
+by `backend/test_station_actions.py` (suite 6, 17 checks) so a half-finished version bump fails the
+tests instead of silently leaving a stale page on screen.
+
+### What changed
+- **Versioned static references.** Every static reference the app ships carries `?v=<ASSET_VERSION>`:
+  `index.html` → `certificate.html?v=0f8552e&id=…` and `application.html?v=0f8552e&id=…`,
+  `application.html` / `certificate.html` → `index.html?v=0f8552e`, the brand emblem →
+  `images/police_logo.png?v=0f8552e`, and `certificate.html` → `application.html?v=0f8552e&id=…`.
+  `ASSET_VERSION` lives at the top of `backend/server.py` (currently the short commit the feature
+  shipped from, `0f8552e`).
+- **`Cache-Control: no-store` on the documents themselves.** The UI ships as self-contained
+  documents (inline `<script>`/`<style>`, no external bundle), so the HTML *is* the asset that must
+  never be replayed. `send_file()` now answers documents, uploads and un-versioned assets with
+  `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` + `Expires: 0` +
+  `Pragma: no-cache`; a `?v=`-stamped asset alone gets
+  `Cache-Control: public, max-age=31536000, immutable`.
+- **A stamp that tells you *which* page you have.** `<meta name="sentinel-ui-build">` is now
+  `sentinel-rbac-readonly-4-0f8552e` (revision **and** the short commit) and is shown as *UI build …*
+  in the sidebar footer (`window.SENTINEL_UI_BUILD`). `GET /api/health` reports `ui_build` — read
+  from the `index.html` on disk on every call, not from a constant — plus `asset_version` and
+  `static_cache`, so the footer can be compared with what the server is handing out: *footer ≠
+  health ⇒ the tab is stale*.
+
+### Bumping the version (do all of it)
+1. `ASSET_VERSION = '<short commit>'` and `UI_BUILD = 'sentinel-rbac-readonly-<n>-<short commit>'` in
+   `backend/server.py`.
+2. `<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-<n>-<short commit>" />` in `index.html`.
+3. Every `?v=…` in `index.html`, `application.html`, `certificate.html`.
+4. Run the suite — `static_asset_version_consistent()` + the served-header checks fail on any
+   parameter or stamp left behind.
+
+### Automated
+```sh
+.venv/bin/python backend/test_station_actions.py   # 140 checks (suite 6 = the cache-busting checks)
+node backend/test_frontend_session.mjs             # pins the stamp shape + that no static reference
+                                                   # is left un-versioned in index.html
+```
+
+### Officer UAT checklist
+1. Sign in as `admin`, open **Police Stations → Registered stations**: the **Actions** column with
+   **View**/**Edit** is present immediately on a normal reload (`Ctrl+R`) — no hard refresh needed.
+2. Sidebar footer shows *UI build sentinel-rbac-readonly-4-0f8552e*; `curl -s localhost:8001/api/health`
+   reports the same `ui_build` and `asset_version: "0f8552e"`.
+3. `curl -sI localhost:8001/ | grep -i cache-control` → `no-store, no-cache, must-revalidate, max-age=0`;
+   `curl -sI "localhost:8001/images/police_logo.png?v=0f8552e" | grep -i cache-control` →
+   `public, max-age=31536000, immutable`.
+4. Open **View → Certificate / Review/Print** (devtools → Network): the created document URL carries
+   `?v=0f8552e`.
+5. Open the app with a stale tab (`/?v=0f8552e`) and confirm the Actions column still renders.

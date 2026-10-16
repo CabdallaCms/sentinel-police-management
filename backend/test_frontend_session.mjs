@@ -541,11 +541,21 @@ function assertShellContract() {
   // the fingerprint register's Review/Print link is a write-side action
   if (!/\$\{canWrite\(\)\?`<a class="btn secondary small" data-write="1"[^`]*Review\/Print<\/a>`:''\}/.test(html))
     throw new Error('the fingerprint Review/Print link must be gated on canWrite()');
-  // a build stamp so an operator can tell a stale cached page from a stale server
-  if (!/<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-3" \/>/.test(html))
-    throw new Error('the sentinel-ui-build meta stamp is missing');
+  // a build stamp so an operator can tell a stale cached page from a stale server.
+  // The stamp carries the short commit the page was published from (the same
+  // value as every `?v=` cache-busting parameter); comparing the sidebar footer
+  // with /api/health 'ui_build' is what proves a page is stale.
+  const uiBuild = (html.match(/<meta name="sentinel-ui-build" content="([^"]+)" \/>/) || [])[1] || '';
+  if (!/^sentinel-rbac-readonly-\d+-[0-9a-f]{7,}$/.test(uiBuild))
+    throw new Error('the sentinel-ui-build meta stamp is missing its asset version: ' + uiBuild);
   if (!/window\.SENTINEL_UI_BUILD=/.test(html))
     throw new Error('window.SENTINEL_UI_BUILD must expose the frontend build');
+  // every static reference the page links out to is version-stamped, so a
+  // deployment invalidates the URL instead of relying on the cache headers
+  const unversioned = [...html.matchAll(/(?:href|src)="([^"]*\.html)"/g)]
+    .map((m) => m[1]).filter((href) => !href.includes('?v='));
+  if (unversioned.length)
+    throw new Error('static references must carry ?v=<asset version>: ' + unversioned.join(', '));
 }
 const probe = (sandbox, expr) => vm.runInContext(expr, sandbox);
 

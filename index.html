@@ -4,9 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <!-- UI build stamp. Lets an operator prove which frontend a browser is
-     running (the RBAC read-only / unit-denylist hardening ships in this
-     build) — see the sidebar footer and window.SENTINEL_UI_BUILD. -->
-<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-3" />
+     running — see the sidebar footer and window.SENTINEL_UI_BUILD. Bump it
+     with the `?v=` asset version below and ASSET_VERSION in
+     backend/server.py: the commit suffix is what separates a stale cached
+     page from a stale server. -->
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-0f8552e" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -3944,14 +3946,14 @@ function renderRegisterRow(item,currentUser){
   // Certificate link, everything else is a plain status label.
   if(isReadOnlyUser()){
     return approved
-      ? `<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(item.id)}">Certificate</a>`
+      ? `<a class="btn green small" target="_blank" href="certificate.html?v=0f8552e&id=${encodeURIComponent(item.id)}">Certificate</a>`
       : '<span class="muted">View only</span>';
   }
   let actionHtml='';
   if(staleBuild){
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="The running backend is not the review-lock build — approvals are disabled.">&#128274; Stale backend — locked</button>`;
   }else if(approved){
-    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?id=${encodeURIComponent(item.id)}">Certificate</a>`;
+    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=0f8552e&id=${encodeURIComponent(item.id)}">Certificate</a>`;
   }else if(isLocked){
     const remaining=Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed).toFixed(1);
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;">&#128274; Review Locked (12h)</button>
@@ -4155,7 +4157,7 @@ function renderFingerprintTable(){
    <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td class="actions">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?id=${encodeURIComponent(x.id)}">Review/Print</a>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=0f8552e&id=${encodeURIComponent(x.id)}">Review/Print</a>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -5176,9 +5178,11 @@ function applyNavForRole(){
 //
 // Called from applyNavForRole() (every nav pass), syncServer() (after /api/me),
 // loadSession() and the sign-in / sign-out transitions.
-// Which frontend build this browser is running — the read-only / unit-denylist
-// hardening ships in 'sentinel-rbac-readonly-3'. Shown in the sidebar footer so
-// an operator can tell a stale cached page from a stale server.
+// Which frontend build this browser is running — the stamp carries the short
+// commit the page was published from (the same value as every ?v= cache-busting
+// parameter, see ASSET_VERSION in backend/server.py) and is compared with
+// /api/health 'ui_build'. Shown in the sidebar footer so an operator can tell a
+// stale cached page from a stale server.
 function applyUiBuildLabel(){
   const meta=document.querySelector('meta[name="sentinel-ui-build"]');
   window.SENTINEL_UI_BUILD=(meta&&meta.content)||'unknown';

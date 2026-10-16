@@ -481,6 +481,23 @@ FINGERPRINT_ROLE_KEYS = {'fingerprint', 'fingerprintunit', 'fingerprintofficer',
 # can confirm the running process carries the review-lock rules.
 BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 
+# ---- static asset versioning / cache busting --------------------------------
+# Every static reference the three pages ship (the brand logo and the links
+# between index / application / certificate) carries `?v=<ASSET_VERSION>`, and
+# the served documents carry no-store headers, so a browser cannot keep running
+# an older page after a deployment.
+#
+# The version is the short commit the assets were published from — bump it,
+# the UI_BUILD stamp below and the `?v=` parameters in index.html,
+# application.html and certificate.html together (the station action suite
+# asserts all four agree, so a half-finished bump fails the tests instead of
+# silently leaving a stale page in a browser).
+ASSET_VERSION = '0f8552e'
+# The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
+# is what makes a stale browser tab visible to the operator: a cached page
+# keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
+UI_BUILD = 'sentinel-rbac-readonly-4-' + ASSET_VERSION
+
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
 # register; both prefixes resolve to the same handler and module gate.
 FINGERPRINT_API_ALIAS = '/api/fingerprint/applications'
@@ -730,6 +747,46 @@ def review_lock_armed():
     if _REVIEW_LOCK_ARMED is None:
         _REVIEW_LOCK_ARMED = review_lock_self_test().startswith('review lock self-test: PASS')
     return _REVIEW_LOCK_ARMED
+
+
+def served_ui_build():
+    """The `<meta name="sentinel-ui-build">` stamp of the index.html on disk.
+
+    Read (from the head of the file only — the meta sits in the first bytes)
+    on every call instead of being cached, so /api/health always reports what
+    the server would hand a browser right now. Comparing it with the "UI
+    build ..." label in the sidebar footer is how an operator proves whether a
+    page that looks old is a stale browser cache or the running server.
+    """
+    try:
+        with open(os.path.join(PROJECT_ROOT, 'index.html'), encoding='utf-8') as f:
+            head = f.read(8192)
+    except OSError:
+        return None
+    m = re.search(r'<meta\s+name="sentinel-ui-build"\s+content="([^"]+)"', head)
+    return m.group(1) if m else None
+
+
+def static_asset_version_consistent():
+    """True when every `?v=` stamp in the pages matches ASSET_VERSION.
+
+    The three pages reference each other and the brand logo with
+    `?v=<ASSET_VERSION>`; a half-finished version bump (the constant moved but
+    one page kept the old parameter) is what leaves a stale asset in a browser,
+    so the station action suite asserts this instead of trusting the bump.
+    """
+    for name in ('index.html', 'application.html', 'certificate.html'):
+        try:
+            with open(os.path.join(PROJECT_ROOT, name), encoding='utf-8') as f:
+                text = f.read()
+        except OSError:
+            return False
+        versions = set(re.findall(r'\?v=([A-Za-z0-9._-]+)', text))
+        if versions - {ASSET_VERSION}:
+            return False
+        if name == 'index.html' and not versions:
+            return False
+    return True
 
 
 def normalise_reason(value):
@@ -5626,6 +5683,12 @@ def _json_default(value):
 class API(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args): print('%s - %s' % (self.address_string(), fmt % args))
 
+    # HEAD is answered by the GET handlers with the body suppressed, so a
+    # cache/verification probe (`curl -I`, a proxy's health check) sees exactly
+    # the headers a browser would receive — including the Cache-Control
+    # contract below. Set by do_HEAD, never by a browser request for a body.
+    head_only = False
+
     def send_json(self, status, data, extra_headers=None):
         out = json.dumps(data, ensure_ascii=False, default=_json_default).encode()
         self.send_response(status)
@@ -5633,12 +5696,14 @@ class API(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(out)))
         self.send_header('Access-Control-Allow-Origin','*')
         self.send_header('Access-Control-Allow-Headers','Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Methods','GET, POST, PUT, PATCH, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods','GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD')
         for name, value in (extra_headers or []):
             self.send_header(name, value)
-        self.end_headers(); self.wfile.write(out)
+        self.end_headers()
+        if not self.head_only:
+            self.wfile.write(out)
 
-    def send_file(self, path, ctype):
+    def send_file(self, path, ctype, immutable=False):
         try:
             with open(path,'rb') as f: data = f.read()
         except OSError:
@@ -5646,16 +5711,42 @@ class API(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(data)))
-        # Development server: never let a browser serve a stale copy of a
-        # template (the printable pages are edited frequently and a cached
-        # application.html shows an outdated layout).
-        self.send_header('Cache-Control', 'no-store, must-revalidate')
-        self.end_headers(); self.wfile.write(data)
+        if immutable:
+            # A versioned asset URL (`?v=<ASSET_VERSION>`) is content-addressed
+            # by that parameter: it may be cached hard, and a new deployment
+            # changes the URL instead (see ASSET_VERSION at the top of the
+            # module). Nothing else may ever be cached this way.
+            self.send_header('Cache-Control', 'public, max-age=31536000, immutable')
+        else:
+            # Development server: never let a browser serve a stale copy of a
+            # page, template or uploaded file. The UI ships as self-contained
+            # documents (inline <script>/<style>, no external bundle), so the
+            # document itself is what must never be replayed from cache — the
+            # header set below is the belt-and-braces spelling every browser
+            # and intermediate proxy honours (no-store + no-cache + Expires: 0).
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
+        self.end_headers()
+        if not self.head_only:
+            self.wfile.write(data)
         # Truthy => the caller (serve_static) stops and does NOT fall through
         # to the JSON API, which would append a second response to the body.
         return True
 
     def do_OPTIONS(self): self.send_json(204, {})
+
+    def do_HEAD(self):
+        """Answer HEAD like GET with the body suppressed.
+
+        Kept explicit (a bare ``501 Unsupported method`` was the previous
+        behaviour) because header-only probes are how cache behaviour is
+        verified — by an operator with ``curl -I`` and by the preview proxy —
+        and because a 501 on HEAD hides the very Cache-Control headers this
+        build relies on.
+        """
+        self.head_only = True
+        self.do_GET()
 
     def read_only_403(self, exc, path=None):
         """Answer an HTTP 403 Forbidden for a read-only-role write attempt.
@@ -5694,6 +5785,9 @@ class API(BaseHTTPRequestHandler):
         # Brand assets for the printable templates — the police emblem used as
         # both the letterhead logo and the page watermark. '/static/images/x'
         # and '/images/x' resolve to the project-root images/ folder.
+        # A `?v=<ASSET_VERSION>` parameter makes the URL content-addressed, so
+        # those requests are served immutable while bare URLs stay no-store.
+        versioned = bool(parse_qs(p.query or '').get('v'))
         for prefix in ('/images/', '/static/images/'):
             if p.path.startswith(prefix):
                 rel = os.path.normpath(p.path[len(prefix):]).lstrip('/\\')
@@ -5702,7 +5796,8 @@ class API(BaseHTTPRequestHandler):
                 ext = os.path.splitext(rel)[1].lower()
                 ctype = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg',
                          '.gif':'image/gif','.webp':'image/webp','.svg':'image/svg+xml'}.get(ext,'application/octet-stream')
-                return self.send_file(os.path.join(PROJECT_ROOT, 'images', rel), ctype)
+                return self.send_file(os.path.join(PROJECT_ROOT, 'images', rel), ctype,
+                                      immutable=versioned)
         return None
 
     # ---- GET ----------------------------------------------------------------
@@ -5723,6 +5818,17 @@ class API(BaseHTTPRequestHandler):
                                             'database':'postgresql',
                                             'database_name':os.environ.get('SENTINEL_DB_NAME', 'sentinel_police'),
                                             'build':BUILD_TAG,
+                                            # ---- frontend / static-asset deployment markers ---
+                                            # `ui_build` is read from the index.html the server
+                                            # is serving right now (not from a constant), so an
+                                            # operator can compare the browser's sidebar footer
+                                            # ("UI build ...") against what the server hands out
+                                            # and prove a stale cached page is what they see.
+                                            # `asset_version` is the `?v=` stamp on every static
+                                            # reference (logo + inter-page links) in that page.
+                                            'ui_build':served_ui_build(),
+                                            'asset_version':ASSET_VERSION,
+                                            'static_cache':'no-store (versioned assets: immutable)',
                                             # Alias -> canonical route table, so a
                                             # caller can tell whether /api/branches
                                             # (and the other spec spellings) resolve

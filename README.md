@@ -129,9 +129,19 @@ UI and the API can never disagree:
   the browser — the same status the server returns. The printable review page
   (`application.html`) carries the same rule: a read-only session gets no *Approve Application*
   button, a view-only note instead, and `approve()` never issues the request.
-- **Confirming which build is live.** `index.html` stamps `<meta name="sentinel-ui-build"
-  content="sentinel-rbac-readonly-3">` and shows *UI build …* in the sidebar footer
-  (`window.SENTINEL_UI_BUILD`), while the backend prints its RBAC guarantees at start-up
+- **Confirming which build is live (and never running a cached one).** `index.html` stamps
+  `<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-0f8552e">` and shows *UI build …*
+  in the sidebar footer (`window.SENTINEL_UI_BUILD`). The stamp ends with the short commit the page
+  was published from, which is also the `?v=` parameter on every static reference in the app
+  (`certificate.html?v=0f8552e&id=…`, `images/police_logo.png?v=0f8552e`) — bump `ASSET_VERSION`
+  *and* `UI_BUILD` in `backend/server.py` together with the `?v=` parameters in `index.html`,
+  `application.html` and `certificate.html` (the station action suite asserts all of them agree).
+  Served documents answer `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` +
+  `Expires: 0` + `Pragma: no-cache`, so a normal reload always fetches the current page, and
+  `?v=`-stamped assets are the only ones allowed to be cached (`immutable`). `GET /api/health`
+  reports `ui_build` (read from the `index.html` on disk, not a constant) and `asset_version`:
+  if the sidebar footer and `ui_build` differ, the tab is stale — hard-refresh it. Meanwhile the
+  backend prints its RBAC guarantees at start-up
   (*Central Police Search is NOT granted to AirportControl, CIDUnit* / *global read-only roles
   chief_commander — DELETE, PATCH, POST, PUT … answer 403 Forbidden*). If a browser still shows the
   old menu or action buttons, it is a stale tab: hard-refresh it (the server sends

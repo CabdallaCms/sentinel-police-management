@@ -35,6 +35,7 @@ Usage:
 """
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -164,6 +165,99 @@ def db_connect(env):
             cursor_factory=psycopg2.extras.RealDictCursor)
     conn.autocommit = True
     return conn
+
+
+# ---------------------------------------------------------------------------
+# 6. Static asset deployment — version stamps + anti-stale-cache headers
+# ---------------------------------------------------------------------------
+def cache_busting_suite(base):
+    """The page a browser receives is always the current build.
+
+    Three things have to hold together, and all three are asserted here
+    because a half-finished version bump is exactly what leaves an operator
+    staring at a cached page without the Actions column:
+      * every static reference carries `?v=<ASSET_VERSION>`,
+      * the served documents (index / application / certificate) answer
+        `Cache-Control: no-store` so the HTML is never replayed from cache,
+      * index.html's `sentinel-ui-build` stamp equals the server's UI_BUILD
+        and its commit suffix equals ASSET_VERSION,
+      * a `?v=`-stamped asset may be cached hard (immutable), a bare one not.
+    """
+    print('== 6. Static asset versioning (cache busting) ==')
+    version = srv.ASSET_VERSION
+    check(bool(version) and version == '0f8552e',
+          f'the server publishes the feature-commit asset version ({version})')
+    check(srv.static_asset_version_consistent(),
+          'every `?v=` stamp in index / application / certificate matches ASSET_VERSION')
+
+    res = urllib.request.urlopen(base + '/', timeout=20)
+    index_html = res.read().decode()
+    headers = {k.lower(): v for k, v in res.headers.items()}
+    check('no-store' in (headers.get('cache-control') or '').lower(),
+          f'index.html answers Cache-Control: {headers.get("cache-control")}')
+    check('no-cache' in (headers.get('cache-control') or '').lower()
+          and headers.get('expires') == '0'
+          and (headers.get('pragma') or '').lower() == 'no-cache',
+          'index.html also sends no-cache + Expires: 0 + Pragma: no-cache')
+
+    meta = re.search(r'<meta\s+name="sentinel-ui-build"\s+content="([^"]+)"', index_html)
+    check(bool(meta), 'index.html carries the sentinel-ui-build meta stamp')
+    stamp = meta.group(1) if meta else ''
+    check(stamp.endswith(version),
+          f'the UI build stamp includes the asset version ({stamp})')
+    check(srv.served_ui_build() == stamp,
+          'the server reports the stamp of the index.html it is actually serving')
+    check(srv.UI_BUILD == stamp,
+          f'the server UI_BUILD constant matches the served stamp ({srv.UI_BUILD})')
+    check(('?v=' + version) in index_html,
+          'index.html links out with a versioned, cache-busting reference')
+
+    for page in ('application.html', 'certificate.html'):
+        r = urllib.request.urlopen(base + '/' + page, timeout=20)
+        body = r.read().decode()
+        h = {k.lower(): v for k, v in r.headers.items()}
+        check('no-store' in (h.get('cache-control') or '').lower(),
+              f'{page} answers Cache-Control: no-store')
+        refs = re.findall(r'(?:href|src)="([^"]+)"', body)
+        # Compare the path part only — the `?v=` parameter is exactly what the
+        # `endswith('.html')` test would otherwise trip over.
+        static_refs = [x for x in refs if x.split('?')[0].endswith('.html')
+                       or 'images/' in x.split('?')[0]]
+        check(bool(static_refs) and all('?v=' + version in x for x in static_refs),
+              f'every static reference on {page} is version-stamped ({len(static_refs)} refs)')
+
+    logo = urllib.request.urlopen(base + '/images/police_logo.png?v=' + version, timeout=20)
+    lh = {k.lower(): v for k, v in logo.headers.items()}
+    check(logo.status == 200 and int(lh.get('content-length', 0)) > 0,
+          'the versioned brand asset is served')
+    check('immutable' in (lh.get('cache-control') or '').lower(),
+          f'a ?v=-stamped asset is cacheable/immutable ({lh.get("cache-control")})')
+    bare = urllib.request.urlopen(base + '/images/police_logo.png', timeout=20)
+    bh = {k.lower(): v for k, v in bare.headers.items()}
+    check('no-store' in (bh.get('cache-control') or '').lower(),
+          'an un-versioned asset is never cached')
+
+    health = json.loads(urllib.request.urlopen(base + '/api/health', timeout=20).read().decode())
+    check(health.get('asset_version') == version and health.get('ui_build') == stamp,
+          f"/api/health reports the deployed UI ({health.get('ui_build')}, {health.get('asset_version')})")
+
+    # A header-only probe (curl -I, a proxy's health check) must report the same
+    # cache contract instead of the old `501 Unsupported method`.
+    for path, expect in (('/', 'no-store'),
+                         ('/?v=' + version, 'no-store'),
+                         ('/application.html', 'no-store'),
+                         ('/images/police_logo.png?v=' + version, 'immutable')):
+        req = urllib.request.Request(base + path, method='HEAD')
+        with urllib.request.urlopen(req, timeout=20) as r:
+            cc = (r.headers.get('cache-control') or '').lower()
+            body = r.read()
+        check(r.status == 200 and expect in cc and body == b'',
+              f'HEAD {path} answers 200, an empty body and Cache-Control: {cc}')
+    req = urllib.request.Request(base + '/api/health', method='HEAD')
+    with urllib.request.urlopen(req, timeout=20) as r:
+        check(r.status == 200 and r.read() == b''
+              and int(r.headers.get('content-length', 0)) > 0,
+              'HEAD /api/health is answered with headers only')
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +657,7 @@ def main():
         sid = admin_edit_suite(base, tokens)
         permission_suite(base, tokens, sid)
         mirror_and_audit_suite(base, tokens, db, sid)
+        cache_busting_suite(base)
     finally:
         if db is not None:
             db.close()
