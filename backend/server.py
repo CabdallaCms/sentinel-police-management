@@ -14,10 +14,34 @@ Identity matching tiers (used by /api/persons/resolve and every unit route):
 
 Replace demo authentication before any operational deployment.
 """
-import datetime, decimal, hashlib, json, os, re, secrets, signal, socket, subprocess, time
-import psycopg2
-import psycopg2.extensions
-from psycopg2.extras import RealDictCursor, RealDictRow
+import datetime, decimal, hashlib, json, os, re, secrets, signal, socket, subprocess, sys, time
+# `--ui-check` only inspects files, so it must work in an environment without
+# the PostgreSQL driver (a bare `python3 backend/server.py --ui-check` on a
+# machine where the venv is not active). Every other entry point needs it.
+_UI_CHECK_ONLY = '--ui-check' in sys.argv[1:]
+try:
+    import psycopg2
+    import psycopg2.extensions
+    from psycopg2.extras import RealDictCursor, RealDictRow
+except ImportError:
+    if not _UI_CHECK_ONLY:
+        raise
+    # Placeholders so the row / cursor / connection subclasses below can be
+    # *defined* (never used): `--ui-check` exits before anything touches the
+    # database. A tiny stand-in module keeps the class statements valid.
+    import types as _types
+
+    class _Unavailable:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError('psycopg2 is not installed')
+
+    class RealDictRow(dict):
+        pass
+
+    psycopg2 = _types.SimpleNamespace(
+        extensions=_types.SimpleNamespace(connection=_Unavailable),
+        OperationalError=Exception)
+    RealDictCursor = _Unavailable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from vehicles import (
@@ -53,14 +77,52 @@ SERVER_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(ROOT)
 # ---- where the served pages come from --------------------------------------
-# The single source of truth for the UI templates is the repository root that
-# contains backend/server.py. A packaged deployment may point the process at a
-# different template directory with SENTINEL_UI_DIR; whichever directory wins,
-# the server verifies at startup that *its* index.html is the current page (see
-# ui_self_test) and refuses to serve a stale one. The resolved path is logged
-# at startup and reported by /api/health as `ui_path`, so "which index.html is
-# this process actually serving" is never a guess.
-UI_DIR = os.path.abspath(os.environ.get('SENTINEL_UI_DIR') or PROJECT_ROOT)
+# `python backend/server.py` serves the index.html that sits in the directory
+# it is started from, so editing the page in your working tree is what a local
+# `http://localhost:8001` reload immediately shows. Resolution order:
+#
+#   1. SENTINEL_UI_DIR          — explicit override (packaged deployments)
+#   2. the current working directory — `cd <repo> && python backend/server.py`
+#   3. the repository root containing backend/server.py — so starting the
+#      server from another directory (or `cd backend && python server.py`)
+#      still finds the page instead of silently serving nothing
+#
+# The file is re-read from disk on every request (send_file), so editing
+# index.html needs no restart and no "auto-reload" watcher. Whichever
+# directory wins is verified before the port is bound and continuously while
+# serving: a stale page is a startup error / 503, never a silent response.
+# /api/health reports `ui_path`, `ui_source`, `ui_cwd` and `ui_git`, so
+# "which index.html is this process serving, and from which checkout" is
+# answered by the running process itself.
+def ui_candidates():
+    """[(source, index.html path)] in resolution order, de-duplicated."""
+    out = []
+    explicit = (os.environ.get('SENTINEL_UI_DIR') or '').strip()
+    if explicit:
+        out.append(('SENTINEL_UI_DIR', os.path.abspath(os.path.join(explicit, 'index.html'))))
+    out.append(('current working directory', os.path.abspath(os.path.join(os.getcwd(), 'index.html'))))
+    out.append(('repository root', os.path.abspath(os.path.join(PROJECT_ROOT, 'index.html'))))
+    seen, unique = set(), []
+    for source, path in out:
+        key = os.path.realpath(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append((source, path))
+    return unique
+
+
+def resolve_ui_dir():
+    """Pick the template directory: the first candidate that holds index.html."""
+    for source, path in ui_candidates():
+        if os.path.isfile(path):
+            return os.path.dirname(path), source
+    # Nothing exists anywhere: fall back to the repository root so the startup
+    # guard can explain what is missing, rather than a bare traceback.
+    return PROJECT_ROOT, 'repository root (index.html missing)'
+
+
+UI_DIR, UI_SOURCE = resolve_ui_dir()
 INDEX_HTML = os.path.join(UI_DIR, 'index.html')
 UPLOAD_DIR = os.environ.get('SENTINEL_UPLOADS', os.path.join(ROOT, 'uploads'))
 TOKENS = {}
@@ -772,6 +834,55 @@ def review_lock_armed():
     return _REVIEW_LOCK_ARMED
 
 
+def git_identity(start_dir=None):
+    """Branch + commit of the checkout a directory belongs to, or None.
+
+    Read from `.git` directly (no subprocess): a local UAT report of "the old
+    build is still served" is usually a checkout on the wrong branch, so the
+    running process should be able to say *which* checkout its page came from.
+    Handles `.git` files (worktrees) and packed refs; returns
+    {'branch': 'main', 'commit': '<sha>'} or None outside a repository.
+    """
+    d = os.path.abspath(start_dir or UI_DIR)
+    git_path = None
+    while True:
+        candidate = os.path.join(d, '.git')
+        if os.path.isdir(candidate) or os.path.isfile(candidate):
+            git_path = candidate
+            break
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+    try:
+        if os.path.isfile(git_path):            # worktree: "gitdir: /path/to/.git/worktrees/x"
+            with open(git_path, encoding='utf-8') as f:
+                line = f.read().strip()
+            if not line.startswith('gitdir:'):
+                return None
+            git_path = os.path.normpath(os.path.join(d, line.split(':', 1)[1].strip()))
+        with open(os.path.join(git_path, 'HEAD'), encoding='utf-8') as f:
+            head = f.read().strip()
+        if head.startswith('ref:'):
+            ref = head.split(':', 1)[1].strip()
+            branch = ref[len('refs/heads/'):] if ref.startswith('refs/heads/') else ref.rsplit('/', 1)[-1]
+            ref_file = os.path.join(git_path, *ref.split('/'))
+            if os.path.isfile(ref_file):
+                with open(ref_file, encoding='utf-8') as f:
+                    return {'branch': branch, 'commit': f.read().strip()}
+            packed = os.path.join(git_path, 'packed-refs')
+            if os.path.isfile(packed):
+                with open(packed, encoding='utf-8') as f:
+                    for row in f:
+                        parts = row.strip().split()
+                        if len(parts) == 2 and parts[1] == ref:
+                            return {'branch': branch, 'commit': parts[0]}
+            return {'branch': branch, 'commit': None}
+        return {'branch': None, 'commit': head}   # detached HEAD
+    except OSError:
+        return None
+
+
 # Cache of the parsed UI state, keyed by (path, size, mtime_ns) so /api/health
 # can report what is on disk without re-reading a half-megabyte page on every
 # probe, while still noticing an edit, a replacement or a re-deploy instantly.
@@ -797,7 +908,8 @@ def ui_state(path=None):
     except OSError:
         return {'path': path, 'exists': False, 'bytes': 0, 'mtime': None,
                 'sha256': None, 'stamp': None, 'features': {},
-                'actions_published': False,
+                'actions_published': False, 'source': None, 'cwd': os.getcwd(),
+                'git': git_identity(os.path.dirname(path)),
                 'problems': [f'{path} does not exist — the server has no UI template to serve']}
     key = (path, st.st_size, st.st_mtime_ns)
     cached = _UI_STATE_CACHE.get(path)
@@ -810,7 +922,8 @@ def ui_state(path=None):
     except OSError as exc:
         return {'path': path, 'exists': False, 'bytes': 0, 'mtime': None,
                 'sha256': None, 'stamp': None, 'features': {},
-                'actions_published': False,
+                'actions_published': False, 'source': None, 'cwd': os.getcwd(),
+                'git': git_identity(os.path.dirname(path)),
                 'problems': [f'{path} cannot be read: {exc}']}
     text = raw.decode('utf-8', 'replace')
     m = re.search(r'<meta\s+name="sentinel-ui-build"\s+content="([^"]+)"', text)
@@ -831,9 +944,72 @@ def ui_state(path=None):
              'sha256': hashlib.sha256(raw).hexdigest(), 'stamp': stamp,
              'features': features,
              'actions_published': bool(features.get('Actions column')),
+             'source': UI_SOURCE if os.path.realpath(path) == os.path.realpath(INDEX_HTML) else 'explicit path',
+             'cwd': os.getcwd(),
+             'git': git_identity(os.path.dirname(path)),
              'problems': problems}
     _UI_STATE_CACHE[path] = (key, dict(state))
     return state
+
+
+def _stamp_of(path):
+    """The `sentinel-ui-build` stamp of an arbitrary index.html, or None."""
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            head = f.read(8192)
+    except OSError:
+        return None
+    m = re.search(r'<meta\s+name="sentinel-ui-build"\s+content="([^"]+)"', head)
+    return m.group(1) if m else None
+
+
+def ui_diagnosis(path=None):
+    """Multi-line explanation of exactly which index.html is being served.
+
+    Printed by the startup refusal, returned in the body of a stale-request
+    503, and shown by `python backend/server.py --ui-check`. It names the
+    chosen file, the other copies that resolution skipped (with their build
+    stamps), and the checkout's branch/commit — the three facts needed to tell
+    "wrong directory" apart from "wrong branch" apart from "un-rebuilt package".
+    """
+    state = ui_state(path)
+    lines = [f'serving  : {state["path"]}',
+             f'via      : {state.get("source") or "?"}   (cwd {state.get("cwd")})',
+             f'stamp    : {state["stamp"]!r}   expected {UI_BUILD!r}']
+    git = state.get('git') or {}
+    if git.get('branch') or git.get('commit'):
+        lines.append(f'checkout : branch {git.get("branch") or "(detached)"} @ '
+                     f'{(git.get("commit") or "?")[:7]}')
+        branch_tail = (git.get('branch') or '').rsplit('/', 1)[-1]
+        if branch_tail in ('main', 'master') and state['stamp'] != UI_BUILD:
+            lines.append('           this checkout predates the station View/Edit feature — '
+                         'switch to the feature branch or merge it first')
+    others = [(src, path2) for src, path2 in ui_candidates()
+              if os.path.isfile(path2)
+              and os.path.realpath(path2) != os.path.realpath(state['path'])]
+    if others:
+        lines.append('other index.html copies on this machine:')
+        for src, path2 in others:
+            stamp2 = _stamp_of(path2) or '<none>'
+            mark = '  <-- current' if stamp2 == UI_BUILD else ''
+            lines.append(f'  {path2}  [{stamp2}]  ({src}){mark}')
+    for problem in state['problems']:
+        lines.append(f'  - {problem}')
+    current = [path for _src, path in ui_candidates() if _stamp_of(path) == UI_BUILD]
+    if current:
+        lines.append(f'the current page is at: {current[0]}')
+        lines.append('start the server from that directory, or set SENTINEL_UI_DIR to it.')
+    else:
+        lines.append('no copy of the current index.html was found on this machine — '
+                     'this checkout does not contain the build you are starting '
+                     '(check git branch --show-current / git log -1) or the package was '
+                     'not rebuilt.')
+    return '\n'.join(lines)
+
+
+def ui_current_paths():
+    """Candidate template paths whose stamp matches this build."""
+    return [path for _src, path in ui_candidates() if _stamp_of(path) == UI_BUILD]
 
 
 def served_ui_build():
@@ -5826,6 +6002,28 @@ class API(BaseHTTPRequestHandler):
         # to the JSON API, which would append a second response to the body.
         return True
 
+    def send_stale_ui(self, state):
+        """Answer GET / with 503 when the template on disk is not this build.
+
+        Serving the page anyway is what produced the UAT report: a fresh
+        browser, no cache involved, running 'sentinel-rbac-readonly-3' without
+        the Actions column. An explicit, self-explaining failure is the only
+        safe answer.
+        """
+        body = ('Sentinel: the index.html on disk is not the build this server serves.\n\n'
+                + ui_diagnosis() + '\n\n'
+                + 'Check without starting a server:  python backend/server.py --ui-check\n')
+        data = body.encode()
+        self.send_response(503)
+        self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('X-Sentinel-UI-Stale', '1')
+        self.end_headers()
+        if not self.head_only:
+            self.wfile.write(data)
+        return True
+
     def do_OPTIONS(self): self.send_json(204, {})
 
     def do_HEAD(self):
@@ -5868,6 +6066,13 @@ class API(BaseHTTPRequestHandler):
         # default, or SENTINEL_UI_DIR for a packaged deployment) — the same
         # path startup verified and /api/health reports as `ui_path`.
         if p.path in ('/','/index.html'):
+            # Re-checked per request (cheap: ui_state caches on size+mtime), so
+            # a checkout switched underneath a running server — the exact way
+            # a *fresh* browser ended up with the previous release — yields a
+            # 503 that names the problem instead of the stale page.
+            state = ui_state()
+            if state['problems']:
+                return self.send_stale_ui(state)
             return self.send_file(INDEX_HTML, 'text/html; charset=utf-8')
         if p.path in ('/application.html','/certificate.html'):
             return self.send_file(os.path.join(UI_DIR, p.path.lstrip('/')), 'text/html; charset=utf-8')
@@ -5941,6 +6146,9 @@ class API(BaseHTTPRequestHandler):
                                             # startup refuses that, so it should never be seen on
                                             # a running process.
                                             'ui_path':ui.get('path'),
+                                            'ui_source':ui.get('source'),
+                                            'ui_cwd':ui.get('cwd'),
+                                            'ui_git':ui.get('git'),
                                             'ui_sha256':ui.get('sha256'),
                                             'ui_bytes':ui.get('bytes'),
                                             'ui_actions_published':ui.get('actions_published'),
@@ -7478,7 +7686,37 @@ def bind_server(port):
     raise last
 
 
+def _ui_check_cli():
+    """`python backend/server.py --ui-check` — answer "what will it serve?"
+
+    Exits 0 when the resolved template is this build and 1 otherwise, so it
+    can gate a local restart or a CI step without starting the server or
+    touching the database.
+    """
+    state = ui_state()
+    print(f'build    : {UI_BUILD}')
+    print(f'asset    : {ASSET_VERSION}')
+    print(f'cwd      : {os.getcwd()}')
+    print(f'server   : {os.path.join(ROOT, "server.py")}')
+    print('candidates:')
+    for source, path in ui_candidates():
+        stamp = _stamp_of(path)
+        mark = 'OK ' if stamp == UI_BUILD else '-- '
+        print(f'  {mark}{path}  [{stamp or "missing"}]  ({source})')
+    print()
+    if state['problems']:
+        print('WOULD REFUSE TO START:')
+        print(ui_diagnosis())
+        return 1
+    print('OK — GET / would serve:')
+    print(ui_diagnosis())
+    print(f'  Actions column: {"yes" if state["actions_published"] else "NO"}')
+    return 0
+
+
 if __name__ == '__main__':
+    if '--ui-check' in sys.argv[1:]:
+        raise SystemExit(_ui_check_cli())
     # The page is the product here: a backend that boots against an old
     # template is indistinguishable, from the officer's chair, from a feature
     # that was never implemented. Refuse to serve one.
@@ -7487,11 +7725,8 @@ if __name__ == '__main__':
         raise SystemExit(
             'FATAL: the index.html this server would serve is not the current page; '
             'refusing to start.\n'
-            f'       template : {ui["path"]}\n'
-            f'       stamp    : {ui["stamp"]!r} (expected {UI_BUILD!r})\n'
-            + ''.join(f'       - {p}\n' for p in ui['problems'])
-            + '       Fix: run the server from the repository root that contains the current '
-              'index.html (or point SENTINEL_UI_DIR at it), and rebuild any packaged copy.\n')
+            + ''.join('       ' + line + '\n' for line in ui_diagnosis().splitlines())
+            + '       Check without starting a server:  python backend/server.py --ui-check\n')
     try:
         init_db()
     except psycopg2.OperationalError as exc:
@@ -7527,6 +7762,11 @@ if __name__ == '__main__':
     print(f'  build {BUILD_TAG}')
     print(f'  ui {UI_BUILD}  (index.html {ui["bytes"]} bytes, sha256 {ui["sha256"][:12]}…)')
     print(f'  ui template : {ui["path"]}')
+    print(f'  ui source   : {ui["source"]}   (cwd {ui["cwd"]})')
+    _git = ui.get('git') or {}
+    if _git.get('branch') or _git.get('commit'):
+        print(f'  ui checkout : branch {_git.get("branch") or "(detached)"} @ '
+              f'{(_git.get("commit") or "?")[:7]}')
     print('  ui features : ' + ', '.join(
         f'{label}={"yes" if present else "NO"}' for label, present in ui['features'].items()))
     if os.environ.get('SENTINEL_DATABASE_URL', '').strip():

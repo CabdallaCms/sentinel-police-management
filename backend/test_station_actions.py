@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -105,6 +106,15 @@ def request(base, method, path, token=None, body=None):
             return e.code, {'error': raw}
 
 
+def http_get(url):
+    """GET any URL and return (status, text, headers) — for HTML, not JSON."""
+    try:
+        with urllib.request.urlopen(url, timeout=20) as r:
+            return r.status, r.read().decode('utf-8', 'replace'), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode('utf-8', 'replace'), dict(e.headers)
+
+
 def login(base, username, password='ChangeMe123!'):
     status, body = request(base, 'POST', '/api/login',
                            body={'username': username, 'password': password})
@@ -171,7 +181,7 @@ def db_connect(env):
 # ---------------------------------------------------------------------------
 # 6. Static asset deployment — version stamps + anti-stale-cache headers
 # ---------------------------------------------------------------------------
-def cache_busting_suite(base):
+def cache_busting_suite(base, env_overrides=None):
     """The page a browser receives is always the current build.
 
     Three things have to hold together, and all three are asserted here
@@ -297,6 +307,82 @@ def cache_busting_suite(base):
                           capture_output=True, text=True, timeout=120)
     check(proc.returncode != 0 and 'FATAL' in proc.stderr and 'Actions column' in proc.stderr,
           'a server handed the old template refuses to start (FATAL, names the Actions column)')
+    check('current working directory' in proc.stderr,
+          'the refusal names which directory the template was resolved from')
+
+    # ---- template resolution: current working directory first -------------
+    # `cd <repo> && python backend/server.py` must serve <repo>/index.html.
+    index_path = os.path.join(os.path.dirname(ROOT), 'index.html')
+    ui_dir = tempfile.mkdtemp(prefix='sentinel-cwd-ui-')
+    shutil.copy2(index_path, os.path.join(ui_dir, 'index.html'))
+    ok_run = subprocess.run([sys.executable, SERVER, '--ui-check'], cwd=ui_dir,
+                            capture_output=True, text=True, timeout=120)
+    check(ok_run.returncode == 0, f'--ui-check exits 0 on a current page ({ok_run.returncode})')
+    check(f'serving  : {os.path.join(ui_dir, "index.html")}' in ok_run.stdout
+          and 'current working directory' in ok_run.stdout,
+          'the template is read from the CURRENT WORKING DIRECTORY first')
+    check('Actions column: yes' in ok_run.stdout,
+          '--ui-check confirms the Actions column is published')
+
+    # A stale page in the cwd is refused, and the diagnosis points at the
+    # current copy that resolution skipped instead of leaving the operator
+    # guessing which of two index.html files won.
+    stale_cwd = tempfile.mkdtemp(prefix='sentinel-cwd-stale-')
+    with open(os.path.join(stale_cwd, 'index.html'), 'w', encoding='utf-8') as f:
+        f.write(old_page)
+    stale_run = subprocess.run([sys.executable, SERVER, '--ui-check'], cwd=stale_cwd,
+                               capture_output=True, text=True, timeout=120)
+    check(stale_run.returncode == 1, '--ui-check exits 1 when the cwd page is stale')
+    check('repository root' in stale_run.stdout and 'index.html' in stale_run.stdout,
+          'the diagnosis lists the other index.html copies resolution skipped')
+    check('the current page is at:' in stale_run.stdout,
+          'the diagnosis names the current copy to start from')
+
+    # ---- a RUNNING server never emits a stale page ------------------------
+    live_dir = tempfile.mkdtemp(prefix='sentinel-live-ui-')
+    shutil.copy2(index_path, os.path.join(live_dir, 'index.html'))
+    live_port = free_port()
+    live = subprocess.Popen([sys.executable, SERVER], cwd=os.path.dirname(ROOT),
+                            env=dict(os.environ, **(env_overrides or {}),
+                                     SENTINEL_UI_DIR=live_dir, PORT=str(live_port)),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(120):
+            try:
+                if request(f'http://127.0.0.1:{live_port}', 'GET', '/api/health')[0] == 200:
+                    break
+            except Exception:
+                time.sleep(0.25)
+        else:
+            check(False, 'the live-guard server started')
+        status, _, _ = http_get(f'http://127.0.0.1:{live_port}/')
+        check(status == 200, f'GET / serves the current page ({status})')
+
+        # Swap in the previous release underneath the running server: the one
+        # move that produced the UAT report (a checkout on main).
+        with open(os.path.join(live_dir, 'index.html'), 'w', encoding='utf-8') as f:
+            f.write(old_page)
+        try:
+            with urllib.request.urlopen(f'http://127.0.0.1:{live_port}/', timeout=20) as r:
+                check(False, 'a stale page must never be served (got 200)')
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode()
+            check(exc.code == 503 and exc.headers.get('X-Sentinel-UI-Stale') == '1',
+                  f'GET / answers 503 (stale-UI header) once the page goes stale ({exc.code})')
+            check('sentinel-rbac-readonly-3' in body and 'Actions column' in body,
+                  'the 503 body names the stale stamp and the missing Actions column')
+        except Exception as exc:
+            check(False, f'a stale page must never be served ({exc})')
+
+        shutil.copy2(index_path, os.path.join(live_dir, 'index.html'))
+        status, _, _ = http_get(f'http://127.0.0.1:{live_port}/')
+        check(status == 200, f'the running server recovers when the page is restored ({status})')
+    finally:
+        live.terminate()
+        try:
+            live.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            live.kill()
 
 
 # ---------------------------------------------------------------------------
@@ -696,7 +782,7 @@ def main():
         sid = admin_edit_suite(base, tokens)
         permission_suite(base, tokens, sid)
         mirror_and_audit_suite(base, tokens, db, sid)
-        cache_busting_suite(base)
+        cache_busting_suite(base, env_overrides)
     finally:
         if db is not None:
             db.close()

@@ -317,3 +317,55 @@ that names the missing Actions column.
 4. If any of 1–3 fails, the preview is attached to a process serving a different template: restart
    from this checkout (`bash scripts/restart-8001.sh`) or use the preview URL reported for the
    current session. The startup log names the template path, the stamp and the sha256 it is serving.
+
+## Local `python backend/server.py` — resolution, `--ui-check`, and the main-branch trap (2026-10-17)
+
+A second UAT report: `http://localhost:8001` on multiple browsers still showed
+`sentinel-rbac-readonly-3` and no Actions column. Re-verified on a *fresh clone on `main`*: that
+checkout's `index.html` **is** `readonly-3` with zero station-action markup, because `main` never
+received the feature — the work lives on `arena/70d3d88b-sentinel-police-management`. A local
+`python backend/server.py` on `main` therefore served exactly what the report described, and there
+was no guard in that commit to say so.
+
+### Resolution rules (implemented)
+`ui_candidates()` picks the first of:
+
+1. `SENTINEL_UI_DIR` (explicit; packaged deployments),
+2. **the current working directory** — `cd <repo> && python backend/server.py`,
+3. the repository root containing `backend/server.py`.
+
+`send_file()` opens the page on every request, so an edit is live on the next reload; no template
+cache, restart or file watcher exists to go stale. The resolved path is used for `/`,
+`/index.html`, `/application.html`, `/certificate.html` and (when present) `UI_DIR/images`.
+
+### Guards
+- **Startup refusal** — before `init_db()`, a stale/mismatched template exits `FATAL` naming the
+  path, the stamp, the branch/commit of the checkout, the other `index.html` copies that resolution
+  skipped, and the copy to start from.
+- **`GET /` re-checks per request** (cached on size + mtime): if the checkout changes under a
+  running server, the answer is **503** with `X-Sentinel-UI-Stale: 1` and the same diagnosis —
+  never the old page. Restoring the file recovers with no restart.
+- **`--ui-check`** (`python backend/server.py --ui-check`) prints the resolution and exits `1` when
+  the server would refuse; runs without the database driver.
+- **`/api/health`** adds `ui_source`, `ui_cwd`, `ui_git`, alongside `ui_path` / `ui_sha256` /
+  `ui_actions_published` / `ui_ok`.
+
+### Local verification (the reporter's step 3)
+```sh
+cd sentinel-police-management
+python backend/server.py --ui-check        # exit 0, "Actions column: yes"
+python backend/server.py                   # prints: ui template / ui source / ui checkout
+curl -s http://localhost:8001/ | grep -E 'sentinel-rbac-readonly-4-0f8552e|<th>Actions</th>'
+```
+Verified on a fresh clone: on `main` the server refuses to start and prints *“this checkout predates
+the station View/Edit feature — switch to the feature branch or merge it first”*; after
+`git checkout arena/70d3d88b-sentinel-police-management`, `GET /` returns both
+`sentinel-rbac-readonly-4-0f8552e` and `<th>Actions</th>` (and `openStationView` / `openStationEdit`).
+
+### Automated
+```sh
+.venv/bin/python backend/test_station_actions.py   # 165 checks (suite 6 covers this)
+```
+New checks: CWD-first resolution, `--ui-check` pass/fail + diagnosis content, the startup refusal
+naming the resolution source, a **running** server answering `503` when the page goes stale and
+recovering to `200` when restored.

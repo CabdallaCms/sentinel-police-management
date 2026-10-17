@@ -141,12 +141,25 @@ UI and the API can never disagree:
   `?v=`-stamped assets are the only ones allowed to be cached (`immutable`). `GET /api/health`
   reports `ui_build` (read from the `index.html` on disk, not a constant) and `asset_version`:
   if the sidebar footer and `ui_build` differ, the tab is stale — hard-refresh it.
+- **Where the page comes from (local runs).** `python backend/server.py` serves the `index.html`
+  found in the **current working directory** first, then the repository root that holds
+  `backend/server.py`, then `SENTINEL_UI_DIR` when set (explicit override, packaged deployments).
+  The file is re-read on every request, so editing it is live on the next reload — no template
+  cache, no restart. `python backend/server.py --ui-check` answers *what would `GET /` serve?*
+  without starting the server or touching the database (exit `1` if it would refuse), and
+  `/api/health` reports `ui_source`, `ui_cwd` and `ui_git` (branch + commit of the checkout the
+  template came from). **The station View/Edit work lives on the branch
+  `arena/70d3d88b-sentinel-police-management`, not on `main`** — a checkout of `main` is
+  `sentinel-rbac-readonly-3` without the Actions column, and the server now refuses to start on it
+  instead of silently serving it.
 - **A stale page cannot be served.** `/api/health` also publishes `ui_path`, `ui_sha256`,
   `ui_actions_published` and `ui_ok`/`ui_problems` for the template the process is actually serving,
   and `bash scripts/verify-live-ui.sh <url>` compares them with a checkout (stamp, sha256, Actions
   column, View/Edit entry points, cache headers) — a fresh browser showing an old build is a *server*
   problem, and that script names it. Startup refuses to bind the port at all when the `index.html` it
-  would serve is not this build (old stamp, or missing the Actions / View / Edit markers), and
+  would serve is not this build (old stamp, or missing the Actions / View / Edit markers), a
+  running server answers `503` (`X-Sentinel-UI-Stale: 1`) rather than emit it after the checkout
+  changes underneath it, and
   `SENTINEL_UI_DIR` lets a packaged deployment point at a different template directory — whatever
   directory wins is the one verified, logged and reported. Meanwhile the
   backend prints its RBAC guarantees at start-up

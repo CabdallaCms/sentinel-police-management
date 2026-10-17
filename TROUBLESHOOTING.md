@@ -166,17 +166,74 @@ fails loudly when they differ, e.g.:
        => the running process serves a DIFFERENT index.html (an older deployment).
 ```
 
+### Local development: `python backend/server.py` on `localhost:8001`
+
+The page is read from **the directory you start the server in**, in this order:
+
+| priority | source | when |
+|---|---|---|
+| 1 | `SENTINEL_UI_DIR` | packaged deployments / explicit override |
+| 2 | **current working directory** | `cd sentinel-police-management && python backend/server.py` |
+| 3 | the repository root containing `backend/server.py` | started from elsewhere, e.g. `cd backend && python backend/server.py` |
+
+The file is opened on **every request**, so editing `index.html` is live on the next
+reload — there is no template cache to flush and no restart needed. Ask before starting:
+
+```sh
+python backend/server.py --ui-check
+```
+
+```
+build    : sentinel-rbac-readonly-4-0f8552e
+candidates:
+  OK /home/you/sentinel-police-management/index.html  [sentinel-rbac-readonly-4-0f8552e]  (current working directory)
+
+OK — GET / would serve:
+serving  : /home/you/sentinel-police-management/index.html
+via      : current working directory   (cwd /home/you/sentinel-police-management)
+stamp    : 'sentinel-rbac-readonly-4-0f8552e'   expected 'sentinel-rbac-readonly-4-0f8552e'
+checkout : branch arena/70d3d88b-sentinel-police-management @ 1a5be49
+  Actions column: yes
+```
+
+`--ui-check` needs no database and exits `1` when the server would refuse to start.
+
+**If you are on `main`:** `main` has not received the station View/Edit work — it is on the branch
+`arena/70d3d88b-sentinel-police-management` (pull request open). A checkout of `main` is exactly
+`sentinel-rbac-readonly-3` with no Actions column, and the fixed server now says so:
+
+```
+checkout : branch main @ 1b05c2c
+           this checkout predates the station View/Edit feature — switch to the feature branch or merge it first
+```
+
+```sh
+git fetch origin
+git checkout arena/70d3d88b-sentinel-police-management   # or merge the PR into main
+python backend/server.py --ui-check                        # exit 0
+python backend/server.py
+```
+
 The same identity is in `GET /api/health`:
 
 | field | meaning |
 |---|---|
 | `ui_build` | the `<meta name="sentinel-ui-build">` stamp of the file the server serves |
 | `ui_sha256` | sha256 of that file — compare with `sha256sum index.html` in the checkout |
-| `ui_path` | absolute path of the served template (repo root, or `SENTINEL_UI_DIR`) |
+| `ui_path` | absolute path of the served template |
+| `ui_source` | how it was resolved: `SENTINEL_UI_DIR`, `current working directory` or `repository root` |
+| `ui_cwd` | the process working directory |
+| `ui_git` | `{branch, commit}` of the checkout the template came from |
 | `ui_actions_published` | whether the served page contains the Registered Stations Actions column |
 | `ui_ok` / `ui_problems` | the startup self-test, re-run on every health call |
 
-**The server now refuses to start on a stale page.** If the `index.html` it would serve is not the
+**A running server never serves a stale page either.** The template is re-checked on every
+`GET /` (cached on size + mtime); if the checkout changes underneath a running process — the exact
+way a *fresh* browser ended up on the previous release — the response is `503` with
+`X-Sentinel-UI-Stale: 1` and the same diagnosis, instead of the out-of-date page. Restoring the
+current file makes the server serve `200` again with no restart.
+
+**The server refuses to start on a stale page.** If the `index.html` it would serve is not the
 current one (old stamp, or missing the Actions column / View / Edit markers) it exits before binding
 the port:
 

@@ -62,6 +62,9 @@ for k in sys.argv[1:]:
 
 LIVE_BUILD=$(jget ui_build)
 LIVE_SHA=$(jget ui_sha256)
+LIVE_SOURCE=$(jget ui_source)
+LIVE_CWD=$(jget ui_cwd)
+LIVE_GIT=$(jget ui_git)
 LIVE_ACTIONS=$(jget ui_actions_published)
 LIVE_PATH=$(jget ui_path)
 LIVE_PID=$(jget pid)
@@ -70,6 +73,8 @@ say "  pid        : ${LIVE_PID:-?}"
 say "  ui_build   : ${LIVE_BUILD:-<missing>}"
 say "  ui_sha256  : ${LIVE_SHA:-<missing>}"
 say "  ui_path    : ${LIVE_PATH:-<missing>}"
+say "  ui_source  : ${LIVE_SOURCE:-<missing>}   (process cwd ${LIVE_CWD:-?})"
+say "  ui_git     : ${LIVE_GIT:-<none>}"
 say "  Actions    : ${LIVE_ACTIONS:-<missing>}"
 say
 
