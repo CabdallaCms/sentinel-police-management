@@ -64,12 +64,22 @@ for _ in $(seq 1 40); do
   [ -z "$HEALTH" ] && continue
   BUILD=$(python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('build',''))" <<<"$HEALTH" 2>/dev/null || echo "")
   ACTIVE=$(python3 -c "import sys,json;d=json.load(sys.stdin);print(str(d.get('review_lock_active',False)).lower())" <<<"$HEALTH" 2>/dev/null || echo "false")
-  if [ "$BUILD" = "$REQUIRED_BUILD" ] && [ "$ACTIVE" = "true" ]; then
+  # The page is part of the build contract too: a process serving an older
+  # index.html (no Registered Stations Actions column) must not be reported as
+  # a successful restart, or the operator keeps seeing the previous release.
+  UI_BUILD=$(python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('ui_build') or '')" <<<"$HEALTH" 2>/dev/null || echo "")
+  UI_ACTIONS=$(python3 -c "import sys,json;d=json.load(sys.stdin);print(str(d.get('ui_actions_published',False)).lower())" <<<"$HEALTH" 2>/dev/null || echo "false")
+  UI_SHA=$(python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('ui_sha256') or '')[:12])" <<<"$HEALTH" 2>/dev/null || echo "")
+  UI_FILES=$(python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('ui_path') or '')" <<<"$HEALTH" 2>/dev/null || echo "")
+  if [ "$BUILD" = "$REQUIRED_BUILD" ] && [ "$ACTIVE" = "true" ] \
+     && [ "$UI_ACTIONS" = "true" ] && [ -n "$UI_BUILD" ]; then
+    echo "  ui: $UI_BUILD  (index.html sha256 ${UI_SHA}...)  Actions column: published"
+    echo "  ui template: $UI_FILES"
     echo "$HEALTH" | python3 -m json.tool
     echo -e "\nOK - the review lock build is live on port $PORT."
     OK=1
   else
-    echo "  STALE BUILD on port $PORT: build='$BUILD' (expected '$REQUIRED_BUILD')"
+    echo "  STALE BUILD on port $PORT: build='$BUILD' (expected '$REQUIRED_BUILD'), ui='$UI_BUILD', Actions column='$UI_ACTIONS'"
     echo "  Kill that process and re-run this script."
   fi
   break

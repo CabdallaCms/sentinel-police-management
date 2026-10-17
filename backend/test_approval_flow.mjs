@@ -504,7 +504,11 @@ async function main() {
     if (!/Review Locked \(12h\)/.test(row)) throw new Error('officer button label wrong: ' + row);
     if (!/Review Lock \(12h Required\) - 1[0-2](\.\d)? hours remaining/.test(row))
       throw new Error('remaining-hours badge missing: ' + row);
-    if (!/application\.html\?id=/.test(row)) throw new Error('Review/Print link missing: ' + row);
+    // The link now leads with the cache-busting version parameter
+    // (application.html?v=<asset version>&id=...) so a deployment invalidates
+    // the URL; the id must still be there.
+    if (!/application\.html\?v=[A-Za-z0-9._-]+&id=/.test(row))
+      throw new Error('Review/Print link missing (or un-versioned): ' + row);
 
     // Rule 1 — the click handler refuses without touching the network.
     let trk = trackFetches(sbO);
@@ -545,7 +549,9 @@ async function main() {
       `(db.fingerprint||[]).find(x => x.id === '${app1.application_id}')?.status === 'Approved'`),
       'officer approval flipped the row to Approved');
     row = fpRow(sbO, app1.application_id);
-    if (!/certificate\.html\?id=/.test(row)) throw new Error('approved row must offer the certificate: ' + row);
+    // Versioned link: certificate.html?v=<asset version>&id=...
+    if (!/certificate\.html\?v=[A-Za-z0-9._-]+&id=/.test(row))
+      throw new Error('approved row must offer the certificate: ' + row);
     console.log('ok A2: officer — after 12h the Approve click executes (201) and unlocks the certificate');
 
     // ======================================================================
@@ -583,7 +589,9 @@ async function main() {
     })).json();
     if (!detail2.certificate_number) throw new Error('admin approval must issue a certificate');
     row = fpRow(sbA, app2.application_id);
-    if (!/certificate\.html\?id=/.test(row)) throw new Error('admin row must offer the certificate: ' + row);
+    // Versioned link: certificate.html?v=<asset version>&id=...
+    if (!/certificate\.html\?v=[A-Za-z0-9._-]+&id=/.test(row))
+      throw new Error('admin row must offer the certificate: ' + row);
     console.log('ok B: admin — instant bypass click executes (201, certificate issued, no 12h wait)');
 
     // ======================================================================

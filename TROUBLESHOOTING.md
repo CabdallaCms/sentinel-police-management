@@ -130,11 +130,131 @@ it prints `RBAC self-test: PASS — module denylist in force for FingerprintUnit
 CIDUnit` when it is serving the fixed code and refuses to start at all if the denylist is not in
 force.
 
-Still seeing the old menu or an action button after updating? That is a stale page, not a stale
-server (the backend prints its RBAC guarantees at start-up and answers 403 for every command-role
-write). Reload with a hard refresh — the sidebar footer shows *UI build sentinel-rbac-readonly-3*
-when you are on the current frontend; anything else is a cached tab under
-`Cache-Control: no-store`.
+Still seeing the old menu, or a Register without the Actions/View/Edit controls, after updating?
+Check which page the browser actually has before blaming the server:
+
+1. The sidebar footer shows *UI build …* (`window.SENTINEL_UI_BUILD`). It must end with the short
+   commit of the deployment (`sentinel-rbac-readonly-4-0f8552e` for the station View/Edit build) —
+   anything else is a page that was rendered before the update.
+2. `GET /api/health` answers `ui_build` (read from the `index.html` on disk) and `asset_version`
+   (`0f8552e`); if those differ from the footer, the tab is cached, not the server.
+3. Reload. Pages are served with `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`,
+   `Expires: 0` and `Pragma: no-cache`, and every static reference carries `?v=<asset_version>`
+   (`certificate.html?v=0f8552e&id=…`, `images/police_logo.png?v=0f8552e`), so an ordinary reload or
+   hard refresh (Ctrl+Shift+R) always lands on the current build. A proxy that ignores the headers
+   can still be flushed by opening the page with a changed parameter (`/?v=0f8552e`).
+
+The backend itself logs its RBAC guarantees at start-up and answers 403 for every command-role
+write, so a stale *server* is never the explanation for an old *page*: the stamp tells you which of
+the two you are looking at.
+
+## Stale UI: a *fresh* browser still shows an old build
+
+A brand-new browser (or a private window, or `curl`) cannot be served from a browser cache, so if it
+still shows the previous page the **server** is serving the previous `index.html`. Confirm it and fix
+it in one step:
+
+```sh
+bash scripts/verify-live-ui.sh https://<your-preview-host>
+```
+
+It prints the checkout's stamp/sha256 next to the live server's `ui_build`/`ui_sha256`/`ui_path` and
+fails loudly when they differ, e.g.:
+
+```
+  FAIL stamp mismatch: live=sentinel-rbac-readonly-3 checkout=sentinel-rbac-readonly-4-0f8552e
+       => the running process serves a DIFFERENT index.html (an older deployment).
+```
+
+### Local development: `python backend/server.py` on `localhost:8001`
+
+The page is read from **the directory you start the server in**, in this order:
+
+| priority | source | when |
+|---|---|---|
+| 1 | `SENTINEL_UI_DIR` | packaged deployments / explicit override |
+| 2 | **current working directory** | `cd sentinel-police-management && python backend/server.py` |
+| 3 | the repository root containing `backend/server.py` | started from elsewhere, e.g. `cd backend && python backend/server.py` |
+
+The file is opened on **every request**, so editing `index.html` is live on the next
+reload — there is no template cache to flush and no restart needed. Ask before starting:
+
+```sh
+python backend/server.py --ui-check
+```
+
+```
+build    : sentinel-rbac-readonly-4-0f8552e
+candidates:
+  OK /home/you/sentinel-police-management/index.html  [sentinel-rbac-readonly-4-0f8552e]  (current working directory)
+
+OK — GET / would serve:
+serving  : /home/you/sentinel-police-management/index.html
+via      : current working directory   (cwd /home/you/sentinel-police-management)
+stamp    : 'sentinel-rbac-readonly-4-0f8552e'   expected 'sentinel-rbac-readonly-4-0f8552e'
+checkout : branch arena/70d3d88b-sentinel-police-management @ 1a5be49
+  Actions column: yes
+```
+
+`--ui-check` needs no database and exits `1` when the server would refuse to start.
+
+**If you are on `main`:** `main` has not received the station View/Edit work — it is on the branch
+`arena/70d3d88b-sentinel-police-management` (pull request open). A checkout of `main` is exactly
+`sentinel-rbac-readonly-3` with no Actions column, and the fixed server now says so:
+
+```
+checkout : branch main @ 1b05c2c
+           this checkout predates the station View/Edit feature — switch to the feature branch or merge it first
+```
+
+```sh
+git fetch origin
+git checkout arena/70d3d88b-sentinel-police-management   # or merge the PR into main
+python backend/server.py --ui-check                        # exit 0
+python backend/server.py
+```
+
+The same identity is in `GET /api/health`:
+
+| field | meaning |
+|---|---|
+| `ui_build` | the `<meta name="sentinel-ui-build">` stamp of the file the server serves |
+| `ui_sha256` | sha256 of that file — compare with `sha256sum index.html` in the checkout |
+| `ui_path` | absolute path of the served template |
+| `ui_source` | how it was resolved: `SENTINEL_UI_DIR`, `current working directory` or `repository root` |
+| `ui_cwd` | the process working directory |
+| `ui_git` | `{branch, commit}` of the checkout the template came from |
+| `ui_actions_published` | whether the served page contains the Registered Stations Actions column |
+| `ui_ok` / `ui_problems` | the startup self-test, re-run on every health call |
+
+**A running server never serves a stale page either.** The template is re-checked on every
+`GET /` (cached on size + mtime); if the checkout changes underneath a running process — the exact
+way a *fresh* browser ended up on the previous release — the response is `503` with
+`X-Sentinel-UI-Stale: 1` and the same diagnosis, instead of the out-of-date page. Restoring the
+current file makes the server serve `200` again with no restart.
+
+**The server refuses to start on a stale page.** If the `index.html` it would serve is not the
+current one (old stamp, or missing the Actions column / View / Edit markers) it exits before binding
+the port:
+
+```
+FATAL: the index.html this server would serve is not the current page; refusing to start.
+       template : /srv/sentinel/index.html
+       stamp    : 'sentinel-rbac-readonly-3' (expected 'sentinel-rbac-readonly-4-0f8552e')
+       - the page stamps itself 'sentinel-rbac-readonly-3' but this build is ...
+       - the page is missing the served build's features: Actions column, ...
+```
+
+Fixes, in order of likelihood:
+
+1. **The process was started from an older checkout/package.** Restart it from the repository that
+   contains the current `index.html`: `bash scripts/restart-8001.sh` (now also requires
+   `ui_actions_published: true`) or `bash scripts/uat-stack.sh` for a throwaway UAT stack.
+2. **The deployment serves a packaged copy.** Point the process at the refreshed templates with
+   `SENTINEL_UI_DIR=/path/to/current/templates`; the startup guard verifies whatever directory wins.
+3. **The preview is attached to a different machine/process.** `ui_path` and `pid` in `/api/health`
+   name the process answering; if it is not the one you just started, that preview URL belongs to an
+   older instance. Use the URL the current session's preview reports.
 
 ## 6. Still stuck?
 

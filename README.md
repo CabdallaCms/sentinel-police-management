@@ -129,9 +129,40 @@ UI and the API can never disagree:
   the browser — the same status the server returns. The printable review page
   (`application.html`) carries the same rule: a read-only session gets no *Approve Application*
   button, a view-only note instead, and `approve()` never issues the request.
-- **Confirming which build is live.** `index.html` stamps `<meta name="sentinel-ui-build"
-  content="sentinel-rbac-readonly-3">` and shows *UI build …* in the sidebar footer
-  (`window.SENTINEL_UI_BUILD`), while the backend prints its RBAC guarantees at start-up
+- **Confirming which build is live (and never running a cached one).** `index.html` stamps
+  `<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-0f8552e">` and shows *UI build …*
+  in the sidebar footer (`window.SENTINEL_UI_BUILD`). The stamp ends with the short commit the page
+  was published from, which is also the `?v=` parameter on every static reference in the app
+  (`certificate.html?v=0f8552e&id=…`, `images/police_logo.png?v=0f8552e`) — bump `ASSET_VERSION`
+  *and* `UI_BUILD` in `backend/server.py` together with the `?v=` parameters in `index.html`,
+  `application.html` and `certificate.html` (the station action suite asserts all of them agree).
+  Served documents answer `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` +
+  `Expires: 0` + `Pragma: no-cache`, so a normal reload always fetches the current page, and
+  `?v=`-stamped assets are the only ones allowed to be cached (`immutable`). `GET /api/health`
+  reports `ui_build` (read from the `index.html` on disk, not a constant) and `asset_version`:
+  if the sidebar footer and `ui_build` differ, the tab is stale — hard-refresh it.
+- **Where the page comes from (local runs).** `python backend/server.py` serves the `index.html`
+  found in the **current working directory** first, then the repository root that holds
+  `backend/server.py`, then `SENTINEL_UI_DIR` when set (explicit override, packaged deployments).
+  The file is re-read on every request, so editing it is live on the next reload — no template
+  cache, no restart. `python backend/server.py --ui-check` answers *what would `GET /` serve?*
+  without starting the server or touching the database (exit `1` if it would refuse), and
+  `/api/health` reports `ui_source`, `ui_cwd` and `ui_git` (branch + commit of the checkout the
+  template came from). **The station View/Edit work lives on the branch
+  `arena/70d3d88b-sentinel-police-management`, not on `main`** — a checkout of `main` is
+  `sentinel-rbac-readonly-3` without the Actions column, and the server now refuses to start on it
+  instead of silently serving it.
+- **A stale page cannot be served.** `/api/health` also publishes `ui_path`, `ui_sha256`,
+  `ui_actions_published` and `ui_ok`/`ui_problems` for the template the process is actually serving,
+  and `bash scripts/verify-live-ui.sh <url>` compares them with a checkout (stamp, sha256, Actions
+  column, View/Edit entry points, cache headers) — a fresh browser showing an old build is a *server*
+  problem, and that script names it. Startup refuses to bind the port at all when the `index.html` it
+  would serve is not this build (old stamp, or missing the Actions / View / Edit markers), a
+  running server answers `503` (`X-Sentinel-UI-Stale: 1`) rather than emit it after the checkout
+  changes underneath it, and
+  `SENTINEL_UI_DIR` lets a packaged deployment point at a different template directory — whatever
+  directory wins is the one verified, logged and reported. Meanwhile the
+  backend prints its RBAC guarantees at start-up
   (*Central Police Search is NOT granted to AirportControl, CIDUnit* / *global read-only roles
   chief_commander — DELETE, PATCH, POST, PUT … answer 403 Forbidden*). If a browser still shows the
   old menu or action buttons, it is a stale tab: hard-refresh it (the server sends
@@ -484,6 +515,47 @@ node backend/test_frontend_session.mjs
 
 Verifies the checkpoint-officer refresh journey: sign in as `cp.south`, token/user persisted to `sentinel_token` / `sentinel_user`, page refresh re-hydrates the session before the API sync (no auto-signout, no 401/404), the checkpoint count survives the refresh, an empty server sync never wipes local rows, a bogus token signs out only via an explicit `/api/me` 401, and a server-down load keeps the officer signed in.
 
+Registered Stations row actions — View / Edit permission suite (PostgreSQL; uses the configured test
+database or a temporary `pgserver` cluster):
+
+```bash
+python3 backend/test_station_actions.py
+```
+
+Pins the Actions column contract end to end: `GET /api/stations/<id>` returns the full record
+(registry fields, officer / vehicle deployment counters, mirrored Police Stations branch lineage and
+the per-session `can_edit` flag) to every session that may open the register (SystemAdmin, HR
+Directorate, read-only Commander) and 401 to a session without the `stations` module; `PATCH` and
+`PUT /api/stations[/<id>]` are served for the SystemAdmin / Admin role and answer **403 Forbidden**
+(`code: admin_only`) for the HR Directorate, a checkpoint officer **and** the Commander (the last of
+which is refused even earlier by the read-only firewall with `code: read_only_role`); a refused write
+never alters the row; the edit validation mirrors station registration (district must belong to the
+region, status from the fixed list, name required, mirrored `BR-<id>` entries refused with an
+explanation); the update is audited (`UPDATE police_station`, changed fields in `details`), stamps
+`updated_at` / `updated_by`, and `PUT /api/persons` keeps its ordinary `405`.
+
+The frontend half is pinned in `backend/test_station_frontend.mjs` (jsdom):
+
+```bash
+node backend/test_station_frontend.mjs
+```
+
+The same journey is driven against a live server and database in
+`backend/test_station_integration.mjs` (`PYTHON="$PWD/.venv/bin/python" node backend/test_station_integration.mjs`):
+the real page script signs in as each role, syncs the register from the API, opens the View drawer on
+the server payload, saves an Edit through `PATCH /api/stations/<id>` and reads the change back, while
+the HR Directorate and Commander attempts are refused with `403` (`admin_only` / `read_only_role`) and
+never touch the row.
+
+It renders the Registered Stations table for an administrator (View + Edit on every persisted row),
+for the HR Directorate, a unit officer and the read-only Commander (View only — the Edit modal
+refuses to open and the DOM sweep removes a painted Edit control), asserts a mirrored `BR-<id>`
+branch entry stays view-only, drives the View drawer (code, name, Region → District → Village,
+operational status, officer / vehicle counts, commander, mirrored branch lineage from the
+authoritative `GET /api/stations/<id>` payload with a local-row fallback), and drives the Edit modal
+(prefill, PATCH `/api/stations/<id>`, register re-render, validation before any request, and an
+offline save reported as an unsynced draft).
+
 Conduct & disciplinary UI journey test (Node ≥ 18):
 
 ```bash
@@ -575,3 +647,34 @@ The current data model is intentionally compatible with a relational implementat
   historical upload-branch snapshot. Missing legacy branch data is labelled.
 
 See [TESTING.md](TESTING.md) for the focused automated tests and officer UAT checklist.
+
+## Registered Stations — View / Edit row actions (testing branch)
+
+The **Police Stations → Registered stations** table now carries an **Actions** column:
+
+- **View** opens a read-only station record drawer with the full metadata: station
+  code and id, station name, **Region → District → Village**, operational status,
+  station tier, contact phone, cell capacity, commander / deputy, notes, the
+  **officer** and **vehicle** deployment counters (counted from the `officers` /
+  `vehicles` registers) and the **mirrored branch lineage** (a Police Stations
+  branch entry, `BR-<id>`, resolves to its mirrored registry row). It is available
+  to every session that may open the register — SystemAdmin, the HR Directorate
+  and the read-only Commander — and is served by `GET /api/stations/<id>`.
+- **Edit** opens the administration modal (name, Region → District → Village,
+  operational status, plus tier / phone / cell capacity / notes) and saves through
+  `PATCH /api/stations/<id>` (`PUT /api/stations[/<id>]` is accepted too). The
+  station id and code are immutable, the update stamps `updated_at` /
+  `updated_by` and is written to `audit_events` (`UPDATE police_station`).
+
+**Role rules — Edit is a SystemAdministrator / Admin capability.** The Edit action
+is rendered only for `body.is-admin` and `can_edit_records` (the flag the API
+returns in the session payload and the visibility block); the server enforces the
+same rule independently — `require_records_admin()` answers **403 Forbidden**
+(`code: admin_only`) for every non-admin role on `PUT` / `PATCH /api/stations`,
+while the read-only Commander is refused even earlier with
+`code: read_only_role`. A standard officer (including the HR Directorate, which
+may read the register for postings) keeps View only, and a `BR-<id>` synthetic
+mirror is view-only even for an administrator — it is edited in Branch Management.
+`can_edit_records` / `can_edit_stations` are the reusable capability flags the same
+administration rule exposes to every management table, so admins keep full edit
+access wherever an inline Edit action exists.

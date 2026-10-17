@@ -115,3 +115,257 @@ Branch: `arena/4d7dbf9c-sentinel-police-management`. Do not merge until UAT is a
 
 ### Automated
 `python backend/test_dynamic_branches.py` — seeded-row, filtering (now 5 rows per region including `police_station`), admin-gate, duplicate, Police Stations mirroring and the frontend-contract (now 6 selectors + `stBranch:police_station` + datalist + synthetic `BR-` merge) — all checks pass (SKIP only without `SENTINEL_DB_*` / `pgserver`).
+
+## Registered Stations — View / Edit row actions & admin-only edit authority (2026-10-12)
+
+Branch: `arena/70d3d88b-sentinel-police-management`. Do not merge until UAT is approved.
+Restart the backend and hard-refresh the browser when testing this branch.
+Use a test database and synthetic identities/documents only.
+
+### What changed
+- **Actions column.** `renderStationsTable()` now paints a final **Actions** column: **View** on every
+  row and **Edit** on every persisted registry row. `View` is a read surface (`data-view="1"`); `Edit`
+  carries `.admin-edit` + `data-write="1"`.
+- **View drawer** (`#stViewModal`, `openStationView()` / `paintStationView()`): station name, code and
+  id, **Region → District → Village**, operational status, station tier, contact phone, cell capacity,
+  commander / deputy (resolved to the officer record), notes, `created_at` / `updated_at`, the
+  **officer** and **vehicle** deployment counters and the **mirrored Police Stations branch lineage**.
+  It renders instantly from the locally merged registry row and is then replaced by the authoritative
+  `GET /api/stations/<id>` payload (`station_detail_view()`), which returns `officer_count` /
+  `vehicle_count` from the `officers` / `vehicles` registers, the `branch` catalogue row, `mirrored` /
+  `persisted` flags and the per-session `can_edit` decision. Open to SystemAdmin, the HR Directorate
+  and the read-only Commander (`stViewModal` joined `READ_ONLY_VIEW_MODALS`); a session without the
+  `stations` module still gets 401.
+- **Edit modal** (`#stEditModal`, `openStationEdit()` / `saveStationEdit()`): station name, Region →
+  District → Village (cascading dropdowns, same validator as registration), operational status, plus
+  optional tier / contact phone / cell capacity / notes. Saves with `PATCH /api/stations/<id>`
+  (`PUT /api/stations[/<id>]` is served too), merges the saved row into `db.stations` (so officer /
+  vehicle postings, the search panes, the counters and the drawer all follow), re-renders and toasts.
+  Validation runs before any request leaves the browser; offline saves are stored locally and reported
+  as an unsynced draft.
+- **Role enforcement (server-authoritative).** `require_records_admin(user)` → **403 Forbidden**
+  (`code: admin_only`) for every non-admin caller of `PUT` / `PATCH /api/stations[/<id>]` — including
+  the HR Directorate, which may read the register, and any unit / checkpoint officer. The read-only
+  Commander is refused even earlier (`code: read_only_role`). `POST /api/stations` keeps its existing
+  admin module gate and now also calls the same role check. `station_detail_view()` returns
+  `can_edit: false` + `edit_disabled_reason` for non-admins; the session payload (`user_view`) and the
+  visibility block expose `can_edit_records` / `can_edit_stations` for the UI, and
+  `canEditRecords()` / `canEditStations()` in `index.html` gate every inline Edit control. A `BR-<id>`
+  synthetic mirror is view-only for everyone (edited in Branch Management); a persisted mirrored row
+  stays editable by an admin and keeps its branch lineage in the payload.
+- **Audit + provenance.** Every accepted station edit writes `audit_events`
+  (`action=UPDATE`, `entity=police_station`, `entity_id=<station id>`, changed fields in `details`) and
+  stamps `police_stations.updated_at` / `updated_by` (new columns, added by the idempotent migration).
+
+### Automated
+```sh
+python3 -m venv .venv
+.venv/bin/pip install psycopg2-binary pgserver
+npm install --no-save --package-lock=false jsdom@26
+
+.venv/bin/python backend/test_station_actions.py     # 123 checks: View payload, edit validation,
+                                                     # admin-only PUT/PATCH (403), mirrors, audit
+node backend/test_station_frontend.mjs               # Actions column, View drawer, Edit modal,
+                                                     # non-admin / read-only gating, offline draft
+PYTHON="$PWD/.venv/bin/python" node backend/test_station_integration.mjs
+                                                     # real page script + real API + real database:
+                                                     # admin View/Edit round-trip, HR 403, Commander 403
+.venv/bin/python backend/test_read_only_rbac.py      # unchanged Commander firewall still holds
+.venv/bin/python backend/test_dynamic_branches.py
+```
+All three suites cover their own provisioning: `test_station_actions.py` uses configured
+`SENTINEL_DB_*` settings or a throwaway `pgserver` cluster and SKIPs (exit 0) when neither is
+available; never point them at operational data.
+
+### Officer UAT checklist
+1. **SystemAdmin (`admin` / `ChangeMe123!`) → Police Stations → Registered stations.**
+   - The table shows the **Actions** column with **View** and **Edit** on every row.
+   - **View**: the drawer shows the station code, name, Region → District → Village, operational
+     status, tier, phone, cell capacity, commander/deputy, notes, officer count, vehicle count and the
+     mirrored branch line. Compare the values with the register row and (for a mirrored branch) with
+     **Branch Management**.
+   - **Edit**: rename the station, move it to another Region → District, change the village, switch
+     the status to *Maintenance*, save — the table, the **Police Stations** counters, the officer /
+     vehicle station dropdowns and **Central Police Search → Stations** all show the new values after
+     saving. Reload the page: the values persist (they are in the database, not only in the browser).
+   - **Edit validation**: leave the name blank → red field, no request; pick a district from another
+     region → the district dropdown resets with the region; try *District HQ* etc. and confirm the
+     tier/status lists are the register's own.
+   - **Mirrored branch entry** (`BR-…` row, if any): View opens, Edit is not offered; hitting the API
+     directly answers *“This registry entry is a Police Stations branch mirror — edit the branch
+     itself in Branch Management.”*
+2. **HR Directorate (`hr.officer`) → Police Stations.**
+   - The register stays readable (postings), **View** works, and there is **no Edit button** anywhere
+     in the table or in the drawer (the drawer explains that editing is a System Administrator action).
+   - With the browser devtools open run
+     `fetch('/api/stations/ST-001',{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':'Bearer '+JSON.parse(localStorage.getItem('sentinel_token'))},body:JSON.stringify({name:'Nope'})})`
+     → **403** with `{"code":"admin_only"}` and the station name unchanged in the register.
+3. **Checkpoint officer (`cp.south`)** — the Police Stations page is not in the sidebar; a direct
+   `PATCH` / `PUT /api/stations` answers **403** (`admin_only`) and a direct `GET /api/stations/<id>`
+   answers **401**.
+4. **Commander (`chief`) — read-only oversight.** View opens for the station record; no Edit control
+   is painted and a direct `PATCH` / `PUT` answers **403** with `{"code":"read_only_role"}`.
+5. **Cross-check the mirrors**: create a **Police Stations** branch in **Branch Management**, confirm
+   the register gains the mirrored entry, open **View** and confirm the *Mirrored branch lineage* line
+   names that branch; the mirrored persisted row can still be edited by the administrator.
+6. Confirm the audit trail after an edit (`audit_events`: `action=UPDATE`, `entity=police_station`,
+   `details` listing the changed fields) and that `updated_at` / `updated_by` moved on the row.
+
+## Static assets: version stamps + no-store headers (2026-10-16)
+
+The Registered Stations build is refused by nothing, but a **browser cache** was still able to keep
+serving the pre-Actions page. Three mechanisms now make that impossible, and all three are asserted
+by `backend/test_station_actions.py` (suite 6, 17 checks) so a half-finished version bump fails the
+tests instead of silently leaving a stale page on screen.
+
+### What changed
+- **Versioned static references.** Every static reference the app ships carries `?v=<ASSET_VERSION>`:
+  `index.html` → `certificate.html?v=0f8552e&id=…` and `application.html?v=0f8552e&id=…`,
+  `application.html` / `certificate.html` → `index.html?v=0f8552e`, the brand emblem →
+  `images/police_logo.png?v=0f8552e`, and `certificate.html` → `application.html?v=0f8552e&id=…`.
+  `ASSET_VERSION` lives at the top of `backend/server.py` (currently the short commit the feature
+  shipped from, `0f8552e`).
+- **`Cache-Control: no-store` on the documents themselves.** The UI ships as self-contained
+  documents (inline `<script>`/`<style>`, no external bundle), so the HTML *is* the asset that must
+  never be replayed. `send_file()` now answers documents, uploads and un-versioned assets with
+  `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` + `Expires: 0` +
+  `Pragma: no-cache`; a `?v=`-stamped asset alone gets
+  `Cache-Control: public, max-age=31536000, immutable`.
+- **A stamp that tells you *which* page you have.** `<meta name="sentinel-ui-build">` is now
+  `sentinel-rbac-readonly-4-0f8552e` (revision **and** the short commit) and is shown as *UI build …*
+  in the sidebar footer (`window.SENTINEL_UI_BUILD`). `GET /api/health` reports `ui_build` — read
+  from the `index.html` on disk on every call, not from a constant — plus `asset_version` and
+  `static_cache`, so the footer can be compared with what the server is handing out: *footer ≠
+  health ⇒ the tab is stale*.
+
+### Bumping the version (do all of it)
+1. `ASSET_VERSION = '<short commit>'` and `UI_BUILD = 'sentinel-rbac-readonly-<n>-<short commit>'` in
+   `backend/server.py`.
+2. `<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-<n>-<short commit>" />` in `index.html`.
+3. Every `?v=…` in `index.html`, `application.html`, `certificate.html`.
+4. Run the suite — `static_asset_version_consistent()` + the served-header checks fail on any
+   parameter or stamp left behind.
+
+### Automated
+```sh
+.venv/bin/python backend/test_station_actions.py   # 140 checks (suite 6 = the cache-busting checks)
+node backend/test_frontend_session.mjs             # pins the stamp shape + that no static reference
+                                                   # is left un-versioned in index.html
+```
+
+### Officer UAT checklist
+1. Sign in as `admin`, open **Police Stations → Registered stations**: the **Actions** column with
+   **View**/**Edit** is present immediately on a normal reload (`Ctrl+R`) — no hard refresh needed.
+2. Sidebar footer shows *UI build sentinel-rbac-readonly-4-0f8552e*; `curl -s localhost:8001/api/health`
+   reports the same `ui_build` and `asset_version: "0f8552e"`.
+3. `curl -sI localhost:8001/ | grep -i cache-control` → `no-store, no-cache, must-revalidate, max-age=0`;
+   `curl -sI "localhost:8001/images/police_logo.png?v=0f8552e" | grep -i cache-control` →
+   `public, max-age=31536000, immutable`.
+4. Open **View → Certificate / Review/Print** (devtools → Network): the created document URL carries
+   `?v=0f8552e`.
+5. Open the app with a stale tab (`/?v=0f8552e`) and confirm the Actions column still renders.
+
+## Served-template identity: no stale page can reach UAT (2026-10-17)
+
+A UAT report showed a **fresh browser** still running `UI build: sentinel-rbac-readonly-3` with no
+Actions column. A fresh browser cannot read a browser cache, so the process was serving a different
+`index.html` — the previous commit's page (`1b05c2c:index.html` is exactly `readonly-3` with zero
+station action markup). Root cause class, not a one-off: *the process and the template were not
+verified against each other*. That is now enforced in four places.
+
+### What changed
+- **Explicit template resolution.** `UI_DIR` (defaults to the repository root that contains
+  `backend/server.py`, override with `SENTINEL_UI_DIR` for a packaged deployment) is the single
+  source for `/`, `/index.html`, `/application.html`, `/certificate.html`. The resolved absolute path
+  is logged at startup and reported by `/api/health` as `ui_path`.
+- **Startup refusal.** Before the database is touched, `ui_self_test()` reads the `index.html` the
+  process would serve and exits `FATAL` if the stamp is not `UI_BUILD`, or if any required feature
+  marker is missing (`data-station-action="view"`, `openStationView(`, `openStationEdit(`,
+  `body:not(.can-edit-records) .admin-edit`). A stale template therefore cannot bind the port.
+- **Served identity in `/api/health`.** `ui_path`, `ui_sha256` (of the served bytes), `ui_bytes`,
+  `ui_actions_published`, `ui_ok` and `ui_problems`. Compare `ui_sha256` with
+  `sha256sum index.html` in a checkout — equal bytes, equal deployment.
+- **`scripts/verify-live-ui.sh <url>`.** Network-level proof for any URL (including a preview):
+  checkout stamp/sha256 vs `ui_build`/`ui_sha256`, the stamp + Actions + View + Edit markup in the
+  served HTML, `?v=` references, and the cache headers. Exits non-zero with the differing identity.
+  `scripts/restart-8001.sh` now also requires `ui_actions_published: true` before it reports success.
+
+### Reproduce the guard (both directions)
+```sh
+bash scripts/verify-live-ui.sh http://127.0.0.1:8001      # PASS on a current stack
+# negative: serve the previous commit's page and watch startup refuse
+TMPD=$(mktemp -d); git show 1b05c2c:index.html > "$TMPD/index.html"
+SENTINEL_UI_DIR="$TMPD" PORT=8123 .venv/bin/python backend/server.py; echo "exit=$?"
+```
+
+### Automated
+```sh
+.venv/bin/python backend/test_station_actions.py   # suite 6: 154 checks incl. served-template identity
+```
+The suite asserts the served path/sha256/features, the `/api/health` identity fields, that a
+`readonly-3` page is reported stale *and* that a server handed it exits non-zero with a `FATAL`
+that names the missing Actions column.
+
+### UAT checklist (the blocker that started this)
+1. `bash scripts/verify-live-ui.sh <preview-url>` → every line `PASS`, ending "the live server is
+   serving this checkout".
+2. `curl -s <preview-url>/api/health` → `ui_actions_published: true`, `ui_ok: true`, and
+   `ui_sha256` equal to `sha256sum index.html`.
+3. Open the preview in a private window → sidebar footer *UI build
+   sentinel-rbac-readonly-4-0f8552e*; Police Stations → Registered stations → **Actions** column
+   with **View** / **Edit** (admin).
+4. If any of 1–3 fails, the preview is attached to a process serving a different template: restart
+   from this checkout (`bash scripts/restart-8001.sh`) or use the preview URL reported for the
+   current session. The startup log names the template path, the stamp and the sha256 it is serving.
+
+## Local `python backend/server.py` — resolution, `--ui-check`, and the main-branch trap (2026-10-17)
+
+A second UAT report: `http://localhost:8001` on multiple browsers still showed
+`sentinel-rbac-readonly-3` and no Actions column. Re-verified on a *fresh clone on `main`*: that
+checkout's `index.html` **is** `readonly-3` with zero station-action markup, because `main` never
+received the feature — the work lives on `arena/70d3d88b-sentinel-police-management`. A local
+`python backend/server.py` on `main` therefore served exactly what the report described, and there
+was no guard in that commit to say so.
+
+### Resolution rules (implemented)
+`ui_candidates()` picks the first of:
+
+1. `SENTINEL_UI_DIR` (explicit; packaged deployments),
+2. **the current working directory** — `cd <repo> && python backend/server.py`,
+3. the repository root containing `backend/server.py`.
+
+`send_file()` opens the page on every request, so an edit is live on the next reload; no template
+cache, restart or file watcher exists to go stale. The resolved path is used for `/`,
+`/index.html`, `/application.html`, `/certificate.html` and (when present) `UI_DIR/images`.
+
+### Guards
+- **Startup refusal** — before `init_db()`, a stale/mismatched template exits `FATAL` naming the
+  path, the stamp, the branch/commit of the checkout, the other `index.html` copies that resolution
+  skipped, and the copy to start from.
+- **`GET /` re-checks per request** (cached on size + mtime): if the checkout changes under a
+  running server, the answer is **503** with `X-Sentinel-UI-Stale: 1` and the same diagnosis —
+  never the old page. Restoring the file recovers with no restart.
+- **`--ui-check`** (`python backend/server.py --ui-check`) prints the resolution and exits `1` when
+  the server would refuse; runs without the database driver.
+- **`/api/health`** adds `ui_source`, `ui_cwd`, `ui_git`, alongside `ui_path` / `ui_sha256` /
+  `ui_actions_published` / `ui_ok`.
+
+### Local verification (the reporter's step 3)
+```sh
+cd sentinel-police-management
+python backend/server.py --ui-check        # exit 0, "Actions column: yes"
+python backend/server.py                   # prints: ui template / ui source / ui checkout
+curl -s http://localhost:8001/ | grep -E 'sentinel-rbac-readonly-4-0f8552e|<th>Actions</th>'
+```
+Verified on a fresh clone: on `main` the server refuses to start and prints *“this checkout predates
+the station View/Edit feature — switch to the feature branch or merge it first”*; after
+`git checkout arena/70d3d88b-sentinel-police-management`, `GET /` returns both
+`sentinel-rbac-readonly-4-0f8552e` and `<th>Actions</th>` (and `openStationView` / `openStationEdit`).
+
+### Automated
+```sh
+.venv/bin/python backend/test_station_actions.py   # 165 checks (suite 6 covers this)
+```
+New checks: CWD-first resolution, `--ui-check` pass/fail + diagnosis content, the startup refusal
+naming the resolution source, a **running** server answering `503` when the page goes stale and
+recovering to `200` when restored.
