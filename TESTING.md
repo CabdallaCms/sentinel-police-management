@@ -264,3 +264,56 @@ node backend/test_frontend_session.mjs             # pins the stamp shape + that
 4. Open **View → Certificate / Review/Print** (devtools → Network): the created document URL carries
    `?v=0f8552e`.
 5. Open the app with a stale tab (`/?v=0f8552e`) and confirm the Actions column still renders.
+
+## Served-template identity: no stale page can reach UAT (2026-10-17)
+
+A UAT report showed a **fresh browser** still running `UI build: sentinel-rbac-readonly-3` with no
+Actions column. A fresh browser cannot read a browser cache, so the process was serving a different
+`index.html` — the previous commit's page (`1b05c2c:index.html` is exactly `readonly-3` with zero
+station action markup). Root cause class, not a one-off: *the process and the template were not
+verified against each other*. That is now enforced in four places.
+
+### What changed
+- **Explicit template resolution.** `UI_DIR` (defaults to the repository root that contains
+  `backend/server.py`, override with `SENTINEL_UI_DIR` for a packaged deployment) is the single
+  source for `/`, `/index.html`, `/application.html`, `/certificate.html`. The resolved absolute path
+  is logged at startup and reported by `/api/health` as `ui_path`.
+- **Startup refusal.** Before the database is touched, `ui_self_test()` reads the `index.html` the
+  process would serve and exits `FATAL` if the stamp is not `UI_BUILD`, or if any required feature
+  marker is missing (`data-station-action="view"`, `openStationView(`, `openStationEdit(`,
+  `body:not(.can-edit-records) .admin-edit`). A stale template therefore cannot bind the port.
+- **Served identity in `/api/health`.** `ui_path`, `ui_sha256` (of the served bytes), `ui_bytes`,
+  `ui_actions_published`, `ui_ok` and `ui_problems`. Compare `ui_sha256` with
+  `sha256sum index.html` in a checkout — equal bytes, equal deployment.
+- **`scripts/verify-live-ui.sh <url>`.** Network-level proof for any URL (including a preview):
+  checkout stamp/sha256 vs `ui_build`/`ui_sha256`, the stamp + Actions + View + Edit markup in the
+  served HTML, `?v=` references, and the cache headers. Exits non-zero with the differing identity.
+  `scripts/restart-8001.sh` now also requires `ui_actions_published: true` before it reports success.
+
+### Reproduce the guard (both directions)
+```sh
+bash scripts/verify-live-ui.sh http://127.0.0.1:8001      # PASS on a current stack
+# negative: serve the previous commit's page and watch startup refuse
+TMPD=$(mktemp -d); git show 1b05c2c:index.html > "$TMPD/index.html"
+SENTINEL_UI_DIR="$TMPD" PORT=8123 .venv/bin/python backend/server.py; echo "exit=$?"
+```
+
+### Automated
+```sh
+.venv/bin/python backend/test_station_actions.py   # suite 6: 154 checks incl. served-template identity
+```
+The suite asserts the served path/sha256/features, the `/api/health` identity fields, that a
+`readonly-3` page is reported stale *and* that a server handed it exits non-zero with a `FATAL`
+that names the missing Actions column.
+
+### UAT checklist (the blocker that started this)
+1. `bash scripts/verify-live-ui.sh <preview-url>` → every line `PASS`, ending "the live server is
+   serving this checkout".
+2. `curl -s <preview-url>/api/health` → `ui_actions_published: true`, `ui_ok: true`, and
+   `ui_sha256` equal to `sha256sum index.html`.
+3. Open the preview in a private window → sidebar footer *UI build
+   sentinel-rbac-readonly-4-0f8552e*; Police Stations → Registered stations → **Actions** column
+   with **View** / **Edit** (admin).
+4. If any of 1–3 fails, the preview is attached to a process serving a different template: restart
+   from this checkout (`bash scripts/restart-8001.sh`) or use the preview URL reported for the
+   current session. The startup log names the template path, the stamp and the sha256 it is serving.

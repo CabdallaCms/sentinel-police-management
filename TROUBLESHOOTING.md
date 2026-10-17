@@ -148,6 +148,57 @@ The backend itself logs its RBAC guarantees at start-up and answers 403 for ever
 write, so a stale *server* is never the explanation for an old *page*: the stamp tells you which of
 the two you are looking at.
 
+## Stale UI: a *fresh* browser still shows an old build
+
+A brand-new browser (or a private window, or `curl`) cannot be served from a browser cache, so if it
+still shows the previous page the **server** is serving the previous `index.html`. Confirm it and fix
+it in one step:
+
+```sh
+bash scripts/verify-live-ui.sh https://<your-preview-host>
+```
+
+It prints the checkout's stamp/sha256 next to the live server's `ui_build`/`ui_sha256`/`ui_path` and
+fails loudly when they differ, e.g.:
+
+```
+  FAIL stamp mismatch: live=sentinel-rbac-readonly-3 checkout=sentinel-rbac-readonly-4-0f8552e
+       => the running process serves a DIFFERENT index.html (an older deployment).
+```
+
+The same identity is in `GET /api/health`:
+
+| field | meaning |
+|---|---|
+| `ui_build` | the `<meta name="sentinel-ui-build">` stamp of the file the server serves |
+| `ui_sha256` | sha256 of that file — compare with `sha256sum index.html` in the checkout |
+| `ui_path` | absolute path of the served template (repo root, or `SENTINEL_UI_DIR`) |
+| `ui_actions_published` | whether the served page contains the Registered Stations Actions column |
+| `ui_ok` / `ui_problems` | the startup self-test, re-run on every health call |
+
+**The server now refuses to start on a stale page.** If the `index.html` it would serve is not the
+current one (old stamp, or missing the Actions column / View / Edit markers) it exits before binding
+the port:
+
+```
+FATAL: the index.html this server would serve is not the current page; refusing to start.
+       template : /srv/sentinel/index.html
+       stamp    : 'sentinel-rbac-readonly-3' (expected 'sentinel-rbac-readonly-4-0f8552e')
+       - the page stamps itself 'sentinel-rbac-readonly-3' but this build is ...
+       - the page is missing the served build's features: Actions column, ...
+```
+
+Fixes, in order of likelihood:
+
+1. **The process was started from an older checkout/package.** Restart it from the repository that
+   contains the current `index.html`: `bash scripts/restart-8001.sh` (now also requires
+   `ui_actions_published: true`) or `bash scripts/uat-stack.sh` for a throwaway UAT stack.
+2. **The deployment serves a packaged copy.** Point the process at the refreshed templates with
+   `SENTINEL_UI_DIR=/path/to/current/templates`; the startup guard verifies whatever directory wins.
+3. **The preview is attached to a different machine/process.** `ui_path` and `pid` in `/api/health`
+   name the process answering; if it is not the one you just started, that preview URL belongs to an
+   older instance. Use the URL the current session's preview reports.
+
 ## 6. Still stuck?
 
 - Hard-reload the browser (`Ctrl+Shift+R`) — HTML may be cached.

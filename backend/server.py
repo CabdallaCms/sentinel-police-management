@@ -52,6 +52,16 @@ SERVER_STARTED_AT = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(ROOT)
+# ---- where the served pages come from --------------------------------------
+# The single source of truth for the UI templates is the repository root that
+# contains backend/server.py. A packaged deployment may point the process at a
+# different template directory with SENTINEL_UI_DIR; whichever directory wins,
+# the server verifies at startup that *its* index.html is the current page (see
+# ui_self_test) and refuses to serve a stale one. The resolved path is logged
+# at startup and reported by /api/health as `ui_path`, so "which index.html is
+# this process actually serving" is never a guess.
+UI_DIR = os.path.abspath(os.environ.get('SENTINEL_UI_DIR') or PROJECT_ROOT)
+INDEX_HTML = os.path.join(UI_DIR, 'index.html')
 UPLOAD_DIR = os.environ.get('SENTINEL_UPLOADS', os.path.join(ROOT, 'uploads'))
 TOKENS = {}
 
@@ -498,6 +508,19 @@ ASSET_VERSION = '0f8552e'
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
 UI_BUILD = 'sentinel-rbac-readonly-4-' + ASSET_VERSION
 
+# What the served index.html MUST contain for the build to be considered
+# current. These are the features this deployment exists to publish — if the
+# file on disk is an older template (an un-regenerated package, a checkout at
+# the previous commit, a container baked before the release) the server now
+# refuses to start instead of quietly serving a page without them. Each marker
+# is the smallest stable fragment of the feature, not a whole block.
+UI_REQUIRED_MARKERS = (
+    ('Actions column', 'data-station-action="view"'),
+    ('View drawer entry point', 'function openStationView('),
+    ('Edit modal entry point', 'function openStationEdit('),
+    ('admin-only Edit gate', "body:not(.can-edit-records) .admin-edit"),
+)
+
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
 # register; both prefixes resolve to the same handler and module gate.
 FINGERPRINT_API_ALIAS = '/api/fingerprint/applications'
@@ -749,22 +772,91 @@ def review_lock_armed():
     return _REVIEW_LOCK_ARMED
 
 
-def served_ui_build():
-    """The `<meta name="sentinel-ui-build">` stamp of the index.html on disk.
+# Cache of the parsed UI state, keyed by (path, size, mtime_ns) so /api/health
+# can report what is on disk without re-reading a half-megabyte page on every
+# probe, while still noticing an edit, a replacement or a re-deploy instantly.
+_UI_STATE_CACHE = {}
 
-    Read (from the head of the file only — the meta sits in the first bytes)
-    on every call instead of being cached, so /api/health always reports what
-    the server would hand a browser right now. Comparing it with the "UI
-    build ..." label in the sidebar footer is how an operator proves whether a
-    page that looks old is a stale browser cache or the running server.
+
+def ui_state(path=None):
+    """Describe the index.html this process serves.
+
+    Returns a dict with the absolute path, size, mtime, sha256, the
+    `sentinel-ui-build` stamp, whether the required feature markers are
+    present and the list of problems. Nothing here is cached across a change
+    to the file: the cache key is (path, size, mtime_ns), so editing or
+    replacing the template invalidates it on the next call.
+
+    The sha256 is the identity an operator compares between the live server
+    and a checkout (`sha256sum index.html`), which is the only reliable way to
+    answer "is the browser talking to a deployment built from the old commit?"
     """
+    path = os.path.abspath(path or INDEX_HTML)
     try:
-        with open(os.path.join(PROJECT_ROOT, 'index.html'), encoding='utf-8') as f:
-            head = f.read(8192)
+        st = os.stat(path)
     except OSError:
-        return None
-    m = re.search(r'<meta\s+name="sentinel-ui-build"\s+content="([^"]+)"', head)
-    return m.group(1) if m else None
+        return {'path': path, 'exists': False, 'bytes': 0, 'mtime': None,
+                'sha256': None, 'stamp': None, 'features': {},
+                'actions_published': False,
+                'problems': [f'{path} does not exist — the server has no UI template to serve']}
+    key = (path, st.st_size, st.st_mtime_ns)
+    cached = _UI_STATE_CACHE.get(path)
+    if cached and cached[0] == key:
+        return dict(cached[1])
+
+    try:
+        with open(path, 'rb') as f:
+            raw = f.read()
+    except OSError as exc:
+        return {'path': path, 'exists': False, 'bytes': 0, 'mtime': None,
+                'sha256': None, 'stamp': None, 'features': {},
+                'actions_published': False,
+                'problems': [f'{path} cannot be read: {exc}']}
+    text = raw.decode('utf-8', 'replace')
+    m = re.search(r'<meta\s+name="sentinel-ui-build"\s+content="([^"]+)"', text)
+    stamp = m.group(1) if m else None
+    features = {label: (marker in text) for label, marker in UI_REQUIRED_MARKERS}
+    missing = [label for label, present in features.items() if not present]
+    problems = []
+    if not stamp:
+        problems.append('the <meta name="sentinel-ui-build"> stamp is missing')
+    elif stamp != UI_BUILD:
+        problems.append(f'the page stamps itself {stamp!r} but this build is {UI_BUILD!r} — '
+                        'the served index.html is not the page this server ships')
+    if missing:
+        problems.append('the page is missing the served build\'s features: ' + ', '.join(missing))
+    state = {'path': path, 'exists': True, 'bytes': len(raw),
+             'mtime': datetime.datetime.fromtimestamp(st.st_mtime, datetime.timezone.utc)
+                      .strftime('%Y-%m-%dT%H:%M:%SZ'),
+             'sha256': hashlib.sha256(raw).hexdigest(), 'stamp': stamp,
+             'features': features,
+             'actions_published': bool(features.get('Actions column')),
+             'problems': problems}
+    _UI_STATE_CACHE[path] = (key, dict(state))
+    return state
+
+
+def served_ui_build():
+    """The `<meta name="sentinel-ui-build">` stamp of the served index.html.
+
+    Read from the file the server actually serves (UI_DIR/index.html) on every
+    call, so /api/health always reports what a browser would receive right
+    now. Comparing it with the "UI build ..." label in the sidebar footer is
+    how an operator proves whether a page that looks old is a stale browser
+    cache or a stale server.
+    """
+    return ui_state().get('stamp')
+
+
+def ui_self_test(path=None):
+    """Problems that make the served page stale or unusable ([] = healthy).
+
+    Called during startup: a server whose index.html is not the current page
+    exits with FATAL instead of publishing a Register without the Actions
+    column. The same function backs /api/health, so a running process can be
+    asked the same question at any time.
+    """
+    return list(ui_state(path).get('problems') or [])
 
 
 def static_asset_version_consistent():
@@ -5772,10 +5864,13 @@ class API(BaseHTTPRequestHandler):
     # ---- static pages & uploads --------------------------------------------
     def serve_static(self, path):
         p = urlparse(path)
+        # Templates are resolved against UI_DIR (the repository root by
+        # default, or SENTINEL_UI_DIR for a packaged deployment) — the same
+        # path startup verified and /api/health reports as `ui_path`.
         if p.path in ('/','/index.html'):
-            return self.send_file(os.path.join(PROJECT_ROOT,'index.html'), 'text/html; charset=utf-8')
+            return self.send_file(INDEX_HTML, 'text/html; charset=utf-8')
         if p.path in ('/application.html','/certificate.html'):
-            return self.send_file(os.path.join(PROJECT_ROOT, p.path.lstrip('/')), 'text/html; charset=utf-8')
+            return self.send_file(os.path.join(UI_DIR, p.path.lstrip('/')), 'text/html; charset=utf-8')
         if p.path.startswith('/uploads/'):
             name = os.path.basename(p.path)
             ext = os.path.splitext(name)[1].lower()
@@ -5796,7 +5891,13 @@ class API(BaseHTTPRequestHandler):
                 ext = os.path.splitext(rel)[1].lower()
                 ctype = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg',
                          '.gif':'image/gif','.webp':'image/webp','.svg':'image/svg+xml'}.get(ext,'application/octet-stream')
-                return self.send_file(os.path.join(PROJECT_ROOT, 'images', rel), ctype,
+                # Brand assets travel with the templates: a packaged deployment
+                # pointed at with SENTINEL_UI_DIR serves its own images/ folder,
+                # so the pages and their emblem are refreshed together.
+                image_root = os.path.join(UI_DIR, 'images')
+                if not os.path.isdir(image_root):
+                    image_root = os.path.join(PROJECT_ROOT, 'images')
+                return self.send_file(os.path.join(image_root, rel), ctype,
                                       immutable=versioned)
         return None
 
@@ -5813,7 +5914,10 @@ class API(BaseHTTPRequestHandler):
                 # The build marker lets an operator confirm at a glance that
                 # the running process really is the build with the 12-hour
                 # fingerprint review lock (a stale process is the usual cause
-                # of "the fix did not take effect").
+                # of "the fix did not take effect"). The same response carries
+                # the served template's identity (`ui_path` / `ui_sha256` /
+                # `ui_actions_published`) for the same reason on the UI side.
+                ui = ui_state()
                 return self.send_json(200, {'status':'ok','service':'sentinel-backend',
                                             'database':'postgresql',
                                             'database_name':os.environ.get('SENTINEL_DB_NAME', 'sentinel_police'),
@@ -5829,6 +5933,19 @@ class API(BaseHTTPRequestHandler):
                                             'ui_build':served_ui_build(),
                                             'asset_version':ASSET_VERSION,
                                             'static_cache':'no-store (versioned assets: immutable)',
+                                            # Which index.html this process is serving, as an
+                                            # identity an operator can diff against a checkout:
+                                            # the absolute path, its sha256 and the feature
+                                            # markers found in it. `ui_ok: false` means the
+                                            # server is (mis)configured to serve a stale page —
+                                            # startup refuses that, so it should never be seen on
+                                            # a running process.
+                                            'ui_path':ui.get('path'),
+                                            'ui_sha256':ui.get('sha256'),
+                                            'ui_bytes':ui.get('bytes'),
+                                            'ui_actions_published':ui.get('actions_published'),
+                                            'ui_ok':not ui.get('problems'),
+                                            'ui_problems':ui.get('problems') or [],
                                             # Alias -> canonical route table, so a
                                             # caller can tell whether /api/branches
                                             # (and the other spec spellings) resolve
@@ -7362,6 +7479,19 @@ def bind_server(port):
 
 
 if __name__ == '__main__':
+    # The page is the product here: a backend that boots against an old
+    # template is indistinguishable, from the officer's chair, from a feature
+    # that was never implemented. Refuse to serve one.
+    ui = ui_state()
+    if ui['problems']:
+        raise SystemExit(
+            'FATAL: the index.html this server would serve is not the current page; '
+            'refusing to start.\n'
+            f'       template : {ui["path"]}\n'
+            f'       stamp    : {ui["stamp"]!r} (expected {UI_BUILD!r})\n'
+            + ''.join(f'       - {p}\n' for p in ui['problems'])
+            + '       Fix: run the server from the repository root that contains the current '
+              'index.html (or point SENTINEL_UI_DIR at it), and rebuild any packaged copy.\n')
     try:
         init_db()
     except psycopg2.OperationalError as exc:
@@ -7395,6 +7525,10 @@ if __name__ == '__main__':
                          ''.join(f'       - {p}\n' for p in rbac_problems))
     print(f'Sentinel backend listening on 0.0.0.0:{port}')
     print(f'  build {BUILD_TAG}')
+    print(f'  ui {UI_BUILD}  (index.html {ui["bytes"]} bytes, sha256 {ui["sha256"][:12]}…)')
+    print(f'  ui template : {ui["path"]}')
+    print('  ui features : ' + ', '.join(
+        f'{label}={"yes" if present else "NO"}' for label, present in ui['features'].items()))
     if os.environ.get('SENTINEL_DATABASE_URL', '').strip():
         print('  database: PostgreSQL via SENTINEL_DATABASE_URL')
     else:

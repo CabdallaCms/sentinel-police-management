@@ -33,6 +33,7 @@ Database resolution (mirrors the other suites):
 Usage:
     python3 backend/test_station_actions.py
 """
+import hashlib
 import json
 import os
 import re
@@ -258,6 +259,44 @@ def cache_busting_suite(base):
         check(r.status == 200 and r.read() == b''
               and int(r.headers.get('content-length', 0)) > 0,
               'HEAD /api/health is answered with headers only')
+
+    # ---- the served template is the current page (the UAT blocker) --------
+    # A fresh browser showing an old build is never a cache problem: it means
+    # the process is serving a different index.html. The server now refuses to
+    # start in that state and publishes its identity so it can be checked.
+    state = srv.ui_state()
+    check(state['path'] == os.path.join(os.path.dirname(ROOT), 'index.html'),
+          f"the served template resolves to the repository-root index.html ({state['path']})")
+    check(state['sha256'] == hashlib.sha256(
+              open(os.path.join(os.path.dirname(ROOT), 'index.html'), 'rb').read()).hexdigest(),
+          'the reported sha256 is the served file\'s sha256')
+    check(state['actions_published'] and all(state['features'].values()),
+          f"the served page carries every required feature {state['features']}")
+    check(health.get('ui_sha256') == state['sha256']
+          and health.get('ui_actions_published') is True
+          and health.get('ui_ok') is True,
+          '/api/health publishes the served page identity (sha256 + Actions column + ui_ok)')
+    check(srv.ui_self_test() == [], 'ui_self_test() passes for the served page')
+
+    # A server pointed at an OLD index.html must refuse to start rather than
+    # publish a Register without the Actions column. Re-create that page from
+    # the previous commit and point a throwaway process at it.
+    old_page = subprocess.run(['git', 'show', '1b05c2c:index.html'], cwd=os.path.dirname(ROOT),
+                              capture_output=True, text=True).stdout
+    check(bool(old_page), 'the previous commit\'s index.html is available for the negative test')
+    stale_dir = tempfile.mkdtemp(prefix='sentinel-stale-ui-')
+    with open(os.path.join(stale_dir, 'index.html'), 'w', encoding='utf-8') as f:
+        f.write(old_page)
+    stale_problems = srv.ui_self_test(os.path.join(stale_dir, 'index.html'))
+    check(any('sentinel-rbac-readonly-3' in p for p in stale_problems),
+          'a readonly-3 template is reported as stale')
+    check(any('Actions column' in p for p in stale_problems),
+          'the missing Actions column is reported explicitly')
+    proc = subprocess.run([sys.executable, SERVER], cwd=os.path.dirname(ROOT),
+                          env=dict(os.environ, SENTINEL_UI_DIR=stale_dir, PORT=str(free_port())),
+                          capture_output=True, text=True, timeout=120)
+    check(proc.returncode != 0 and 'FATAL' in proc.stderr and 'Actions column' in proc.stderr,
+          'a server handed the old template refuses to start (FATAL, names the Actions column)')
 
 
 # ---------------------------------------------------------------------------

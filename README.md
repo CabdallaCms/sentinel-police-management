@@ -140,7 +140,15 @@ UI and the API can never disagree:
   `Expires: 0` + `Pragma: no-cache`, so a normal reload always fetches the current page, and
   `?v=`-stamped assets are the only ones allowed to be cached (`immutable`). `GET /api/health`
   reports `ui_build` (read from the `index.html` on disk, not a constant) and `asset_version`:
-  if the sidebar footer and `ui_build` differ, the tab is stale — hard-refresh it. Meanwhile the
+  if the sidebar footer and `ui_build` differ, the tab is stale — hard-refresh it.
+- **A stale page cannot be served.** `/api/health` also publishes `ui_path`, `ui_sha256`,
+  `ui_actions_published` and `ui_ok`/`ui_problems` for the template the process is actually serving,
+  and `bash scripts/verify-live-ui.sh <url>` compares them with a checkout (stamp, sha256, Actions
+  column, View/Edit entry points, cache headers) — a fresh browser showing an old build is a *server*
+  problem, and that script names it. Startup refuses to bind the port at all when the `index.html` it
+  would serve is not this build (old stamp, or missing the Actions / View / Edit markers), and
+  `SENTINEL_UI_DIR` lets a packaged deployment point at a different template directory — whatever
+  directory wins is the one verified, logged and reported. Meanwhile the
   backend prints its RBAC guarantees at start-up
   (*Central Police Search is NOT granted to AirportControl, CIDUnit* / *global read-only roles
   chief_commander — DELETE, PATCH, POST, PUT … answer 403 Forbidden*). If a browser still shows the
