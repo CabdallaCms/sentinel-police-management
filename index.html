@@ -624,6 +624,112 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+/* ============================================================
+   LANDSCAPE MODALS · HORIZONTAL FIELD GRIDS
+   ------------------------------------------------------------
+   The registration and identity dialogs used to be narrow vertical
+   sheets: a six-field record stacked seven inputs deep and forced an
+   officer to scroll just to compare two values. Every dialog is now a
+   wide landscape sheet.
+
+   · Container — .modal / .cmodal grow to 900–1000px on desktop, stay
+     viewport-centred, and are capped by viewport height so the header
+     and the action bar never drift off-screen. Dropping the old
+     `max-height:80vh` on .modal-body removes a double height cap that
+     made the dialog jump between two scrollers.
+   · .f-row — the shared row primitive for logically grouped fields.
+     f-2 / f-3 / f-4 set the column count, .f-full spans the row, and
+     the rows reflow by themselves (no JS, no resize listener).
+   · Density — field boxes, label gaps, hint / notice padding are
+     tightened, so the added width is not paid for in extra height.
+   · Safety net — a .grid2 / .grid3 still sitting inside a dialog uses
+     auto-fit tracks instead of stretching two inputs across 950px.
+   · Below 1000/900px the 4- and 3-column rows collapse to 2, below
+     680px to one, and the dialog goes edge-to-edge on 100dvh.
+
+   Presentation only: no field id, validator, payload or handler is
+   changed, and DOM order inside every re-flowed block is preserved so
+   first-invalid focus (focusFormError reads DOM order) is unchanged.
+   ============================================================ */
+/* --- 1 · dialog containers: wide, centred, height-capped --- */
+.modal{width:min(960px,calc(100vw - 44px));max-width:calc(100vw - 44px)}
+.cmodal{width:min(1000px,calc(100vw - 44px));max-width:calc(100vw - 44px)}
+.cmodal.profile{width:min(900px,calc(100vw - 44px))}
+/* vh first, dvh second: mobile chrome collapses only where dvh is understood */
+.modal,.cmodal{max-height:calc(100vh - 44px);max-height:calc(100dvh - 44px)}
+/* the body is the single scroller; head + action bar stay put */
+.modal-body{padding:16px 22px;max-height:none;min-height:0;overscroll-behavior:contain;scrollbar-gutter:stable}
+.cm-body{padding:16px 22px 18px;overscroll-behavior:contain;scrollbar-gutter:stable;overflow-x:hidden}
+.modal-head,.cm-head{padding:13px 22px;gap:14px}
+.modal-head h3,.cm-head h3{font-size:16px;letter-spacing:-.2px}
+.modal-head .sub,.cm-head .sub{margin-top:2px;font-size:11.5px}
+.modal-foot{padding:12px 22px;gap:8px}
+.cm-body>.form,.modal-body>.form{gap:11px}
+/* slim scrollbars inside the dialog body only */
+.cm-body,.modal-body{scrollbar-width:thin;scrollbar-color:#c3d1e5 transparent}
+.cm-body::-webkit-scrollbar,.modal-body::-webkit-scrollbar{width:11px}
+.cm-body::-webkit-scrollbar-track,.modal-body::-webkit-scrollbar-track{background:#f4f7fb}
+.cm-body::-webkit-scrollbar-thumb,.modal-body::-webkit-scrollbar-thumb{background:#c3d1e5;border-radius:99px;border:3px solid #fff}
+.cm-body::-webkit-scrollbar-thumb:hover,.modal-body::-webkit-scrollbar-thumb:hover{background:#a9bcd6}
+/* --- 2 · horizontal field-row grid primitive --- */
+.f-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 14px;align-items:end;min-width:0}
+.f-row.f-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.f-row.f-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.f-row.f-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.f-row>.f-full{grid-column:1/-1}
+.f-row>*{min-width:0}
+.id-form{display:grid;gap:11px;min-width:0}
+.id-form .m-matchlist{margin-bottom:0}
+.id-form .match-banner{margin-bottom:0}
+/* unlabelled two/three-column grids inside a dialog still use the width */
+.cmodal .grid2,.modal .grid2{grid-template-columns:repeat(auto-fit,minmax(min(100%,248px),1fr));gap:11px 14px;align-items:end}
+.cmodal .grid3,.modal .grid3{grid-template-columns:repeat(auto-fit,minmax(min(100%,208px),1fr));gap:11px 14px;align-items:end}
+.cmodal .docgrid,.modal .docgrid{grid-template-columns:repeat(auto-fit,minmax(min(100%,206px),1fr))}
+.cmodal .loc-grid,.modal .loc-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,206px),1fr))}
+.cmodal .pv-grid,.modal .pv-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,236px),1fr))}
+/* --- 3 · density: tighter boxes, labels and helper text --- */
+.cmodal .field,.modal .field{gap:4px}
+.cmodal .field label,.modal .field label{margin:0;font-size:11.5px;line-height:1.3;color:#3f4f68}
+.cmodal .field input,.cmodal .field select,.cmodal .field textarea,.modal .field input,.modal .field select,.modal .field textarea{
+  min-height:36px;padding:7px 10px;font-size:12.75px;line-height:1.35;border-radius:8px
+}
+.cmodal .field textarea,.modal .field textarea{min-height:60px}
+.cmodal .field .fileslot,.modal .field .fileslot{padding:8px 10px;flex-direction:column;align-items:stretch;gap:3px}
+.cmodal .fileslot input,.modal .fileslot input{width:100%;min-width:0;font-size:11.5px}
+.cmodal .fileslot small,.modal .fileslot small{font-size:10.5px;line-height:1.3}
+.cmodal .field input[type=file],.modal .field input[type=file]{min-width:0;padding:5px 7px;font-size:11.5px}
+.cmodal .section-label,.modal .section-label{margin:5px 0 0;padding-bottom:5px;font-size:10.5px}
+.cmodal .hint,.modal .hint{padding:9px 12px;font-size:11.5px;line-height:1.5}
+.cmodal .notice,.modal .notice{margin-bottom:10px;padding:9px 12px;font-size:12.5px}
+.cmodal .record-type,.modal .record-type{margin:0 0 10px;font-size:11.5px;line-height:1.5}
+.cmodal .tabs,.modal .tabs{margin-bottom:12px;gap:4px}
+.cmodal .tab,.modal .tab{padding:9px 13px;font-size:12.5px}
+/* the save row reads as a dialog footer: full-bleed, ruled, right-aligned */
+.cmodal .form .form-actions{
+  margin:6px -22px -18px;padding:12px 22px;border-top:1px solid var(--line);
+  background:#fbfcff;justify-content:flex-end;gap:10px
+}
+.cmodal .form .form-actions .btn{min-height:36px}
+/* --- 4 · read-only detail popups keep the same rhythm at the new width --- */
+.cmodal .pv-headcard{padding:13px 16px;gap:14px;margin-bottom:12px}
+.cmodal .pv-photo{width:64px;height:64px;border-radius:12px;font-size:20px}
+.cmodal .pv-grid{gap:9px}
+.cmodal .pv-field{padding:8px 11px}
+.cmodal .pv-field b{font-size:12.5px;line-height:1.4}
+.cmodal .pv-units{margin-top:12px;padding-top:10px}
+.cmodal .pv-foot{margin-top:12px;padding-top:11px}
+/* --- 5 · responsive collapse (dialog-relative, then edge-to-edge) --- */
+@media(max-width:1000px){.f-row.f-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.f-row.f-3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){
+  .modal,.cmodal,.cmodal.profile{width:calc(100vw - 16px);max-width:calc(100vw - 16px);border-radius:13px;max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px)}
+  .modal-body,.cm-body{padding:14px 15px}
+  .modal-head,.cm-head{padding:12px 15px}
+  .cmodal .form .form-actions{margin:6px -15px -14px;padding:11px 15px}
+  .f-row,.f-row.f-2,.f-row.f-3,.f-row.f-4,.cmodal .grid2,.modal .grid2,.cmodal .grid3,.modal .grid3,.cmodal .docgrid,.modal .docgrid,.cmodal .loc-grid,.modal .loc-grid{grid-template-columns:1fr}
+  .f-row>.f-full{grid-column:auto}
+  .cmodal .field input,.cmodal .field select,.cmodal .field textarea,.modal .field input,.modal .field select,.modal .field textarea{min-height:40px;font-size:13px}
+}
 </style>
 </head>
 <body>
@@ -829,15 +935,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="section-label">Applicant identity — Central Person Registry</div>
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>: an exact match (National ID/passport or 4-part name + DOB) auto-fills the existing record; if no match exists a new Central Person is created automatically on save.</div>
 <div id="fpIdentity"></div>
+<div class="f-row f-4">
 <div class="field"><label>Fingerprint branch *</label><select id="fpBranch" data-branch-unit="fingerprint" required><option value="">Loading branches…</option></select></div>
 <div class="field"><label>Clearance reason *</label><select id="fpPurpose"><option>Education</option><option>Travel</option><option>Employment</option><option>Citizenship</option><option>Licence</option></select></div>
-<div class="grid2">
 <div class="field"><label>Gender</label><select id="fpSex"><option value="">Not stated</option><option>Male</option><option>Female</option></select></div>
 <div class="field"><label>Email</label><input id="fpEmail" type="email" placeholder="applicant@example.com"></div>
 </div>
 <div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs" data-min-files="2"></div></div>
 <div class="section-label">Guardian / next of kin</div>
-<div class="grid2">
+<div class="f-row f-3">
 <div class="field"><label>Guardian full name *</label><input id="gName" required placeholder="Guardian / relative name"></div>
 <div class="field"><label>Relationship</label><input id="gRelation" placeholder="Father, mother, spouse…"></div>
 <div class="field"><label>Guardian ID (passport / national)</label><input id="gId" placeholder="ID number"></div>
@@ -876,12 +982,16 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
 <div id="airIdentity"></div>
 <div class="section-label">Travel</div>
+<div class="f-row f-3">
 <div class="field"><label>Airport branch *</label><select id="airBranch" data-branch-unit="airport" required><option value="">Loading branches…</option></select></div>
-<div class="grid2">
 <div class="field"><label>Movement type</label><select id="airMove"><option>Arrival</option><option>Departure</option></select></div>
 <div class="field"><label>Travel date</label><input id="airDate" type="date" value="2026-09-01"></div>
+</div>
+<div class="f-row f-2">
 <div class="field"><label>Flight / transport number *</label><input id="airFlight" required placeholder="e.g. HL-204"></div>
 <div class="field"><label>Airline / carrier</label><input id="airAirline" placeholder="e.g. Sentinel Air"></div>
+</div>
+<div class="f-row f-2">
 <div class="field"><label>Origin city *</label><input id="airOrigin" required placeholder="e.g. Berbera"></div>
 <div class="field"><label>Destination city *</label><input id="airDest" required placeholder="e.g. Hargeisa"></div>
 </div>
@@ -942,8 +1052,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="section-label">Identity — Central Person Registry</div>
 <div class="hint" style="margin-bottom:6px;background:#f4f8ff">Type the identity below. The registry is matched <b>in real time</b>; an exact match auto-fills the existing central record, otherwise a new Central Person is created automatically on save.</div>
 <div id="cwIdentity"></div>
-<div class="grid2">
-<div class="role-select"><label class="muted" style="font-weight:700">Role</label><select id="cwRole"><option>Suspect</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
+<div class="f-row f-2">
+<div class="field"><label>Role</label><select id="cwRole"><option>Suspect</option><option>Victim</option><option>Witness</option><option>Complainant</option></select></div>
 <div class="field"><label>Linked case (optional)</label><select id="cwCaseSel"></select></div>
 </div>
 <div class="field"><label>Participant note <span id="cwNoteReq" style="color:var(--red)">(required when no case)</span></label><input id="cwPartNote" placeholder="e.g. last seen, relationship to incident, reason for listing"></div>
@@ -1048,7 +1158,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div id="stNotice" class="notice"></div>
 
 <form novalidate class="form" id="stForm" onsubmit="saveStation(event)">
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Station name *</label><input id="stName" placeholder="e.g. Burao Central Station"></div>
 <div class="field"><label>Station code (auto)</label><input id="stCode" readonly placeholder="STN-REG-XXX" style="background:#f3f6fb;color:#526075"></div>
 <div class="field"><label>Station tier *</label><select id="stTier"><option value="">— select —</option><option>Regional HQ</option><option>District HQ</option><option>Outpost</option><option>Checkpoint</option><option>Border Post</option></select></div>
@@ -1091,7 +1201,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <form novalidate class="form" id="stEditForm" onsubmit="saveStationEdit(event)">
 <input type="hidden" id="stEditId">
 <div class="hint" id="stEditIdentity" style="margin-bottom:14px"></div>
-<div class="grid2">
+<div class="f-row f-3">
 <div class="field"><label>Station name *</label><input id="stEditName" placeholder="e.g. Burao Central Station"></div>
 <div class="field"><label>Station code <small class="muted">(read-only)</small></label><input id="stEditCode" readonly style="background:#f3f6fb;color:#526075"></div>
 <div class="field"><label>Operational status *</label><select id="stEditStatus"><option>Active</option><option>Inactive</option><option>Maintenance</option></select></div>
@@ -1171,7 +1281,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 <div class="tabpane active" id="off-step-1">
 <div class="section-label">Official &amp; System Identifiers</div>
-<div class="grid2">
+<div class="f-row f-3">
 <div class="field"><label>Service ID (auto-generated)</label><input id="offServiceId" readonly placeholder="POL-YYYY-XXXX" style="background:#f3f6fb;color:#526075"></div>
 <div class="field"><label>Rank *</label><select id="offRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
 <div class="field"><label>Unit / Division *</label><select id="offUnit"><option value="">— select unit —</option><option>General Patrol</option><option>CID / Criminal Investigation</option><option>Traffic Control</option><option>Rapid Response Unit</option><option>Special Protection Unit</option><option>Logistics</option></select></div>
@@ -1183,7 +1293,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 <div class="tabpane" id="off-step-2">
 <div class="section-label">Personal Identification</div>
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Full Name *</label><input id="offName" placeholder="e.g. Maxamed Faarax Nuur"></div>
 <div class="field"><label>Mother's Name *</label><input id="offMother" placeholder="e.g. Khadra Faarax"></div>
 <div class="field"><label>Date of Birth (DOB) *</label><input id="offDob" type="date"></div>
@@ -1198,7 +1308,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 <div class="tabpane" id="off-step-3">
 <div class="section-label">Regional &amp; Origin Data</div>
-<div class="grid2">
+<div class="f-row f-3">
 <div class="field"><label>State / Region of Origin</label><select id="offOriginRegion"></select></div>
 <div class="field"><label>District of Origin</label><select id="offOriginDistrict"></select></div>
 <div class="field"><label>Town / Village</label><input id="offTown" type="text" placeholder="e.g. Adhi Cadeeye"></div>
@@ -1207,7 +1317,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 <div class="tabpane" id="off-step-4">
 <div class="section-label">Guarantor / Emergency Contact</div>
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Guarantor Name *</label><input id="offGuarName" placeholder="e.g. Faarax Nuur"></div>
 <div class="field"><label>Guarantor Contact *</label><input id="offGuarPhone" type="tel" placeholder="+252 …"></div>
 <div class="field"><label>Occupation</label><input id="offGuarOcc" placeholder="e.g. Merchant"></div>
@@ -1219,12 +1329,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 <div class="tabpane" id="off-step-5">
 <div class="section-label">Document Slot 1 <span style="color:var(--red)">(Mandatory)</span></div>
-<div class="grid2">
+<div class="f-row f-2">
 <div class="field"><label>Document Type *</label><select id="offDoc1Type"><option value="">— select type —</option><option>National ID</option><option>Passport</option><option>Birth Certificate</option><option>Letter of Guarantee</option></select></div>
 <div class="field"><label>File Upload * <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc1File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
 </div>
 <div class="section-label">Document Slot 2 <span class="muted">(Optional)</span></div>
-<div class="grid2">
+<div class="f-row f-2">
 <div class="field"><label>Document Type</label><select id="offDoc2Type"><option value="">— none —</option><option>Background Check</option><option>Reference Letter</option><option>Military Discharge</option><option>Other</option></select></div>
 <div class="field"><label>File Upload <small class="muted">(PDF/JPG/PNG)</small></label><input id="offDoc2File" type="file" accept=".pdf,image/jpeg,image/png,.jpg,.jpeg"></div>
 </div>
@@ -1247,7 +1357,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div id="prmNotice" class="notice"></div>
 
 <form novalidate class="form" id="prmForm" onsubmit="savePromotionNomination(event)">
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Officer *</label><select id="prmOfficer"></select></div>
 <div class="field"><label>Proposed rank *</label><select id="prmRank"><option value="">— select rank —</option><option>Constable</option><option>Corporal</option><option>Sergeant</option><option>Inspector</option><option>Chief Inspector</option><option>Superintendent</option><option>Commander</option><option>General</option></select></div>
 <div class="field"><label>Effective date</label><input id="prmDate" type="date"></div>
@@ -1266,7 +1376,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div id="dscNotice" class="notice"></div>
 
 <form novalidate class="form" id="dscForm" onsubmit="saveDisciplineAction(event)">
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Officer *</label><select id="dscOfficer"></select></div>
 <div class="field"><label>Action type *</label><select id="dscType" onchange="disciplineTypeChanged()"><option value="">— select —</option><option>Misconduct</option><option>Suspension</option><option>Demotion</option><option>Warning</option><option>Investigation</option></select></div>
 <div class="field"><label>Severity</label><select id="dscSeverity"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
@@ -1370,13 +1480,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 <form novalidate class="form" id="crmForm" onsubmit="saveCrime(event)">
 <div class="section-label">1 · Station &amp; desk officer</div>
-<div class="grid2">
+<div class="f-row f-3">
 <div class="field"><label>Police station *</label><select id="crmStation"></select></div>
 <div class="field"><label>Desk officer *</label><select id="crmOfficer"></select></div>
-</div>
 <div class="field"><label>Crime branch *</label><select id="crmBranch" data-branch-unit="crime" required><option value="">Loading branches…</option></select></div>
+</div>
 <div class="section-label">2 · Incident</div>
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Category *</label><select id="crmCat"><option value="">— select —</option><option>Theft/Burglary</option><option>Assault</option><option>Robbery</option><option>Traffic Accident</option><option>Homicide</option><option>Fraud</option><option>Domestic Incident</option><option>Public Order</option><option>Cybercrime</option><option>Other</option></select></div>
 <div class="field"><label>Date / time *</label><input id="crmWhen" type="datetime-local"></div>
 <div class="field"><label>Severity</label><select id="crmSev"><option value="">—</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></div>
@@ -1385,7 +1495,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="field"><label>Location of occurrence *</label><input id="crmLoc" placeholder="Street, village, landmark"></div>
 <div class="field"><label>Description *</label><textarea id="crmDesc" required></textarea></div>
 <div class="section-label">3 · Victim / reporting party</div>
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Reporting party</label><select id="crmParty"><option value="">—</option><option>Victim</option><option>Witness</option><option>Third-Party Representative</option><option>Police</option></select></div>
 <div class="field"><label>Anonymous victim</label><select id="crmAnon"><option value="">No</option><option value="1">Yes</option></select></div>
 <div class="field"><label>Victim full name</label><input id="crmVName"></div>
@@ -1397,7 +1507,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 </div>
 <div class="field"><label>Statement</label><textarea id="crmStmt"></textarea></div>
 <div class="section-label">4 · Evidence (optional, PDF/JPG/PNG ≤5MB)</div>
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Evidence 1 type</label><select id="crmE1Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
 <div class="field"><label>Evidence 1 file</label><input id="crmE1" type="file" accept=".pdf,image/jpeg,image/png"></div>
 <div class="field"><label>Evidence 2 type</label><select id="crmE2Type"><option value="">—</option><option>Photo</option><option>Statement</option><option>Physical item</option><option>Digital file</option><option>Other</option></select></div>
@@ -1429,7 +1539,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div id="carNotice" class="notice"></div>
 
 <form novalidate class="form" id="carForm" onsubmit="saveCar(event)">
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Category *</label><select id="carCategory" onchange="toggleCarCategory()"><option value="Police Fleet">Police Fleet</option><option value="Civilian / Commercial">Civilian / Commercial</option></select></div>
 <div class="field"><label>Plate number *</label><input id="carPlate" placeholder="e.g. SL-1010-26" style="text-transform:uppercase"></div>
 <div class="field"><label>VIN / chassis (17) *</label><input id="carVin" maxlength="17" placeholder="17 characters, no I/O/Q"></div>
@@ -1441,14 +1551,16 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 </div>
 <div id="carFleetFields">
 <div class="section-label">Police fleet assignment</div>
+<div class="f-row f-3">
 <div class="field"><label>Assigned station *</label><select id="carStation"></select></div>
 <div class="field"><label>Assigned officer</label><select id="carOfficer"><option value="">— optional —</option></select></div>
 <div class="field"><label>Operational status</label><select id="carOpStatus"><option>In Service</option><option>Maintenance</option><option>Out of Service</option><option>Decommissioned</option></select></div>
+</div>
 <div id="car-loc" class="loc-grid"></div>
 </div>
 <div id="carCivFields" style="display:none">
 <div class="section-label">Civilian owner</div>
-<div class="grid2">
+<div class="f-row f-2">
 <div class="field"><label>Owner full name *</label><input id="carOwnerName"></div>
 <div class="field"><label>Owner phone *</label><input id="carOwnerPhone"></div>
 <div class="field"><label>National ID / passport *</label><input id="carOwnerNid"></div>
@@ -1456,7 +1568,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 </div>
 </div>
 <div class="section-label">Security alert</div>
-<div class="grid2">
+<div class="f-row f-4">
 <div class="field"><label>Status</label><select id="carAlert" onchange="toggleCarAlert()"><option>Clean / Normal</option><option>Stolen</option><option>Wanted in Crime</option><option>Impounded</option><option>Unregistered / Suspicious</option></select></div>
 <div class="field" id="carAlertReasonWrap" style="display:none"><label>Alert reason *</label><input id="carAlertReason"></div>
 <div class="field"><label>Registration expiry</label><input id="carExpiry" type="date"></div>
@@ -2448,22 +2560,30 @@ async function resolveIdentity(d){
 function identityFormHTML(prefix,opts={}){
   return `
   <div class="id-form">
-   <div class="grid2">
+   <div class="f-row f-2">
     <div class="field"><label>First name *</label><input id="${prefix}-first" placeholder="e.g. Ayaan" autocomplete="off"></div>
     <div class="field"><label>Second name *</label><input id="${prefix}-second" placeholder="e.g. Cabdi" autocomplete="off"></div>
+   </div>
+   <div class="f-row f-2">
     <div class="field"><label>Third name *</label><input id="${prefix}-third" placeholder="e.g. Xasan" autocomplete="off"></div>
     <div class="field"><label>Fourth name *</label><input id="${prefix}-fourth" placeholder="e.g. Axmed" autocomplete="off"></div>
+   </div>
+   <div class="f-row f-3">
     <div class="field"><label>Date of birth *</label><input id="${prefix}-dob" type="date"></div>
     <div class="field"><label>National ID</label><input id="${prefix}-national" placeholder="National ID number" autocomplete="off"></div>
     <div class="field"><label>Passport ID</label><input id="${prefix}-passport" placeholder="Passport number" autocomplete="off"></div>
    </div>
    <div id="${prefix}-matchlist" class="m-matchlist"></div>
    <div id="${prefix}-match" class="match-banner"></div>
-   <div class="grid2">
+   <div class="f-row f-2">
     <div class="field"><label>Mother's name *</label><input id="${prefix}-mother" placeholder="Mother's full name" autocomplete="off"></div>
     <div class="field"><label>Address (residence) *</label><input id="${prefix}-address" placeholder="Street, district, town" autocomplete="off"></div>
+   </div>
+   <div class="f-row f-2">
     <div class="field"><label>Phone</label><input id="${prefix}-phone" placeholder="Contact number" autocomplete="off"></div>
     <div class="field"><label>Place of birth</label><input id="${prefix}-pob" placeholder="City / town"></div>
+   </div>
+   <div class="f-row f-2">
     <div class="field"><label>Occupation</label><input id="${prefix}-occupation" placeholder="Occupation"></div>
     ${opts.photo?`<div class="field"><label>Photo</label><input id="${prefix}-photo" type="file" accept="image/*"><img id="${prefix}-photoPrev" class="m-photoprev" alt="person photo"></div>`:''}
    </div>
@@ -2583,43 +2703,57 @@ function dismissMatches(prefix){
 function travelerFormHTML(prefix){
   return `
   <div class="id-form">
-   <div class="grid2">
+   <div class="f-row f-2">
     <div class="field"><label>First name *</label><input id="${prefix}-first" placeholder="e.g. Ayaan" autocomplete="off"></div>
     <div class="field"><label>Second name *</label><input id="${prefix}-second" placeholder="e.g. Cabdi" autocomplete="off"></div>
+   </div>
+   <div class="f-row f-2">
     <div class="field"><label>Third name *</label><input id="${prefix}-third" placeholder="e.g. Xasan" autocomplete="off"></div>
     <div class="field"><label>Fourth name *</label><input id="${prefix}-fourth" placeholder="e.g. Axmed" autocomplete="off"></div>
+   </div>
+   <div class="f-row f-4">
     <div class="field"><label>Date of birth *</label><input id="${prefix}-dob" type="date"></div>
     <div class="field"><label>Place of birth</label><input id="${prefix}-pob" placeholder="City / town"></div>
     <div class="field"><label>National ID (optional)</label><input id="${prefix}-national" placeholder="National ID number" autocomplete="off"></div>
     <div class="field"><label>Passport ID (optional)</label><input id="${prefix}-passport" placeholder="Passport number" autocomplete="off"></div>
-    <div class="field"><label>Mother's name (optional)</label><input id="${prefix}-mother" placeholder="Mother's full name" autocomplete="off"></div>
-    <div class="field"><label>Current address *</label><input id="${prefix}-address" placeholder="Street, district, town"></div>
-    <div class="field"><label>Permanent address *</label><input id="${prefix}-permanent" placeholder="Home address in country of origin"></div>
-    <div class="field"><label>Purpose of visit *</label><input id="${prefix}-purpose" placeholder="Family visit, business, medical…"></div>
-    <div class="field"><label>Real-time photo *</label><input id="${prefix}-photo" type="file" accept="image/*"><img id="${prefix}-photoPrev" class="m-photoprev" alt="traveler photo"></div>
    </div>
    <div id="${prefix}-matchlist" class="m-matchlist"></div>
    <div id="${prefix}-match" class="match-banner"></div>
+   <div class="f-row f-3">
+    <div class="field"><label>Mother's name (optional)</label><input id="${prefix}-mother" placeholder="Mother's full name" autocomplete="off"></div>
+    <div class="field"><label>Current address *</label><input id="${prefix}-address" placeholder="Street, district, town"></div>
+    <div class="field"><label>Permanent address *</label><input id="${prefix}-permanent" placeholder="Home address in country of origin"></div>
+   </div>
+   <div class="f-row f-2">
+    <div class="field"><label>Purpose of visit *</label><input id="${prefix}-purpose" placeholder="Family visit, business, medical…"></div>
+    <div class="field"><label>Real-time photo *</label><input id="${prefix}-photo" type="file" accept="image/*"><img id="${prefix}-photoPrev" class="m-photoprev" alt="traveler photo"></div>
+   </div>
    <div class="field"><label>Traveler documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs" data-min-files="1"></div></div>
   </div>`;
 }
 function guardianFormHTML(prefix){
   return `
   <div class="id-form">
-   <div class="grid2">
+   <div class="f-row f-2">
     <div class="field"><label>Guardian first name *</label><input id="${prefix}-first" placeholder="e.g. Cabdi" autocomplete="off"></div>
     <div class="field"><label>Guardian second name *</label><input id="${prefix}-second" placeholder="e.g. Faarax" autocomplete="off"></div>
+   </div>
+   <div class="f-row f-2">
     <div class="field"><label>Guardian third name *</label><input id="${prefix}-third" placeholder="e.g. Cali" autocomplete="off"></div>
     <div class="field"><label>Guardian fourth name *</label><input id="${prefix}-fourth" placeholder="e.g. Axmed" autocomplete="off"></div>
+   </div>
+   <div id="${prefix}-matchlist" class="m-matchlist"></div>
+   <div id="${prefix}-match" class="match-banner"></div>
+   <div class="f-row f-3">
     <div class="field"><label>Relationship *</label><select id="${prefix}-relationship"><option value="">— select —</option><option>Parent</option><option>Spouse</option><option>Legal Guardian</option><option>Sibling</option><option>Relative</option><option>Employer</option><option>Other</option></select></div>
     <div class="field"><label>Contact number *</label><input id="${prefix}-phone" placeholder="+252 …" autocomplete="off"></div>
     <div class="field"><label>Permanent address *</label><input id="${prefix}-permanent" placeholder="Guardian home address"></div>
+   </div>
+   <div class="f-row f-3">
     <div class="field"><label>Occupation *</label><input id="${prefix}-occupation" placeholder="Occupation"></div>
     <div class="field"><label>National ID (optional)</label><input id="${prefix}-national" placeholder="Guardian NID" autocomplete="off"></div>
     <div class="field"><label>Passport ID (optional)</label><input id="${prefix}-passport" placeholder="Guardian passport" autocomplete="off"></div>
    </div>
-   <div id="${prefix}-matchlist" class="m-matchlist"></div>
-   <div id="${prefix}-match" class="match-banner"></div>
    <div class="field"><label>Guardian documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs" data-min-files="1"></div></div>
   </div>`;
 }
@@ -2912,9 +3046,9 @@ function openAddSuspect(){
    <form novalidate class="form" id="addSuspectForm">
     ${identityFormHTML('sp')}
     <div class="section-label">Suspect record</div>
-    <div class="grid2">
+    <div class="f-row f-2">
       <div class="field"><label>Linked case (optional)</label><select id="spCase">${caseOptions('')}</select></div>
-      <div class="role-select"><label class="muted" style="font-weight:700">Origin / reference</label><select id="spOrigin"><option>Direct Intelligence Listing</option><option>Manual Entry</option></select></div>
+      <div class="field"><label>Origin / reference</label><select id="spOrigin"><option>Direct Intelligence Listing</option><option>Manual Entry</option></select></div>
     </div>
     <div class="field"><label>Suspect reason / alert details <span id="spReasonReq" style="color:var(--red)">(required)</span></label><textarea id="spNote" placeholder="Reason for listing, source of intelligence, last known location, description…"></textarea></div>
     <div class="hint" id="spReasonHint" style="margin-top:-4px">Required when no crime case is linked. When a case <b>is</b> linked it defaults to the case details.</div>
@@ -4318,10 +4452,10 @@ function openCaseDrawer(){
   if(guardReadOnly('Opening a new crime case')) return;
   openDrawer('New crime case',`
    <form novalidate class="form" id="caseDrawerForm">
-    <div class="grid2"><div class="field"><label>Category *</label><input id="cdCategory" placeholder="Theft, Fraud…"></div>
+    <div class="f-row f-2"><div class="field"><label>Category *</label><input id="cdCategory" placeholder="Theft, Fraud…"></div>
     <div class="field"><label>Location</label><input id="cdLocation" placeholder="Hargeisa"></div></div>
-    <div class="field"><label>Crime branch *</label><select id="caseBranch" data-branch-unit="crime" required><option value="">Loading branches…</option></select></div>
-    <div class="field"><label>Status</label><select id="cdStatus"><option>Reported</option><option>Under Investigation</option><option>Submitted for Prosecution</option></select></div>
+    <div class="f-row f-2"><div class="field"><label>Crime branch *</label><select id="caseBranch" data-branch-unit="crime" required><option value="">Loading branches…</option></select></div>
+    <div class="field"><label>Status</label><select id="cdStatus"><option>Reported</option><option>Under Investigation</option><option>Submitted for Prosecution</option></select></div></div>
     <div class="field"><label>Incident summary</label><textarea id="cdSummary" placeholder="What happened, when, key facts…"></textarea></div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCaseDrawer()">Create case</button>`);
@@ -4423,7 +4557,7 @@ function openCheckpointDrawer(){
     <div class="section-label">Guardian — next of kin / companion</div>
     ${guardianFormHTML('gd')}
     <div class="section-label">Checkpoint screening</div>
-    <div class="grid3">
+    <div class="f-row f-3">
      <div class="field"><label>Checkpoint branch *</label><select id="cpBranch" data-branch-unit="checkpoint" required><option value="">Loading branches…</option></select></div>
      <div class="field"><label>Checkpoint location *</label><select id="cpLoc" ${!isAdmin && scope ? 'disabled' : ''}>${opts}</select></div>
      <div class="field"><label>Officer notes (optional)</label><input id="cpNotes" placeholder="Vehicle, travel direction, officer remark…"></div>
@@ -7194,7 +7328,7 @@ function openConductModal(){
     </div>
 
     <div class="section-label">2 · Action category &amp; classification</div>
-    <div class="grid2">
+    <div class="f-row f-2">
       <div class="field"><label>Action type *</label>
         <select id="cdType" onchange="cdTypeChanged()">
           <option value="">— select category —</option>
@@ -7206,7 +7340,7 @@ function openConductModal(){
         <select id="cdClassification" onchange="cdClassificationChanged()"><option value="">— select type first —</option></select>
       </div>
     </div>
-    <div class="grid2" id="cdRankRow" style="display:none">
+    <div class="f-row f-2" id="cdRankRow" style="display:none">
       <div class="field"><label>Proposed rank * <small class="muted">(standard officer ranks)</small></label>
         <select id="cdRank"><option value="">— select rank —</option></select>
       </div>
@@ -7221,16 +7355,14 @@ function openConductModal(){
     </div>
 
     <div class="section-label">4 · Submitting station / commander <span class="muted">(at least one required)</span></div>
-    <div class="grid2">
+    <div class="f-row f-3">
       <div class="field"><label>Submitting station</label><select id="cdStation"></select></div>
       <div class="field"><label>Reporting commander</label><select id="cdCommander"><option value="">— optional —</option></select></div>
-    </div>
-    <div class="grid2">
       <div class="field"><label>Submission date / time *</label><input id="cdSubmittedAt" type="datetime-local" value="${nowLocal}"></div>
     </div>
 
     <div class="section-label">5 · Supporting report documents <span class="muted">(PDF/JPG, max 5MB each, optional)</span></div>
-    <div class="grid2">
+    <div class="f-row f-2">
       <div class="field"><label>Document 1</label><input id="cdDoc1" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg"></div>
       <div class="field"><label>Document 2</label><input id="cdDoc2" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg"></div>
     </div>
