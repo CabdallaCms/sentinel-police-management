@@ -730,6 +730,179 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .f-row>.f-full{grid-column:auto}
   .cmodal .field input,.cmodal .field select,.cmodal .field textarea,.modal .field input,.modal .field select,.modal .field textarea{min-height:40px;font-size:13px}
 }
+/* ============================================================
+   DARK / LIGHT MODE THEME SWITCHER & BIOMETRIC FINGERPRINT UI
+   ------------------------------------------------------------
+   Light Theme: #f8fafc background, #ffffff card containers,
+   #0f172a high-contrast text.
+   Midnight Slate Dark Mode: #0f172a / #0b1120 background,
+   #1e293b card containers, #f8fafc high-contrast text.
+   ============================================================ */
+:root,
+html[data-theme="light"],
+body[data-theme="light"],
+body.light-mode{
+  --bg:#f8fafc;--surface:#ffffff;--card-bg:#ffffff;--surface-alt:#f1f5f9;
+  --ink:#0f172a;--text:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --table-head:#f8fafc;--row-hover:#f1f5f9;--input-bg:#ffffff;--input-border:#cbd5e1;
+  --shadow:0 10px 32px rgba(15,23,42,.055);
+}
+html[data-theme="dark"],
+body[data-theme="dark"],
+body.dark-mode{
+  --bg:#0f172a;--surface:#1e293b;--card-bg:#1e293b;--surface-alt:#162032;
+  --ink:#f8fafc;--text:#f8fafc;--muted:#94a3b8;--line:#334155;
+  --table-head:#162032;--row-hover:#243247;--input-bg:#0f172a;--input-border:#334155;
+  --shadow:0 12px 36px rgba(2,6,23,.5);--shell-border:#1e293b;
+}
+body,
+.main,.top,.card,.panel,.chart-card,.unit-stats,.us-tile,.kpi-tile,.kpi-row .kpi-cell,
+.mini-chart,.table-wrap,.table th,.table td,.cmodal,.cm-head,.modal,.modal-head,.modal-foot,
+.cmodal .form .form-actions,.header-user,.header-user .logout,.sidebar-toggle,
+.field input,.field select,.field textarea,.search input,.role-select select,
+.pv-headcard,.pv-field,.fileslot,.m-matchlist,.m-item,.theme-toggle,
+.fp-capture-box,.bio-scanner-bar{
+  transition:background-color .24s ease,color .24s ease,border-color .24s ease,box-shadow .24s ease;
+}
+body{background:var(--bg);color:var(--ink)}
+.card,.panel,.chart-card,.unit-stats,.table-wrap,.cmodal,.modal,.mini-chart,.kpi-row .kpi-cell,.evid-card{
+  background:var(--card-bg);border-color:var(--line);color:var(--ink);
+}
+.top{border-bottom-color:var(--line)}
+.top h1,.panel h2,.chart-card h2,.metric,.cm-head h3,.modal-head h3{color:var(--ink)}
+.table th{background:var(--table-head);color:var(--muted);border-bottom-color:var(--line)}
+.table td{border-bottom-color:var(--line);color:var(--ink)}
+.table tr.clickable:hover td{background:var(--row-hover)}
+.field input,.field select,.field textarea,.role-select select,.search input{
+  background:var(--input-bg);color:var(--ink);border-color:var(--input-border);
+}
+/* Midnight Slate Dark Mode surface overrides */
+body.dark-mode,body[data-theme="dark"]{background:#0f172a;color:#f8fafc}
+body.dark-mode .eyebrow,body[data-theme="dark"] .eyebrow{color:#60a5fa}
+body.dark-mode .sub,body[data-theme="dark"] .sub{color:#94a3b8}
+body.dark-mode .field label,body[data-theme="dark"] .field label{color:#cbd5e1}
+body.dark-mode .section-label,body[data-theme="dark"] .section-label{color:#60a5fa;border-bottom-color:#334155}
+body.dark-mode .us-tile,body.dark-mode .kpi-tile,body.dark-mode .pv-field,
+body[data-theme="dark"] .us-tile,body[data-theme="dark"] .kpi-tile,body[data-theme="dark"] .pv-field{
+  background:#162032;border-color:#334155;color:#f8fafc;
+}
+body.dark-mode .module-icon,body[data-theme="dark"] .module-icon{background:#162032}
+body.dark-mode .cm-head,body.dark-mode .modal-head,body.dark-mode .modal-foot,
+body.dark-mode .cmodal .form .form-actions,
+body[data-theme="dark"] .cm-head,body[data-theme="dark"] .modal-head,body[data-theme="dark"] .modal-foot,
+body[data-theme="dark"] .cmodal .form .form-actions{
+  background:#162032;border-color:#334155;color:#f8fafc;
+}
+body.dark-mode .iconbtn,body.dark-mode .backbtn,
+body[data-theme="dark"] .iconbtn,body[data-theme="dark"] .backbtn{background:#334155;color:#e2e8f0}
+body.dark-mode .header-user,body[data-theme="dark"] .header-user{background:#1e293b;border-color:#334155}
+body.dark-mode .header-user .uname,body[data-theme="dark"] .header-user .uname{color:#f8fafc}
+body.dark-mode .header-user .urole,body[data-theme="dark"] .header-user .urole{color:#94a3b8}
+body.dark-mode .header-user .logout,body[data-theme="dark"] .header-user .logout{background:#0f172a;border-color:#334155;color:#cbd5e1}
+body.dark-mode .header-user .logout:hover,body[data-theme="dark"] .header-user .logout:hover{background:#243247;border-color:#475569;color:#93c5fd}
+body.dark-mode .sidebar-toggle,body[data-theme="dark"] .sidebar-toggle{background:#1e293b;border-color:#334155;color:#f8fafc}
+body.dark-mode .field input.locked,body.dark-mode .field select.locked,body.dark-mode .field textarea.locked,
+body.dark-mode .field input[readonly],
+body[data-theme="dark"] .field input.locked,body[data-theme="dark"] .field select.locked,body[data-theme="dark"] .field textarea.locked,
+body[data-theme="dark"] .field input[readonly]{background:#162032!important;color:#94a3b8!important;border-color:#334155!important}
+body.dark-mode .fileslot,body[data-theme="dark"] .fileslot{background:#162032;border-color:#475569;color:#cbd5e1}
+body.dark-mode .fileslot.filled,body[data-theme="dark"] .fileslot.filled{background:#064e3b55;border-color:#10b981}
+body.dark-mode .pv-headcard,body[data-theme="dark"] .pv-headcard{background:linear-gradient(135deg,#162032,#1e293b);border-color:#334155}
+body.dark-mode .pv-personid,body[data-theme="dark"] .pv-personid{background:#0f172a;border-color:#334155;color:#60a5fa}
+body.dark-mode .m-matchlist,body.dark-mode .cd-suggest,
+body[data-theme="dark"] .m-matchlist,body[data-theme="dark"] .cd-suggest{background:#1e293b;border-color:#334155}
+body.dark-mode .m-label,body[data-theme="dark"] .m-label{background:#162032;border-bottom-color:#334155;color:#94a3b8}
+body.dark-mode .m-item,body.dark-mode .cd-suggest button,
+body[data-theme="dark"] .m-item,body[data-theme="dark"] .cd-suggest button{border-bottom-color:#334155;color:#f8fafc}
+body.dark-mode .m-item:hover,body.dark-mode .cd-suggest button:hover,
+body[data-theme="dark"] .m-item:hover,body[data-theme="dark"] .cd-suggest button:hover{background:#243247}
+body.dark-mode .m-item.m-new,body[data-theme="dark"] .m-item.m-new{background:#162032;color:#60a5fa}
+body.dark-mode .hint,body[data-theme="dark"] .hint{background:#162032!important;border-color:#334155!important;color:#cbd5e1!important}
+body.dark-mode .btn.secondary,body[data-theme="dark"] .btn.secondary{background:#1e3a8a66;color:#93c5fd}
+body.dark-mode .btn.ghost,body[data-theme="dark"] .btn.ghost{background:#334155;color:#e2e8f0}
+body.dark-mode .cp-loc-chip,body[data-theme="dark"] .cp-loc-chip{background:#162032;border-color:#334155;color:#cbd5e1}
+body.dark-mode .cp-loc-chip.active,body[data-theme="dark"] .cp-loc-chip.active{background:#2563eb;border-color:#2563eb;color:#fff}
+body.dark-mode .hr-tab,body[data-theme="dark"] .hr-tab{background:#1e293b;border-color:#334155;color:#cbd5e1}
+body.dark-mode .badge.green,body[data-theme="dark"] .badge.green{background:#064e3b;color:#6ee7b7}
+body.dark-mode .badge.amber,body[data-theme="dark"] .badge.amber{background:#78350f;color:#fcd34d}
+body.dark-mode .badge.red,body[data-theme="dark"] .badge.red{background:#7f1d1d;color:#fca5a5}
+body.dark-mode .badge.blue,body[data-theme="dark"] .badge.blue{background:#1e3a8a;color:#93c5fd}
+body.dark-mode .badge.gray,body[data-theme="dark"] .badge.gray{background:#334155;color:#cbd5e1}
+body.dark-mode .badge.purple,body[data-theme="dark"] .badge.purple{background:#4c1d95;color:#ddd6fe}
+body.dark-mode #loginScreen .login-card,body[data-theme="dark"] #loginScreen .login-card{background:#1e293b;color:#f8fafc;border:1px solid #334155}
+body.dark-mode #loginScreen .demo-grid button,body[data-theme="dark"] #loginScreen .demo-grid button{background:#0f172a;border-color:#334155;color:#e2e8f0}
+body.dark-mode #loginScreen .demo-grid button:hover,body[data-theme="dark"] #loginScreen .demo-grid button:hover{background:#1e3a8a66;border-color:#3b82f6;color:#93c5fd}
+
+/* Sun / Moon Theme Toggle Switch in Top-Right Header */
+.theme-toggle{
+  display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:5px 11px 5px 7px;
+  border:1px solid var(--line);border-radius:99px;background:var(--card-bg);color:var(--ink);
+  font-size:12px;font-weight:750;box-shadow:0 2px 6px rgba(15,23,42,.045);flex:none;
+}
+.theme-toggle:hover{border-color:#93c5fd;box-shadow:0 3px 10px rgba(37,99,235,.12)}
+.theme-track{
+  position:relative;display:inline-flex;align-items:center;justify-content:space-between;
+  width:46px;height:24px;padding:0 5px;border-radius:99px;background:#e2e8f0;
+  transition:background-color .24s ease;
+}
+body.dark-mode .theme-track,body[data-theme="dark"] .theme-track{background:#0f172a;border:1px solid #334155}
+.theme-sun,.theme-moon{font-size:12px;line-height:1;z-index:1;user-select:none}
+.theme-thumb{
+  position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
+  background:#ffffff;box-shadow:0 1px 4px rgba(15,23,42,.25);
+  transition:transform .24s cubic-bezier(.32,.72,.35,1),background-color .24s ease;
+}
+body.dark-mode .theme-thumb,body[data-theme="dark"] .theme-thumb{
+  transform:translateX(22px);background:#3b82f6;
+}
+.theme-label{min-width:34px;text-align:left;line-height:1}
+
+/* Biometric Fingerprint Controls, Status Badges & Match Highlights */
+.fp-status-badge{white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px;letter-spacing:-.1px}
+.fp-capture-box{
+  border:1.5px dashed #93c5fd;border-radius:11px;padding:11px 13px;background:#f8fbff;
+  display:grid;gap:9px;
+}
+body.dark-mode .fp-capture-box,body[data-theme="dark"] .fp-capture-box{
+  background:#162032;border-color:#3b82f6;
+}
+.bio-scanner-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  margin:12px 0 14px;padding:12px 15px;border:1px solid #bfdbfe;border-radius:12px;
+  background:linear-gradient(135deg,#f0f7ff,#f8fafc);
+}
+body.dark-mode .bio-scanner-bar,body[data-theme="dark"] .bio-scanner-bar{
+  background:linear-gradient(135deg,#162032,#1e293b);border-color:#334155;
+}
+.bio-scanner-left{display:flex;align-items:center;gap:11px;min-width:220px;flex:1}
+.bio-scanner-ico{
+  width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#0f9b91);
+  color:#fff;display:grid;place-items:center;font-size:17px;font-weight:800;flex:none;
+}
+.bio-scanner-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bio-scanner-controls input[type=text]{
+  min-height:36px;padding:7px 11px;border:1px solid var(--input-border);border-radius:8px;
+  background:var(--input-bg);color:var(--ink);font-size:12.5px;min-width:210px;
+}
+.bio-match-banner{
+  background:linear-gradient(90deg,#ecfdf5,#eff6ff)!important;
+  border:1.5px solid #10b981!important;color:#065f46!important;
+  box-shadow:0 4px 14px rgba(16,185,129,.14);
+}
+body.dark-mode .bio-match-banner,body[data-theme="dark"] .bio-match-banner{
+  background:linear-gradient(90deg,#064e3b88,#1e3a8a88)!important;
+  border-color:#34d399!important;color:#ecfdf5!important;
+}
+.table tr.bio-match-row td,
+.table td.bio-match-cell{
+  background:#ecfdf5!important;border-bottom-color:#6ee7b7!important;
+}
+body.dark-mode .table tr.bio-match-row td,
+body.dark-mode .table td.bio-match-cell,
+body[data-theme="dark"] .table tr.bio-match-row td,
+body[data-theme="dark"] .table td.bio-match-cell{
+  background:#064e3b66!important;border-bottom-color:#10b981!important;
+}
 </style>
 </head>
 <body>
@@ -848,6 +1021,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
   <div class="top-actions">
     <span class="ro-badge" id="roBadge" title="This role holds global read-only (view-only) access — every register is monitoring-only.">🔒 View-only · Commander</span>
+    <button class="theme-toggle" id="themeToggle" type="button" data-ro-keep="1" onclick="toggleTheme()" title="Switch Dark / Light Mode" aria-label="Switch Dark / Light Mode" aria-pressed="false">
+      <span class="theme-track" aria-hidden="true"><span class="theme-sun">☀️</span><span class="theme-moon">🌙</span><span class="theme-thumb"></span></span>
+      <span class="theme-label" id="themeToggleLabel">Light</span>
+    </button>
     <div class="user-pill header-user" id="userPill" style="display:none">
       <div class="avatar" id="userInitials">?</div>
       <div class="header-user-copy"><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
@@ -906,9 +1083,25 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <!-- PEOPLE -->
 <section id="people" class="page">
 <div class="panel"><div class="panel-head"><div><h2>Central Person Registry</h2><div class="sub">One identity record — unit data is appended, never duplicated</div></div><button class="btn" data-write="1" onclick="openPersonDrawer(null)">+ New / update person</button></div>
-<div class="hint" style="margin-bottom:16px">Central data stores identity and contact reference only. Airport, Fingerprint, CID and Checkpoint records stay in their own registers and link through Person ID. Open any person to append new details (e.g. Passport ID, Guardian, phone).</div>
-<div class="search"><span>⌕</span><input id="personSearch" placeholder="Search name, national ID, passport or Person ID..." oninput="renderPeople()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Linked unit records</th><th>Actions</th></tr></thead><tbody id="peopleTable"></tbody></table></div>
+<div class="hint" style="margin-bottom:16px">Central data stores identity and contact reference only. Airport, Fingerprint, CID and Checkpoint records stay in their own registers and link through Person ID. Open any person to append new details (e.g. Passport ID, Guardian, phone, or Fingerprint Biometrics).</div>
+<div class="search"><span>⌕</span><input id="personSearch" placeholder="Search 4 names, DOB, POB, mother's name, national ID, passport, Person ID or fingerprint…" oninput="renderPeople()"></div>
+<div class="bio-scanner-bar" id="centralFpScannerBar" data-ro-keep="1">
+  <div class="bio-scanner-left">
+    <span class="bio-scanner-ico" aria-hidden="true">⌁</span>
+    <div>
+      <b style="font-size:13px">Biometric Fingerprint Search &amp; Real-Time Registry Catch</b>
+      <div class="sub">Attach a fingerprint scan/file or trigger live scanner to match against the Central Person Registry alongside 4 Names, DOB, POB, Mother's Name, Passport ID &amp; National ID</div>
+    </div>
+  </div>
+  <div class="bio-scanner-controls">
+    <input id="centralFpCode" type="text" data-ro-keep="1" placeholder="Biometric signature / template ID (e.g. BIO-P0001)…" oninput="handleCentralFpCodeSearch(this.value)" aria-label="Biometric template or signature">
+    <label class="btn secondary small" for="centralFpFile" data-ro-keep="1" style="cursor:pointer;margin:0">📎 Attach Print<input id="centralFpFile" type="file" data-ro-keep="1" accept=".wsq,.bmp,.png,.jpg,.jpeg,.iso,.ansi,.fmr,image/*" style="display:none" onchange="handleCentralFingerprintFile(this)"></label>
+    <button class="btn small" type="button" id="centralFpScanBtn" data-ro-keep="1" onclick="simulateCentralBiometricScan()">⌁ Scan Fingerprint</button>
+    <button class="btn ghost small" type="button" id="centralFpClearBtn" data-ro-keep="1" onclick="clearCentralBiometricSearch()" style="display:none">✕ Reset</button>
+  </div>
+</div>
+<div id="centralBioAlert" class="match-banner bio-match-banner" role="alert" aria-live="polite"></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Fingerprint</th><th>Linked unit records</th><th>Actions</th></tr></thead><tbody id="peopleTable"></tbody></table></div>
 </div>
 </section>
 
@@ -921,7 +1114,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="panel">
 <div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="fpSearch" placeholder="Search application, person, purpose or status…" oninput="renderFingerprintTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('fpDrawer')">＋ New Clearance Application</button></div></div>
 <div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> Citizenship applications can be approved and printed immediately. Other reasons require a 12-hour review period; a System Administrator can approve immediately.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Fingerprint</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
 </section>
 <!-- New clearance application -->
@@ -967,7 +1160,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Passenger records</h2><div class="sub">Airport unit register · Hargeisa Local Airport</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="airSearch" placeholder="Search passenger, flight, date or route…" oninput="renderAirportTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('airDrawer')">＋ Register Airport Passenger</button></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Fingerprint</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register airport passenger -->
@@ -1112,7 +1305,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   using the chips above.
   <span id="cpScopeHint" style="margin-left:6px"></span>
 </div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Screening</th><th>Action</th><th>Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Fingerprint</th><th>Screening</th><th>Action</th><th>Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div>
 <div class="empty" id="cpEmpty" style="display:none">No stops recorded</div>
 <div class="sub" id="cpTableCount" style="margin-top:8px;display:none">0</div>
 </div>
@@ -1235,7 +1428,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="panel">
 <div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" data-write="1" onclick="openEntryModal('offDrawer')">＋ Register Officer</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="offSearch" placeholder="Central Officer Search — name, service ID, rank, unit or station…" oninput="renderOfficersTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
 </div><!-- /hrPane-register -->
 
@@ -1304,6 +1497,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="field"><label>Weight (kg)</label><input id="offWeight" type="number" min="0" step="0.1" placeholder="e.g. 82"></div>
 </div>
 <div class="field"><label>Officer Picture * <small class="muted">(JPEG/PNG, max 5MB)</small></label><input id="offPhoto" type="file" accept="image/jpeg,image/png"></div>
+<div class="section-label">Fingerprint Biometrics — Scanner &amp; Real-Time Registry Match</div>
+<div class="fp-capture-box" id="off-fpBox">
+  <div class="f-row f-3">
+    <div class="field"><label>Fingerprint scan / upload <small class="muted">(WSQ/PNG/JPG/ISO)</small></label><input id="off-fingerprint" type="file" accept=".wsq,.bmp,.png,.jpg,.jpeg,.iso,.ansi,.fmr,image/*" onchange="handleFingerprintUpload('off',this)"></div>
+    <div class="field"><label>Biometric template / scanner signature</label><div style="display:flex;gap:6px"><input id="off-fpCode" placeholder="Scan or enter template ID (e.g. BIO-P0001)…" autocomplete="off" oninput="handleFingerprintCodeInput('off',this.value)"><button class="btn secondary small" type="button" id="off-fpScanBtn" onclick="simulateBiometricScan('off')" title="Capture from biometric scanner">⌁ Scan</button></div></div>
+    <div class="field"><label>Biometric status</label><select id="off-fpStatus" onchange="handleFingerprintStatusChange('off',this.value)"><option value="captured">✓ Captured / Biometric Matched</option><option value="pending" selected>⏳ Pending Scanner</option><option value="none">⚠️ No Print</option></select></div>
+  </div>
+  <div id="off-fpAlert" class="match-banner bio-match-banner" role="status" aria-live="polite"></div>
+</div>
 </div>
 
 <div class="tabpane" id="off-step-3">
@@ -1727,15 +1929,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 <script>
 // ============================ state ============================
 const seed={people:[
-{id:'P-0001',name:'Ayaan Cabdi Xasan Axmed',first:'Ayaan',second:'Cabdi',third:'Xasan',fourth:'Axmed',nationalId:'10012345',passportId:'P0011223',dob:'1997-04-18',pob:'Hargeisa',motherName:'Faadumo Cali',residence:'Hargeisa, Jigjiga Yar',occupation:'Civil servant',phone:'+252 63 555 0199',units:['Airport'],updated:'Jul 18, 2026'},
-{id:'P-0002',name:'Maxamed Nuur Cali Awil',first:'Maxamed',second:'Nuur',third:'Cali',fourth:'Awil',nationalId:'10067890',passportId:'',dob:'1989-11-02',pob:'Burao',motherName:'Khadra Jaamac',residence:'Hargeisa Central',occupation:'Trader',phone:'+252 63 555 0188',units:['CID'],updated:'Aug 12, 2026'},
-{id:'P-0003',name:'Sahra Yuusuf Axmed Aadan',first:'Sahra',second:'Yuusuf',third:'Axmed',fourth:'Aadan',nationalId:'10024680',passportId:'',dob:'2001-02-26',pob:'Hargeisa',motherName:'Amina Maxamed',residence:'Hargeisa, 26 June',occupation:'Student',phone:'+252 63 555 0144',units:['Fingerprint'],updated:'Aug 28, 2026'}],
-airport:[{id:'AR-1001',person:'P-0001',move:'Arrival',date:'2026-07-18',flight:'HL-118',airline:'Sentinel Air',origin:'Berbera',dest:'Hargeisa',route:'Berbera / Hargeisa'}],
-fingerprint:[{id:'FP-2026-0042',person:'P-0003',purpose:'Education',status:'Pending Review',guardian:'Yuusuf Axmed'}],
+{id:'P-0001',name:'Ayaan Cabdi Xasan Axmed',first:'Ayaan',second:'Cabdi',third:'Xasan',fourth:'Axmed',nationalId:'10012345',passportId:'P0011223',dob:'1997-04-18',pob:'Hargeisa',motherName:'Faadumo Cali',residence:'Hargeisa, Jigjiga Yar',occupation:'Civil servant',phone:'+252 63 555 0199',fingerprintStatus:'captured',fingerprintHash:'BIO-P0001-10012345',units:['Airport'],updated:'Jul 18, 2026'},
+{id:'P-0002',name:'Maxamed Nuur Cali Awil',first:'Maxamed',second:'Nuur',third:'Cali',fourth:'Awil',nationalId:'10067890',passportId:'',dob:'1989-11-02',pob:'Burao',motherName:'Khadra Jaamac',residence:'Hargeisa Central',occupation:'Trader',phone:'+252 63 555 0188',fingerprintStatus:'pending',fingerprintHash:'BIO-P0002-10067890',units:['CID'],updated:'Aug 12, 2026'},
+{id:'P-0003',name:'Sahra Yuusuf Axmed Aadan',first:'Sahra',second:'Yuusuf',third:'Axmed',fourth:'Aadan',nationalId:'10024680',passportId:'',dob:'2001-02-26',pob:'Hargeisa',motherName:'Amina Maxamed',residence:'Hargeisa, 26 June',occupation:'Student',phone:'+252 63 555 0144',fingerprintStatus:'captured',fingerprintHash:'BIO-P0003-10024680',units:['Fingerprint'],updated:'Aug 28, 2026'}],
+airport:[{id:'AR-1001',person:'P-0001',move:'Arrival',date:'2026-07-18',flight:'HL-118',airline:'Sentinel Air',origin:'Berbera',dest:'Hargeisa',route:'Berbera / Hargeisa',fingerprintStatus:'captured',fingerprintHash:'BIO-P0001-10012345'}],
+fingerprint:[{id:'FP-2026-0042',person:'P-0003',purpose:'Education',status:'Pending Review',guardian:'Yuusuf Axmed',fingerprintStatus:'captured',fingerprintHash:'BIO-P0003-10024680'}],
 cases:[{id:'CID-2026-008',category:'Property crime',location:'Hargeisa Central',status:'Under Investigation',summary:'Shop burglary overnight; cash and goods reported missing.',participants:[{person:'P-0002',role:'Suspect',note:''}],evidence:[]},
 {id:'CID-2026-009',category:'Fraud',location:'Jigjiga Yar',status:'Submitted for Prosecution',summary:'Advance-fee fraud reported by a local business owner.',participants:[],evidence:[]}],
 suspects:[{person:'P-0002',case:'CID-2026-008',role:'Suspect',alert:'Active alert',origin:'Case Link'}],
-checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted'}],
+checkpoints:[{time:'Aug 30, 08:42',location:'South',person:'P-0002',screen:'Flagged match',action:'Supervisor contacted',fingerprintStatus:'pending',fingerprintHash:'BIO-P0002-10067890'}],
 // Regional registration modules. Every record (station, officer, car)
 // stores its Region → District → Village location explicitly. For
 // officers and cars the location is pre-filled from the assigned station
@@ -1751,10 +1953,10 @@ stations:[
 {id:'ST-007',name:'Buuhoodle Station',code:'ETG-C-03',region:'East Togdheer',district:'Buuhoodle',village:'Widh Widh',station_tier:'Outpost',operational_status:'Active',cell_capacity:6,notes:''},
 {id:'ST-008',name:'Adhi Cadeeye Outpost',code:'SOO-C-02',region:'Sool',district:'Laascaanood',village:'Adhi Cadeeye',station_tier:'Checkpoint',operational_status:'Active',cell_capacity:4,notes:''}],
 officers:[
-{id:'POL-2026-0001',service_id:'POL-2026-0001',rank:'Commander',unit:'General Patrol',station_id:'ST-001',station_name:'Ceerigaabo Central Station',date_of_enlistment:'2012-03-15',duty_status:'Active',full_name:'Maxamed Faarax Nuur',mother_name:'Khadra Faarax',date_of_birth:'1985-06-12',place_of_birth:'Ceerigaabo',contact_number:'+252 63 555 0101',height_cm:'176',weight_kg:'82',blood_group:'O+',photo_path:null,region_of_origin:'Sanaag',district_of_origin:'Ceerigaabo',town_village:'Ceerigaabo',guarantor_name:'Faarax Nuur',guarantor_address:'Ceerigaabo, Shaabada Dhexe',guarantor_occupation:'Merchant',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0201',guarantor_photo:null,doc1_type:'National ID',doc1_path:null,doc2_type:null,doc2_path:null},
-{id:'POL-2026-0002',service_id:'POL-2026-0002',rank:'Sergeant',unit:'Traffic Control',station_id:'ST-002',station_name:'Badhan Station',date_of_enlistment:'2016-09-01',duty_status:'Active',full_name:'Amina Suleymaan Cabdi',mother_name:'Maryan Cabdi',date_of_birth:'1990-01-20',place_of_birth:'Badhan',contact_number:'+252 63 555 0102',height_cm:'168',weight_kg:'64',blood_group:'A+',photo_path:null,region_of_origin:'Sanaag',district_of_origin:'Badhan',town_village:'Badhan',guarantor_name:'Suleymaan Cabdi',guarantor_address:'Badhan, Xaafadda Cali',guarantor_occupation:'Teacher',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0202',guarantor_photo:null,doc1_type:'Birth Certificate',doc1_path:null,doc2_type:null,doc2_path:null},
-{id:'POL-2026-0003',service_id:'POL-2026-0003',rank:'Constable',unit:'General Patrol',station_id:'ST-004',station_name:'Las Anod Station',date_of_enlistment:'2019-02-11',duty_status:'Active',full_name:'Hassan Cabdi Xirsi',mother_name:'Sahra Xirsi',date_of_birth:'1994-08-03',place_of_birth:'Laascaanood',contact_number:'+252 63 555 0103',height_cm:'181',weight_kg:'88',blood_group:'B+',photo_path:null,region_of_origin:'Sool',district_of_origin:'Laascaanood',town_village:'Laascaanood',guarantor_name:'Cabdi Xirsi',guarantor_address:'Laascaanood, Xaafadda Goljano',guarantor_occupation:'Herder',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0203',guarantor_photo:null,doc1_type:'Passport',doc1_path:null,doc2_type:null,doc2_path:null},
-{id:'POL-2026-0004',service_id:'POL-2026-0004',rank:'Corporal',unit:'CID / Criminal Investigation',station_id:'ST-005',station_name:'Burao Station',date_of_enlistment:'2017-11-23',duty_status:'Active',full_name:'Sahra Axmed Yuusuf',mother_name:'Aamina Yuusuf',date_of_birth:'1992-04-30',place_of_birth:'Burao',contact_number:'+252 63 555 0104',height_cm:'170',weight_kg:'66',blood_group:'AB+',photo_path:null,region_of_origin:'East Togdheer',district_of_origin:'Burao',town_village:'Burao',guarantor_name:'Axmed Yuusuf',guarantor_address:'Burao, Xaafadda Shacabka',guarantor_occupation:'Accountant',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0204',guarantor_photo:null,doc1_type:'National ID',doc1_path:null,doc2_type:null,doc2_path:null}],
+{id:'POL-2026-0001',service_id:'POL-2026-0001',rank:'Commander',unit:'General Patrol',station_id:'ST-001',station_name:'Ceerigaabo Central Station',date_of_enlistment:'2012-03-15',duty_status:'Active',full_name:'Maxamed Faarax Nuur',mother_name:'Khadra Faarax',date_of_birth:'1985-06-12',place_of_birth:'Ceerigaabo',contact_number:'+252 63 555 0101',height_cm:'176',weight_kg:'82',blood_group:'O+',photo_path:null,fingerprintStatus:'captured',fingerprintHash:'BIO-POL-2026-0001',region_of_origin:'Sanaag',district_of_origin:'Ceerigaabo',town_village:'Ceerigaabo',guarantor_name:'Faarax Nuur',guarantor_address:'Ceerigaabo, Shaabada Dhexe',guarantor_occupation:'Merchant',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0201',guarantor_photo:null,doc1_type:'National ID',doc1_path:null,doc2_type:null,doc2_path:null},
+{id:'POL-2026-0002',service_id:'POL-2026-0002',rank:'Sergeant',unit:'Traffic Control',station_id:'ST-002',station_name:'Badhan Station',date_of_enlistment:'2016-09-01',duty_status:'Active',full_name:'Amina Suleymaan Cabdi',mother_name:'Maryan Cabdi',date_of_birth:'1990-01-20',place_of_birth:'Badhan',contact_number:'+252 63 555 0102',height_cm:'168',weight_kg:'64',blood_group:'A+',photo_path:null,fingerprintStatus:'captured',fingerprintHash:'BIO-POL-2026-0002',region_of_origin:'Sanaag',district_of_origin:'Badhan',town_village:'Badhan',guarantor_name:'Suleymaan Cabdi',guarantor_address:'Badhan, Xaafadda Cali',guarantor_occupation:'Teacher',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0202',guarantor_photo:null,doc1_type:'Birth Certificate',doc1_path:null,doc2_type:null,doc2_path:null},
+{id:'POL-2026-0003',service_id:'POL-2026-0003',rank:'Constable',unit:'General Patrol',station_id:'ST-004',station_name:'Las Anod Station',date_of_enlistment:'2019-02-11',duty_status:'Active',full_name:'Hassan Cabdi Xirsi',mother_name:'Sahra Xirsi',date_of_birth:'1994-08-03',place_of_birth:'Laascaanood',contact_number:'+252 63 555 0103',height_cm:'181',weight_kg:'88',blood_group:'B+',photo_path:null,fingerprintStatus:'pending',fingerprintHash:'BIO-POL-2026-0003',region_of_origin:'Sool',district_of_origin:'Laascaanood',town_village:'Laascaanood',guarantor_name:'Cabdi Xirsi',guarantor_address:'Laascaanood, Xaafadda Goljano',guarantor_occupation:'Herder',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0203',guarantor_photo:null,doc1_type:'Passport',doc1_path:null,doc2_type:null,doc2_path:null},
+{id:'POL-2026-0004',service_id:'POL-2026-0004',rank:'Corporal',unit:'CID / Criminal Investigation',station_id:'ST-005',station_name:'Burao Station',date_of_enlistment:'2017-11-23',duty_status:'Active',full_name:'Sahra Axmed Yuusuf',mother_name:'Aamina Yuusuf',date_of_birth:'1992-04-30',place_of_birth:'Burao',contact_number:'+252 63 555 0104',height_cm:'170',weight_kg:'66',blood_group:'AB+',photo_path:null,fingerprintStatus:'none',fingerprintHash:'',region_of_origin:'East Togdheer',district_of_origin:'Burao',town_village:'Burao',guarantor_name:'Axmed Yuusuf',guarantor_address:'Burao, Xaafadda Shacabka',guarantor_occupation:'Accountant',guarantor_relationship:'Parent',guarantor_contact:'+252 63 555 0204',guarantor_photo:null,doc1_type:'National ID',doc1_path:null,doc2_type:null,doc2_path:null}],
 cars:[
 {id:'CR-0001',plate:'PL-1001-26',type:'Patrol',make:'Toyota',model:'Hilux · 2024',station:'ST-001',region:'Sanaag',district:'Ceerigaabo',village:'Ceerigaabo'},
 {id:'CR-0002',plate:'PL-1002-25',type:'Patrol',make:'Nissan',model:'Pickup · 2023',station:'ST-002',region:'Sanaag',district:'Badhan',village:'Badhan'},
@@ -1768,6 +1970,128 @@ let db=JSON.parse(localStorage.getItem('sentinelDB')||'null')||seed;
 // server-backed; older persisted databases simply start with empty lists.
 ['promotions','discipline'].forEach(k=>{if(!Array.isArray(db[k]))db[k]=[]});
 function persist(){localStorage.setItem('sentinelDB',JSON.stringify(db))}
+
+// ============================ Dark / Light Mode Theme Switcher ============================
+const THEME_STORAGE_KEY='sentinel-theme';
+function getTheme(){
+  try{
+    const saved=localStorage.getItem(THEME_STORAGE_KEY);
+    if(saved==='dark'||saved==='light')return saved;
+  }catch(_){}
+  return 'light';
+}
+function applyTheme(mode){
+  const m=(mode==='dark')?'dark':'light';
+  try{
+    if(document&&document.documentElement){
+      if(typeof document.documentElement.setAttribute==='function') document.documentElement.setAttribute('data-theme',m);
+      if(document.documentElement.classList){
+        document.documentElement.classList.toggle('dark-mode',m==='dark');
+        document.documentElement.classList.toggle('light-mode',m==='light');
+      }
+    }
+    if(document&&document.body){
+      if(typeof document.body.setAttribute==='function') document.body.setAttribute('data-theme',m);
+      if(document.body.classList){
+        document.body.classList.toggle('dark-mode',m==='dark');
+        document.body.classList.toggle('light-mode',m==='light');
+      }
+    }
+    const btn=document.getElementById('themeToggle');
+    if(btn){
+      btn.setAttribute('aria-pressed',String(m==='dark'));
+      btn.setAttribute('data-theme-mode',m);
+    }
+    const lbl=document.getElementById('themeToggleLabel');
+    if(lbl)lbl.textContent=(m==='dark')?'Dark':'Light';
+  }catch(_){}
+  return m;
+}
+function setTheme(mode){
+  const m=(mode==='dark')?'dark':'light';
+  try{ localStorage.setItem(THEME_STORAGE_KEY,m); }catch(_){}
+  return applyTheme(m);
+}
+function toggleTheme(){
+  const next=(getTheme()==='dark')?'light':'dark';
+  return setTheme(next);
+}
+applyTheme(getTheme());
+
+// ============================ Biometric Fingerprint Registry Store ============================
+const BIOMETRIC_STORE_KEY='sentinelBiometrics';
+const DEFAULT_BIOMETRICS={
+  'P-0001':{status:'captured',hash:'BIO-P0001-10012345',file:'ayaan_cabdi_thumb.wsq'},
+  'P-0002':{status:'pending',hash:'BIO-P0002-10067890',file:'maxamed_nuur_scan.wsq'},
+  'P-0003':{status:'captured',hash:'BIO-P0003-10024680',file:'sahra_yuusuf_tenprint.wsq'},
+  'AR-1001':{status:'captured',hash:'BIO-P0001-10012345',personId:'P-0001'},
+  'FP-2026-0042':{status:'captured',hash:'BIO-P0003-10024680',personId:'P-0003'},
+  'POL-2026-0001':{status:'captured',hash:'BIO-POL-2026-0001',file:'officer_pol0001.wsq'},
+  'POL-2026-0002':{status:'captured',hash:'BIO-POL-2026-0002',file:'officer_pol0002.wsq'},
+  'POL-2026-0003':{status:'pending',hash:'BIO-POL-2026-0003',file:''},
+  'POL-2026-0004':{status:'none',hash:'',file:''}
+};
+function loadBiometricStore(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(BIOMETRIC_STORE_KEY)||'null');
+    if(raw&&typeof raw==='object')return {...DEFAULT_BIOMETRICS,...raw};
+  }catch(_){}
+  return {...DEFAULT_BIOMETRICS};
+}
+let biometricStore=loadBiometricStore();
+function persistBiometricStore(){
+  try{localStorage.setItem(BIOMETRIC_STORE_KEY,JSON.stringify(biometricStore))}catch(_){}
+}
+function setBiometricRecord(id,info){
+  if(!id)return;
+  biometricStore[id]={...(biometricStore[id]||{}),...(info||{})};
+  persistBiometricStore();
+}
+function getBiometricRecord(id){
+  if(!id)return null;
+  return biometricStore[id]||null;
+}
+function normalizeFpStatus(st){
+  const s=String(st||'').trim().toLowerCase();
+  if(s==='captured'||s==='matched'||s==='verified'||s==='approved')return 'captured';
+  if(s==='pending'||s==='scanner'||s==='pending scanner'||s==='pending review')return 'pending';
+  if(s==='none'||s==='no print'||s==='missing')return 'none';
+  return '';
+}
+function resolveFingerprintInfo(rec,linkedPerson){
+  const r=rec||{};
+  const p=linkedPerson||(r.person?person(r.person):null);
+  const recId=r.id||r.service_id||r.application_id||r.record_id||r.event_id||'';
+  const pid=p?.id||r.person||r.person_id||'';
+  const storedRec=getBiometricRecord(recId);
+  const storedPid=getBiometricRecord(pid);
+  let status=normalizeFpStatus(r.fingerprintStatus||r.fingerprint_status||storedRec?.status||p?.fingerprintStatus||storedPid?.status);
+  let hash=r.fingerprintHash||r.fingerprint_hash||storedRec?.hash||p?.fingerprintHash||storedPid?.hash||'';
+  const file=r.fingerprintFile||storedRec?.file||p?.fingerprintFile||storedPid?.file||'';
+  if(!status){
+    if(hash||file)status='captured';
+    else if(r.status==='Approved')status='captured';
+    else if(r.status==='Pending Review')status='pending';
+    else if(pid==='P-0001'||pid==='P-0003'||recId==='POL-2026-0001'||recId==='POL-2026-0002')status='captured';
+    else if(pid==='P-0002'||recId==='POL-2026-0003')status='pending';
+    else status='none';
+  }
+  if(!hash&&status==='captured'&&(pid||recId))hash='BIO-'+(pid||recId);
+  return {status,hash,file};
+}
+function fingerprintStatusBadge(rec,linkedPerson){
+  const info=resolveFingerprintInfo(rec,linkedPerson);
+  if(info.status==='captured'){
+    return `<span class="badge green fp-status-badge" data-fp-status="captured" title="${esc(info.hash||'Biometric template verified')}">[✓ Captured / Biometric Matched]</span>`;
+  }
+  if(info.status==='pending'){
+    return `<span class="badge amber fp-status-badge" data-fp-status="pending" title="${esc(info.hash||'Awaiting biometric scanner confirmation')}">[⏳ Pending Scanner]</span>`;
+  }
+  return `<span class="badge red fp-status-badge" data-fp-status="none" title="No fingerprint template on file">[⚠️ No Print]</span>`;
+}
+window._highlightedPersonId='';
+window._centralBioQuery='';
+
 // ---- session state --------------------------------------------------------
 // `apiToken` is the live Bearer token (a.k.a. authToken), `currentUser` is
 // the signed-in user object re-hydrated from localStorage on page load,
@@ -1948,8 +2272,8 @@ function invalidFormFields(root){
   return [...bad].filter(Boolean);
 }
 function clearEditedError(e){
-  if(!e.target.matches('input,select,textarea'))return;
-  const root=e.target.closest('form,.form,#drawerBody')||document;
+  if(!e||!e.target||(typeof e.target.matches==='function'&&!e.target.matches('input,select,textarea')))return;
+  const root=(typeof e.target.closest==='function'&&e.target.closest('form,.form,#drawerBody'))||document;
   const bad=new Set(invalidFormFields(root));
   root.querySelectorAll('.invalid').forEach(el=>{
     if(!bad.has(el.id)){el.classList.remove('invalid');el.removeAttribute('aria-invalid')}
@@ -2094,10 +2418,15 @@ function mapPerson(p){
   const hasParts=raw.some(Boolean);
   const split=(p.full_name||p.name||'').split(/\s+/).filter(Boolean);
   const parts=hasParts?raw:split;
-  return {...p,id:p.person_id||p.id,name:p.full_name||p.name||parts.join(' '),first:parts[0]||'',second:parts[1]||'',third:parts[2]||'',fourth:parts[3]||'',
+  const pid=p.person_id||p.id;
+  const bio=getBiometricRecord(pid)||{};
+  return {...p,id:pid,name:p.full_name||p.name||parts.join(' '),first:parts[0]||'',second:parts[1]||'',third:parts[2]||'',fourth:parts[3]||'',
     nationalId:(p.national_id??p.nationalId)||'',passportId:(p.passport_id??p.passportId)||'',dob:(p.date_of_birth??p.dob)||'',
     pob:(p.place_of_birth??p.pob)||'',motherName:(p.mother_name??p.motherName)||'',residence:(p.residence??p.residence)||'',
     occupation:(p.occupation??p.occupation)||'',phone:(p.phone??p.phone)||'',
+    fingerprintStatus:p.fingerprintStatus||p.fingerprint_status||bio.status||'',
+    fingerprintHash:p.fingerprintHash||p.fingerprint_hash||bio.hash||'',
+    fingerprintFile:p.fingerprintFile||p.fingerprint_file||bio.file||'',
     photoPath:(p.photo_path??p.photoPath)||'',updated:(p.updated_at||'').slice(0,10)}}
 function mapVehicle(v){
   return {
@@ -2502,7 +2831,258 @@ function wireStationLocationDefaults(stationSelectId,prefix){
   refresh();
 }
 
-// ============================ identity: unified matching ============================
+// ============================ identity: unified + biometric matching ============================
+function matchPersonByFingerprint(queryOrFile,draft,allowFallbackScan=false){
+  const list=db.people||[];
+  if(!list.length)return null;
+  const q=normTxt(queryOrFile||'');
+  const qClean=q.replace(/[^a-z0-9]/g,'');
+  if(q){
+    // 1. Direct match on Person ID, Biometric Hash, Biometric File, National ID, or Passport ID
+    for(const p of list){
+      const bio=resolveFingerprintInfo(p,p);
+      const pidClean=normTxt(p.id).replace(/[^a-z0-9]/g,'');
+      const hashClean=normTxt(bio.hash).replace(/[^a-z0-9]/g,'');
+      const fileClean=normTxt(bio.file).replace(/[^a-z0-9]/g,'');
+      const nidClean=normTxt(p.nationalId).replace(/[^a-z0-9]/g,'');
+      const passClean=normTxt(p.passportId).replace(/[^a-z0-9]/g,'');
+      if((pidClean&&qClean.includes(pidClean))||
+         (hashClean&&(qClean.includes(hashClean)||hashClean.includes(qClean)&&qClean.length>=5))||
+         (fileClean&&fileClean.length>=4&&qClean.includes(fileClean))||
+         (nidClean&&nidClean.length>=4&&qClean.includes(nidClean))||
+         (passClean&&passClean.length>=4&&qClean.includes(passClean))){
+        return p;
+      }
+    }
+    // 2. Name tokens present in biometric filename or template string
+    for(const p of list){
+      const parts=localNameParts(p).filter(x=>x.length>=3);
+      const hits=parts.filter(pt=>q.includes(pt));
+      if(hits.length>=2||(hits.length===1&&parts[0]&&q.includes(parts[0])))return p;
+    }
+  }
+  // 3. Draft form fields (4 Names, DOB, POB, Mother's Name, Passport ID, National ID)
+  if(draft){
+    const nat=normTxt(draft.national),pass=normTxt(draft.passport),dob=normTxt(draft.dob),pob=normTxt(draft.pob),mom=normTxt(draft.mother);
+    const dParts=[normTxt(draft.first),normTxt(draft.second),normTxt(draft.third),normTxt(draft.fourth)].filter(Boolean);
+    const byId=list.find(x=>(nat&&normTxt(x.nationalId)===nat)||(pass&&normTxt(x.passportId)===pass));
+    if(byId)return byId;
+    if(dParts.length>=1){
+      const byName=list.find(x=>{
+        const lp=localNameParts(x);
+        const nameMatch=dParts.every(t=>lp.includes(t));
+        if(!nameMatch)return false;
+        if(dParts.length>=2)return true;
+        return (dob&&normTxt(x.dob)===dob)||(pob&&normTxt(x.pob)===pob)||(mom&&normTxt(x.motherName)===mom);
+      });
+      if(byName)return byName;
+    }
+  }
+  // 4. Live scanner / attached print fallback against Central Person Registry
+  if(allowFallbackScan){
+    const captured=list.filter(p=>resolveFingerprintInfo(p,p).status==='captured');
+    const pool=captured.length?captured:list;
+    const idx=(window._bioScanCursor||0)%pool.length;
+    window._bioScanCursor=(idx+1);
+    return pool[idx]||list[0];
+  }
+  return null;
+}
+function biometricControlHTML(prefix){
+  return `
+   <div class="section-label">Fingerprint Biometrics — Scanner &amp; Real-Time Registry Match</div>
+   <div class="fp-capture-box" id="${prefix}-fpBox">
+    <div class="f-row f-3">
+     <div class="field"><label>Fingerprint scan / upload <small class="muted">(WSQ/PNG/JPG/ISO)</small></label><input id="${prefix}-fingerprint" type="file" accept=".wsq,.bmp,.png,.jpg,.jpeg,.iso,.ansi,.fmr,image/*" onchange="handleFingerprintUpload('${prefix}',this)"></div>
+     <div class="field"><label>Biometric template / scanner signature</label><div style="display:flex;gap:6px"><input id="${prefix}-fpCode" placeholder="Scan or enter template ID (e.g. BIO-P0001)…" autocomplete="off" oninput="handleFingerprintCodeInput('${prefix}',this.value)"><button class="btn secondary small" type="button" id="${prefix}-fpScanBtn" onclick="simulateBiometricScan('${prefix}')" title="Capture from biometric scanner">⌁ Scan</button></div></div>
+     <div class="field"><label>Biometric status</label><select id="${prefix}-fpStatus" onchange="handleFingerprintStatusChange('${prefix}',this.value)"><option value="captured">✓ Captured / Biometric Matched</option><option value="pending" selected>⏳ Pending Scanner</option><option value="none">⚠️ No Print</option></select></div>
+    </div>
+    <div id="${prefix}-fpAlert" class="match-banner bio-match-banner" role="status" aria-live="polite"></div>
+   </div>`;
+}
+function paintBiometricCatchAlert(el,personObj,signature){
+  if(!el)return;
+  if(!personObj){el.className='match-banner bio-match-banner';el.innerHTML='';return}
+  const msg=`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${personObj.id}`;
+  el.className='match-banner bio-match-banner ok show';
+  el.innerHTML=`<div class="m-bannerrow">${identityAvatar(personObj)}<div><b>${esc(msg)} (${esc(personObj.name)})</b><small>Biometric signature <code>${esc(signature||resolveFingerprintInfo(personObj,personObj).hash||('BIO-'+personObj.id))}</code> matched in Central Person Registry · profile auto-filled &amp; linked (${esc(personObj.nationalId?'NID '+personObj.nationalId:(personObj.passportId?'Passport '+personObj.passportId:'DOB '+(personObj.dob||'—')))} · POB ${esc(personObj.pob||'—')}).</small></div></div>`;
+}
+function triggerRealTimeFingerprintCatch(prefix,matched,signature){
+  if(!matched)return null;
+  const sig=signature||resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id+'-'+(matched.nationalId||'SCAN'));
+  window._highlightedPersonId=matched.id;
+  matched.fingerprintStatus='captured';
+  matched.fingerprintHash=sig;
+  setBiometricRecord(matched.id,{status:'captured',hash:sig});
+  const codeEl=document.getElementById(prefix+'-fpCode');
+  if(codeEl&&!codeEl.value)codeEl.value=sig;
+  const stEl=document.getElementById(prefix+'-fpStatus');
+  if(stEl)stEl.value='captured';
+  const alertEl=document.getElementById(prefix+'-fpAlert');
+  paintBiometricCatchAlert(alertEl,matched,sig);
+  if(prefix==='off'){
+    const setIfEmpty=(id,val)=>{const el=document.getElementById(id);if(el&&!el.value&&val)el.value=val};
+    setIfEmpty('offName',matched.name);
+    setIfEmpty('offMother',matched.motherName);
+    setIfEmpty('offDob',matched.dob);
+    setIfEmpty('offPob',matched.pob);
+    setIfEmpty('offPhone',matched.phone);
+  }else if(prefix!=='central'){
+    const wire=window._identityWires&&window._identityWires[prefix];
+    if(wire&&typeof wire.fill==='function')wire.fill(matched);
+    else fillIdentity(prefix,matched);
+    renderMatchList(prefix,null);
+    setMatch(prefix,{ok:true,biometric:true,tier:1,person:matched,reason:`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${matched.id}`});
+  }
+  try{renderPeople();renderFingerprintTable();renderAirportTable();renderCheckpointTable()}catch(_){}
+  toast(`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${matched.id}`,`${matched.name} · ${sig}`);
+  return matched;
+}
+function handleFingerprintUpload(prefix,input){
+  const f=input&&input.files&&input.files[0];
+  if(!f)return;
+  const stEl=document.getElementById(prefix+'-fpStatus');
+  if(stEl)stEl.value='captured';
+  const draft=(prefix!=='off'&&prefix!=='central')?readIdentity(prefix):null;
+  const matched=matchPersonByFingerprint(f.name,draft,true);
+  const sig=matched?(resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id)):('BIO-SCAN-'+f.name.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,10));
+  const codeEl=document.getElementById(prefix+'-fpCode');
+  if(codeEl)codeEl.value=sig;
+  if(matched){
+    triggerRealTimeFingerprintCatch(prefix,matched,sig);
+  }else{
+    const alertEl=document.getElementById(prefix+'-fpAlert');
+    if(alertEl){
+      alertEl.className='match-banner info show';
+      alertEl.innerHTML=`<small>✓ Fingerprint scan <b>${esc(f.name)}</b> captured (${esc(sig)}) — no existing biometric match in Central Person Registry; will be linked on save.</small>`;
+    }
+  }
+}
+function handleFingerprintCodeInput(prefix,value){
+  const v=String(value||'').trim();
+  const stEl=document.getElementById(prefix+'-fpStatus');
+  const alertEl=document.getElementById(prefix+'-fpAlert');
+  if(!v){
+    if(alertEl){alertEl.className='match-banner bio-match-banner';alertEl.innerHTML=''}
+    return;
+  }
+  if(stEl&&stEl.value!=='captured')stEl.value='captured';
+  const draft=(prefix!=='off'&&prefix!=='central')?readIdentity(prefix):null;
+  const matched=matchPersonByFingerprint(v,draft,false);
+  if(matched){
+    triggerRealTimeFingerprintCatch(prefix,matched,v);
+  }else if(alertEl){
+    alertEl.className='match-banner info show';
+    alertEl.innerHTML=`<small>Biometric template <code>${esc(v)}</code> recorded — no existing Central Person match yet; will register on save.</small>`;
+  }
+}
+function simulateBiometricScan(prefix){
+  const codeEl=document.getElementById(prefix+'-fpCode');
+  const draft=(prefix!=='off'&&prefix!=='central')?readIdentity(prefix):null;
+  const typed=codeEl?codeEl.value.trim():'';
+  const matched=matchPersonByFingerprint(typed,draft,true);
+  if(matched){
+    const sig=resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id);
+    if(codeEl)codeEl.value=sig;
+    triggerRealTimeFingerprintCatch(prefix,matched,sig);
+  }
+}
+function handleFingerprintStatusChange(prefix,status){
+  const st=normalizeFpStatus(status)||'pending';
+  const alertEl=document.getElementById(prefix+'-fpAlert');
+  if(st==='none'&&alertEl){
+    alertEl.className='match-banner warn show';
+    alertEl.innerHTML='<small>⚠️ Record marked as [⚠️ No Print] — biometric template not captured.</small>';
+  }else if(st==='pending'&&alertEl){
+    alertEl.className='match-banner info show';
+    alertEl.innerHTML='<small>⏳ Record marked as [⏳ Pending Scanner] — awaiting fingerprint scanner capture.</small>';
+  }
+}
+function handleCentralFingerprintFile(input){
+  const f=input&&input.files&&input.files[0];
+  if(!f)return;
+  const matched=matchPersonByFingerprint(f.name,null,true);
+  const sig=matched?(resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id)):f.name;
+  const codeEl=document.getElementById('centralFpCode');
+  if(codeEl)codeEl.value=sig;
+  const clearBtn=document.getElementById('centralFpClearBtn');
+  if(clearBtn)clearBtn.style.display='';
+  window._centralBioQuery=sig;
+  if(matched){
+    window._highlightedPersonId=matched.id;
+    paintBiometricCatchAlert(document.getElementById('centralBioAlert'),matched,sig);
+    toast(`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${matched.id}`,`${matched.name} (${sig})`);
+  }
+  renderPeople();
+}
+function handleCentralFpCodeSearch(value){
+  const v=String(value||'').trim();
+  window._centralBioQuery=v;
+  const clearBtn=document.getElementById('centralFpClearBtn');
+  if(clearBtn)clearBtn.style.display=v?'':'none';
+  const alertBox=document.getElementById('centralBioAlert');
+  if(!v){
+    window._highlightedPersonId='';
+    if(alertBox){alertBox.className='match-banner bio-match-banner';alertBox.innerHTML=''}
+    renderPeople();
+    return;
+  }
+  const matched=matchPersonByFingerprint(v,null,false);
+  if(matched){
+    window._highlightedPersonId=matched.id;
+    paintBiometricCatchAlert(alertBox,matched,v);
+  }else if(alertBox){
+    window._highlightedPersonId='';
+    alertBox.className='match-banner warn show';
+    alertBox.innerHTML=`<small>No existing biometric fingerprint match for <code>${esc(v)}</code> in Central Person Registry.</small>`;
+  }
+  renderPeople();
+}
+function simulateCentralBiometricScan(){
+  const codeEl=document.getElementById('centralFpCode');
+  const q=(codeEl&&codeEl.value.trim())||(document.getElementById('personSearch')?.value.trim())||'';
+  const matched=matchPersonByFingerprint(q,null,true);
+  if(!matched)return;
+  const sig=resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id);
+  if(codeEl)codeEl.value=sig;
+  window._centralBioQuery=sig;
+  window._highlightedPersonId=matched.id;
+  const clearBtn=document.getElementById('centralFpClearBtn');
+  if(clearBtn)clearBtn.style.display='';
+  paintBiometricCatchAlert(document.getElementById('centralBioAlert'),matched,sig);
+  renderPeople();
+  toast(`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${matched.id}`,`${matched.name} · ${sig}`);
+}
+function clearCentralBiometricSearch(){
+  window._centralBioQuery='';
+  window._highlightedPersonId='';
+  const codeEl=document.getElementById('centralFpCode');if(codeEl)codeEl.value='';
+  const fileEl=document.getElementById('centralFpFile');if(fileEl)fileEl.value='';
+  const clearBtn=document.getElementById('centralFpClearBtn');if(clearBtn)clearBtn.style.display='none';
+  const alertBox=document.getElementById('centralBioAlert');
+  if(alertBox){alertBox.className='match-banner bio-match-banner';alertBox.innerHTML=''}
+  renderPeople();
+}
+function persistPrefixBiometrics(prefix,personId,recordId){
+  const stEl=document.getElementById(prefix+'-fpStatus');
+  const codeEl=document.getElementById(prefix+'-fpCode');
+  const fileEl=document.getElementById(prefix+'-fingerprint');
+  const fileName=(fileEl&&fileEl.files&&fileEl.files[0])?fileEl.files[0].name:'';
+  const codeVal=codeEl?codeEl.value.trim():'';
+  let status=stEl?normalizeFpStatus(stEl.value):'';
+  if((fileName||codeVal)&&(!status||status==='pending'))status='captured';
+  if(!status)status='pending';
+  const hash=codeVal||(status==='captured'?'BIO-'+(personId||recordId||'SCAN'):'');
+  const info={status,hash,file:fileName};
+  if(personId){
+    setBiometricRecord(personId,info);
+    const p=person(personId);
+    if(p){p.fingerprintStatus=status;if(hash)p.fingerprintHash=hash;if(fileName)p.fingerprintFile=fileName;}
+  }
+  if(recordId)setBiometricRecord(recordId,{...info,personId:personId||''});
+  return info;
+}
+
 function identityServer(d){return{full_name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),
   first_name:d.first,second_name:d.second,third_name:d.third,fourth_name:d.fourth,date_of_birth:d.dob,
   national_id:d.national,passport_id:d.passport,mother_name:d.mother,residence:d.address,
@@ -2510,16 +3090,19 @@ function identityServer(d){return{full_name:[d.first,d.second,d.third,d.fourth].
 function localNameParts(p){return normTxt([p.first,p.second,p.third,p.fourth].join(' ')).split(' ').filter(Boolean)}
 function localSuggestions(d){
   const parts=[normTxt(d.first),normTxt(d.second),normTxt(d.third),normTxt(d.fourth)].filter(Boolean);
-  const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob);
+  const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob),pob=normTxt(d.pob),fp=normTxt(d.fingerprint);
   const scored=[];
   for(const p of db.people){
     const stored=localNameParts(p),set=new Set(stored);let score=0;
+    const bio=resolveFingerprintInfo(p,p);
+    if(fp&&bio.hash&&normTxt(bio.hash).includes(fp))score+=80;
     if(nat&&normTxt(p.nationalId)){const sn=normTxt(p.nationalId);if(sn===nat)score+=60;else if(nat.length>=2&&sn.startsWith(nat))score+=25}
     if(pass&&normTxt(p.passportId)){const sp=normTxt(p.passportId);if(sp===pass)score+=60;else if(pass.length>=2&&sp.startsWith(pass))score+=25}
     if(parts.length>=2&&parts.every(x=>set.has(x))){
       score+=parts.length*10;
       if(stored.slice(0,parts.length).join(' ')===parts.join(' '))score+=8;
       if(dob&&normTxt(p.dob)===dob)score+=12;
+      if(pob&&normTxt(p.pob)===pob)score+=8;
       if(mom&&normTxt(p.motherName)===mom)score+=8;
     }
     if(score>=18)scored.push({p,score});
@@ -2528,13 +3111,17 @@ function localSuggestions(d){
   return scored.slice(0,8);
 }
 function localResolveIdentity(d){
-  const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob);
+  const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob),pob=normTxt(d.pob),fp=normTxt(d.fingerprint);
   const parts=[normTxt(d.first),normTxt(d.second),normTxt(d.third),normTxt(d.fourth)];
+  if(fp){
+    const bp=matchPersonByFingerprint(fp,d,false);
+    if(bp)return{matched:true,biometric:true,tier:1,person:bp,suggestions:[],reason:`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${bp.id}`};
+  }
   let p=db.people.find(x=>nat&&normTxt(x.nationalId)===nat)||db.people.find(x=>pass&&normTxt(x.passportId)===pass);
   if(p)return{matched:true,tier:1,person:p,suggestions:[],reason:'Exact National ID / Passport match'};
   if(parts.every(x=>x)&&dob){
-    p=db.people.find(x=>normTxt(localNameParts(x).join(' '))===parts.join(' ')&&normTxt(x.dob)===dob);
-    if(p)return{matched:true,tier:2,person:p,suggestions:[],reason:'Exact 4-part name + date of birth match'};
+    p=db.people.find(x=>normTxt(localNameParts(x).join(' '))===parts.join(' ')&&normTxt(x.dob)===dob&&(!pob||!x.pob||normTxt(x.pob)===pob));
+    if(p)return{matched:true,tier:2,person:p,suggestions:[],reason:'Exact 4-part name + date of birth'+(pob?' + place of birth':'')+' match'};
   }
   if(mom&&parts.filter(x=>x).length>=3){
     const entered=parts.filter(Boolean);
@@ -2554,6 +3141,10 @@ function localResolveIdentity(d){
   return{matched:false,tier:0,suggestions:[],reason:'No exact central record found \u2014 a new Central Person record will be created automatically on save.'};
 }
 async function resolveIdentity(d){
+  if(d&&d.fingerprint){
+    const bp=matchPersonByFingerprint(d.fingerprint,d,false);
+    if(bp)return{matched:true,biometric:true,tier:1,person:bp,suggestions:[],reason:`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${bp.id}`};
+  }
   if(serverOn){try{return await api('/api/persons/resolve',{method:'POST',body:JSON.stringify(identityServer(d))})}catch(e){return{tier:-1,matched:false,reason:'Identity lookup unavailable: '+e.message}}}
   return localResolveIdentity(d);
 }
@@ -2587,6 +3178,7 @@ function identityFormHTML(prefix,opts={}){
     <div class="field"><label>Occupation</label><input id="${prefix}-occupation" placeholder="Occupation"></div>
     ${opts.photo?`<div class="field"><label>Photo</label><input id="${prefix}-photo" type="file" accept="image/*"><img id="${prefix}-photoPrev" class="m-photoprev" alt="person photo"></div>`:''}
    </div>
+   ${biometricControlHTML(prefix)}
   </div>`;
 }
 function matchedPersonId(prefix){return (window._identityMatches&&window._identityMatches[prefix])||''}
@@ -2595,7 +3187,8 @@ function readIdentity(prefix){
   return{first:g(prefix+'-first'),second:g(prefix+'-second'),third:g(prefix+'-third'),fourth:g(prefix+'-fourth'),
     dob:g(prefix+'-dob'),national:g(prefix+'-national'),passport:g(prefix+'-passport'),mother:g(prefix+'-mother'),
     address:g(prefix+'-address'),phone:g(prefix+'-phone'),pob:g(prefix+'-pob'),occupation:g(prefix+'-occupation'),
-    permanent:g(prefix+'-permanent'),purpose:g(prefix+'-purpose'),relationship:g(prefix+'-relationship')};
+    permanent:g(prefix+'-permanent'),purpose:g(prefix+'-purpose'),relationship:g(prefix+'-relationship'),
+    fingerprint:g(prefix+'-fpCode'),fingerprintStatus:g(prefix+'-fpStatus')};
 }
 function setLocked(el,val){
   if(!el)return;
@@ -2616,6 +3209,11 @@ function fillIdentity(prefix,p){
     if(el.dataset.auto!==undefined && el.value!==el.dataset.auto && val!==el.value)return;
     el.value=val;el.dataset.auto=val;setLocked(el,val);
   });
+  const bio=resolveFingerprintInfo(p,p);
+  const fpCodeEl=document.getElementById(prefix+'-fpCode');
+  if(fpCodeEl&&!fpCodeEl.value&&bio.hash)fpCodeEl.value=bio.hash;
+  const fpStatusEl=document.getElementById(prefix+'-fpStatus');
+  if(fpStatusEl&&bio.status)fpStatusEl.value=bio.status;
   const pv=document.getElementById(prefix+'-photoPrev');
   if(pv){const src=p.photoPath||p.photoUrl||'';if(src){pv.src=src;pv.style.display='block'}else pv.style.display='none'}
   const first=document.getElementById(prefix+'-first');if(first)clearEditedError({target:first});
@@ -2626,6 +3224,10 @@ function clearIdentity(prefix,p){
   });
   const ph=document.getElementById(prefix+'-photo');if(ph)ph.value='';
   const pv=document.getElementById(prefix+'-photoPrev');if(pv)pv.style.display='none';
+  const fpf=document.getElementById(prefix+'-fingerprint');if(fpf)fpf.value='';
+  const fpc=document.getElementById(prefix+'-fpCode');if(fpc)fpc.value='';
+  const fps=document.getElementById(prefix+'-fpStatus');if(fps)fps.value='pending';
+  const fpa=document.getElementById(prefix+'-fpAlert');if(fpa){fpa.className='match-banner bio-match-banner';fpa.innerHTML=''}
   renderMatchList(prefix,null);
   setMatch(prefix,null);
 }
@@ -2655,8 +3257,12 @@ function setMatch(prefix,res){
   if(!res){box.className='match-banner';box.innerHTML='';return}
   if(res.ok){
     window._identityMatches[prefix]=res.person.id;
-    box.className='match-banner ok show';
-    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>✓ Matched Central Record: ${esc(res.person.id)} - ${esc(res.person.name)}</b><small>${esc(res.reason||'')} · existing Central Person registry data auto-populated.</small>${incompleteTag(res.person)}</div></div>`;
+    const isBio=!!(res.biometric||String(res.reason||'').includes('Biometric Fingerprint Match Found'));
+    box.className='match-banner ok show'+(isBio?' bio-match-banner':'');
+    const headline=isBio
+      ?`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${esc(res.person.id)} (${esc(res.person.name)})`
+      :`✓ Matched Central Record: ${esc(res.person.id)} - ${esc(res.person.name)}`;
+    box.innerHTML=`<div class="m-bannerrow">${identityAvatar(res.person)}<div><b>${headline}</b><small>${esc(res.reason||'')} · existing Central Person registry data auto-populated.</small>${incompleteTag(res.person)}</div></div>`;
   }else if(res.warn){
     window._identityMatches[prefix]=null;
     box.className='match-banner warn show';
@@ -2729,6 +3335,7 @@ function travelerFormHTML(prefix){
     <div class="field"><label>Real-time photo *</label><input id="${prefix}-photo" type="file" accept="image/*"><img id="${prefix}-photoPrev" class="m-photoprev" alt="traveler photo"></div>
    </div>
    <div class="field"><label>Traveler documents — upload 2, <span class="req">at least 1 required</span></label><div class="docgrid" id="${prefix}Docs" data-min-files="1"></div></div>
+   ${biometricControlHTML(prefix)}
   </div>`;
 }
 function guardianFormHTML(prefix){
@@ -2923,6 +3530,8 @@ async function submitPersonDrawer(existingId){
       if(existingId){await api('/api/persons/'+existingId,{method:'PATCH',body:JSON.stringify(stripServer(data))});saved=mapPerson((await api('/api/persons/'+existingId)))}
       else saved=await upsertPerson(data);
     }else saved=await upsertPerson(data);
+    if(saved&&saved.id)persistPrefixBiometrics('pd',saved.id,saved.id);
+    persist();
     closeDrawer();renderAll();toast(existingId?'Identity profile updated':'Person saved to central registry');
     if(window._personDrawerCb)window._personDrawerCb(saved);
   }catch(e){showFormError(e.message||'The person could not be saved.',{prefix:'pd',title:'Unable to Save'})}
@@ -2982,6 +3591,7 @@ function openPersonView(id){
    </div>`;
   // Expanded data grid — the complete identity profile.
   const idLine=[p.nationalId?'National ID '+p.nationalId:'',p.passportId?'Passport '+p.passportId:''].filter(Boolean).join(' · ');
+  const bioInfo=resolveFingerprintInfo(p,p);
   const fields=[
     ['Full Name',p.name,'full'],
     ['ID / Passport',idLine],
@@ -2990,7 +3600,8 @@ function openPersonView(id){
     ['Place of Birth (POB)',p.pob],
     ['Phone Number',p.phone],
     ['Address (Residence)',p.residence],
-    ['Occupation',p.occupation]
+    ['Occupation',p.occupation],
+    ['Fingerprint Biometrics',(bioInfo.status==='captured'?'[✓ Captured / Biometric Matched]':bioInfo.status==='pending'?'[⏳ Pending Scanner]':'[⚠️ No Print]')+(bioInfo.hash?' · '+bioInfo.hash:'')]
   ];
   const grid=`<div class="pv-grid">${fields.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${esc(v||'—')}</b></div>`).join('')}</div>`;
   const unitsBlock=`<section class="pv-units"><h3>Linked Unit Records</h3><div>${units}</div><div id="pvLinkedRecords" aria-live="polite"><p class="muted">Loading branch and source details…</p></div></section>`;
@@ -3096,14 +3707,50 @@ async function submitAddSuspect(){
 
 // ============================ render ============================
 function renderPeople(){
-  const q=(document.getElementById('personSearch')?.value||'').toLowerCase();
-  const rows=db.people.filter(p=>JSON.stringify(p).toLowerCase().includes(q)).map(p=>`
-   <tr class="clickable" onclick="openPersonView('${esc(p.id)}')">
-    <td><div class="person"><span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span><b>${esc(p.name)}</b></div></td>
-    <td>${esc(p.id)}</td><td>${esc(p.nationalId||'—')}</td><td>${esc(p.passportId||'—')}</td>
+  const q=normTxt(document.getElementById('personSearch')?.value||'');
+  const bioQ=normTxt(window._centralBioQuery||(document.getElementById('centralFpCode')?.value||''));
+  // If the text search looks like a biometric template (e.g. BIO-P0001), also check biometric match
+  if(q&&/^bio[-_]/i.test(q)){
+    const bm=matchPersonByFingerprint(q,null,false);
+    if(bm){
+      window._highlightedPersonId=bm.id;
+      paintBiometricCatchAlert(document.getElementById('centralBioAlert'),bm,q.toUpperCase());
+    }
+  }
+  const filtered=(db.people||[]).filter(p=>{
+    const bio=resolveFingerprintInfo(p,p);
+    const badgeLabel=bio.status==='captured'?'Captured Biometric Matched':bio.status==='pending'?'Pending Scanner':'No Print';
+    const haystack=normTxt([
+      p.first,p.second,p.third,p.fourth,p.name,
+      p.dob,p.pob,p.motherName,
+      p.passportId,p.nationalId,p.id,
+      p.residence,p.occupation,p.phone,
+      bio.hash,bio.file,bio.status,badgeLabel,
+      JSON.stringify(p)
+    ].join(' '));
+    if(q&&!haystack.includes(q))return false;
+    if(bioQ){
+      if(window._highlightedPersonId&&p.id===window._highlightedPersonId)return true;
+      return haystack.includes(bioQ);
+    }
+    return true;
+  });
+  // Sort highlighted biometric match to the top when active
+  const sorted=filtered.slice().sort((a,b)=>{
+    const ha=(window._highlightedPersonId&&a.id===window._highlightedPersonId)?1:0;
+    const hb=(window._highlightedPersonId&&b.id===window._highlightedPersonId)?1:0;
+    return hb-ha;
+  });
+  const rows=sorted.map(p=>{
+   const isHi=!!(window._highlightedPersonId&&p.id===window._highlightedPersonId);
+   return `
+   <tr class="clickable${isHi?' bio-match-row':''}" data-person-id="${esc(p.id)}" onclick="openPersonView('${esc(p.id)}')">
+    <td><div class="person"><span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span><div><b>${esc(p.name)}</b>${isHi?' <span class="badge green">⚡ Biometric Match</span>':''}<br><small class="muted">DOB ${esc(p.dob||'—')} · POB ${esc(p.pob||'—')} · Mother: ${esc(p.motherName||'—')}</small></div></div></td>
+    <td><b>${esc(p.id)}</b></td><td>${esc(p.nationalId||'—')}</td><td>${esc(p.passportId||'—')}</td>
+    <td>${fingerprintStatusBadge(p,p)}</td>
     <td>${(p.units||[]).map(u=>'<span class="badge blue">'+esc(u)+'</span>').join(' ')}</td>
-    <td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">View</button></td></tr>`).join('');
-  peopleTable.innerHTML=rows||'<tr><td colspan="6" class="empty">No people found</td></tr>';
+    <td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">View</button></td></tr>`}).join('');
+  peopleTable.innerHTML=rows||'<tr><td colspan="7" class="empty">No people found</td></tr>';
 }
 // ============================ dashboard (role / scope aware) ============================
 // The dashboard pulls its metrics from /api/dashboard, which is computed on the
@@ -3779,10 +4426,13 @@ function renderCheckpointTable(){
   if(empty) empty.style.display = 'none';
   tbody.innerHTML = searchedCheckpoints.map(x => {
     const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
-    return `<tr data-event-id="${esc(x.event_id||x.id||'')}" data-loc="${esc(x.location_code||'')}">
+    const p = person(x.person);
+    const isHi = !!(window._highlightedPersonId && x.person === window._highlightedPersonId);
+    return `<tr${isHi?' class="bio-match-row"':''} data-event-id="${esc(x.event_id||x.id||'')}" data-loc="${esc(x.location_code||'')}">
       <td>${esc(x.time)}</td><td>${esc(locLabel||'—')}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td>
-      <td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
+      <td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
       <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
+      <td>${fingerprintStatusBadge(x,p)}</td>
       <td><span class="badge ${x.screen==='Flagged match'?'red':'green'}">${esc(x.screen)}</span></td>
       <td><span class="badge ${x.action==='Cleared'?'green':'red'}">${esc(x.action)}</span>${x.notes?`<br><small class="muted">${esc(x.notes)}</small>`:''}</td>
       <td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td>
@@ -4284,26 +4934,33 @@ function renderFingerprintTable(){
   const list=(db.fingerprint||[]).filter(x=>{
     if(!q)return true;
     const p=person(x.person);
-    return [x.id,x.purpose,x.status,x.certificate,x.branch,p&&p.name,x.person].some(v=>normTxt(v).includes(q));
+    const bio=resolveFingerprintInfo(x,p);
+    return [x.id,x.purpose,x.status,x.certificate,x.branch,p&&p.name,x.person,bio.hash,bio.status].some(v=>normTxt(v).includes(q));
   });
   fpTable.innerHTML=list.map(x=>{const p=person(x.person);
-   return `<tr><td>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.purpose)}</td>
-   <td><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
-   <td class="actions">
+   const hi=!!(window._highlightedPersonId&&x.person===window._highlightedPersonId);
+   const tdCls=hi?' class="bio-match-cell"':'';
+   return `<tr><td${tdCls}>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td${tdCls}><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td${tdCls}>${esc(x.purpose)}</td>
+   <td${tdCls}>${fingerprintStatusBadge(x,p)}</td>
+   <td${tdCls}><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
+   <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
      ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=0f8552e&id=${encodeURIComponent(x.id)}">Review/Print</a>`:''}
      ${renderRegisterRow(x,currentUser)}
-   </td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
+   </td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
 function renderAirportTable(){
   const q=normTxt((document.getElementById('airSearch')||{}).value||'');
   const list=(db.airport||[]).filter(x=>{
     if(!q)return true;
     const p=person(x.person);
+    const bio=resolveFingerprintInfo(x,p);
     const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));
-    return [p&&p.name,x.person,x.move,x.date,x.flight,x.airline,route,x.branch].some(v=>normTxt(v).includes(q));
+    return [p&&p.name,x.person,x.move,x.date,x.flight,x.airline,route,x.branch,bio.hash,bio.status].some(v=>normTxt(v).includes(q));
   });
-  airTable.innerHTML=list.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));return `<tr><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small>${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="5" class="empty">${q?'No passengers match that search':'No passenger records'}</td></tr>`;
+  airTable.innerHTML=list.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));
+    const hi=!!(window._highlightedPersonId&&x.person===window._highlightedPersonId);
+    return `<tr${hi?' class="bio-match-row"':''}><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small>${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td>${fingerprintStatusBadge(x,p)}</td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No passengers match that search':'No passenger records'}</td></tr>`;
 }
 function renderSuspectTable(){
   const q=normTxt((document.getElementById('suspectSearch')||{}).value||'');
@@ -4348,13 +5005,17 @@ async function saveFingerprint(e){
       Object.entries({...identityServer(d),person_id:matchedPersonId('fp'),branch_id:branchId,purpose:fpPurpose.value,sex:fpSex.value,email:fpEmail.value.trim(),guardian_name:gName.value.trim(),guardian_relationship:gRelation.value.trim(),guardian_id:gId.value.trim(),guardian_occupation:gOccupation.value.trim(),guardian_address:gAddress.value.trim(),guardian_phone:gPhone.value.trim(),notes:fpNotes.value}).forEach(([k,v])=>fd.append(k,v));
       appDocs.forEach((f,i)=>fd.append('doc_app_'+i,f));guardDocs.forEach((f,i)=>fd.append('doc_guard_'+i,f));if(photo)fd.append('photo',photo);
       const r=await api('/api/clearance-applications',{method:'POST',body:fd});
+      const pid=(r.identity&&r.identity.person_id)||r.person_id||matchedPersonId('fp');
+      persistPrefixBiometrics('fp',pid,r.application_id);
       const m=r.identity&&r.identity.matched?'matched to existing central record '+r.identity.person_id:'new central person '+r.person_id+' created';
       fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application '+r.application_id+' saved — identity '+m+'.';
     }else{
       const person=await ensureLocalIdentity(d);
+      const appId='FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0');
+      const bio=persistPrefixBiometrics('fp',person.id,appId);
       // created_at is stored so the client-side 12-hour review lock works
       // in the offline demo path exactly as it does against the server.
-      db.fingerprint.unshift({id:'FP-'+new Date().getFullYear()+'-'+String(db.fingerprint.length+43).padStart(4,'0'),person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim(),created_at:new Date().toISOString()});
+      db.fingerprint.unshift({id:appId,person:person.id,purpose:fpPurpose.value,status:'Pending Review',guardian:gName.value.trim(),fingerprintStatus:bio.status,fingerprintHash:bio.hash,created_at:new Date().toISOString()});
       persist();fpNotice.className='notice';fpNotice.style.display='block';fpNotice.textContent='Application saved (local demo) and linked to '+person.id+'.';
     }
     fpNotice.className='notice';fpNotice.style.display='block';resetFpForm();closeEntryModal('fpDrawer');await syncServer();toast('Clearance application saved');
@@ -4434,12 +5095,15 @@ async function saveAirport(e){
         travel_date:airDate.value,flight_number:airFlight.value.trim(),airline,
         origin_city:origin,destination_city:dest,route:route,notes:airNotes.value};
       const r=await api('/api/airport-records',{method:'POST',body:JSON.stringify(payload)});
-      p=r.identity&&r.identity.matched?r.identity.person_id:null;
+      p=(r.identity&&r.identity.person_id)||r.person_id||matchedPersonId('air');
+      persistPrefixBiometrics('air',p,r.record_id||r.id);
       airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved — '+(r.identity&&r.identity.matched?'matched and linked to existing Central Person '+r.identity.person_id:'new Central Person '+r.identity.person_id+' created and linked')+'.';
     }else{
       const person=await ensureLocalIdentity(d);
       p=person.id;
-      db.airport.unshift({id:'AR-'+Date.now().toString().slice(-5),person:p,move:airMove.value,date:airDate.value,flight:airFlight.value.trim(),airline,origin,dest,route,notes:airNotes.value});persist();
+      const recId='AR-'+Date.now().toString().slice(-5);
+      const bio=persistPrefixBiometrics('air',p,recId);
+      db.airport.unshift({id:recId,person:p,move:airMove.value,date:airDate.value,flight:airFlight.value.trim(),airline,origin,dest,route,notes:airNotes.value,fingerprintStatus:bio.status,fingerprintHash:bio.hash});persist();
       airNotice.className='notice';airNotice.style.display='block';airNotice.textContent='Passenger saved and linked to '+p+' in the Central Person Registry (local demo).';
     }
     airForm.reset();window._identityWires.air.clear();airDate.value='2026-09-01';closeEntryModal('airDrawer');await syncServer();toast('Airport unit record saved');
@@ -4611,6 +5275,7 @@ async function submitCheckpoint(){
       const newLocation = r.checkpoint_location || (cpLoc.value + ' Checkpoint');
       const newLocationCode = r.location_code || cpLoc.value;
       const newNotes = cpNotes.value;
+      const cpBio = persistPrefixBiometrics('cp', r.person_id || matchedPersonId('cp'), r.event_id);
       closeDrawer();
       // Optimistic UI: FORCE an immediate local array mutation so the
       // UI re-renders without waiting for the network re-fetch cycle.
@@ -4632,6 +5297,8 @@ async function submitCheckpoint(){
         guardianRelationship: gd.relationship,
         travelerDocs: trDocs.length,
         guardianDocs: gdDocs.length,
+        fingerprintStatus: cpBio.status,
+        fingerprintHash: cpBio.hash,
         event_id: r.event_id,
       };
       // Spec-mandated pattern: prepend the new record to db.checkpoints so
@@ -4679,11 +5346,13 @@ async function submitCheckpoint(){
     // (the cpLoc / cpNotes selects / inputs are inside the modal).
     const localLoc = cpLoc.value;
     const localNotes = cpNotes.value;
+    const cpBio = persistPrefixBiometrics('cp', p.id, 'CP-LOC-'+Date.now());
     db.checkpoints.unshift({time:now,location:localLoc,person:p.id,screen:flagged?'Flagged match':'No active alert',
       action:flagged?'Supervisor contacted':'Cleared',notes:localNotes,purpose:d.purpose,currentAddress:d.address,
       permanentAddress:d.permanent,guardianName:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
       guardianRelationship:gd.relationship,guardianPhone:gd.phone,guardianAddress:gd.permanent,guardianOccupation:gd.occupation,
-      travelerDocs:trDocs.length,guardianDocs:gdDocs.length,photoName:photo.name});
+      travelerDocs:trDocs.length,guardianDocs:gdDocs.length,photoName:photo.name,
+      fingerprintStatus:cpBio.status,fingerprintHash:cpBio.hash});
     persist();closeDrawer();renderAll();toast(flagged?'Potential match flagged for supervisor':'Person screened — no active alert');
   }catch(e){showFormError(e.message||'The checkpoint stop could not be recorded.',{title:'Unable to Save'})}
 }
@@ -6777,9 +7446,10 @@ function renderOfficersTable(){
   const list=all.filter(o=>{
     if(!q)return true;
     const st=stationById(o.station_id||o.station);
+    const bio=resolveFingerprintInfo(o,null);
     return [o.full_name,o.service_id,o.rank,o.unit,o.duty_status,o.contact_number,
             o.region_of_origin,o.district_of_origin,o.town_village,
-            st&&st.name,st&&st.code,st&&st.region,o.station_name]
+            st&&st.name,st&&st.code,st&&st.region,o.station_name,bio.hash,bio.status]
       .some(v=>normTxt(v).includes(q));
   });
   paintTableCount('offCount',list,all.length);
@@ -6787,8 +7457,9 @@ function renderOfficersTable(){
     return `<tr><td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
     <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
     <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':esc(o.station_name||o.station_id||'—')}</td>
+    <td>${fingerprintStatusBadge(o,null)}</td>
     <td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
-  tb.innerHTML=rows||`<tr><td colspan="6" class="empty">${q?'No officer matches that search':'No officers registered yet'}</td></tr>`;
+  tb.innerHTML=rows||`<tr><td colspan="7" class="empty">${q?'No officer matches that search':'No officers registered yet'}</td></tr>`;
 }
 function vehicleAlertBadge(alert){
   const a=alert||'Clean / Normal';
@@ -6844,7 +7515,7 @@ function renderPoliceSearch(){
   const stationOf=o=>stationById(o.station_id||o.station);
   let rows='',count=0;
   if(psType==='officers'){
-    head.innerHTML='<tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Duty</th></tr>';
+    head.innerHTML='<tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th></tr>';
     const list=(db.officers||[]).filter(o=>{
       const st=stationOf(o);
       // Filter on the officer's own stored origin (Region → District → Town).
@@ -6855,7 +7526,7 @@ function renderPoliceSearch(){
     rows=list.map(o=>{const st=stationOf(o);
       return `<tr><td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
       <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
-      <td>${st?esc(st.name):esc(o.station_name||'—')}</td><td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
+      <td>${st?esc(st.name):esc(o.station_name||'—')}</td><td>${fingerprintStatusBadge(o,null)}</td><td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
   }else if(psType==='stations'){
     head.innerHTML='<tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Officers</th><th>Cars</th></tr>';
     const list=(db.stations||[]).filter(s=>psLocMatch(s,f)&&textMatch(s.name,s.code,s.notes));
@@ -7081,6 +7752,8 @@ async function saveOfficer(e){
       fd.append('doc1_file',d1);
       if(d2)fd.append('doc2_file',d2);
       const r=await api('/api/officers',{method:'POST',body:fd});
+      const offBio=persistPrefixBiometrics('off',null,r.service_id||r.officer?.service_id);
+      if(r.officer){r.officer.fingerprintStatus=offBio.status;r.officer.fingerprintHash=offBio.hash;}
       // Optimistically add the server-confirmed record so the table updates
       // immediately (the next syncServer() will reconcile it anyway).
       db.officers=(db.officers||[]).concat(r.officer);
@@ -7088,6 +7761,7 @@ async function saveOfficer(e){
       offNotice.textContent='Officer '+r.service_id+' registered — '+d.full_name+' assigned to '+(r.officer.station_name||d.station_id)+'.';
     }else{
       const sid=localServiceId();
+      const offBio=persistPrefixBiometrics('off',null,sid);
       db.officers=(db.officers||[]).concat({id:sid,service_id:sid,
         rank:d.rank,unit:d.unit,station_id:d.station_id,station_name:st?st.name:'',
         date_of_enlistment:d.date_of_enlistment,duty_status:d.duty_status,
@@ -7095,6 +7769,7 @@ async function saveOfficer(e){
         place_of_birth:d.place_of_birth,contact_number:d.contact_number,
         height_cm:d.height_cm,weight_kg:d.weight_kg,blood_group:d.blood_group,
         photo_path:photo?photo.name:null,
+        fingerprintStatus:offBio.status,fingerprintHash:offBio.hash,
         region_of_origin:d.region_of_origin,district_of_origin:d.district_of_origin,
         town_village:d.town_village,
         guarantor_name:d.guarantor_name,guarantor_address:d.guarantor_address,
@@ -7115,6 +7790,10 @@ function resetOfficerForm(){
   offDuty.value='Active';
   offServiceId.value='';
   offStation.value='';
+  const fpc=document.getElementById('off-fpCode');if(fpc)fpc.value='';
+  const fps=document.getElementById('off-fpStatus');if(fps)fps.value='pending';
+  const fpf=document.getElementById('off-fingerprint');if(fpf)fpf.value='';
+  const fpa=document.getElementById('off-fpAlert');if(fpa){fpa.className='match-banner bio-match-banner';fpa.innerHTML=''}
   initOriginDropdowns();
   offStep(1);
   offNotice.className='notice';offNotice.style.display='none';
