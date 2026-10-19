@@ -903,6 +903,36 @@ body[data-theme="dark"] .table tr.bio-match-row td,
 body[data-theme="dark"] .table td.bio-match-cell{
   background:#064e3b66!important;border-bottom-color:#10b981!important;
 }
+
+/* ==== Universal USB scanner bridge — capture feedback states ====
+   Every modal Scan button carries `.btn-scan`. While the hardware engine is
+   reading a print the label becomes "[ 🌀 Reading Finger... ]" with a subtle
+   pulse; a successful capture flashes a green confirmation before the button
+   returns to its normal label. Motion is disabled for reduced-motion users. */
+.btn-scan{position:relative;white-space:nowrap;transition:background-color .18s ease,color .18s ease,border-color .18s ease,box-shadow .18s ease}
+.btn-scan[disabled]{cursor:progress;opacity:.92}
+.btn-scan.is-scanning{
+  background:linear-gradient(135deg,#1d4ed8,#0e7490)!important;
+  color:#fff!important;border-color:#1d4ed8!important;
+  animation:sentinelScanPulse 1.15s ease-in-out infinite;
+}
+.btn-scan.is-scanning .scan-glyph{display:inline-block;animation:sentinelScanSpin 1.35s linear infinite}
+.btn-scan.is-scan-success{
+  background:#dcf5e9!important;color:#116a4c!important;border-color:#34d399!important;
+  box-shadow:0 0 0 3px rgba(16,185,129,.14)!important;
+}
+body.dark-mode .btn-scan.is-scan-success,
+body[data-theme="dark"] .btn-scan.is-scan-success{
+  background:#064e3b!important;color:#6ee7b7!important;border-color:#10b981!important;
+}
+@keyframes sentinelScanPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.36)}
+  50%{box-shadow:0 0 0 6px rgba(37,99,235,0)}
+}
+@keyframes sentinelScanSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){
+  .btn-scan.is-scanning,.btn-scan.is-scanning .scan-glyph{animation:none}
+}
 </style>
 </head>
 <body>
@@ -1096,7 +1126,7 @@ body[data-theme="dark"] .table td.bio-match-cell{
   <div class="bio-scanner-controls">
     <input id="centralFpCode" type="text" data-ro-keep="1" placeholder="Biometric signature / template ID (e.g. BIO-P0001)…" oninput="handleCentralFpCodeSearch(this.value)" aria-label="Biometric template or signature">
     <label class="btn secondary small" for="centralFpFile" data-ro-keep="1" style="cursor:pointer;margin:0">📎 Attach Print<input id="centralFpFile" type="file" data-ro-keep="1" accept=".wsq,.bmp,.png,.jpg,.jpeg,.iso,.ansi,.fmr,image/*" style="display:none" onchange="handleCentralFingerprintFile(this)"></label>
-    <button class="btn small" type="button" id="centralFpScanBtn" data-ro-keep="1" onclick="simulateCentralBiometricScan()">⌁ Scan Fingerprint</button>
+    <button class="btn small btn-scan" type="button" id="centralFpScanBtn" data-ro-keep="1" data-scan-prefix="central" onclick="scanFingerprint('central',this)" title="Capture from a USB / local scanner bridge">⌁ Scan Fingerprint</button>
     <button class="btn ghost small" type="button" id="centralFpClearBtn" data-ro-keep="1" onclick="clearCentralBiometricSearch()" style="display:none">✕ Reset</button>
   </div>
 </div>
@@ -1501,7 +1531,7 @@ body[data-theme="dark"] .table td.bio-match-cell{
 <div class="fp-capture-box" id="off-fpBox">
   <div class="f-row f-3">
     <div class="field"><label>Fingerprint scan / upload <small class="muted">(WSQ/PNG/JPG/ISO)</small></label><input id="off-fingerprint" type="file" accept=".wsq,.bmp,.png,.jpg,.jpeg,.iso,.ansi,.fmr,image/*" onchange="handleFingerprintUpload('off',this)"></div>
-    <div class="field"><label>Biometric template / scanner signature</label><div style="display:flex;gap:6px"><input id="off-fpCode" placeholder="Scan or enter template ID (e.g. BIO-P0001)…" autocomplete="off" oninput="handleFingerprintCodeInput('off',this.value)"><button class="btn secondary small" type="button" id="off-fpScanBtn" onclick="simulateBiometricScan('off')" title="Capture from biometric scanner">⌁ Scan</button></div></div>
+    <div class="field"><label>Biometric template / scanner signature</label><div style="display:flex;gap:6px"><input id="off-fpCode" placeholder="Scan or enter template ID (e.g. BIO-P0001)…" autocomplete="off" oninput="handleFingerprintCodeInput('off',this.value)"><button class="btn secondary small btn-scan" type="button" id="off-fpScanBtn" data-scan-prefix="off" onclick="scanFingerprint('off',this)" title="Capture from biometric scanner">⌁ Scan</button></div></div>
     <div class="field"><label>Biometric status</label><select id="off-fpStatus" onchange="handleFingerprintStatusChange('off',this.value)"><option value="captured">✓ Captured / Biometric Matched</option><option value="pending" selected>⏳ Pending Scanner</option><option value="none">⚠️ No Print</option></select></div>
   </div>
   <div id="off-fpAlert" class="match-banner bio-match-banner" role="status" aria-live="polite"></div>
@@ -2894,7 +2924,7 @@ function biometricControlHTML(prefix){
    <div class="fp-capture-box" id="${prefix}-fpBox">
     <div class="f-row f-3">
      <div class="field"><label>Fingerprint scan / upload <small class="muted">(WSQ/PNG/JPG/ISO)</small></label><input id="${prefix}-fingerprint" type="file" accept=".wsq,.bmp,.png,.jpg,.jpeg,.iso,.ansi,.fmr,image/*" onchange="handleFingerprintUpload('${prefix}',this)"></div>
-     <div class="field"><label>Biometric template / scanner signature</label><div style="display:flex;gap:6px"><input id="${prefix}-fpCode" placeholder="Scan or enter template ID (e.g. BIO-P0001)…" autocomplete="off" oninput="handleFingerprintCodeInput('${prefix}',this.value)"><button class="btn secondary small" type="button" id="${prefix}-fpScanBtn" onclick="simulateBiometricScan('${prefix}')" title="Capture from biometric scanner">⌁ Scan</button></div></div>
+     <div class="field"><label>Biometric template / scanner signature</label><div style="display:flex;gap:6px"><input id="${prefix}-fpCode" placeholder="Scan or enter template ID (e.g. BIO-P0001)…" autocomplete="off" oninput="handleFingerprintCodeInput('${prefix}',this.value)"><button class="btn secondary small btn-scan" type="button" id="${prefix}-fpScanBtn" data-scan-prefix="${prefix}" onclick="scanFingerprint('${prefix}',this)" title="Capture from biometric scanner">⌁ Scan</button></div></div>
      <div class="field"><label>Biometric status</label><select id="${prefix}-fpStatus" onchange="handleFingerprintStatusChange('${prefix}',this.value)"><option value="captured">✓ Captured / Biometric Matched</option><option value="pending" selected>⏳ Pending Scanner</option><option value="none">⚠️ No Print</option></select></div>
     </div>
     <div id="${prefix}-fpAlert" class="match-banner bio-match-banner" role="status" aria-live="polite"></div>
@@ -3063,6 +3093,1024 @@ function clearCentralBiometricSearch(){
   if(alertBox){alertBox.className='match-banner bio-match-banner';alertBox.innerHTML=''}
   renderPeople();
 }
+// ============================ Universal biometric hardware bridge ============================
+// SentinelBiometricHardware is the single hardware abstraction layer behind every
+// "Scan" button in the UI. It understands three transports and degrades to the
+// existing manual template / file-upload path when none is present:
+//
+//   1. WebUSB  — direct browser → USB optical scanner (Futronic, DigitalPersona,
+//                SecuGen, Suprema, …). The first click opens the browser's
+//                device chooser (a WebUSB security requirement); after the
+//                officer authorises the scanner, every later click captures
+//                immediately. Additional vendor IDs can be registered with
+//                SentinelBiometricHardware.registerDeviceProfile({...}).
+//   2. WebHID  — the same devices when the vendor exposes them as HID rather
+//                than a vendor-specific USB interface.
+//   3. Local SDK bridge — a vendor driver background service listening on
+//                8080 / 9001 / 11100. The client pings the standard ports
+//                silently at page load and speaks either:
+//                  * WebSocket ws://localhost:<port>/biometrics
+//                  * HTTP POST http://127.0.0.1:<port>/scan
+//
+// Bridge response contract (any of these shapes is accepted):
+//   { ok:true, template:"<base64 WSQ/ISO>" | "<WSQ/ISO/FMR file bytes>",
+//     format:"WSQ", quality:78, vendor:"SecuGen", image:"<base64 png>" }
+//   { signature:"BIO-WSQ-…", format:"WSQ" }
+//   "<BIO-WSQ-…>"                                  // plain-text WSQ/ISO signature
+// A WebSocket request is sent as {action:'scan', type:'fingerprint',
+// format:'WSQ', requestId:'…'}; a bridge may also push a capture unprompted.
+// The returned template is hashed (SHA-256, FNV-1a fallback) into the same
+// BIO-… signature format the manual fields and Central Person Registry use.
+const SentinelBiometricHardware=(function(){
+  'use strict';
+
+  const VERSION='1.0.0';
+  const CONFIG={
+    version:VERSION,
+    bridgePorts:[8080,9001,11100],
+    bridgeHosts:['localhost','127.0.0.1'],
+    bridgePaths:{health:'/health',info:'/scan/info',scan:'/scan',ws:'/biometrics'},
+    probeTimeoutMs:850,
+    wsScanTimeoutMs:6500,
+    httpScanTimeoutMs:8000,
+    captureTimeoutMs:5000,
+    transferTimeoutMs:1800,
+    minTemplateBytes:16,
+    maxCaptureBytes:262144,
+    usbPromptCooldownMs:15000,
+    hidPromptCooldownMs:30000
+  };
+
+  // Known vendor IDs are deliberately only *entry points*: the bridge / direct
+  // protocol remains generic, and `registerDeviceProfile()` extends this table
+  // without touching the UI. `classCode:0xff` is appended to the WebUSB chooser
+  // so vendor-specific optical scanners from unlisted manufacturers are also
+  // selectable. `initPacket` / `captureBytes` can be supplied for a vendor whose
+  // SDK documents its trigger command and frame size.
+  const DEVICE_PROFILES=[
+    {id:'futronic',label:'Futronic',vendorId:0x0f4d,format:'WSQ'},
+    {id:'digitalpersona',label:'DigitalPersona / HID',vendorId:0x05ba,format:'ISO'},
+    {id:'secugen',label:'SecuGen',vendorId:0x1162,format:'WSQ'},
+    {id:'suprema',label:'Suprema BioMini',vendorId:0x2c7c,format:'ISO'},
+    {id:'crossmatch',label:'Crossmatch',vendorId:0x1782,format:'ISO'},
+    {id:'nitgen',label:'Nitgen',vendorId:0x0c36,format:'WSQ'},
+    {id:'hidglobal',label:'HID Global',vendorId:0x076b,format:'ISO'},
+    {id:'upek',label:'UPEK / AuthenTec',vendorId:0x147e,format:'ISO'},
+    {id:'authenTec',label:'AuthenTec',vendorId:0x08ff,format:'ISO'}
+  ];
+
+  const state={
+    phase:'idle',              // idle | detecting | ready | scanning | unavailable
+    source:'',                 // webusb | webhid | bridge | ''
+    deviceLabel:'',
+    bridge:null,
+    usbDevice:null,
+    hidDevice:null,
+    detection:{usbDevices:0,hidDevices:0,bridge:false,ports:{}},
+    lastScan:null,
+    lastError:'',
+    initialized:false,
+    usbPromptedAt:0,
+    hidPromptedAt:0,
+    listeners:[]
+  };
+  let initPromise=null;
+  let detectPromise=null;
+  let scanPromise=null;
+
+  // ---- small utilities ----------------------------------------------------
+  const nav=()=>{try{return typeof navigator!=='undefined'?navigator:null}catch(_){return null}};
+  const doc=()=>{try{return typeof document!=='undefined'?document:null}catch(_){return null}};
+  function browserContext(){
+    return !!(nav()&&doc()&&typeof window!=='undefined'
+      && typeof location!=='undefined'&&location&&/^https?:$/i.test(location.protocol));
+  }
+  function debugLog(){
+    try{
+      if(typeof localStorage!=='undefined'&&localStorage.getItem('sentinelScannerDebug')==='1'){
+        console.log.apply(console,['[SentinelBiometricHardware]'].concat([].slice.call(arguments)));
+      }
+    }catch(_){}
+  }
+  function hwError(code,message,cause){
+    const error=new Error(message||code||'Biometric hardware error');
+    error.code=code||'HW_ERROR';
+    if(cause)error.cause=cause;
+    return error;
+  }
+  function withTimeout(promise,ms,message){
+    let timer;
+    const timeout=new Promise((_,reject)=>{
+      timer=setTimeout(()=>reject(hwError('TIMEOUT',message||'Operation timed out.')),Math.max(1,ms||1));
+    });
+    return Promise.race([Promise.resolve(promise),timeout]).finally(()=>{try{clearTimeout(timer)}catch(_){}});
+  }
+  function delay(ms){return new Promise(resolve=>setTimeout(resolve,Math.max(0,ms||0)))}
+  function now(){return Date.now()}
+  function toHex(bytes){
+    let out='';
+    for(let i=0;i<bytes.length;i++)out+=bytes[i].toString(16).padStart(2,'0');
+    return out;
+  }
+  function utf8Bytes(text){
+    const s=String(text==null?'':text);
+    if(typeof TextEncoder!=='undefined')return new TextEncoder().encode(s);
+    const encoded=encodeURIComponent(s);const out=[];
+    for(let i=0;i<encoded.length;i++){
+      if(encoded[i]==='%'){out.push(parseInt(encoded.substr(i+1,2),16));i+=2}
+      else out.push(encoded.charCodeAt(i));
+    }
+    return new Uint8Array(out);
+  }
+  function toBytes(value){
+    if(value==null)return new Uint8Array(0);
+    if(value instanceof Uint8Array)return value;
+    if(typeof ArrayBuffer!=='undefined'&&value instanceof ArrayBuffer)return new Uint8Array(value);
+    if(value&&value.buffer instanceof ArrayBuffer){
+      return new Uint8Array(value.buffer,value.byteOffset||0,value.byteLength||value.buffer.byteLength);
+    }
+    if(typeof value==='string'){
+      const s=value.trim();
+      if(/^[A-Za-z0-9+/=\s]{24,}$/.test(s)&&typeof atob==='function'){
+        try{
+          const bin=atob(s.replace(/\s+/g,''));
+          const out=new Uint8Array(bin.length);
+          for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
+          return out;
+        }catch(_){}
+      }
+      return utf8Bytes(s);
+    }
+    try{return utf8Bytes(JSON.stringify(value))}catch(_){return new Uint8Array(0)}
+  }
+  function concatBytes(chunks,total){
+    const out=new Uint8Array(total);
+    let offset=0;
+    chunks.forEach(chunk=>{out.set(chunk,offset);offset+=chunk.length});
+    return out;
+  }
+  function normalizeFormat(value){
+    const raw=String(value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(!raw)return '';
+    if(raw.indexOf('WSQ')!==-1)return 'WSQ';
+    if(raw.indexOf('JPEG')!==-1||raw.indexOf('JPG')!==-1)return 'JPG';
+    if(raw.indexOf('PNG')!==-1)return 'PNG';
+    if(raw.indexOf('FMR')!==-1||raw.indexOf('ANSI')!==-1||raw.indexOf('378')!==-1)return 'FMR';
+    if(raw.indexOf('ISO')!==-1||raw.indexOf('19794')!==-1)return 'ISO';
+    return raw.slice(0,8);
+  }
+  function existingSignature(value){
+    const text=String(value==null?'':value).trim();
+    const match=text.match(/^BIO-[A-Z0-9][A-Z0-9-]{2,79}$/i);
+    return match?match[0].toUpperCase():'';
+  }
+  async function sha256Hex(bytes){
+    let cryptoRef=null;
+    try{cryptoRef=typeof crypto!=='undefined'?crypto:(typeof window!=='undefined'?window.crypto:null)}catch(_){}
+    if(cryptoRef&&cryptoRef.subtle&&typeof cryptoRef.subtle.digest==='function'){
+      try{
+        const digest=await cryptoRef.subtle.digest('SHA-256',bytes);
+        return toHex(new Uint8Array(digest));
+      }catch(_){}
+    }
+    // Deterministic 128-bit FNV-1a fallback for non-secure contexts (a
+    // fingerprint template must never be rejected just because WebCrypto is
+    // unavailable on an old intranet browser).
+    let h1=0x811c9dc5,h2=0x9e3779b9,h3=0x85ebca6b,h4=0xc2b2ae35;
+    for(let i=0;i<bytes.length;i++){
+      const b=bytes[i];
+      h1=Math.imul(h1^b,16777619)>>>0;
+      h2=Math.imul(h2^b,2246822519)>>>0;
+      h3=Math.imul(h3^b,3266489917)>>>0;
+      h4=Math.imul(h4^b,668265263)>>>0;
+    }
+    return [h1,h2,h3,h4].map(n=>n.toString(16).padStart(8,'0')).join('');
+  }
+  async function buildSignature(raw,format,vendor){
+    const direct=typeof raw==='string'?existingSignature(raw):'';
+    if(direct)return direct;
+    const bytes=toBytes(raw);
+    if(!bytes.length)throw hwError('EMPTY_TEMPLATE','The scanner returned an empty fingerprint template.');
+    const fmt=normalizeFormat(format)||'ISO';
+    const tag=String(vendor||'SCAN').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,16)||'SCAN';
+    const digest=await sha256Hex(bytes);
+    return 'BIO-'+fmt+'-'+tag+'-'+digest.slice(0,20).toUpperCase();
+  }
+
+  // ---- device profiles ----------------------------------------------------
+  function profileForVendor(vendorId){
+    const id=Number(vendorId);
+    return DEVICE_PROFILES.find(p=>p.vendorId===id)||null;
+  }
+  function registerDeviceProfile(profile){
+    if(!profile||typeof profile!=='object'||!Number.isFinite(Number(profile.vendorId))){
+      throw new Error('registerDeviceProfile requires a numeric vendorId');
+    }
+    const clean=Object.assign({},profile,{
+      vendorId:Number(profile.vendorId),
+      id:String(profile.id||('usb-'+Number(profile.vendorId).toString(16)))
+    });
+    const at=DEVICE_PROFILES.findIndex(p=>p.vendorId===clean.vendorId);
+    if(at>=0)DEVICE_PROFILES[at]=Object.assign({},DEVICE_PROFILES[at],clean);
+    else DEVICE_PROFILES.push(clean);
+    return clean;
+  }
+  function deviceLabel(device,profile){
+    const base=(profile&&profile.label)||('USB '+(device&&device.vendorId!=null?Number(device.vendorId).toString(16).toUpperCase():'scanner'));
+    const name=(device&&(device.productName||device.manufacturerName||''))||'';
+    return name&&name!==base?base+' · '+name:base;
+  }
+
+  // ---- WebUSB -------------------------------------------------------------
+  function webusbSupported(){
+    const n=nav();
+    return !!(n&&n.usb&&typeof n.usb.getDevices==='function'&&typeof n.usb.requestDevice==='function');
+  }
+  async function authorizedUsbDevices(){
+    if(!webusbSupported())return [];
+    try{return (await nav().usb.getDevices())||[]}catch(_){return []}
+  }
+  function chooseUsbDevice(list){
+    if(!list||!list.length)return null;
+    return list.find(d=>profileForVendor(d&&d.vendorId))||list[0];
+  }
+  function usbFilters(){
+    const out=[];const seen={};
+    DEVICE_PROFILES.forEach(p=>{
+      if(!p||!Number.isFinite(Number(p.vendorId)))return;
+      const key=String(p.vendorId);
+      if(seen[key])return;seen[key]=1;
+      out.push({vendorId:Number(p.vendorId)});
+    });
+    // Vendor-specific optical scanners commonly expose class 0xFF. Asking for
+    // it makes the chooser universal without needing a vendor ID for every
+    // rebranded device on the market.
+    out.push({classCode:0xff});
+    return out;
+  }
+  async function requestUsbDevice(){
+    if(!webusbSupported())throw hwError('UNSUPPORTED','WebUSB is not available in this browser.');
+    try{
+      return await nav().usb.requestDevice({filters:usbFilters()});
+    }catch(e){
+      const name=String((e&&e.name)||'')+String((e&&e.message)||'');
+      if(/NotFoundError|No device selected/i.test(name))throw hwError('NO_DEVICE','No USB scanner was selected.');
+      if(/SecurityError|NotAllowedError/i.test(name))throw hwError('UNSUPPORTED','USB access is blocked by this browser or page policy.');
+      throw hwError('USB_UNAVAILABLE',(e&&e.message)||'The USB device could not be requested.',e);
+    }
+  }
+  function rankUsbInterface(iface){
+    let score=0;
+    const alt=iface&&iface.alternate;
+    const endpoints=(alt&&alt.endpoints)||[];
+    if(iface&&iface.classCode===0xff)score+=30;
+    if(iface&&iface.classCode===0x0d)score+=20;
+    if(endpoints.some(e=>e.direction==='in'))score+=10;
+    if(endpoints.some(e=>e.direction==='out'))score+=2;
+    return score;
+  }
+  function usbEndpoints(iface){
+    const endpoints=((iface&&iface.alternate&&iface.alternate.endpoints)||[]);
+    return {
+      inEndpoint:endpoints.find(e=>e.direction==='in')||null,
+      outEndpoint:endpoints.find(e=>e.direction==='out')||null
+    };
+  }
+  async function openUsbDevice(device){
+    if(!device)throw hwError('NO_DEVICE','No USB scanner is authorised.');
+    try{
+      if(!device.opened)await device.open();
+      if(!device.configuration){
+        const configs=device.configurations||[];
+        const config=configs.find(c=>(c.interfaces||[]).some(i=>usbEndpoints(i).inEndpoint))||configs[0];
+        if(config)await device.selectConfiguration(config.configurationValue);
+      }
+      if(!device.configuration)throw new Error('the device did not expose a USB configuration');
+      const ifaces=(device.configuration.interfaces||[]).slice().sort((a,b)=>rankUsbInterface(b)-rankUsbInterface(a));
+      const iface=ifaces.find(i=>usbEndpoints(i).inEndpoint);
+      if(!iface)throw new Error('the device did not expose an IN endpoint');
+      await device.claimInterface(iface.interfaceNumber);
+      const eps=usbEndpoints(iface);
+      return {device,iface,inEndpoint:eps.inEndpoint,outEndpoint:eps.outEndpoint};
+    }catch(e){
+      try{if(device&&device.opened)await device.close()}catch(_){}
+      throw hwError('USB_CLAIM_FAILED',(e&&e.message)||'The USB scanner interface could not be claimed.',e);
+    }
+  }
+  async function closeUsbDevice(link){
+    if(!link)return;
+    try{await link.device.releaseInterface(link.iface.interfaceNumber)}catch(_){}
+    try{if(link.device.opened)await link.device.close()}catch(_){}
+  }
+  async function captureFromUsb(link,profile){
+    if(!link||!link.inEndpoint)throw hwError('USB_CLAIM_FAILED','No USB input endpoint is available.');
+    const chunks=[];let total=0;
+    const deadline=now()+CONFIG.captureTimeoutMs;
+    let lastDataAt=now();
+    if(link.outEndpoint&&profile&&profile.initPacket){
+      try{
+        await withTimeout(link.device.transferOut(link.outEndpoint.endpointNumber,toBytes(profile.initPacket)),CONFIG.transferTimeoutMs,'USB trigger timed out.');
+      }catch(_){}
+    }
+    while(now()<deadline&&total<CONFIG.maxCaptureBytes){
+      let result;
+      const budget=Math.max(350,Math.min(CONFIG.transferTimeoutMs,deadline-now()));
+      try{
+        result=await withTimeout(link.device.transferIn(link.inEndpoint.endpointNumber,64),budget,'USB read timed out.');
+      }catch(e){
+        if(total)break;
+        throw hwError('USB_EMPTY',(e&&e.message)||'The USB scanner returned no data.',e);
+      }
+      if(result&&result.status==='stall'){
+        try{await link.device.clearHalt('in',link.inEndpoint.endpointNumber)}catch(_){}
+        if(total)break;
+        await delay(60);
+        continue;
+      }
+      if(result&&result.data&&result.data.byteLength){
+        const view=new Uint8Array(result.data.buffer,result.data.byteOffset||0,result.data.byteLength);
+        chunks.push(view);total+=view.length;lastDataAt=now();
+        if(profile&&profile.captureBytes&&total>=Number(profile.captureBytes))break;
+        // A short USB bulk packet marks the end of the vendor's template.
+        if(view.length<64&&total>=CONFIG.minTemplateBytes)break;
+      }else{
+        if(total)break;
+        if(now()-lastDataAt>400)break;
+        await delay(60);
+      }
+    }
+    if(!total)throw hwError('USB_EMPTY','The USB scanner did not return a fingerprint template.');
+    return concatBytes(chunks,total);
+  }
+
+  // ---- WebHID -------------------------------------------------------------
+  function webhidSupported(){
+    const n=nav();
+    return !!(n&&n.hid&&typeof n.hid.getDevices==='function'&&typeof n.hid.requestDevice==='function');
+  }
+  async function authorizedHidDevices(){
+    if(!webhidSupported())return [];
+    try{return (await nav().hid.getDevices())||[]}catch(_){return []}
+  }
+  function chooseHidDevice(list){
+    if(!list||!list.length)return null;
+    return list.find(d=>profileForVendor(d&&d.vendorId))||list[0];
+  }
+  function hidFilters(){
+    const out=[];const seen={};
+    DEVICE_PROFILES.forEach(p=>{
+      if(!p||!Number.isFinite(Number(p.vendorId)))return;
+      const key=String(p.vendorId);
+      if(seen[key])return;seen[key]=1;
+      out.push({vendorId:Number(p.vendorId)});
+    });
+    out.push({usagePage:0x000d,usage:0x0002}); // HID digitizer / fingerprint
+    return out;
+  }
+  async function requestHidDevice(){
+    if(!webhidSupported())throw hwError('UNSUPPORTED','WebHID is not available in this browser.');
+    try{
+      return await nav().hid.requestDevice({filters:hidFilters()});
+    }catch(e){
+      const name=String((e&&e.name)||'')+String((e&&e.message)||'');
+      if(/NotFoundError|No device selected/i.test(name))throw hwError('NO_DEVICE','No HID scanner was selected.');
+      if(/SecurityError|NotAllowedError/i.test(name))throw hwError('UNSUPPORTED','HID access is blocked by this browser or page policy.');
+      throw hwError('HID_UNAVAILABLE',(e&&e.message)||'The HID device could not be requested.',e);
+    }
+  }
+  async function captureFromHid(device,profile){
+    if(!device)throw hwError('NO_DEVICE','No HID scanner is authorised.');
+    const chunks=[];let total=0;let lastDataAt=now();
+    const onReport=event=>{
+      const data=event&&event.data;
+      if(!data||!data.byteLength)return;
+      chunks.push(new Uint8Array(data.buffer,data.byteOffset||0,data.byteLength));
+      total+=data.byteLength;lastDataAt=now();
+    };
+    try{
+      if(!device.opened)await device.open();
+      if(typeof device.addEventListener==='function')device.addEventListener('inputreport',onReport);
+      if(profile&&profile.initReport&&typeof device.sendReport==='function'){
+        try{
+          await withTimeout(device.sendReport(profile.initReportId||0,toBytes(profile.initReport)),CONFIG.transferTimeoutMs,'HID trigger timed out.');
+        }catch(_){}
+      }
+      if(!total&&profile&&profile.featureReportId!=null&&typeof device.receiveFeatureReport==='function'){
+        try{
+          const report=await withTimeout(device.receiveFeatureReport(profile.featureReportId),CONFIG.transferTimeoutMs,'HID feature report timed out.');
+          if(report&&report.byteLength)onReport({data:report});
+        }catch(_){}
+      }
+      const deadline=now()+CONFIG.captureTimeoutMs;
+      while(now()<deadline&&total<CONFIG.maxCaptureBytes){
+        if(profile&&profile.captureBytes&&total>=Number(profile.captureBytes))break;
+        if(total>=CONFIG.minTemplateBytes&&now()-lastDataAt>260)break;
+        await delay(60);
+      }
+    }catch(e){
+      throw hwError('HID_EMPTY',(e&&e.message)||'The HID scanner did not return a fingerprint template.',e);
+    }finally{
+      try{if(typeof device.removeEventListener==='function')device.removeEventListener('inputreport',onReport)}catch(_){}
+      try{if(device.opened)await device.close()}catch(_){}
+    }
+    if(!total)throw hwError('HID_EMPTY','The HID scanner did not return a fingerprint template.');
+    return concatBytes(chunks,total);
+  }
+
+  // ---- local vendor bridge (WebSocket + HTTP) -----------------------------
+  function bridgeBase(port){return 'http://127.0.0.1:'+port}
+  function bridgeWsUrls(port){
+    return CONFIG.bridgeHosts.map(host=>'ws://'+host+':'+port+CONFIG.bridgePaths.ws);
+  }
+  async function fetchJson(url,options,timeoutMs){
+    if(typeof fetch!=='function')throw hwError('UNSUPPORTED','fetch() is unavailable.');
+    let controller=null;
+    try{controller=typeof AbortController!=='undefined'?new AbortController():null}catch(_){}
+    const timer=setTimeout(()=>{try{if(controller)controller.abort()}catch(_){}},Math.max(1,timeoutMs||CONFIG.probeTimeoutMs));
+    try{
+      const response=await fetch(url,Object.assign({cache:'no-store',credentials:'omit'},options||{},{signal:controller?controller.signal:undefined}));
+      let text='';try{text=await response.text()}catch(_){}
+      let data=null;
+      if(text){try{data=JSON.parse(text)}catch(_){data=text}}
+      return {ok:!!response.ok,status:response.status,data,text};
+    }finally{try{clearTimeout(timer)}catch(_){}}
+  }
+  function probeWebSocket(port,host,timeoutMs){
+    return new Promise(resolve=>{
+      if(typeof WebSocket==='undefined')return resolve(false);
+      let socket=null,settled=false;
+      const finish=ok=>{
+        if(settled)return;settled=true;
+        try{clearTimeout(timer)}catch(_){}
+        try{if(socket&&socket.readyState<=1)socket.close()}catch(_){}
+        resolve(ok);
+      };
+      const timer=setTimeout(()=>finish(false),Math.max(1,timeoutMs||CONFIG.probeTimeoutMs));
+      try{socket=new WebSocket('ws://'+host+':'+port+CONFIG.bridgePaths.ws)}catch(_){return finish(false)}
+      socket.onopen=()=>finish(true);
+      socket.onerror=()=>finish(false);
+      socket.onclose=()=>finish(false);
+    });
+  }
+  async function probeHttpBridge(port){
+    const base=bridgeBase(port);
+    for(const path of [CONFIG.bridgePaths.health,CONFIG.bridgePaths.info]){
+      try{
+        const result=await fetchJson(base+path,{method:'GET',mode:'cors',headers:{Accept:'application/json'}},CONFIG.probeTimeoutMs);
+        if(result.ok)return {found:true,info:result.data,path};
+      }catch(_){}
+    }
+    try{
+      const result=await fetchJson(base+CONFIG.bridgePaths.scan,{
+        method:'OPTIONS',mode:'cors',
+        headers:{Accept:'application/json','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'}
+      },CONFIG.probeTimeoutMs);
+      if(result.ok||result.status===204||result.status===405)return {found:true,info:null,path:'OPTIONS '+CONFIG.bridgePaths.scan};
+    }catch(_){}
+    return {found:false,info:null,path:''};
+  }
+  async function probePort(port){
+    const [wsResults,http]=await Promise.all([
+      Promise.all(CONFIG.bridgeHosts.map(host=>probeWebSocket(port,host,CONFIG.probeTimeoutMs))),
+      probeHttpBridge(port)
+    ]);
+    const ws=wsResults.some(Boolean);
+    const found=ws||http.found;
+    return {
+      port,found,ws,http:http.found,info:http.info,
+      base:bridgeBase(port),
+      wsUrl:'ws://'+CONFIG.bridgeHosts[0]+':'+port+CONFIG.bridgePaths.ws
+    };
+  }
+  function normalizeWsPayload(data){
+    if(typeof data==='string'){
+      const text=data.trim();
+      if(!text)throw hwError('BRIDGE_EMPTY','The local scanner service sent an empty response.');
+      try{return JSON.parse(text)}catch(_){return text}
+    }
+    if(typeof Blob!=='undefined'&&data instanceof Blob)return data.arrayBuffer();
+    if(typeof ArrayBuffer!=='undefined'&&data instanceof ArrayBuffer)return new Uint8Array(data);
+    if(data&&data.buffer instanceof ArrayBuffer)return new Uint8Array(data.buffer,data.byteOffset||0,data.byteLength);
+    return String(data);
+  }
+  function bridgeWsScan(bridge,url,timeoutMs){
+    return new Promise((resolve,reject)=>{
+      if(typeof WebSocket==='undefined')return reject(hwError('UNSUPPORTED','WebSocket is unavailable.'));
+      let socket=null,settled=false;
+      const finish=(error,value)=>{
+        if(settled)return;settled=true;
+        try{clearTimeout(timer)}catch(_){}
+        try{if(socket)socket.close()}catch(_){}
+        if(error)reject(error);else resolve(value);
+      };
+      const timer=setTimeout(()=>finish(hwError('TIMEOUT','The local scanner service did not respond.')),Math.max(500,timeoutMs||CONFIG.wsScanTimeoutMs));
+      try{socket=new WebSocket(url)}catch(e){return finish(hwError('BRIDGE_FAILED','Could not open the local scanner bridge.',e))}
+      socket.onopen=()=>{
+        try{
+          socket.send(JSON.stringify({action:'scan',type:'fingerprint',format:'WSQ',requestId:'SNT-'+now()}));
+        }catch(_){}
+      };
+      socket.onmessage=event=>{
+        Promise.resolve(normalizeWsPayload(event&&event.data)).then(payload=>finish(null,payload)).catch(error=>finish(error));
+      };
+      socket.onerror=()=>finish(hwError('BRIDGE_FAILED','The local scanner bridge rejected the connection.'));
+      socket.onclose=()=>{ if(!settled)finish(hwError('BRIDGE_FAILED','The local scanner bridge closed before returning a template.')) };
+    });
+  }
+  async function bridgeHttpScan(bridge,timeoutMs){
+    const url=bridge.base+CONFIG.bridgePaths.scan;
+    const body=JSON.stringify({action:'scan',type:'fingerprint',format:'WSQ',requestId:'SNT-'+now()});
+    const attempts=[
+      {method:'POST',mode:'cors',headers:{'Content-Type':'application/json',Accept:'application/json'},body},
+      // text/plain keeps the request "simple" (no preflight) for older vendor
+      // services that parse JSON but do not implement CORS OPTIONS.
+      {method:'POST',mode:'cors',headers:{'Content-Type':'text/plain;charset=UTF-8',Accept:'application/json'},body},
+      {method:'GET',mode:'cors',headers:{Accept:'application/json'}}
+    ];
+    let lastError=null;
+    for(const attempt of attempts){
+      try{
+        const result=await fetchJson(url,attempt,Math.max(700,timeoutMs||CONFIG.httpScanTimeoutMs));
+        if(!result.ok)throw hwError('BRIDGE_FAILED','The local scanner service answered HTTP '+result.status+'.');
+        if(result.data!=null&&result.data!=='')return result.data;
+        if(result.text)return result.text;
+      }catch(e){lastError=e}
+    }
+    throw lastError||hwError('BRIDGE_FAILED','The local scanner service did not return a template.');
+  }
+  function unwrapBridgePayload(payload){
+    let data=payload;
+    if(typeof data==='string'||(typeof ArrayBuffer!=='undefined'&&data instanceof ArrayBuffer)||data instanceof Uint8Array)return data;
+    if(!data||typeof data!=='object')return data;
+    if(data.ok===false||data.success===false)throw hwError('BRIDGE_FAILED',data.error||data.message||'The local scanner service reported a failure.');
+    for(const key of ['result','data','payload','scan','capture']){
+      const nested=data[key];
+      if(nested&&typeof nested==='object'&&!Array.isArray(nested)){data=nested;break}
+    }
+    return data;
+  }
+  function normalizeBridgePayload(payload){
+    const data=unwrapBridgePayload(payload);
+    if(data==null)throw hwError('BRIDGE_EMPTY','The local scanner service returned no template.');
+    if(typeof data==='string'||(typeof ArrayBuffer!=='undefined'&&data instanceof ArrayBuffer)||data instanceof Uint8Array){
+      return {raw:data,format:typeof data==='string'&&existingSignature(data)?'SIGNATURE':'ISO',image:'',vendor:'bridge',quality:null};
+    }
+    if(typeof data!=='object')throw hwError('BRIDGE_EMPTY','The local scanner service returned an unsupported response.');
+    const raw=data.template||data.signature||data.hash||data.templateBase64||data.base64||data.wsq||data.iso||data.fmr||data.ansi||data.data||data.fingerprint||'';
+    if(!raw)throw hwError('BRIDGE_EMPTY','The local scanner service did not include a template or signature.');
+    let format=data.format||data.templateFormat||data.template_format||data.imageFormat||'';
+    if(!format){
+      if(data.wsq)format='WSQ';else if(data.iso)format='ISO';else if(data.fmr||data.ansi)format='FMR';
+    }
+    return {
+      raw,
+      format:normalizeFormat(format)||'ISO',
+      image:data.image||data.imageBase64||data.image_base64||data.png||data.jpeg||'',
+      vendor:data.vendor||data.scanner||data.device||data.deviceName||'bridge',
+      quality:data.quality!=null?data.quality:null
+    };
+  }
+  async function captureFromBridge(bridge,options){
+    if(!bridge)throw hwError('NO_DEVICE','No local scanner bridge is listening.');
+    const limit=(options&&options.timeoutMs)||CONFIG.wsScanTimeoutMs;
+    let lastError=null;
+    for(const url of bridgeWsUrls(bridge.port)){
+      try{
+        const payload=await bridgeWsScan(bridge,url,limit);
+        return normalizeBridgePayload(payload);
+      }catch(e){lastError=e}
+    }
+    try{
+      const payload=await bridgeHttpScan(bridge,CONFIG.httpScanTimeoutMs);
+      return normalizeBridgePayload(payload);
+    }catch(e){lastError=e}
+    throw hwError('BRIDGE_FAILED',(lastError&&lastError.message)||'The local scanner service did not return a template.',lastError);
+  }
+
+  // ---- detection ----------------------------------------------------------
+  function snapshot(){
+    return {
+      version:VERSION,
+      phase:state.phase,
+      source:state.source,
+      deviceLabel:state.deviceLabel,
+      bridge:state.bridge?{port:state.bridge.port,base:state.bridge.base,wsUrl:state.bridge.wsUrl}:null,
+      detection:{
+        usbDevices:state.detection.usbDevices,
+        hidDevices:state.detection.hidDevices,
+        bridge:state.detection.bridge,
+        ports:Object.assign({},state.detection.ports)
+      },
+      lastScan:state.lastScan?Object.assign({},state.lastScan):null,
+      lastError:state.lastError,
+      supported:{webusb:webusbSupported(),webhid:webhidSupported()}
+    };
+  }
+  function emit(){
+    const value=snapshot();
+    state.listeners.slice().forEach(fn=>{try{fn(value)}catch(_){}});
+    try{
+      if(typeof window!=='undefined'&&typeof window.CustomEvent==='function'&&typeof document!=='undefined'&&document.dispatchEvent){
+        document.dispatchEvent(new window.CustomEvent('sentinel:scanner-state',{detail:value}));
+      }
+    }catch(_){}
+    return value;
+  }
+  async function detect(options){
+    const opts=options||{};
+    if(detectPromise)return detectPromise;
+    if(!browserContext()){
+      state.phase='unavailable';
+      return snapshot();
+    }
+    detectPromise=(async()=>{
+      const keepReady=state.phase==='ready'||state.phase==='scanning';
+      if(!opts.silent&&!keepReady)state.phase='detecting';
+      if(!opts.silent)emit();
+      const [usbList,hidList]=await Promise.all([authorizedUsbDevices(),authorizedHidDevices()]);
+      const ports=await Promise.all(CONFIG.bridgePorts.map(port=>probePort(port).catch(()=>({port,found:false,ws:false,http:false}))));
+      const detectedPorts={};
+      ports.forEach(p=>{detectedPorts[String(p.port)]=!!p.found});
+      const bridge=ports.find(p=>p.found)||null;
+      const usb=chooseUsbDevice(usbList);
+      const hid=chooseHidDevice(hidList);
+      if(!opts.keepCurrentDevice){
+        state.usbDevice=usb||state.usbDevice||null;
+        state.hidDevice=hid||state.hidDevice||null;
+      }
+      state.detection={
+        usbDevices:(usbList||[]).length,
+        hidDevices:(hidList||[]).length,
+        bridge:!!bridge,
+        ports:detectedPorts
+      };
+      if(bridge){
+        state.bridge={port:bridge.port,base:bridge.base,wsUrl:bridge.wsUrl,detectedAt:now()};
+      }else if(!keepReady){
+        state.bridge=null;
+      }
+      if(state.usbDevice){state.source='webusb';state.deviceLabel=deviceLabel(state.usbDevice,profileForVendor(state.usbDevice.vendorId))}
+      else if(state.hidDevice){state.source='webhid';state.deviceLabel=deviceLabel(state.hidDevice,profileForVendor(state.hidDevice.vendorId))}
+      else if(state.bridge){state.source='bridge';state.deviceLabel='Local scanner bridge · port '+state.bridge.port}
+      else if(!keepReady){state.source='';state.deviceLabel=''}
+      if(!opts.silent){
+        state.phase=(state.usbDevice||state.hidDevice||state.bridge)?'ready':'unavailable';
+        debugLog('detect',state.detection,state.phase);
+        emit();
+        syncScanButtons();
+      }
+      return snapshot();
+    })().finally(()=>{detectPromise=null});
+    return detectPromise;
+  }
+
+  // ---- scan orchestration -------------------------------------------------
+  async function scan(options){
+    const opts=Object.assign({prompt:true,keepCurrentDevice:true},options||{});
+    if(scanPromise)return scanPromise;
+    if(!browserContext())throw hwError('UNSUPPORTED','Biometric hardware is only available in a browser.');
+    scanPromise=(async()=>{
+      state.phase='scanning';state.lastError='';emit();
+      syncScanButtons();
+      try{
+        let raw=null,format='ISO',vendor='',source='',label='',image='',quality=null,connectedUsb=null;
+        // 1) WebUSB — a previously authorised scanner first, then the chooser.
+        let usb=state.usbDevice||chooseUsbDevice(await authorizedUsbDevices());
+        if(!usb&&opts.prompt&&webusbSupported()&&(!state.usbPromptedAt||now()-state.usbPromptedAt>CONFIG.usbPromptCooldownMs)){
+          state.usbPromptedAt=now();
+          try{usb=await requestUsbDevice()}catch(e){state.lastError=e.message;debugLog('usb prompt',e.code,e.message)}
+        }
+        connectedUsb=usb||null;
+        if(usb){
+          const profile=profileForVendor(usb.vendorId);
+          let link=null;
+          try{
+            link=await openUsbDevice(usb);
+            raw=await captureFromUsb(link,profile);
+            format=(profile&&profile.format)||'ISO';
+            vendor=(profile&&profile.id)||('usb-'+Number(usb.vendorId||0).toString(16));
+            label=deviceLabel(usb,profile);
+            source='webusb';
+            state.usbDevice=usb;
+          }catch(e){
+            state.lastError=e.message;debugLog('usb capture',e.code,e.message);
+            try{if(usb&&usb.opened)await usb.close()}catch(_){}
+          }finally{
+            await closeUsbDevice(link);
+          }
+        }
+        // 2) WebHID — authorised devices, or one chooser after a USB attempt
+        //    selected a HID-class scanner that WebUSB cannot claim.
+        let hid=state.hidDevice||chooseHidDevice(await authorizedHidDevices());
+        if(!raw&&!hid&&opts.prompt&&webhidSupported()&&(connectedUsb||!webusbSupported())
+            &&(!state.hidPromptedAt||now()-state.hidPromptedAt>CONFIG.hidPromptCooldownMs)){
+          state.hidPromptedAt=now();
+          try{hid=await requestHidDevice()}catch(e){state.lastError=e.message;debugLog('hid prompt',e.code,e.message)}
+        }
+        if(!raw&&hid){
+          const profile=profileForVendor(hid.vendorId);
+          try{
+            raw=await captureFromHid(hid,profile);
+            format=(profile&&profile.format)||'ISO';
+            vendor=(profile&&profile.id)||('hid-'+Number(hid.vendorId||0).toString(16));
+            label=deviceLabel(hid,profile);
+            source='webhid';
+            state.hidDevice=hid;
+          }catch(e){
+            state.lastError=e.message;debugLog('hid capture',e.code,e.message);
+          }
+        }
+        // 3) Local vendor driver bridge.
+        if(!raw){
+          let bridge=state.bridge;
+          if(!bridge){
+            await detect({keepCurrentDevice:true,silent:true});
+            bridge=state.bridge;
+          }
+          if(bridge){
+            try{
+              const payload=await captureFromBridge(bridge,{timeoutMs:CONFIG.wsScanTimeoutMs});
+              raw=payload.raw;format=payload.format||'ISO';
+              vendor=payload.vendor||'bridge';image=payload.image||'';quality=payload.quality;
+              label='Local scanner bridge · port '+bridge.port;source='bridge';
+              state.bridge=bridge;
+            }catch(e){state.lastError=e.message;debugLog('bridge capture',e.code,e.message)}
+          }
+        }
+        if(!raw)throw hwError('NO_DEVICE','No physical scanner detected on USB/localhost.');
+        const signature=await buildSignature(raw,format,vendor);
+        const result={
+          ok:true,
+          signature,
+          template:signature,
+          format:normalizeFormat(format)||'ISO',
+          source,
+          vendor,
+          deviceLabel:label||'Biometric scanner',
+          quality,
+          image,
+          bytes:toBytes(raw).length,
+          capturedAt:new Date().toISOString()
+        };
+        state.lastScan=result;
+        state.lastError='';
+        state.source=source;
+        state.deviceLabel=result.deviceLabel;
+        state.phase='ready';
+        emit();syncScanButtons();
+        debugLog('capture',result);
+        return result;
+      }catch(e){
+        const normalized=(e&&e.code)?e:hwError('SCAN_FAILED',(e&&e.message)||'Fingerprint capture failed.',e);
+        state.lastError=normalized.message;
+        state.phase=(state.usbDevice||state.hidDevice||state.bridge)?'ready':'unavailable';
+        emit();syncScanButtons();
+        throw normalized;
+      }finally{
+        scanPromise=null;
+      }
+    })();
+    return scanPromise;
+  }
+
+  function onDeviceChange(){
+    state.usbPromptedAt=0;
+    state.hidPromptedAt=0;
+    state.usbDevice=null;
+    state.hidDevice=null;
+    detect({keepCurrentDevice:false}).catch(()=>{});
+  }
+  function attachListeners(){
+    const n=nav();
+    try{ if(n&&n.usb&&typeof n.usb.addEventListener==='function'){n.usb.addEventListener('connect',onDeviceChange);n.usb.addEventListener('disconnect',onDeviceChange)} }catch(_){}
+    try{ if(n&&n.hid&&typeof n.hid.addEventListener==='function'){n.hid.addEventListener('connect',onDeviceChange);n.hid.addEventListener('disconnect',onDeviceChange)} }catch(_){}
+  }
+
+  function init(){
+    if(!browserContext())return Promise.resolve(snapshot());
+    if(initPromise)return initPromise;
+    state.initialized=true;
+    initPromise=Promise.resolve().then(async()=>{
+      attachListeners();
+      syncScanButtons();
+      await detect();
+      syncScanButtons();
+      return snapshot();
+    }).catch(e=>{state.phase='unavailable';state.lastError=(e&&e.message)||'';emit();return snapshot()});
+    return initPromise;
+  }
+
+  // ---- UI binding helpers -------------------------------------------------
+  function scannerTitle(){
+    if(state.phase==='scanning')return 'Reading fingerprint from the scanner…';
+    if(state.source==='webusb'&&state.deviceLabel)return 'Capture from '+state.deviceLabel+' (USB ready)';
+    if(state.source==='webhid'&&state.deviceLabel)return 'Capture from '+state.deviceLabel+' (HID ready)';
+    if(state.source==='bridge'&&state.bridge)return 'Capture via the local scanner bridge on port '+state.bridge.port;
+    if(state.phase==='detecting')return 'Checking USB / localhost scanner service…';
+    return 'Capture from biometric scanner (no hardware detected — manual entry remains available)';
+  }
+  function syncScanButtons(){
+    const d=doc();if(!d||typeof d.querySelectorAll!=='function')return;
+    let buttons=[];
+    try{buttons=[].slice.call(d.querySelectorAll('button.btn-scan'))}catch(_){return}
+    buttons.forEach(btn=>{
+      try{
+        if(!btn.dataset)btn.dataset={};
+        if(!btn.classList.contains('is-scanning')&&!btn.classList.contains('is-scan-success'))btn.title=scannerTitle();
+        if(btn.setAttribute)btn.setAttribute('data-scanner-state',state.phase);
+      }catch(_){}
+    });
+  }
+
+  const api={
+    version:VERSION,
+    init,
+    detect,
+    refresh:detect,
+    scan,
+    capture:scan,
+    status:snapshot,
+    getState:snapshot,
+    onState(fn){if(typeof fn==='function')state.listeners.push(fn);return ()=>{state.listeners=state.listeners.filter(x=>x!==fn)}},
+    registerDeviceProfile,
+    registerBridgePort(port){
+      const p=Number(port);
+      if(!Number.isFinite(p)||p<=0||p>65535)throw new Error('registerBridgePort requires a valid TCP port');
+      if(CONFIG.bridgePorts.indexOf(p)===-1)CONFIG.bridgePorts.push(p);
+      return p;
+    },
+    config:CONFIG,
+    profiles:DEVICE_PROFILES,
+    // Force a fresh permission prompt on the next Scan click (useful after an
+    // officer plugs a scanner in mid-shift).
+    forgetPermissions(){
+      state.usbPromptedAt=0;state.hidPromptedAt=0;
+      state.usbDevice=null;state.hidDevice=null;
+    }
+  };
+  return api;
+})();
+try{window.SentinelBiometricHardware=SentinelBiometricHardware}catch(_){}
+
+// ---- Scan button binding -------------------------------------------------
+// Visual lifecycle for every `.btn-scan`: normal → "[ 🌀 Reading Finger... ]"
+// → "[ ✓ Captured ]" → normal. The original label is preserved per button so
+// future scan buttons need no extra wiring beyond class="btn-scan" and
+// data-scan-prefix="<form prefix>".
+function setScanButtonState(btn,mode){
+  if(!btn)return;
+  try{
+    if(!btn.dataset)btn.dataset={};
+    if(!btn.dataset.scanBaseHtml)btn.dataset.scanBaseHtml=btn.innerHTML||'⌁ Scan';
+    if(!btn.dataset.scanBaseTitle)btn.dataset.scanBaseTitle=(btn.getAttribute&&btn.getAttribute('title'))||'Capture from biometric scanner';
+    if(btn.dataset.scanBaseDisabled===undefined)btn.dataset.scanBaseDisabled=btn.disabled?'1':'0';
+    clearTimeout(btn._scanRestoreTimer);
+    if(mode==='scanning'){
+      btn.disabled=true;
+      btn.classList.add('is-scanning');btn.classList.remove('is-scan-success');
+      if(btn.setAttribute){
+        btn.setAttribute('aria-busy','true');
+        btn.setAttribute('aria-label','Reading fingerprint — keep your finger on the scanner');
+      }
+      btn.innerHTML='[ <span class="scan-glyph" aria-hidden="true">🌀</span> Reading Finger... ]';
+    }else if(mode==='success'){
+      btn.disabled=true;
+      btn.classList.remove('is-scanning');btn.classList.add('is-scan-success');
+      if(btn.setAttribute){
+        btn.setAttribute('aria-busy','false');
+        btn.setAttribute('aria-label','Fingerprint captured');
+      }
+      btn.innerHTML='[ <span class="scan-glyph" aria-hidden="true">✓</span> Captured ]';
+    }else{
+      btn.classList.remove('is-scanning','is-scan-success');
+      if(btn.removeAttribute)btn.removeAttribute('aria-busy');
+      btn.disabled=btn.dataset.scanBaseDisabled==='1';
+      btn.innerHTML=btn.dataset.scanBaseHtml;
+      if(btn.setAttribute)btn.setAttribute('title',btn.dataset.scanBaseTitle||'Capture from biometric scanner');
+      if(btn.removeAttribute)btn.removeAttribute('aria-label');
+    }
+  }catch(_){}
+}
+function hardwareSourceLabel(capture){
+  const c=capture||{};
+  if(c.deviceLabel)return c.deviceLabel;
+  if(c.source==='bridge')return 'Local scanner bridge';
+  return 'Biometric scanner';
+}
+// No hardware is a *notice*, never an exception: if the officer already typed a
+// template or identity, the existing registry matcher still runs. Otherwise the
+// form is left untouched for manual template / file-upload entry.
+function runBiometricFallbackAfterHardwareMiss(prefix){
+  const codeEl=document.getElementById(prefix==='central'?'centralFpCode':prefix+'-fpCode');
+  const typed=codeEl?String(codeEl.value||'').trim():'';
+  let hasContext=!!typed;
+  if(prefix==='central'){
+    const search=document.getElementById('personSearch');
+    hasContext=hasContext||!!(search&&String(search.value||'').trim());
+  }else if(prefix!=='off'){
+    const draft=readIdentity(prefix);
+    hasContext=hasContext||[draft.first,draft.second,draft.third,draft.fourth,draft.national,draft.passport,draft.mother].some(Boolean);
+  }
+  if(!hasContext)return null;
+  try{
+    return prefix==='central'?simulateCentralBiometricScan():simulateBiometricScan(prefix);
+  }catch(_){return null}
+}
+function scannerReportedReady(){
+  try{
+    const hardware=window.SentinelBiometricHardware;
+    const st=hardware&&typeof hardware.getState==='function'?hardware.getState():null;
+    return !!(st&&st.phase==='ready'&&(st.source||st.bridge));
+  }catch(_){return false}
+}
+function showNoScannerFallback(prefix,error){
+  const detected=scannerReportedReady();
+  const notice='No physical scanner detected on USB/localhost. Switch to manual template or file upload.';
+  const title=detected?'Scanner could not complete the capture':notice;
+  const reason=(error&&error.message)||'';
+  const alertEl=document.getElementById(prefix==='central'?'centralBioAlert':prefix+'-fpAlert');
+  if(alertEl){
+    alertEl.className='match-banner info show';
+    const detail=reason&&reason!==notice?'<br><small>'+esc(reason)+'</small>':'';
+    alertEl.innerHTML='<small>⌁ '+esc(title)+' Manual template entry, file upload and saving remain fully available.'+detail+'</small>';
+  }
+  runBiometricFallbackAfterHardwareMiss(prefix);
+  try{toast(title,detected?(reason||'Manual template entry and file upload remain fully available.'):'Manual template entry and file upload remain fully available.')}catch(_){}
+}
+function applyHardwareCapture(prefix,capture){
+  const sig=capture&&capture.signature?String(capture.signature).trim():'';
+  if(!sig)throw new Error('The scanner did not return a usable template signature.');
+  const source=hardwareSourceLabel(capture);
+  if(prefix==='central'){
+    const codeEl=document.getElementById('centralFpCode');
+    if(codeEl)codeEl.value=sig;
+    window._centralBioQuery=sig;
+    const clearBtn=document.getElementById('centralFpClearBtn');
+    if(clearBtn)clearBtn.style.display='';
+    const matched=matchPersonByFingerprint(sig,null,false);
+    const alertBox=document.getElementById('centralBioAlert');
+    if(matched){
+      window._highlightedPersonId=matched.id;
+      paintBiometricCatchAlert(alertBox,matched,sig);
+      renderPeople();
+      toast('⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #'+matched.id,matched.name+' · '+sig);
+    }else{
+      window._highlightedPersonId='';
+      if(alertBox){
+        alertBox.className='match-banner info show';
+        alertBox.innerHTML='<small>✓ Fingerprint captured from <b>'+esc(source)+'</b> — template <code>'+esc(sig)+'</code> recorded. No existing Central Person match yet.</small>';
+      }
+      renderPeople();
+      toast('Fingerprint captured',sig+' · '+source);
+    }
+    return matched||null;
+  }
+  const codeEl=document.getElementById(prefix+'-fpCode');
+  if(codeEl)codeEl.value=sig;
+  const stEl=document.getElementById(prefix+'-fpStatus');
+  if(stEl)stEl.value='captured';
+  const draft=prefix!=='off'?readIdentity(prefix):null;
+  const matched=matchPersonByFingerprint(sig,draft,false);
+  if(matched){
+    triggerRealTimeFingerprintCatch(prefix,matched,sig);
+  }else{
+    const alertEl=document.getElementById(prefix+'-fpAlert');
+    if(alertEl){
+      alertEl.className='match-banner info show';
+      alertEl.innerHTML='<small>✓ Fingerprint captured from <b>'+esc(source)+'</b> — signature <code>'+esc(sig)+'</code> stored. No existing biometric match in the Central Person Registry; it will be linked on save.</small>';
+    }
+    toast('Fingerprint captured',sig+' · '+source);
+  }
+  return matched||null;
+}
+async function scanFingerprint(prefix,btn){
+  prefix=prefix||'off';
+  btn=btn||document.getElementById(prefix+'-fpScanBtn')||document.getElementById('centralFpScanBtn');
+  if(!btn)return null;
+  if(btn.dataset&&btn.dataset.scanBusy==='1')return null;
+  if(btn.dataset)btn.dataset.scanBusy='1';
+  setScanButtonState(btn,'scanning');
+  try{
+    const hardware=window.SentinelBiometricHardware;
+    if(!hardware||typeof hardware.scan!=='function')throw Object.assign(new Error('The hardware bridge is not available in this browser.'),{code:'UNSUPPORTED'});
+    const result=await hardware.scan({prompt:true});
+    applyHardwareCapture(prefix,result);
+    setScanButtonState(btn,'success');
+    btn._scanRestoreTimer=setTimeout(()=>setScanButtonState(btn,'idle'),1300);
+    return result;
+  }catch(error){
+    // Every failure path is non-blocking: the officer keeps manual template
+    // entry, file upload and form submission exactly as before.
+    showNoScannerFallback(prefix,error);
+    setScanButtonState(btn,'idle');
+    return null;
+  }finally{
+    if(btn.dataset)btn.dataset.scanBusy='0';
+    if(!btn.classList.contains('is-scan-success'))setScanButtonState(btn,'idle');
+  }
+}
+try{window.scanFingerprint=scanFingerprint}catch(_){}
+
 function persistPrefixBiometrics(prefix,personId,recordId){
   const stEl=document.getElementById(prefix+'-fpStatus');
   const codeEl=document.getElementById(prefix+'-fpCode');
@@ -8381,6 +9429,10 @@ try{
 initOriginDropdowns();
 offStep(1);
 applyUiBuildLabel();  // stamp the running frontend build in the sidebar
+// Silent hardware discovery: authorised WebUSB/WebHID devices plus the standard
+// local vendor-driver ports (8080 / 9001 / 11100). Never prompts, never blocks
+// the shell — Scan remains fully functional with the manual fallback.
+try{ Promise.resolve(SentinelBiometricHardware.init()).catch(()=>{}); }catch(_){}
 applyNavForRole();   // hide admin pages until sign-in
 // Diagnostic helpers (spec step 2.1 — log db.checkpoints + active
 // filter when investigating the 'South Checkpoint 0' bug). Toggle
