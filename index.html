@@ -3177,6 +3177,7 @@ const SentinelBiometricHardware=(function(){
   let initPromise=null;
   let detectPromise=null;
   let scanPromise=null;
+  let lastDetectAt=0;
 
   // ---- small utilities ----------------------------------------------------
   const nav=()=>{try{return typeof navigator!=='undefined'?navigator:null}catch(_){return null}};
@@ -3753,6 +3754,7 @@ const SentinelBiometricHardware=(function(){
       else if(state.hidDevice){state.source='webhid';state.deviceLabel=deviceLabel(state.hidDevice,profileForVendor(state.hidDevice.vendorId))}
       else if(state.bridge){state.source='bridge';state.deviceLabel='Local scanner bridge · port '+state.bridge.port}
       else if(!keepReady){state.source='';state.deviceLabel=''}
+      lastDetectAt=now();
       if(!opts.silent){
         state.phase=(state.usbDevice||state.hidDevice||state.bridge)?'ready':'unavailable';
         debugLog('detect',state.detection,state.phase);
@@ -3823,7 +3825,10 @@ const SentinelBiometricHardware=(function(){
         // 3) Local vendor driver bridge.
         if(!raw){
           let bridge=state.bridge;
-          if(!bridge){
+          // Re-probe a vendor service that started after page load, but do not
+          // add ~1s of latency to a no-hardware click made just after the
+          // page-load sweep already found nothing.
+          if(!bridge&&now()-lastDetectAt>5000){
             await detect({keepCurrentDevice:true,silent:true});
             bridge=state.bridge;
           }
@@ -3834,7 +3839,13 @@ const SentinelBiometricHardware=(function(){
               vendor=payload.vendor||'bridge';image=payload.image||'';quality=payload.quality;
               label='Local scanner bridge · port '+bridge.port;source='bridge';
               state.bridge=bridge;
-            }catch(e){state.lastError=e.message;debugLog('bridge capture',e.code,e.message)}
+            }catch(e){
+              state.lastError=e.message;debugLog('bridge capture',e.code,e.message);
+              // The driver may have stopped (or never answered). Drop the stale
+              // bridge and re-probe so the next click is honest about state.
+              state.bridge=null;
+              try{await detect({keepCurrentDevice:true,silent:true})}catch(_){}
+            }
           }
         }
         if(!raw)throw hwError('NO_DEVICE','No physical scanner detected on USB/localhost.');
