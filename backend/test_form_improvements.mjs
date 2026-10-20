@@ -71,12 +71,16 @@ try{
   // Group requirement focuses the file input, not the top of the modal.
   run(`clearInvalid();showFormError('Two documents required',{names:['appDocs'],notice:'fpNotice'});`);await tick();
   assert.equal(w.document.activeElement.dataset.slot,'appDoc0');
-  const files=$('appDocs').querySelectorAll('input');
+  const files=$('appDocs').querySelectorAll('input[type="file"]');
+  assert.equal(files.length,5,'clearance form renders five applicant upload controls');
+  assert.ok($('appDocs').textContent.includes('Document 5 — Officer application scan / supporting clearance documents'));
   Object.defineProperty(files[0],'files',{value:[new w.File(['test'],'test.pdf')]});
   run(`showFormError('Two documents required',{names:['appDocs'],notice:'fpNotice'})`);await tick();
   assert.equal(w.document.activeElement.dataset.slot,'appDoc1');
   Object.defineProperty(files[2],'files',{value:[new w.File(['test'],'test.pdf')]});
   files[2].dispatchEvent(new w.Event('change',{bubbles:true}));
+  Object.defineProperty(files[4],'files',{value:[new w.File(['scan'],'officer-application-scan.pdf')]});
+  assert.equal(run("collectFiles('appDoc',5)").length,3,'fifth upload slot is collected with other applicant files');
   assert.equal($('appDocs').classList.contains('invalid'),false);
   console.log('ok: file group errors clear when the minimum is met in any slots');
 

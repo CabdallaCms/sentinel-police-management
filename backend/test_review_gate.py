@@ -334,6 +334,8 @@ def main():
                       'guardian_occupation': 'Teacher',
                       'guardian_address': 'Burao', 'guardian_phone': '+252 63 555 0901'}
             files = {'doc_app_0': ('a1.pdf', b'%PDF-a1'), 'doc_app_1': ('a2.pdf', b'%PDF-a2'),
+                     'doc_app_2': ('a3.pdf', b'%PDF-a3'), 'doc_app_3': ('a4.pdf', b'%PDF-a4'),
+                     'doc_app_4': ('officer-application-scan.pdf', b'%PDF-officer-scan'),
                      'doc_guard_0': ('g1.pdf', b'%PDF-g1'), 'doc_guard_1': ('g2.pdf', b'%PDF-g2')}
             s, r = multipart_request(base, '/api/clearance-applications',
                                      officer_token, fields, files)
@@ -355,6 +357,8 @@ def main():
 
         # ---- 1) 12-HOUR RULE: officer locked on a fresh application --------
         app1 = new_application()
+        s, five_doc_detail = request(base, 'GET', f'/api/clearance-applications/{app1}', officer_token)
+        assert s == 200 and len(json.loads(five_doc_detail['applicant_docs'])) == 5, five_doc_detail
         s, r = approve(officer_token, app1)
         assert s == 400, f'officer instant approval must be 400, got {s}: {r}'
         assert r.get('detail') == REVIEW_LOCK_MESSAGE, r

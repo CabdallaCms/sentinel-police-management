@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-3376bdca" />
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-60b7522f" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -482,6 +482,7 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
   width:286px;height:100vh;height:100dvh;min-width:286px;overflow:hidden;
   padding:20px 14px 14px;background:linear-gradient(180deg,#0d1729 0%,#101d32 100%);
   border-right:1px solid var(--shell-border);box-shadow:8px 0 26px rgba(15,23,42,.055);
+  transform:translateX(0);transition:transform .23s cubic-bezier(.2,.8,.2,1);
 }
 .brand{gap:11px;padding:3px 7px 17px;min-height:55px;font-size:18px;letter-spacing:-.35px}
 .brand .crest{width:40px;height:40px;flex:none;border-radius:12px;background:linear-gradient(140deg,#3b82f6,#0f9b91);box-shadow:0 7px 18px rgba(37,99,235,.25);font-size:17px}
@@ -557,7 +558,7 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .header-user .logout-signout:hover{border-color:#cbd8e8;background:#edf3fb;color:#1e4b86}
 .top h1{margin:3px 0 0;color:#122039;font-size:27px;font-weight:760;letter-spacing:-.85px;line-height:1.2}
 .eyebrow{color:#3566a4;font-size:10px;font-weight:850;letter-spacing:1.2px}
-.sidebar-toggle{display:none;place-items:center;width:40px;height:40px;flex:none;border:1px solid #dce4ee;border-radius:10px;background:#fff;color:#263b59;font-size:17px;box-shadow:0 2px 5px rgba(15,23,42,.04)}
+.sidebar-toggle{display:grid;place-items:center;width:40px;height:40px;flex:none;border:1px solid #dce4ee;border-radius:10px;background:#fff;color:#263b59;font-size:17px;box-shadow:0 2px 5px rgba(15,23,42,.04);transition:background-color .16s ease,border-color .16s ease,color .16s ease,transform .16s ease}
 .sidebar-toggle:hover{background:#eef4fc;border-color:#c7d6ea}
 .ro-badge{margin-left:auto}
 .page.active{animation:sentinel-page-in .18s ease-out}
@@ -680,6 +681,32 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .header-user .logout-signout{gap:4px;padding:0 8px}
   .user-pill .urole{max-width:180px}
   .top h1{font-size:21px}
+}
+/* Desktop density at standard 100% browser zoom. Keep the page full-width,
+   reclaim space used by oversized gutters, and confine wide-register scrolling
+   to each table wrapper instead of the entire viewport. */
+@media(min-width:951px){
+  .main{padding:22px clamp(14px,2vw,30px)}
+  .panel{padding:18px;margin-top:16px}
+  .panel-head{gap:10px}
+  .table{font-size:12px}
+  .table th,.table td{padding:10px 9px}
+  .table-wrap{max-width:100%;overscroll-behavior-x:contain}
+  .main>*,.main .panel,.main .unit-stats{min-width:0}
+  body.sidebar-collapsed .side{transform:translateX(-105%);pointer-events:none}
+  body.sidebar-collapsed .main{width:100%;margin-left:0}
+  body.sidebar-collapsed .sidebar-scrim{display:none}
+}
+@media(min-width:951px) and (max-width:1280px){
+  .side{width:258px;min-width:258px;padding-inline:11px}
+  .main{width:calc(100% - 258px);margin-left:258px;padding:18px 14px}
+  .panel{padding:15px}
+  .panel-head{gap:8px}
+  .table{font-size:11.5px}
+  .table th,.table td{padding:8px 7px}
+  .table .actions .btn.small{padding:5px 6px;font-size:10.5px}
+  .cards{gap:10px}
+  .card{padding:15px}
 }
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
@@ -1106,7 +1133,7 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 <main class="main">
 <header class="top" id="topbar">
   <div class="top-heading">
-    <button class="sidebar-toggle" id="sidebarToggle" type="button" onclick="toggleSidebar()" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation"><span aria-hidden="true">☰</span></button>
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" onclick="toggleSidebar()" aria-controls="sidebar" aria-expanded="true" aria-label="Collapse navigation" title="Collapse navigation"><span id="sidebarToggleIcon" aria-hidden="true">‹</span></button>
     <div><div class="eyebrow" id="pageEyebrow">Police management platform</div><h1 id="pageTitle">Operations dashboard</h1></div>
   </div>
   <div class="top-actions">
@@ -1224,7 +1251,7 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 <div class="field"><label>Gender</label><select id="fpSex"><option value="">Not stated</option><option>Male</option><option>Female</option></select></div>
 <div class="field"><label>Email</label><input id="fpEmail" type="email" placeholder="applicant@example.com"></div>
 </div>
-<div class="field"><label>Applicant attachments — upload 4, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs" data-min-files="2"></div></div>
+<div class="field"><label>Applicant attachments — upload up to 5, <span class="req">at least 2 required</span></label><div class="docgrid" id="appDocs" data-min-files="2"></div><small class="muted">Document 5 can hold the officer application scan or any additional supporting clearance document.</small></div>
 <div class="section-label">Guardian / next of kin</div>
 <div class="f-row f-3">
 <div class="field"><label>Guardian full name *</label><input id="gName" required placeholder="Guardian / relative name"></div>
@@ -2674,26 +2701,74 @@ function setNavGroupOpen(name,open){
     toggle.setAttribute('aria-label',NAV_GROUP_LABELS[name]||name);
   }
 }
+const SIDEBAR_COLLAPSED_KEY='sentinelSidebarCollapsed';
+function sidebarIsMobile(){
+  if(typeof window.matchMedia==='function')return window.matchMedia('(max-width: 950px)').matches;
+  return Number(window.innerWidth||0)<=950;
+}
+function savedSidebarCollapsed(){
+  try{return localStorage.getItem(SIDEBAR_COLLAPSED_KEY)==='1'}catch(_){return false}
+}
+function setSidebarAccessible(side,hidden){
+  if(!side)return;
+  side.setAttribute('aria-hidden',String(!!hidden));
+  try{
+    if(hidden){side.setAttribute('inert','');if('inert' in side)side.inert=true}
+    else{side.removeAttribute('inert');if('inert' in side)side.inert=false}
+  }catch(_){}
+}
+function updateSidebarToggle(expanded,isMobile){
+  const toggle=document.getElementById('sidebarToggle');
+  if(!toggle)return;
+  const label=isMobile?(expanded?'Close navigation':'Open navigation'):
+    (expanded?'Collapse navigation':'Expand navigation');
+  toggle.setAttribute('aria-expanded',String(!!expanded));
+  toggle.setAttribute('aria-label',label);
+  toggle.setAttribute('title',label);
+  const icon=document.getElementById('sidebarToggleIcon');
+  if(icon)icon.textContent=isMobile?(expanded?'×':'☰'):(expanded?'‹':'☰');
+}
+function applySidebarViewport(){
+  const side=document.getElementById('sidebar');
+  if(!side)return;
+  const mobile=sidebarIsMobile();
+  const collapsed=!mobile&&savedSidebarCollapsed();
+  side.classList.remove('is-open');
+  if(document.body&&document.body.classList){
+    document.body.classList.remove('nav-open');
+    document.body.classList.toggle('sidebar-collapsed',collapsed);
+  }
+  setSidebarAccessible(side,mobile||collapsed);
+  updateSidebarToggle(!mobile&&!collapsed,mobile);
+}
 function setSidebarOpen(open){
   const side=document.getElementById('sidebar');
-  const toggle=document.getElementById('sidebarToggle');
-  if(!side) return;
-  const isMobile=typeof window.matchMedia==='function' && window.matchMedia('(max-width: 950px)').matches;
-  const expanded=!!open&&isMobile;
-  side.classList.toggle('is-open',expanded);
-  if(document.body&&document.body.classList) document.body.classList.toggle('nav-open',expanded);
-  if(toggle){
-    toggle.setAttribute('aria-expanded',String(expanded));
-    toggle.setAttribute('aria-label',expanded?'Close navigation':'Open navigation');
+  if(!side)return;
+  const mobile=sidebarIsMobile();
+  const expanded=!!open;
+  if(mobile){
+    document.body.classList.remove('sidebar-collapsed');
+    side.classList.toggle('is-open',expanded);
+    document.body.classList.toggle('nav-open',expanded);
+    setSidebarAccessible(side,!expanded);
+  }else{
+    side.classList.remove('is-open');
+    document.body.classList.remove('nav-open');
+    document.body.classList.toggle('sidebar-collapsed',!expanded);
+    setSidebarAccessible(side,!expanded);
+    try{localStorage.setItem(SIDEBAR_COLLAPSED_KEY,expanded?'0':'1')}catch(_){}
   }
+  updateSidebarToggle(expanded,mobile);
 }
 function toggleSidebar(){
   const side=document.getElementById('sidebar');
-  setSidebarOpen(!(side&&side.classList.contains('is-open')));
+  if(sidebarIsMobile())setSidebarOpen(!(side&&side.classList.contains('is-open')));
+  else setSidebarOpen(!!(document.body&&document.body.classList.contains('sidebar-collapsed')));
 }
-function closeSidebar(){setSidebarOpen(false)}
+function closeSidebar(){if(sidebarIsMobile())setSidebarOpen(false)}
+applySidebarViewport();
 if(typeof document.addEventListener==='function') document.addEventListener('keydown',e=>{if(e.key==='Escape') closeSidebar()});
-if(typeof window.addEventListener==='function') window.addEventListener('resize',()=>{if(typeof window.matchMedia!=='function'||!window.matchMedia('(max-width: 950px)').matches) closeSidebar()});
+if(typeof window.addEventListener==='function') window.addEventListener('resize',applySidebarViewport);
 function toggleNavGroup(name){
   const s=navGroupsState();
   s[name]=(s[name]===undefined)?false:!s[name];
@@ -6005,14 +6080,14 @@ function renderRegisterRow(item,currentUser){
   // Certificate link, everything else is a plain status label.
   if(isReadOnlyUser()){
     return approved
-      ? `<a class="btn green small" target="_blank" href="certificate.html?v=3376bdca&id=${encodeURIComponent(item.id)}">Certificate</a>`
+      ? `<a class="btn green small" target="_blank" href="certificate.html?v=60b7522f&id=${encodeURIComponent(item.id)}">Certificate</a>`
       : '<span class="muted">View only</span>';
   }
   let actionHtml='';
   if(staleBuild){
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="The running backend is not the review-lock build — approvals are disabled.">&#128274; Stale backend — locked</button>`;
   }else if(approved){
-    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=3376bdca&id=${encodeURIComponent(item.id)}">Certificate</a>`;
+    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=60b7522f&id=${encodeURIComponent(item.id)}">Certificate</a>`;
   }else if(isLocked){
     const remaining=Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed).toFixed(1);
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;">&#128274; Review Locked (12h)</button>
@@ -6078,7 +6153,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=3376bdca&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=60b7522f&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -6356,7 +6431,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=3376bdca&id=${encodeURIComponent(x.id)}">Review/Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Review / re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=60b7522f&id=${encodeURIComponent(x.id)}">Review/Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Review / re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="7" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -6405,7 +6480,7 @@ async function saveFingerprint(e){
   const d=window._identityWires.fp.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'fp',names:v.names,notice:'fpNotice'});return}
   const branchId=val('fpBranch');
   if(!branchId){showFormError('Select a Fingerprint Unit branch.',{names:['fpBranch'],notice:'fpNotice'});return}
-  const appDocs=collectFiles('appDoc',4),guardDocs=collectFiles('guardDoc',3);
+  const appDocs=collectFiles('appDoc',5),guardDocs=collectFiles('guardDoc',3);
   if(!gName.value.trim()){showFormError('Guardian full name is required.',{names:['gName'],notice:'fpNotice'});return}
   if(appDocs.length<2){showFormError('Attach at least 2 applicant documents.',{names:['appDocs'],notice:'fpNotice'});return}
   if(guardDocs.length<2){showFormError('Attach at least 2 guardian documents.',{names:['guardDocs'],notice:'fpNotice'});return}
@@ -9761,7 +9836,7 @@ function resetCarForm(){
 }
 
 // ============================ init ============================
-buildFileSlots('appDocs','appDoc',4,['Document 1 (ID) *','Document 2 *','Document 3 (optional)','Document 4 (optional)']);
+buildFileSlots('appDocs','appDoc',5,['Document 1 (ID) *','Document 2 *','Document 3 (optional)','Document 4 (optional)','Document 5 — Officer application scan / supporting clearance documents (optional)']);
 buildFileSlots('guardDocs','guardDoc',3,['Document 1 (ID) *','Document 2 *','Document 3 (optional)']);
 document.getElementById('fpIdentity').innerHTML=identityFormHTML('fp',{photo:true});wireIdentity('fp');
 document.getElementById('airIdentity').innerHTML=identityFormHTML('air');wireIdentity('air');

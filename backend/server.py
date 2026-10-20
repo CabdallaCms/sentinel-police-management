@@ -578,7 +578,7 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '3376bdca'
+ASSET_VERSION = '60b7522f'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
@@ -599,6 +599,8 @@ UI_REQUIRED_MARKERS = (
     ('Person document viewer', 'Documents &amp; Attachments'),
     ('Fingerprint signed scan column', 'Application Scanned Document'),
     ('Signed application re-scan upload', 'function uploadSignedApplicationDocument('),
+    ('Desktop sidebar collapse', 'body.sidebar-collapsed .main{width:100%;margin-left:0}'),
+    ('Five applicant document fields', "buildFileSlots('appDocs','appDoc',5"),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance

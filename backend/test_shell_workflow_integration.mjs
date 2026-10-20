@@ -38,6 +38,10 @@ try{
   assert.ok(html.includes('#quickActions>.btn:disabled'));
   assert.ok(html.includes('@media(max-width:680px)'));
   assert.ok(html.includes('grid-template-columns:repeat(2,minmax(0,1fr))'));
+  assert.match(html,/body\.sidebar-collapsed \.main\{width:100%;margin-left:0\}/);
+  assert.match(html,/body\.sidebar-collapsed \.side\{transform:translateX\(-105%\);pointer-events:none\}/);
+  assert.match(html,/@media\(min-width:951px\) and \(max-width:1280px\)/);
+  assert.match(html,/\.main\{padding:22px clamp\(14px,2vw,30px\)\}/);
   // Valid controls must not inherit the red styling of invalid siblings.
   assert.ok(html.includes('input.invalid,select.invalid,textarea.invalid'));
   assert.ok(!html.includes('.field.invalid input'));
@@ -67,7 +71,20 @@ try{
   run('toggleSidebar()');
   mobile=false;w.dispatchEvent(new w.Event('resize'));
   assert.equal($('sidebar').classList.contains('is-open'),false);
-  console.log('ok: mobile menu closes on navigation, Escape and desktop resize');
+  assert.equal($('sidebarToggle').getAttribute('aria-expanded'),'true');
+  run('toggleSidebar()');
+  assert.ok(w.document.body.classList.contains('sidebar-collapsed'));
+  assert.equal($('sidebarToggle').getAttribute('aria-expanded'),'false');
+  assert.equal(w.localStorage.getItem('sentinelSidebarCollapsed'),'1');
+  assert.equal($('sidebar').getAttribute('aria-hidden'),'true');
+  run('toggleSidebar()');
+  assert.equal(w.document.body.classList.contains('sidebar-collapsed'),false);
+  assert.equal($('sidebarToggle').getAttribute('aria-expanded'),'true');
+  assert.equal(w.localStorage.getItem('sentinelSidebarCollapsed'),'0');
+  w.localStorage.setItem('sentinelSidebarCollapsed','1');run('applySidebarViewport()');
+  assert.ok(w.document.body.classList.contains('sidebar-collapsed'),'desktop collapse preference restores');
+  run('toggleSidebar()');
+  console.log('ok: responsive navigation menu, persisted desktop collapse and full-width workspace');
 
   // New subgroup labels and restored menu items still obey role gates.
   const checkpointLabel=w.document.querySelector('[data-module-label="checkpoints"]');
