@@ -367,6 +367,43 @@ def main():
         s, detail = request(base, 'GET', f'/api/clearance-applications/{app1}', officer_token)
         assert s == 200 and detail['status'] == 'Pending Review', detail
         assert detail['certificate_number'] is None, detail
+        # Signed physical application re-scan: reject empty files, then keep
+        # uploads additive/versioned in the review payload, register and person viewer.
+        s, bad_scan = multipart_request(base,
+            f'/api/clearance-applications/{app1}/signed-document', officer_token,
+            files={'signed_application_document': ('empty.pdf', b'')})
+        assert s == 400 and ('cannot be empty' in bad_scan.get('error', '')
+                              or 'is required' in bad_scan.get('error', '')), (s, bad_scan)
+        s, scanned = multipart_request(base,
+            f'/api/clearance-applications/{app1}/signed-document', officer_token,
+            files={'signed_application_document': ('signed-application.pdf', b'%PDF-signed-test')})
+        assert s == 201 and scanned['status'] == 'Signed & Scanned', (s, scanned)
+        assert scanned['document']['name'] == 'signed-application.pdf', scanned
+        # A replacement scan preserves the previous version but becomes the
+        # latest item used by both the register's quick-view and review status.
+        s, scanned2 = multipart_request(base,
+            f'/api/clearance-applications/{app1}/signed-document', officer_token,
+            files={'signed_application_document': ('signed-application-v2.pdf', b'%PDF-signed-test-v2')})
+        assert s == 201 and scanned2['status'] == 'Signed & Scanned', (s, scanned2)
+        s, detail = request(base, 'GET', f'/api/clearance-applications/{app1}', officer_token)
+        assert s == 200 and detail['status'] == 'Pending Review', detail
+        assert detail['signed_application_document']['name'] == 'signed-application-v2.pdf', detail
+        assert len(detail['signed_application_documents']) == 2, detail
+        assert detail['signed_application_documents'][1]['name'] == 'signed-application.pdf', detail
+        s, register = request(base, 'GET', '/api/clearance-applications', officer_token)
+        assert s == 200, register
+        listed = next(item for item in register['items'] if item['application_id'] == app1)
+        assert listed['signed_document_path'] == scanned2['document']['path'], listed
+        assert listed['signed_document_name'] == 'signed-application-v2.pdf', listed
+        s, documents = request(base, 'GET', f"/api/persons/{listed['person_id']}/documents", officer_token)
+        assert s == 200, documents
+        assert any(item['name'] == 'signed-application.pdf'
+                   and item['category'].startswith('Signed clearance application')
+                   for item in documents['documents']), documents
+        assert any(item['name'] == 'signed-application-v2.pdf'
+                   for item in documents['documents']), documents
+        assert any(item['name'] == 'a1.pdf' for item in documents['documents']), documents
+        print('ok 1a: signed paper scan is uploaded, versioned and visible in register + person documents')
         assert detail['review']['review_locked'] is True, detail
         assert detail['can_approve'] is False, detail
         # the alias officer is gated identically, on both route spellings

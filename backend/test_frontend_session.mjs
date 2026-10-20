@@ -487,7 +487,7 @@ function assertShellContract() {
   //     banner explain it, and the api() firewall refuses non-GET calls.
   ['function isReadOnlyRole(', 'function isReadOnlyUser(){', 'function canWrite(){',
    'function guardReadOnly(action){', 'function applyReadOnlyMode(){',
-   'const READ_ONLY_VIEW_MODALS=new Set([\'pvModal\']);'].forEach((needle) => {
+   'const READ_ONLY_VIEW_MODALS=new Set([\'pvModal\', \'stViewModal\']);'].forEach((needle) => {
     if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
   });
   if (!/id="roBadge"/.test(html) || !/id="roBanner"/.test(html))
@@ -539,7 +539,7 @@ function assertShellContract() {
       || !/else removeNavItem\(spec\.page\);/.test(html))
     throw new Error('applyNavForRole() must remove a denied module from the sidebar DOM');
   // the fingerprint register's Review/Print link is a write-side action
-  if (!/\$\{canWrite\(\)\?`<a class="btn secondary small" data-write="1"[^`]*Review\/Print<\/a>`:''\}/.test(html))
+  if (!/\$\{canWrite\(\)\?`<a class="btn secondary small" data-write="1"[^`]*Review\/Print<\/a>[^`]*`:''\}/.test(html))
     throw new Error('the fingerprint Review/Print link must be gated on canWrite()');
   // a build stamp so an operator can tell a stale cached page from a stale server.
   // The stamp carries the short commit the page was published from (the same
@@ -832,6 +832,7 @@ async function main() {
     const uiBranchName = 'Frontend Managed Branch ' + Date.now();
     admin.sb.getElementById('branchName').value = uiBranchName;
     admin.sb.getElementById('branchRegion').value = 'Sool';
+    admin.sb.getElementById('branchDistrict').value = 'Laascaanood';
     admin.sb.getElementById('branchUnitType').value = 'crime';
     await probe(admin.sb.sandbox, 'saveBranch({preventDefault(){}})');
     await waitFor(() => admin.sb.getElementById('branchTable').innerHTML.includes(uiBranchName),

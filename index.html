@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-0f8552e" />
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-3376bdca" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -203,6 +203,66 @@ body.modal-open{overflow:hidden}
 .pv-units .badge{margin:0 5px 5px 0}
 .pv-foot{display:flex;justify-content:flex-end;gap:8px;padding-top:16px;border-top:1px solid var(--line);margin-top:16px;flex-wrap:wrap}
 @media(max-width:650px){.pv-grid{grid-template-columns:1fr}}
+/* Comprehensive person detail + readable attachment previews */
+#personDetailModal{width:min(1160px,calc(100vw - 40px));max-width:calc(100vw - 40px)}
+#personDetailModal .cm-body{padding:18px 24px 22px}
+.pv-legacy-anchor{display:none!important}
+.person-detail-tabs{display:flex;gap:7px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin:0 0 16px;padding-bottom:0}
+.person-detail-tab{appearance:none;background:transparent;color:var(--muted);border:0;border-bottom:3px solid transparent;margin-bottom:-1px;padding:11px 14px;font-weight:750;font-size:12.5px;border-radius:8px 8px 0 0}
+.person-detail-tab:hover{background:var(--surface-alt);color:var(--ink)}
+.person-detail-tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.person-detail-tab .tab-count{margin-left:5px}
+.person-detail-panel{display:none;min-width:0}
+.person-detail-panel.active{display:block;animation:detailPaneIn .16s ease}
+@keyframes detailPaneIn{from{opacity:.65;transform:translateY(3px)}to{opacity:1;transform:none}}
+#personDetailModal .pv-grid.pd-bio-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.pd-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:2px 0 12px;flex-wrap:wrap}
+.pd-section-heading h4{margin:0;font-size:14px;color:var(--ink)}
+.pd-section-heading p{margin:4px 0 0;font-size:11.5px;color:var(--muted);line-height:1.5}
+.pd-doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:14px;align-items:start}
+.pd-doc-card{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--card-bg);color:var(--ink);box-shadow:0 4px 12px rgba(15,23,42,.045)}
+.pd-doc-preview{height:218px;position:relative;display:flex;align-items:center;justify-content:center;background:var(--surface-alt);border-bottom:1px solid var(--line);overflow:hidden}
+.pd-doc-preview img{display:block;width:100%;height:100%;object-fit:contain;background:#0b1120}
+.pd-doc-preview iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+.pd-doc-preview .pd-file-icon{display:grid;place-items:center;gap:8px;text-align:center;padding:18px;color:var(--muted);font-size:32px;width:100%;height:100%}
+.pd-doc-preview .pd-file-icon b{font-size:12px;letter-spacing:.5px;color:var(--ink);max-width:100%;overflow-wrap:anywhere}
+.pd-doc-meta{padding:11px 12px 12px;display:grid;gap:5px;min-width:0}
+.pd-doc-meta>strong{font-size:12.5px;line-height:1.4;overflow-wrap:anywhere}
+.pd-doc-meta>small{font-size:10.5px;color:var(--muted);line-height:1.45;overflow-wrap:anywhere}
+.pd-doc-meta .pd-doc-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+.pd-doc-empty{border:1px dashed var(--line);border-radius:12px;padding:26px 18px;text-align:center;color:var(--muted);background:var(--surface-alt);line-height:1.55}
+.pd-doc-empty b{display:block;color:var(--ink);margin-bottom:4px}
+.pd-scope-note{margin-top:12px;font-size:11px;color:var(--muted)}
+.pd-bio-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pd-bio-status .fp-status-badge{font-size:11px}
+#fpReviewModal{width:min(980px,calc(100vw - 40px));max-width:calc(100vw - 40px)}
+.fp-review-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:16px}
+.fp-review-summary .pv-field{min-width:0}
+.fp-signed-upload{border:1.5px dashed #93c5fd;background:var(--surface-alt);border-radius:13px;padding:15px;display:grid;gap:11px;margin:14px 0}
+.fp-signed-upload-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.fp-signed-upload-head b{font-size:13px;display:block}
+.fp-signed-upload-head small{display:block;color:var(--muted);font-size:11px;margin-top:3px;line-height:1.45}
+.fp-signed-input-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.fp-signed-input-row input[type=file]{min-width:240px;max-width:100%;border:1px solid var(--line);border-radius:8px;background:var(--card-bg);padding:7px;color:var(--ink)}
+.fp-signed-preview{min-height:70px}
+.fp-signed-preview .pd-doc-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr))}
+.fp-review-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:12px 22px;border-top:1px solid var(--line);background:var(--card-bg);flex:none}
+body.dark-mode .pd-doc-preview,body[data-theme="dark"] .pd-doc-preview{background:#0b1120;border-bottom-color:#334155}
+body.dark-mode .pd-doc-preview iframe,body[data-theme="dark"] .pd-doc-preview iframe{background:#0b1120}
+body.dark-mode .pd-doc-card,body[data-theme="dark"] .pd-doc-card{box-shadow:0 6px 18px rgba(2,6,23,.28)}
+body.dark-mode .fp-signed-upload,body[data-theme="dark"] .fp-signed-upload{border-color:#3b82f6;background:#162032}
+@media(max-width:950px){#personDetailModal .pv-grid.pd-bio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.fp-review-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){
+  #personDetailModal,#fpReviewModal{width:calc(100vw - 16px);max-width:calc(100vw - 16px)}
+  #personDetailModal .cm-body{padding:14px 15px 17px}
+  #personDetailModal .pv-grid.pd-bio-grid,.fp-review-summary{grid-template-columns:1fr}
+  .person-detail-tab{padding:9px 10px;font-size:11.5px}
+  .pd-doc-preview{height:185px}
+  .fp-signed-input-row{align-items:stretch}
+  .fp-signed-input-row input[type=file]{width:100%;min-width:0}
+  .fp-review-footer{padding:11px 15px;justify-content:stretch}
+  .fp-review-footer .btn{flex:1;justify-content:center}
+}
 /* file slots */
 .fileslot{border:1.5px dashed #c4d0e3;border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;background:#fafcff}
 .fileslot input{font-size:12px}.fileslot .req{color:var(--red);font-weight:800}
@@ -1144,7 +1204,7 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 <div class="panel">
 <div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="fpSearch" placeholder="Search application, person, purpose or status…" oninput="renderFingerprintTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('fpDrawer')">＋ New Clearance Application</button></div></div>
 <div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> Citizenship applications can be approved and printed immediately. Other reasons require a 12-hour review period; a System Administrator can approve immediately.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Fingerprint</th><th>Status</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Fingerprint</th><th>Status</th><th>Application Scanned Document</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
 </section>
 <!-- New clearance application -->
@@ -1458,7 +1518,7 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 <div class="panel">
 <div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" data-write="1" onclick="openEntryModal('offDrawer')">＋ Register Officer</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="offSearch" placeholder="Central Officer Search — name, service ID, rank, unit or station…" oninput="renderOfficersTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th></tr></thead><tbody id="officersTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th><th>Actions</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
 </div><!-- /hrPane-register -->
 
@@ -1949,11 +2009,31 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
 <div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
-<!-- Identity profile · shared centered popup (Fingerprint · Airport · Checkpoint "View" actions) -->
-<div class="cmodal-ov" id="pvModalOv" onclick="closeEntryModal('pvModal')"></div>
-<div class="cmodal profile" id="pvModal" data-view="1" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
-  <div class="cm-head"><div><h3 id="pvModalTitle">Identity profile</h3><div class="sub">Central Person Registry</div></div><button class="iconbtn" onclick="closeEntryModal('pvModal')" aria-label="Close">✕</button></div>
+<!-- Shared person detail modal · Central Search, Fingerprint, Airport, Checkpoint + Police Registration -->
+<div class="cmodal-ov" id="personDetailModalOv" onclick="closeEntryModal('personDetailModal')"></div>
+<div class="cmodal person-detail" id="personDetailModal" data-view="1" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
+  <span id="pvModal" class="pv-legacy-anchor" aria-hidden="true"></span>
+  <div class="cm-head"><div><h3 id="pvModalTitle">Person detail</h3><div class="sub" id="personDetailSubtitle">Central Person Registry · complete profile and documents</div></div><button class="iconbtn" onclick="closeEntryModal('personDetailModal')" aria-label="Close">✕</button></div>
   <div class="cm-body" id="pvModalBody"></div>
+</div>
+<!-- Fingerprint clearance review & signed-paper re-scan workflow -->
+<div class="cmodal-ov" id="fpReviewModalOv" onclick="closeEntryModal('fpReviewModal')"></div>
+<div class="cmodal fp-review-modal" id="fpReviewModal" role="dialog" aria-modal="true" aria-labelledby="fpReviewTitle">
+  <div class="cm-head"><div><h3 id="fpReviewTitle">Clearance review</h3><div class="sub">Review the application and upload the applicant / guarantor signed scan</div></div><button class="iconbtn" onclick="closeEntryModal('fpReviewModal')" aria-label="Close">✕</button></div>
+  <div class="cm-body">
+    <div class="notice" id="fpReviewNotice" role="status" aria-live="polite"></div>
+    <div id="fpReviewSummary"><div class="empty">Loading clearance application…</div></div>
+    <div class="pd-section-heading"><div><h4>Original applicant &amp; guarantor attachments</h4><p>Inspect the identity files submitted with the application before reviewing the returned signed paper.</p></div></div>
+    <div id="fpOriginalDocuments"><div class="pd-doc-empty"><b>Loading original attachments…</b></div></div>
+    <section class="fp-signed-upload" aria-labelledby="fpSignedHeading">
+      <div class="fp-signed-upload-head"><div><b id="fpSignedHeading">Signed Application Document · re-scan</b><small>After the applicant and guarantor sign the printed form, scan the completed paper and attach a PDF or clear image (up to 20 MB). New scans are versioned; the latest scan appears in the register.</small></div><span id="fpSignedStatus" class="badge amber">⏳ Awaiting Re-scan</span></div>
+      <div class="fp-signed-input-row" data-write="1"><input id="fpSignedDocumentInput" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,application/pdf,image/jpeg,image/png,image/webp,image/tiff" capture="environment" aria-label="Choose or scan the signed clearance application" onchange="previewSignedApplicationFile(this)"><button class="btn secondary small btn-scan" type="button" onclick="document.getElementById('fpSignedDocumentInput').click()">⌁ Choose scan / document</button><button class="btn small" type="button" data-write="1" onclick="uploadSignedApplicationDocument()">Upload signed scan</button></div>
+      <div class="fp-signed-preview" id="fpSignedPreview" aria-live="polite"><div class="pd-doc-empty"><b>No signed scan selected</b>Choose the re-scanned signed application to preview it before saving.</div></div>
+    </section>
+    <div class="pd-section-heading"><div><h4>Signed application scan history</h4><p>Most recent scan is shown first. Select “Open full size” to inspect each paper scan in a separate tab.</p></div></div>
+    <div id="fpSignedExistingPreview"><div class="pd-doc-empty"><b>Loading scan history…</b></div></div>
+  </div>
+  <div class="fp-review-footer" id="fpReviewActions"><button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button></div>
 </div>
 
 <script>
@@ -4521,20 +4601,24 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElement
 // session: the identity profile popup is a pure VIEW surface.
 const READ_ONLY_VIEW_MODALS=new Set(['pvModal', 'stViewModal']);
 function openEntryModal(id){
-  // Read-only role: entry/registration modals are refused; the read-only
-  // identity-profile popup ('pvModal') still opens.
-  if(!READ_ONLY_VIEW_MODALS.has(id) && guardReadOnly('Opening an entry form')) return;
-  const d=document.getElementById(id);if(!d)return;
+  // Read-only role: entry/registration modals are refused; identity and
+  // station-view surfaces remain available. `pvModal` is retained as a
+  // compatibility alias for the new #personDetailModal.
+  const targetId=id==='pvModal'?'personDetailModal':id;
+  const viewAlias=id==='personDetailModal'?'pvModal':id;
+  if(!READ_ONLY_VIEW_MODALS.has(viewAlias) && guardReadOnly('Opening an entry form')) return;
+  const d=document.getElementById(targetId)||document.getElementById(id);if(!d)return;
   cancelEntryFocus();
   clearInvalid(d);
-  const ov=document.getElementById(id+'Ov');
+  const ov=document.getElementById(targetId+'Ov')||document.getElementById(id+'Ov');
   clearTimeout(d._closeT);
   d.classList.remove('closing');
   if(ov)ov.classList.add('on');
   d.classList.add('open');
+  if(targetId==='personDetailModal')document.getElementById('pvModal')?.classList.add('open');
   document.body.classList.add('modal-open');
   const branchForms={fpDrawer:['fpBranch','fingerprint'],airDrawer:['airBranch','airport'],crmDrawer:['crmBranch','crime'],stDrawer:['stBranch','police_station']};
-  if(branchForms[id])refreshBranchSelect(branchForms[id][0],branchForms[id][1]);
+  if(branchForms[targetId])refreshBranchSelect(branchForms[targetId][0],branchForms[targetId][1]);
   const body=d.querySelector('.cm-body');
   if(body)body.scrollTop=0;
   const first=d.querySelector('input:not([readonly]):not([disabled]),select,textarea');
@@ -4545,15 +4629,17 @@ function openEntryModal(id){
   },240);
 }
 function closeEntryModal(id){
-  const d=document.getElementById(id);if(!d)return;
+  const targetId=id==='pvModal'?'personDetailModal':id;
+  const d=document.getElementById(targetId)||document.getElementById(id);if(!d)return;
   if(!d.classList.contains('open'))return;
   cancelEntryFocus();
-  const ov=document.getElementById(id+'Ov');
+  const ov=document.getElementById(targetId+'Ov')||document.getElementById(id+'Ov');
   if(ov)ov.classList.remove('on');
   d.classList.add('closing');
   clearTimeout(d._closeT);
   d._closeT=setTimeout(()=>{
     d.classList.remove('open','closing');
+    if(targetId==='personDetailModal')document.getElementById('pvModal')?.classList.remove('open','closing');
     const modal=document.getElementById('drawer');
     if((!modal||!modal.classList.contains('on'))&&!document.querySelector('.cmodal.open'))document.body.classList.remove('modal-open');
   },220);
@@ -4596,79 +4682,209 @@ async function submitPersonDrawer(existingId){
   }catch(e){showFormError(e.message||'The person could not be saved.',{prefix:'pd',title:'Unable to Save'})}
 }
 window._viewingPerson=null;
+window._viewingOfficer=null;
+window._personDetailMode='person';
+let personDocumentRequest=0;
+
+function safeDocumentUrl(value){
+  const url=String(value||'').trim();
+  if(!url)return '';
+  if(/^\/uploads\/[A-Za-z0-9._/-]+$/i.test(url)&&!url.split('/').includes('..'))return url;
+  if(/^https?:\/\//i.test(url))return url;
+  if(/^blob:/i.test(url))return url;
+  return '';
+}
+function documentExtension(doc){
+  const path=String(doc&& (doc.name||doc.file_name||doc.path||doc.file_path)||'');
+  const ext=(path.match(/\.([a-z0-9]+)(?:\?|$)/i)||[])[1]||'';
+  return ext.toLowerCase();
+}
+function renderPersonDocuments(documents,emptyMessage){
+  const docs=Array.isArray(documents)?documents.filter(d=>d&&typeof d==='object'):[];
+  if(!docs.length)return `<div class="pd-doc-empty"><b>No documents attached</b>${esc(emptyMessage||'No identity documents or application files are available for this record.')}</div>`;
+  return `<div class="pd-doc-grid">${docs.map(doc=>{
+    const name=doc.name||doc.file_name||doc.fileName||'Attached document';
+    const category=doc.category||doc.label||'Identity document';
+    const url=safeDocumentUrl(doc.path||doc.file_path||doc.url);
+    const ext=documentExtension(doc);
+    const mime=String(doc.file_type||doc.mime_type||'').toLowerCase();
+    const isImage=(mime.startsWith('image/')&&!/tiff/.test(mime))||['jpg','jpeg','png','webp','gif','bmp'].includes(ext);
+    const isPdf=mime==='application/pdf'||ext==='pdf';
+    let preview='';
+    if(url&&isImage){
+      preview=`<a class="pd-doc-preview" href="${esc(url)}" target="_blank" rel="noopener" aria-label="Open ${esc(name)} full size"><img src="${esc(url)}" alt="Preview of ${esc(name)}" loading="lazy"></a>`;
+    }else if(url&&isPdf){
+      preview=`<div class="pd-doc-preview"><iframe src="${esc(url)}#view=FitH" title="Preview of ${esc(name)}" loading="lazy"></iframe></div>`;
+    }else{
+      const label=(ext||mime.split('/').pop()||'FILE').toUpperCase().slice(0,8);
+      preview=`<div class="pd-doc-preview"><div class="pd-file-icon"><span aria-hidden="true">${isPdf?'▤':'📄'}</span><b>${esc(label)} · ${esc(name)}</b></div></div>`;
+    }
+    const detail=[doc.source,doc.record_id?'Record '+doc.record_id:'',doc.uploaded_at?'Uploaded '+doc.uploaded_at:'',doc.uploaded_by?'By '+doc.uploaded_by:''].filter(Boolean).join(' · ');
+    return `<article class="pd-doc-card">${preview}<div class="pd-doc-meta"><strong>${esc(category)}</strong><small>${esc(name)}</small>${detail?`<small>${esc(detail)}</small>`:''}<div class="pd-doc-actions">${url?`<a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">Open full size</a><a class="btn ghost small" href="${esc(url)}" download="${esc(name)}">Download</a>`:'<span class="muted" style="font-size:11px">Preview unavailable for this local attachment</span>'}</div></div></article>`;
+  }).join('')}</div>`;
+}
+function localPersonDocuments(p){
+  const docs=Array.isArray(p&&(p.documents||p.attachments))?[...(p.documents||p.attachments)]:[];
+  const photo=safeDocumentUrl(p&&(p.photoPath||p.photo_path||p.photoUrl));
+  if(photo&&!docs.some(d=>safeDocumentUrl(d&&(d.path||d.file_path||d.url))===photo)){
+    docs.unshift({path:photo,name:'Profile photograph',category:'Profile photograph',source:'Central Person Registry'});
+  }
+  return docs;
+}
+function officerDocuments(o){
+  const out=[];
+  const add=(path,name,category)=>{if(path)out.push({path,name:name||String(path).split('/').pop(),category,source:'Police Registration',record_id:o.service_id||o.id})};
+  add(o.photo_path,'Officer photograph','Officer photograph');
+  add(o.guarantor_photo,'Guarantor photograph','Guarantor photograph');
+  add(o.doc1_path,o.doc1_path&&String(o.doc1_path).split('/').pop(),o.doc1_type||'Supporting document 1');
+  add(o.doc2_path,o.doc2_path&&String(o.doc2_path).split('/').pop(),o.doc2_type||'Supporting document 2');
+  return out;
+}
+function personUnitsHtml(p){
+  const explicit=p.units_explicit||p.units||[];
+  const isCheckpointLabel=u=>typeof u==='string'&&(u==='Checkpoint'||/Checkpoint\s*\(/.test(u)||/^Checkpoint\s+\S/.test(u));
+  const hasExplicitCheckpoint=explicit.some(u=>/Checkpoint\s*\(/.test(u)||(typeof u==='object'&&u.kind==='checkpoint'));
+  if(hasExplicitCheckpoint){
+    return explicit.map(u=>{
+      if(typeof u==='object'&&u&&u.label)return `<span class="badge blue">${esc(u.label)}</span>`;
+      return `<span class="badge blue">${esc(u)}</span>`;
+    }).join(' ');
+  }
+  const fallback=[];
+  (p.units||[]).forEach(u=>{
+    if(isCheckpointLabel(u)){
+      const cpe=(db.checkpoints||[]).filter(x=>x.person===p.id);
+      const seen=new Set();
+      cpe.forEach(ev=>{
+        const code=ev.location_code||ev.location;
+        const label=ev.checkpoint_location||(code?(code+' Checkpoint'):'Checkpoint');
+        if(!seen.has(label)){seen.add(label);fallback.push(label)}
+      });
+      if(!fallback.length)fallback.push('Checkpoint');
+    }else fallback.push(u);
+  });
+  return fallback.map(u=>`<span class="badge blue">${esc(u)}</span>`).join(' ');
+}
+function personBioGrid(record,mode){
+  const isOfficer=mode==='officer';
+  const name=record.name||record.full_name||'';
+  const split=String(name).split(/\s+/).filter(Boolean);
+  const bio=resolveFingerprintInfo(record,isOfficer?null:record);
+  const status=bio.status==='captured'?'Captured / Biometric Matched':bio.status==='pending'?'Pending Scanner':'No Print';
+  const statusClass=bio.status==='captured'?'green':bio.status==='pending'?'amber':'gray';
+  const fields=isOfficer?[
+    ['First Name',record.first_name||split[0]||''],['Second Name',record.second_name||split[1]||''],
+    ['Third Name',record.third_name||split[2]||''],['Fourth Name',record.fourth_name||split.slice(3).join(' ')||''],
+    ['Date of Birth',record.date_of_birth||''],['Place of Birth',record.place_of_birth||''],
+    ["Mother's Name",record.mother_name||''],['National ID','Not stored in the Police Registration record'],
+    ['Passport ID','Not stored in the Police Registration record'],['Contact Phone',record.contact_number||''],
+    ['Residence Address',[record.town_village,record.district_of_origin,record.region_of_origin].filter(Boolean).join(', ')],
+    ['Occupation / Assignment',[record.rank,record.unit].filter(Boolean).join(' · ')]
+  ]:[
+    ['Full Legal Name',name,'full'],['First Name',record.first||record.first_name||''],
+    ['Second Name',record.second||record.second_name||''],['Third Name',record.third||record.third_name||''],
+    ['Fourth Name',record.fourth||record.fourth_name||''],['Date of Birth',record.dob||record.date_of_birth||''],
+    ['Place of Birth',record.pob||record.place_of_birth||''],["Mother's Name",record.motherName||record.mother_name||''],
+    ['National ID',record.nationalId||record.national_id||''],['Passport ID',record.passportId||record.passport_id||''],
+    ['Contact Phone',record.phone||record.contact_number||''],['Residence Address',record.residence||'','full'],
+    ['Occupation',record.occupation||'']
+  ];
+  const standard=fields.map(([label,value,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(label)}</small><b>${esc(value||'—')}</b></div>`).join('');
+  const biometric=`<div class="pv-field full"><small>Biometric Status</small><div class="pd-bio-status"><span class="badge ${statusClass}">${bio.status==='captured'?'✓':bio.status==='pending'?'⏳':'⚠'} ${esc(status)}</span>${bio.hash?`<code class="fp-status-badge">${esc(bio.hash)}</code>`:''}</div></div>`;
+  return `<div class="pv-grid pd-bio-grid">${standard}${biometric}</div>`;
+}
+function renderOfficerRegistrationDetails(o){
+  const station=stationById(o.station_id||o.station);
+  const rows=[['Service ID',o.service_id||o.id],['Rank',o.rank],['Unit / Division',o.unit],
+    ['Assigned Station',station&&station.name||o.station_name||o.station_id],['Enlistment Date',o.date_of_enlistment],
+    ['Duty Status',o.duty_status],['Guarantor',o.guarantor_name],['Guarantor Contact',o.guarantor_contact],
+    ['Guarantor Address',o.guarantor_address],['Guarantor Relationship',o.guarantor_relationship]];
+  return `<div class="pv-grid" style="margin-top:12px">${rows.map(([k,v])=>`<div class="pv-field"><small>${esc(k)}</small><b>${esc(v||'—')}</b></div>`).join('')}</div>`;
+}
 function openPersonView(id){
   const p=person(id);
-  if(!p){toast('Person not found','No central registry record matches '+id);return}
-  window._viewingPerson=p;
-  // Per the spec, replace the generic 'Checkpoint' pill with explicit
-  // 'Checkpoint (South)' / 'Checkpoint (East)' / 'Checkpoint (West)' labels
-  // derived from the linked events' actual location. We dedupe while
-  // preserving the encounter count.
-  const explicit = p.units_explicit || p.units || [];
-  const isCheckpointLabel = u => typeof u === 'string' && (u === 'Checkpoint' || /Checkpoint\s*\(/.test(u) || /^Checkpoint\s+\S/.test(u));
-  const hasExplicitCheckpoint = explicit.some(u => /Checkpoint\s*\(/.test(u) || (typeof u === 'object' && u.kind === 'checkpoint'));
-  // If the explicit list still uses the generic 'Checkpoint' label, try to
-  // resolve it from db.checkpoints so the modal stays accurate even when
-  // syncServer hasn't repopulated p.units_explicit.
-  const unitsHtml = (() => {
-    if(hasExplicitCheckpoint){
-      return explicit.map(u => {
-        if(typeof u === 'object' && u && u.label){
-          return `<span class="badge blue">${esc(u.label)}</span>`;
-        }
-        return `<span class="badge blue">${esc(u)}</span>`;
-      }).join(' ');
-    }
-    const fallback = [];
-    (p.units || []).forEach(u => {
-      if(isCheckpointLabel(u)){
-        const cpe = (db.checkpoints || []).filter(x => x.person === p.id);
-        const seen = new Set();
-        cpe.forEach(ev => {
-          const code = ev.location_code || ev.location;
-          const label = ev.checkpoint_location || (code ? (code + ' Checkpoint') : 'Checkpoint');
-          if(!seen.has(label)){ seen.add(label); fallback.push(label); }
-        });
-        if(!fallback.length) fallback.push('Checkpoint');
-      } else {
-        fallback.push(u);
-      }
-    });
-    return fallback.map(u => `<span class="badge blue">${esc(u)}</span>`).join(' ');
-  })();
-  const units = unitsHtml;
-  // Header card — photo (or initials avatar) prominently at the top left.
-  const photoSrc=p.photoPath||p.photoUrl||'';
-  const head=`
-   <div class="pv-headcard">
-     <span class="pv-photo" aria-hidden="true">${photoSrc?`<img src="${esc(photoSrc)}" alt="Photo of ${esc(p.name)}">`:esc(initials(p.name))}</span>
-     <div class="pv-id">
-       <b>${esc(p.name||'Unnamed person')}</b>
-       <div class="muted">${esc(p.nationalId||p.passportId||'No ID / passport on file')}${p.passportId&&p.nationalId?' · Passport '+esc(p.passportId):''}</div>
-       <span class="pv-personid">🆔 Person ID · ${esc(p.id)}</span>
-     </div>
-   </div>`;
-  // Expanded data grid — the complete identity profile.
-  const idLine=[p.nationalId?'National ID '+p.nationalId:'',p.passportId?'Passport '+p.passportId:''].filter(Boolean).join(' · ');
-  const bioInfo=resolveFingerprintInfo(p,p);
-  const fields=[
-    ['Full Name',p.name,'full'],
-    ['ID / Passport',idLine],
-    ["Mother's Name",p.motherName],
-    ['Date of Birth (DOB)',p.dob],
-    ['Place of Birth (POB)',p.pob],
-    ['Phone Number',p.phone],
-    ['Address (Residence)',p.residence],
-    ['Occupation',p.occupation],
-    ['Fingerprint Biometrics',(bioInfo.status==='captured'?'[✓ Captured / Biometric Matched]':bioInfo.status==='pending'?'[⏳ Pending Scanner]':'[⚠️ No Print]')+(bioInfo.hash?' · '+bioInfo.hash:'')]
-  ];
-  const grid=`<div class="pv-grid">${fields.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${esc(v||'—')}</b></div>`).join('')}</div>`;
-  const unitsBlock=`<section class="pv-units"><h3>Linked Unit Records</h3><div>${units}</div><div id="pvLinkedRecords" aria-live="polite"><p class="muted">Loading branch and source details…</p></div></section>`;
-  const foot=`<div class="pv-foot"><button class="btn ghost" onclick="closeEntryModal('pvModal')">Close</button>${canWrite()?`<button class="btn secondary" onclick="closeEntryModal('pvModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button>`:''}</div>`;
-  document.getElementById('pvModalTitle').textContent='Identity profile · '+p.id;
-  document.getElementById('pvModalBody').innerHTML=head+grid+unitsBlock+foot;
-  openEntryModal('pvModal');
-  loadPersonLinkedRecords(p.id);
+  if(!p){
+    const officer=(db.officers||[]).find(o=>String(o.service_id||o.id)===String(id));
+    if(officer)return openOfficerView(id);
+    toast('Person not found','No central registry record matches '+id);return;
+  }
+  window._viewingPerson=p;window._viewingOfficer=null;window._personDetailMode='person';
+  renderPersonDetail(p,'person');
+}
+function openOfficerView(id){
+  const o=(db.officers||[]).find(x=>String(x.service_id||x.id)===String(id));
+  if(!o){toast('Officer not found','No Police Registration record matches '+id);return}
+  window._viewingPerson=null;window._viewingOfficer=o;window._personDetailMode='officer';
+  renderPersonDetail(o,'officer');
+}
+function renderPersonDetail(record,mode){
+  const isOfficer=mode==='officer';
+  const personId=isOfficer?(record.service_id||record.id):(record.id||record.person_id);
+  const displayName=record.name||record.full_name||'Unnamed person';
+  const photoCandidate=record.photoPath||record.photo_path||record.photoUrl||'';
+  const photoSrc=safeDocumentUrl(photoCandidate);
+  const nameSummary=isOfficer?`Service ID · ${personId}`:
+    `${record.nationalId||record.national_id||record.passportId||record.passport_id||'No ID / passport on file'}${(record.nationalId||record.national_id)&&(record.passportId||record.passport_id)?' · Passport '+(record.passportId||record.passport_id):''}`;
+  const head=`<div class="pv-headcard"><span class="pv-photo" aria-hidden="true">${photoSrc?`<img src="${esc(photoSrc)}" alt="Photo of ${esc(displayName)}">`:esc(initials(displayName))}</span><div class="pv-id"><b>${esc(displayName)}</b><div class="muted">${esc(nameSummary)}</div><span class="pv-personid">${isOfficer?'♙ Service ID':'🆔 Person ID'} · ${esc(personId)}</span></div></div>`;
+  const unitsHtml=isOfficer?'<span class="badge purple">Police Registration</span> '+(record.unit?`<span class="badge blue">${esc(record.unit)}</span>`:''):personUnitsHtml(record);
+  const unitsBlock=isOfficer?renderOfficerRegistrationDetails(record):'';
+  const foot=`<div class="pv-foot"><button class="btn ghost" type="button" onclick="closeEntryModal('personDetailModal')">Close</button>${!isOfficer&&canWrite()?`<button class="btn secondary" type="button" onclick="closeEntryModal('personDetailModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button>`:''}</div>`;
+  document.getElementById('pvModalTitle').textContent=(isOfficer?'Police Registration record · ':'Person detail · ')+personId;
+  const subtitle=document.getElementById('personDetailSubtitle');if(subtitle)subtitle.textContent=isOfficer?'Police Personnel Registry · biographic details and supporting documents':'Central Person Registry · complete biographic profile, attachments and linked unit records';
+  document.getElementById('pvModalBody').innerHTML=`${head}
+    <div class="person-detail-tabs" role="tablist" aria-label="Person record sections">
+      <button class="person-detail-tab active" type="button" role="tab" aria-selected="true" data-detail-tab="overview" onclick="setPersonDetailTab('overview')">Biographic Information</button>
+      <button class="person-detail-tab" type="button" role="tab" aria-selected="false" data-detail-tab="documents" onclick="setPersonDetailTab('documents')">Documents &amp; Attachments <span class="badge gray tab-count" id="personDetailDocCount">…</span></button>
+      <button class="person-detail-tab" type="button" role="tab" aria-selected="false" data-detail-tab="linked" onclick="setPersonDetailTab('linked')">${isOfficer?'Registration Details':'Linked Unit Records'}</button>
+    </div>
+    <section class="person-detail-panel active" role="tabpanel" data-person-detail-panel="overview"><div class="pd-section-heading"><div><h4>Biographic Information</h4><p>Complete identity details available in the ${isOfficer?'Police Registration':'Central Person Registry'} record.</p></div></div>${personBioGrid(record,mode)}${!isOfficer&&unitsHtml?`<section class="pv-units"><small>Linked Units</small><div>${unitsHtml}</div></section>`:''}</section>
+    <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="documents"><div class="pd-section-heading"><div><h4>Documents &amp; Attachments</h4><p>Readable previews of identity documents, passport scans, application files and supporting attachments. Open any item full size for inspection.</p></div></div><div id="personDocumentGrid"><div class="pd-doc-empty"><b>Loading documents…</b>Checking attachments available to your unit.</div></div><p class="pd-scope-note" id="personDocumentScopeNote"></p></section>
+    <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="linked"><div class="pd-section-heading"><div><h4>${isOfficer?'Police Registration details':'Linked Unit Records'}</h4><p>${isOfficer?'Service, assignment, guarantor and registration details.':'Branch provenance and source information for linked records within your access scope.'}</p></div></div><div id="pvLinkedRecords">${isOfficer?unitsBlock:'<p class="muted">Loading branch and source details…</p>'}</div></section>${foot}`;
+  openEntryModal('personDetailModal');
+  if(isOfficer){
+    personDocumentRequest++;
+    const docs=officerDocuments(record);
+    const mount=document.getElementById('personDocumentGrid');if(mount)mount.innerHTML=renderPersonDocuments(docs,'Police Registration has no documents attached to this officer.');
+    const count=document.getElementById('personDetailDocCount');if(count)count.textContent=String(docs.length);
+    const note=document.getElementById('personDocumentScopeNote');if(note)note.textContent='Documents are the officer photograph, guarantor photograph and supporting files captured during Police Registration.';
+    if(docs.length===0&&mount)mount.innerHTML=renderPersonDocuments([],'Police Registration has no documents attached to this officer.');
+  }else{
+    loadPersonDocuments(personId);
+    loadPersonLinkedRecords(personId);
+  }
+}
+function setPersonDetailTab(tab){
+  document.querySelectorAll('#personDetailModal [data-detail-tab]').forEach(button=>{
+    const active=button.getAttribute('data-detail-tab')===tab;
+    button.classList.toggle('active',active);button.setAttribute('aria-selected',active?'true':'false');
+  });
+  document.querySelectorAll('#personDetailModal [data-person-detail-panel]').forEach(panel=>
+    panel.classList.toggle('active',panel.getAttribute('data-person-detail-panel')===tab));
+}
+async function loadPersonDocuments(id){
+  const request=++personDocumentRequest;
+  const target=document.getElementById('personDocumentGrid');
+  if(!target)return;
+  const local=localPersonDocuments(window._viewingPerson||{});
+  if(!serverOn){
+    target.innerHTML=renderPersonDocuments(local,'No application files are cached in this local session. Reconnect to load stored attachments.');
+    const count=document.getElementById('personDetailDocCount');if(count)count.textContent=String(local.length);
+    const note=document.getElementById('personDocumentScopeNote');if(note)note.textContent='Offline preview shows only files already present in this browser session.';
+    return;
+  }
+  try{
+    const data=await api('/api/persons/'+encodeURIComponent(id)+'/documents');
+    if(request!==personDocumentRequest||window._personDetailMode!=='person'||window._viewingPerson?.id!==id)return;
+    const docs=Array.isArray(data.documents)?data.documents:[];
+    target.innerHTML=renderPersonDocuments(docs,'No attached identity documents or application files are available within your access scope.');
+    const count=document.getElementById('personDetailDocCount');if(count)count.textContent=String(data.total_count??docs.length);
+    const note=document.getElementById('personDocumentScopeNote');if(note)note.textContent=data.scope_note||'Documents are limited to registers available to your role.';
+  }catch(e){
+    if(request!==personDocumentRequest||window._personDetailMode!=='person'||window._viewingPerson?.id!==id)return;
+    target.innerHTML=renderPersonDocuments(local,'Stored documents could not be loaded. Reopen the profile after reconnecting to retry.');
+    const count=document.getElementById('personDetailDocCount');if(count)count.textContent=String(local.length);
+    const note=document.getElementById('personDocumentScopeNote');if(note)note.textContent=e.message||'Document service unavailable.';
+  }
 }
 
 // Fetch authoritative provenance instead of guessing from unit badges or a
@@ -5789,14 +6005,14 @@ function renderRegisterRow(item,currentUser){
   // Certificate link, everything else is a plain status label.
   if(isReadOnlyUser()){
     return approved
-      ? `<a class="btn green small" target="_blank" href="certificate.html?v=0f8552e&id=${encodeURIComponent(item.id)}">Certificate</a>`
+      ? `<a class="btn green small" target="_blank" href="certificate.html?v=3376bdca&id=${encodeURIComponent(item.id)}">Certificate</a>`
       : '<span class="muted">View only</span>';
   }
   let actionHtml='';
   if(staleBuild){
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="The running backend is not the review-lock build — approvals are disabled.">&#128274; Stale backend — locked</button>`;
   }else if(approved){
-    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=0f8552e&id=${encodeURIComponent(item.id)}">Certificate</a>`;
+    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=3376bdca&id=${encodeURIComponent(item.id)}">Certificate</a>`;
   }else if(isLocked){
     const remaining=Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed).toFixed(1);
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;">&#128274; Review Locked (12h)</button>
@@ -5805,6 +6021,139 @@ function renderRegisterRow(item,currentUser){
     actionHtml=`<button class="btn small" onclick="approveFP('${esc(item.id)}')">${isAdmin?'&#10003; Approve Application (Admin bypass)':'&#10003; Approve'}</button>`;
   }
   return actionHtml;
+}
+
+// ---- Fingerprint clearance review + signed paper re-scan -------------------
+let clearanceReviewRequest=0;
+let selectedSignedPreviewUrl='';
+function clearanceFiles(value,category,recordId){
+  let parsed=value;
+  if(typeof value==='string'){
+    try{parsed=JSON.parse(value)}catch(_){parsed=[]}
+  }
+  if(!Array.isArray(parsed))parsed=parsed&&typeof parsed==='object'?[parsed]:[];
+  return parsed.filter(x=>x&&typeof x==='object').map(x=>({
+    path:x.path||x.file_path||'',name:x.name||x.file_name||'Attached document',
+    category,source:'Fingerprint Unit · clearance application',record_id:recordId,
+    file_type:x.file_type||x.type||''
+  })).filter(x=>x.path);
+}
+function setFpReviewNotice(message,isError){
+  const el=document.getElementById('fpReviewNotice');if(!el)return;
+  el.className='notice'+(isError?' err show':'');el.style.display=message?'block':'none';el.textContent=message||'';
+}
+function renderClearanceReview(record){
+  if(!record)return;
+  const id=record.application_id||record.id||window._reviewingClearanceId;
+  const personName=record.full_name||record.person_name||person(record.person_id||record.person)?.name||'Applicant';
+  const status=record.status||'Pending Review';
+  document.getElementById('fpReviewTitle').textContent='Clearance review · '+id;
+  const summary=document.getElementById('fpReviewSummary');
+  if(summary)summary.innerHTML=`<div class="fp-review-summary">
+    <div class="pv-field"><small>Applicant</small><b>${esc(personName)}</b><small>${esc(record.person_id||record.person||'')}</small></div>
+    <div class="pv-field"><small>Application / purpose</small><b>${esc(id)}</b><small>${esc(record.purpose||'')}</small></div>
+    <div class="pv-field"><small>Application status</small><b><span class="badge ${status==='Approved'?'green':status==='Rejected'?'red':'blue'}">${esc(status)}</span></b><small>${record.certificate_number?esc(record.certificate_number):'No certificate issued'}</small></div>
+    <div class="pv-field"><small>Submitted</small><b>${esc(record.created_at||'Not recorded')}</b><small>${record.branch_name?esc(record.branch_name)+' · '+esc(record.branch_region||''):''}</small></div>
+  </div><div class="hint">Print the application for the applicant and guarantor to sign. Attach the re-scanned signed paper below; each upload is retained as a version.</div>`;
+  const cachedLatest=(record.signedDocumentPath||record.signed_document_path)?{
+    path:record.signedDocumentPath||record.signed_document_path,
+    name:record.signedDocumentName||record.signed_document_name||'Signed application scan'
+  }:null;
+  const latest=record.signed_application_document||record.signedApplicationDocument||cachedLatest;
+  const current=record.signed_application_documents||(latest?[latest]:[]);
+  const history=document.getElementById('fpSignedExistingPreview');
+  const badge=document.getElementById('fpSignedStatus');
+  if(badge){badge.className='badge '+(current.length?'green':'amber');badge.textContent=current.length?'✓ Signed & Scanned':'⏳ Awaiting Re-scan'}
+  if(history){
+    const docs=current.map((d,index)=>({
+      ...d,category:'Signed application scan'+(index===0?' · latest':''),
+      source:'Fingerprint Unit · re-scan',record_id:id
+    }));
+    history.innerHTML=renderPersonDocuments(docs,'No signed application scan has been uploaded yet. The table will show “Awaiting Re-scan” until the first signed paper is attached.');
+  }
+  const applicantDocs=clearanceFiles(record.applicant_docs,'Applicant identity / supporting document',id);
+  const guardianDocs=clearanceFiles(record.guardian_docs,'Guarantor supporting document',id);
+  if(record.applicant_photo)applicantDocs.unshift({path:record.applicant_photo,name:'Applicant photograph',category:'Applicant photograph',source:'Fingerprint Unit · clearance application',record_id:id});
+  const original=document.getElementById('fpOriginalDocuments');
+  if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
+  const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
+  const actions=document.getElementById('fpReviewActions');
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=3376bdca&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+}
+function openClearanceReview(id){
+  if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
+  window._reviewingClearanceId=String(id);
+  clearanceReviewRequest++;
+  if(selectedSignedPreviewUrl){try{URL.revokeObjectURL(selectedSignedPreviewUrl)}catch(_){}selectedSignedPreviewUrl=''}
+  const input=document.getElementById('fpSignedDocumentInput');if(input)input.value='';
+  const preview=document.getElementById('fpSignedPreview');if(preview)preview.innerHTML='<div class="pd-doc-empty"><b>No signed scan selected</b>Choose the re-scanned signed application to preview it before saving.</div>';
+  setFpReviewNotice('');
+  const cached=(db.fingerprint||[]).find(x=>String(x.id)===String(id));
+  if(cached)renderClearanceReview(cached);
+  else{
+    const summary=document.getElementById('fpReviewSummary');if(summary)summary.innerHTML='<div class="empty">Loading clearance application…</div>';
+    const history=document.getElementById('fpSignedExistingPreview');if(history)history.innerHTML='<div class="pd-doc-empty"><b>Loading scan history…</b></div>';
+  }
+  const actions=document.getElementById('fpReviewActions');
+  if(actions)actions.innerHTML=`<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  openEntryModal('fpReviewModal');
+  refreshClearanceReview(String(id));
+}
+async function refreshClearanceReview(id){
+  const request=++clearanceReviewRequest;
+  if(!serverOn){
+    const cached=(db.fingerprint||[]).find(x=>String(x.id)===String(id));
+    if(cached)renderClearanceReview(cached);
+    setFpReviewNotice('Reconnect to the central database to inspect application attachments or save a signed scan.',true);
+    return;
+  }
+  try{
+    const detail=await api('/api/clearance-applications/'+encodeURIComponent(id));
+    if(request!==clearanceReviewRequest||window._reviewingClearanceId!==String(id))return;
+    renderClearanceReview(detail);
+  }catch(e){
+    if(request!==clearanceReviewRequest||window._reviewingClearanceId!==String(id))return;
+    setFpReviewNotice(e.message||'Clearance details could not be loaded.',true);
+  }
+}
+function previewSignedApplicationFile(input){
+  const file=input&&input.files&&input.files[0];
+  const preview=document.getElementById('fpSignedPreview');if(!preview)return;
+  if(selectedSignedPreviewUrl){try{URL.revokeObjectURL(selectedSignedPreviewUrl)}catch(_){}selectedSignedPreviewUrl=''}
+  if(!file){preview.innerHTML='<div class="pd-doc-empty"><b>No signed scan selected</b>Choose the re-scanned signed application to preview it before saving.</div>';return}
+  const ext=(file.name.match(/\.([a-z0-9]+)$/i)||[])[1]||'';
+  if(!['pdf','jpg','jpeg','png','webp','tif','tiff'].includes(ext.toLowerCase())){
+    setFpReviewNotice('Use a PDF or image scan (PDF, JPG, PNG, WEBP, TIF or TIFF).',true);input.value='';return;
+  }
+  if(!file.size){setFpReviewNotice('The selected signed application scan is empty.',true);input.value='';return}
+  if(file.size>20*1024*1024){setFpReviewNotice('Signed application scan exceeds the 20MB limit.',true);input.value='';return}
+  setFpReviewNotice('');
+  try{selectedSignedPreviewUrl=URL.createObjectURL(file)}catch(_){selectedSignedPreviewUrl=''}
+  preview.innerHTML=renderPersonDocuments([{path:selectedSignedPreviewUrl,name:file.name,file_type:file.type,category:'Selected signed application scan',source:'Not uploaded yet'}],'');
+}
+async function uploadSignedApplicationDocument(){
+  if(guardReadOnly('Uploading a signed application scan'))return;
+  const id=window._reviewingClearanceId;
+  const input=document.getElementById('fpSignedDocumentInput');
+  const file=input&&input.files&&input.files[0];
+  if(!id){setFpReviewNotice('Open an application before uploading a signed scan.',true);return}
+  if(!file){setFpReviewNotice('Choose the re-scanned signed application before uploading.',true);return}
+  if(!serverOn){setFpReviewNotice('A central database connection is required to save the signed scan. Reconnect and retry.',true);return}
+  if(!file.size){setFpReviewNotice('The selected signed application scan is empty.',true);return}
+  if(file.size>20*1024*1024){setFpReviewNotice('Signed application scan exceeds the 20MB limit.',true);return}
+  const submit=document.querySelector('#fpReviewModal button[onclick="uploadSignedApplicationDocument()"]');
+  if(submit){submit.disabled=true;submit.textContent='Uploading…'}
+  try{
+    const form=new FormData();form.append('signed_application_document',file);
+    const result=await api('/api/clearance-applications/'+encodeURIComponent(id)+'/signed-document',{method:'POST',body:form});
+    setFpReviewNotice('Signed application scan saved: '+(result.document&&result.document.name||file.name),false);
+    if(selectedSignedPreviewUrl){try{URL.revokeObjectURL(selectedSignedPreviewUrl)}catch(_){}selectedSignedPreviewUrl=''}
+    input.value='';
+    await syncServer();
+    await refreshClearanceReview(id);
+    toast('Signed application scanned',id+' · '+file.name);
+  }catch(e){setFpReviewNotice(e.message||'The signed scan could not be uploaded.',true)}
+  finally{if(submit){submit.disabled=false;submit.textContent='Upload signed scan'}}
 }
 
 // ============================ compact unit overview =========================
@@ -5994,19 +6343,22 @@ function renderFingerprintTable(){
     if(!q)return true;
     const p=person(x.person);
     const bio=resolveFingerprintInfo(x,p);
-    return [x.id,x.purpose,x.status,x.certificate,x.branch,p&&p.name,x.person,bio.hash,bio.status].some(v=>normTxt(v).includes(q));
+    return [x.id,x.purpose,x.status,x.certificate,x.branch,p&&p.name,x.person,bio.hash,bio.status,x.signedDocumentName,x.signedDocumentPath].some(v=>normTxt(v).includes(q));
   });
   fpTable.innerHTML=list.map(x=>{const p=person(x.person);
    const hi=!!(window._highlightedPersonId&&x.person===window._highlightedPersonId);
    const tdCls=hi?' class="bio-match-cell"':'';
+   const signedPath=safeDocumentUrl(x.signedDocumentPath||x.signed_document_path);
+   const signedCell=signedPath?`<div class="fp-signed-cell"><span class="badge green">✓ Signed &amp; Scanned</span><br><a class="btn ghost small" href="${esc(signedPath)}" target="_blank" rel="noopener" title="Open ${esc(x.signedDocumentName||'signed application scan')}">Quick view</a></div>`:'<span class="badge amber">⏳ Awaiting Re-scan</span>';
    return `<tr><td${tdCls}>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td${tdCls}><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td${tdCls}>${esc(x.purpose)}</td>
    <td${tdCls}>${fingerprintStatusBadge(x,p)}</td>
    <td${tdCls}><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
+   <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=0f8552e&id=${encodeURIComponent(x.id)}">Review/Print</a>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=3376bdca&id=${encodeURIComponent(x.id)}">Review/Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Review / re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
-   </td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
+   </td></tr>`}).join('')||`<tr><td colspan="7" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
 function renderAirportTable(){
   const q=normTxt((document.getElementById('airSearch')||{}).value||'');
@@ -6119,7 +6471,8 @@ async function approveFP(id){
       // register route. A Fingerprint Officer is blocked by the mandatory
       // 12-hour review period (HTTP 400); a System Administrator bypasses it.
       await api('/api/fingerprint/applications/'+id+'/approve',{method:'POST',body:'{}'});
-      await syncServer();toast('Approved — certificate unlocked for printing')}
+      await syncServer();toast('Approved — certificate unlocked for printing');
+      if(window._reviewingClearanceId===id)closeEntryModal('fpReviewModal')}
   else{
     // Offline / demo path — the mandatory review window still applies here,
     // otherwise signing out of the API would hand out instant approvals.
@@ -6133,7 +6486,8 @@ async function approveFP(id){
         return;
       }
     }
-    x.status='Approved';x.certificate='CL-'+Date.now().toString().slice(-6);persist();renderAll();toast('Approved; certificate '+x.certificate+' generated (local demo)')}}
+    x.status='Approved';x.certificate='CL-'+Date.now().toString().slice(-6);persist();renderAll();toast('Approved; certificate '+x.certificate+' generated (local demo)');
+    if(window._reviewingClearanceId===id)closeEntryModal('fpReviewModal')}}
   catch(e){showFormError(e.message||('Application '+id+' could not be approved.'),{title:'Approval blocked'})}
 }
 
@@ -6556,7 +6910,7 @@ async function syncServer(){
     // The review payload carries the 12-hour mandatory-review window state
     // (and whether the signed-in user may approve right now), so the register
     // can show why an approval is still locked.
-    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at}));
+    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at,signedDocumentPath:x.signed_document_path||'',signedDocumentName:x.signed_document_name||''}));
     if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',summary:x.incident_summary,created_at:x.created_at||'',participants:[],evidence:[]}));
     if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     // Police Registrations: stations + officers now sync from the central DB.
@@ -8517,8 +8871,8 @@ function renderOfficersTable(){
     <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
     <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':esc(o.station_name||o.station_id||'—')}</td>
     <td>${fingerprintStatusBadge(o,null)}</td>
-    <td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
-  tb.innerHTML=rows||`<tr><td colspan="7" class="empty">${q?'No officer matches that search':'No officers registered yet'}</td></tr>`;
+    <td>${dutyBadge(o.duty_status)}</td><td class="actions"><button class="btn secondary small" type="button" data-view="1" onclick="openOfficerView('${esc(o.service_id||o.id)}')">View</button></td></tr>`}).join('');
+  tb.innerHTML=rows||`<tr><td colspan="8" class="empty">${q?'No officer matches that search':'No officers registered yet'}</td></tr>`;
 }
 function vehicleAlertBadge(alert){
   const a=alert||'Clean / Normal';
@@ -8574,7 +8928,7 @@ function renderPoliceSearch(){
   const stationOf=o=>stationById(o.station_id||o.station);
   let rows='',count=0;
   if(psType==='officers'){
-    head.innerHTML='<tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th></tr>';
+    head.innerHTML='<tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th><th>Actions</th></tr>';
     const list=(db.officers||[]).filter(o=>{
       const st=stationOf(o);
       // Filter on the officer's own stored origin (Region → District → Town).
@@ -8585,7 +8939,7 @@ function renderPoliceSearch(){
     rows=list.map(o=>{const st=stationOf(o);
       return `<tr><td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
       <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
-      <td>${st?esc(st.name):esc(o.station_name||'—')}</td><td>${fingerprintStatusBadge(o,null)}</td><td>${dutyBadge(o.duty_status)}</td></tr>`}).join('');
+      <td>${st?esc(st.name):esc(o.station_name||'—')}</td><td>${fingerprintStatusBadge(o,null)}</td><td>${dutyBadge(o.duty_status)}</td><td class="actions"><button class="btn secondary small" type="button" data-view="1" onclick="openOfficerView('${esc(o.service_id||o.id)}')">View</button></td></tr>`}).join('');
   }else if(psType==='stations'){
     head.innerHTML='<tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Officers</th><th>Cars</th></tr>';
     const list=(db.stations||[]).filter(s=>psLocMatch(s,f)&&textMatch(s.name,s.code,s.notes));
@@ -8608,7 +8962,7 @@ function renderPoliceSearch(){
       <td>${esc(c.make||c.type||'')}${c.model?` <small class="muted">${esc(c.model)}</small>`:''}</td>
       <td>${st?esc(st.name):'—'}</td>${locationCells(c)}<td>${vehicleAlertBadge(c.security_alert)}</td></tr>`}).join('');
   }
-  tb.innerHTML=rows||'<tr><td colspan="7" class="empty">No records match the current filter</td></tr>';
+  tb.innerHTML=rows||`<tr><td colspan="${psType==='officers'?8:7}" class="empty">No records match the current filter</td></tr>`;
   const cnt=document.getElementById('psCount');
   if(cnt){cnt.textContent=count;cnt.style.display='';}
 }

@@ -43,7 +43,7 @@ except ImportError:
         OperationalError=Exception)
     RealDictCursor = _Unavailable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from vehicles import (
     VEHICLES_SCHEMA, register_vehicle, update_vehicle_alert, list_vehicles,
     VEHICLE_CATEGORIES, VEHICLE_OP_STATUSES, VEHICLE_ALERTS,
@@ -269,6 +269,20 @@ CREATE TABLE IF NOT EXISTS clearance_applications(
   certificate_number TEXT, created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')), reviewed_at TEXT
 );
+-- Re-scanned signed application sheets are versioned in a separate additive
+-- table. Existing clearance_applications columns and approval/matching data
+-- remain untouched, while each paper re-scan retains its upload provenance.
+CREATE TABLE IF NOT EXISTS clearance_signed_documents(
+  id SERIAL PRIMARY KEY,
+  application_id TEXT NOT NULL REFERENCES clearance_applications(application_id) ON DELETE CASCADE,
+  file_path TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_type TEXT,
+  uploaded_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE INDEX IF NOT EXISTS idx_clearance_signed_documents_application
+  ON clearance_signed_documents(application_id, id DESC);
 CREATE TABLE IF NOT EXISTS crime_cases(
   id SERIAL PRIMARY KEY, case_id TEXT UNIQUE NOT NULL,
   branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
@@ -564,7 +578,7 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '0f8552e'
+ASSET_VERSION = '3376bdca'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
@@ -581,6 +595,10 @@ UI_REQUIRED_MARKERS = (
     ('View drawer entry point', 'function openStationView('),
     ('Edit modal entry point', 'function openStationEdit('),
     ('admin-only Edit gate', "body:not(.can-edit-records) .admin-edit"),
+    ('Person detail modal', 'id="personDetailModal"'),
+    ('Person document viewer', 'Documents &amp; Attachments'),
+    ('Fingerprint signed scan column', 'Application Scanned Document'),
+    ('Signed application re-scan upload', 'function uploadSignedApplicationDocument('),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
@@ -1497,6 +1515,8 @@ EVIDENCE_TYPES = ('Photo', 'Statement', 'Physical item', 'Digital file', 'Other'
 OFFICER_IMAGE_EXTS = {'.jpg', '.jpeg', '.png'}
 OFFICER_DOC_EXTS = {'.pdf', '.jpg', '.jpeg', '.png'}
 OFFICER_MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+SIGNED_APPLICATION_MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # signed scan / PDF
+SIGNED_APPLICATION_ALLOWED_EXTS = {'.pdf', '.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff'}
 
 # ---------------------------------------------------------------------------
 # Officer Conduct, Promotions & Disciplinary Management domain
@@ -4043,6 +4063,116 @@ def linked_person_records(c, person, user):
             'scope_note': 'Only records permitted for your unit and checkpoint location are shown.'}
 
 
+def _attachment_manifest(value):
+    """Decode legacy JSON attachment arrays without assuming a file schema."""
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        parsed = []
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+    if not isinstance(parsed, list):
+        return []
+    out = []
+    for item in parsed:
+        if isinstance(item, str):
+            item = {'path': item, 'name': os.path.basename(item)}
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get('path') or item.get('file_path') or '').strip()
+        if not path:
+            continue
+        out.append({'path': path,
+                    'name': str(item.get('name') or item.get('file_name') or os.path.basename(path)),
+                    'file_type': str(item.get('file_type') or item.get('type') or '')})
+    return out
+
+
+def person_document_records(c, person, user):
+    """Return readable document metadata from unit records the caller may read.
+
+    This is an additive view over existing attachment manifests. It does not
+    alter person matching or any of the existing register tables; checkpoint
+    attachments remain location-scoped and other unit attachments are omitted
+    unless the signed-in role can read that register.
+    """
+    modules = user_module_set(user)
+    docs, seen_paths = [], set()
+
+    def append(path, name, category, source, record_id, created_at=None,
+               file_type='', uploaded_by=''):
+        path = str(path or '').strip()
+        if not path or path in seen_paths:
+            return
+        seen_paths.add(path)
+        docs.append({'path': path,
+                     'name': str(name or os.path.basename(path)),
+                     'category': category,
+                     'source': source,
+                     'record_id': record_id,
+                     'uploaded_at': created_at,
+                     'file_type': file_type or '',
+                     'uploaded_by': uploaded_by or ''})
+
+    append(person.get('photo_path'), os.path.basename(person.get('photo_path') or ''),
+           'Profile photograph', 'Central Person Registry', person['person_id'])
+
+    if 'fingerprint' in modules:
+        applications = c.execute('''SELECT application_id,created_at,applicant_docs,
+            guardian_docs,applicant_photo FROM clearance_applications
+            WHERE person_id=%s ORDER BY id DESC''', (person['id'],)).fetchall()
+        for app in applications:
+            aid = app['application_id']
+            for item in _attachment_manifest(app['applicant_docs']):
+                append(item['path'], item['name'], 'Applicant identity / supporting document',
+                       'Fingerprint Unit · clearance application', aid, app['created_at'],
+                       item['file_type'])
+            for item in _attachment_manifest(app['guardian_docs']):
+                append(item['path'], item['name'], 'Guarantor supporting document',
+                       'Fingerprint Unit · clearance application', aid, app['created_at'],
+                       item['file_type'])
+            if app['applicant_photo']:
+                append(app['applicant_photo'], os.path.basename(app['applicant_photo']),
+                       'Applicant photograph', 'Fingerprint Unit · clearance application',
+                       aid, app['created_at'])
+        signed = c.execute('''SELECT d.file_path,d.file_name,d.file_type,d.created_at,
+            d.application_id,u.display_name AS uploaded_by
+            FROM clearance_signed_documents d
+            JOIN clearance_applications a ON a.application_id=d.application_id
+            LEFT JOIN users u ON u.id=d.uploaded_by
+            WHERE a.person_id=%s ORDER BY d.id DESC''', (person['id'],)).fetchall()
+        for item in signed:
+            append(item['file_path'], item['file_name'], 'Signed clearance application · scanned',
+                   'Fingerprint Unit · signed application re-scan', item['application_id'],
+                   item['created_at'], item['file_type'], item['uploaded_by'])
+
+    if 'checkpoints' in modules:
+        scope_sql, scope_params = checkpoint_scope_sql(checkpoint_scope(user), 'ce')
+        scope_clause = (' ' + scope_sql.replace('WHERE ', 'AND ', 1)) if scope_sql else ''
+        rows = c.execute('''SELECT ce.event_id,ce.created_at,ce.traveler_docs,ce.guardian_docs
+            FROM checkpoint_events ce WHERE ce.person_id=%s''' + scope_clause +
+            ' ORDER BY ce.id DESC', (person['id'], *scope_params)).fetchall()
+        for event in rows:
+            for item in _attachment_manifest(event['traveler_docs']):
+                append(item['path'], item['name'], 'Traveler identity document',
+                       'Checkpoint · traveler record', event['event_id'], event['created_at'],
+                       item['file_type'])
+            for item in _attachment_manifest(event['guardian_docs']):
+                append(item['path'], item['name'], 'Guarantor identity document',
+                       'Checkpoint · traveler record', event['event_id'], event['created_at'],
+                       item['file_type'])
+
+    docs.sort(key=lambda item: (item.get('uploaded_at') or '', item.get('name') or ''), reverse=True)
+    permitted = [m for m in ('fingerprint', 'checkpoints') if m in modules]
+    note = ('Showing Central Person Registry attachments'
+            + ((' plus documents from ' + ' and '.join(permitted)) if permitted else '')
+            + '. Other unit attachments are hidden unless your role can access that register.')
+    return {'person_id': person['person_id'], 'documents': docs, 'total_count': len(docs),
+            'scope_note': note}
+
+
 def identity_result(c, data, person):
     """Small match summary returned with unit record POST responses."""
     row, tier, reason, _ = resolve_person(c, data)
@@ -6080,7 +6210,8 @@ class API(BaseHTTPRequestHandler):
             name = os.path.basename(p.path)
             ext = os.path.splitext(name)[1].lower()
             ctype = {'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png',
-                     '.gif':'image/gif','.webp':'image/webp','.pdf':'application/pdf'}.get(ext,'application/octet-stream')
+                     '.gif':'image/gif','.webp':'image/webp','.tif':'image/tiff',
+                     '.tiff':'image/tiff','.pdf':'application/pdf'}.get(ext,'application/octet-stream')
             return self.send_file(os.path.join(UPLOAD_DIR, name), ctype)
         # Brand assets for the printable templates — the police emblem used as
         # both the letterhead logo and the page watermark. '/static/images/x'
@@ -6268,11 +6399,17 @@ class API(BaseHTTPRequestHandler):
                     ORDER BY id DESC''', (like,like,like,like,like,like,like,like,like,like)).fetchall()
                 result = {'items':[rowdict(r) for r in rows]}
             elif p.path.startswith('/api/persons/') and p.path.endswith('/linked-records'):
-                pid = p.path.split('/')[3]
+                pid = unquote(p.path.split('/')[3])
                 person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s', (pid,)).fetchone())
                 if not person:
                     self.send_json(404, {'error': 'Person not found'}); c.close(); return
                 result = linked_person_records(c, person, user)
+            elif p.path.startswith('/api/persons/') and p.path.endswith('/documents'):
+                pid = unquote(p.path.split('/')[3])
+                person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s', (pid,)).fetchone())
+                if not person:
+                    self.send_json(404, {'error': 'Person not found'}); c.close(); return
+                result = person_document_records(c, person, user)
             elif p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone())
@@ -6296,7 +6433,11 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/clearance-applications':
                 rows = c.execute('''SELECT a.application_id,a.branch_id,b.name AS branch_name,
                     b.region AS branch_region,a.purpose,a.status,a.certificate_number,a.created_at,
-                    a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone
+                    a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone,
+                    (SELECT d.file_path FROM clearance_signed_documents d
+                     WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_path,
+                    (SELECT d.file_name FROM clearance_signed_documents d
+                     WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_name
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id
                     LEFT JOIN police_branches b ON b.id=a.branch_id ORDER BY a.id DESC''').fetchall()
                 items = []
@@ -6317,6 +6458,13 @@ class API(BaseHTTPRequestHandler):
                     LEFT JOIN police_branches b ON b.id=a.branch_id
                     WHERE a.application_id=%s''',(aid,)).fetchone())
                 if not a: self.send_json(404,{'error':'Application not found'}); c.close(); return
+                signed_rows = c.execute('''SELECT d.id,d.file_path AS path,d.file_name AS name,
+                    d.file_type,d.created_at AS uploaded_at,u.display_name AS uploaded_by
+                    FROM clearance_signed_documents d LEFT JOIN users u ON u.id=d.uploaded_by
+                    WHERE d.application_id=%s ORDER BY d.id DESC''', (aid,)).fetchall()
+                a['signed_application_documents'] = [rowdict(r) for r in signed_rows]
+                a['signed_application_document'] = (a['signed_application_documents'][0]
+                                                     if a['signed_application_documents'] else None)
                 # 12-hour mandatory review window metadata for the printable page.
                 a['review'] = fingerprint_review_state(a)
                 a['can_approve'] = bool(is_admin_user(user) or not a['review']['review_locked'])
@@ -6905,6 +7053,41 @@ class API(BaseHTTPRequestHandler):
                           'review_window_hours':0 if purpose == 'Citizenship' else FINGERPRINT_REVIEW_WINDOW_HOURS,
                           'review_eligible_at':fingerprint_review_state({'created_at':submitted_at,'purpose':purpose})['review_eligible_at'],
                           'identity':identity_result(c,fields,person)}
+            elif p.path.startswith('/api/clearance-applications/') and p.path.endswith('/signed-document'):
+                aid = unquote(p.path.split('/')[3])
+                app = c.execute('SELECT application_id FROM clearance_applications WHERE application_id=%s',
+                                (aid,)).fetchone()
+                if not app:
+                    self.send_json(404, {'error':'Application not found'}); c.close(); return
+                fields, files = parse_multipart(self)
+                upload = (files.get('signed_application_document') or files.get('signed_document')
+                          or files.get('file'))
+                if not upload:
+                    raise ValueError('A signed application scan is required')
+                extension = file_ext(upload.get('filename'))
+                if extension not in SIGNED_APPLICATION_ALLOWED_EXTS:
+                    raise ValueError('Signed application document must be PDF or an image scan '
+                                     '(PDF, JPG, PNG, WEBP, TIF or TIFF)')
+                content = upload.get('content') or b''
+                if not content:
+                    raise ValueError('Signed application scan cannot be empty')
+                if len(content) > SIGNED_APPLICATION_MAX_UPLOAD_BYTES:
+                    raise ValueError('Signed application scan exceeds the 20MB limit')
+                meta = save_upload(upload)
+                file_type = ({'.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg',
+                              '.png':'image/png','.webp':'image/webp','.tif':'image/tiff',
+                              '.tiff':'image/tiff'}.get(extension, 'application/octet-stream'))
+                saved = c.execute('''INSERT INTO clearance_signed_documents
+                    (application_id,file_path,file_name,file_type,uploaded_by)
+                    VALUES(%s,%s,%s,%s,%s)
+                    RETURNING id,file_path AS path,file_name AS name,file_type,
+                              created_at AS uploaded_at''',
+                    (aid,meta['path'],meta['name'],file_type,user['id'])).fetchone()
+                audit(c,user,'UPLOAD','clearance_signed_document',str(saved['id']),
+                      f'{aid} · {meta["name"]}')
+                c.commit()
+                result = {'application_id':aid,'document':rowdict(saved),
+                          'status':'Signed & Scanned'}
             elif p.path.startswith('/api/clearance-applications/') and p.path.endswith('/approve'):
                 aid = p.path.split('/')[3]
                 row = c.execute('SELECT application_id,status,certificate_number,created_at,purpose '

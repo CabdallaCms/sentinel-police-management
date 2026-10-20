@@ -196,7 +196,7 @@ def cache_busting_suite(base, env_overrides=None):
     """
     print('== 6. Static asset versioning (cache busting) ==')
     version = srv.ASSET_VERSION
-    check(bool(version) and version == '0f8552e',
+    check(bool(version) and version == '3376bdca',
           f'the server publishes the feature-commit asset version ({version})')
     check(srv.static_asset_version_consistent(),
           'every `?v=` stamp in index / application / certificate matches ASSET_VERSION')
@@ -289,11 +289,16 @@ def cache_busting_suite(base, env_overrides=None):
     check(srv.ui_self_test() == [], 'ui_self_test() passes for the served page')
 
     # A server pointed at an OLD index.html must refuse to start rather than
-    # publish a Register without the Actions column. Re-create that page from
-    # the previous commit and point a throwaway process at it.
-    old_page = subprocess.run(['git', 'show', '1b05c2c:index.html'], cwd=os.path.dirname(ROOT),
-                              capture_output=True, text=True).stdout
-    check(bool(old_page), 'the previous commit\'s index.html is available for the negative test')
+    # publish a Register without the Actions column. Build a stale fixture from
+    # the current template so the test does not depend on an unrelated commit
+    # object being present in the checkout.
+    with open(os.path.join(os.path.dirname(ROOT), 'index.html'), encoding='utf-8') as current_page:
+        old_page = current_page.read()
+    old_page = re.sub(r'(<meta\s+name="sentinel-ui-build"\s+content=")[^"]+',
+                      r'\1sentinel-rbac-readonly-3-stale', old_page, count=1)
+    old_page = old_page.replace('data-station-action="view"',
+                                'data-station-action="legacy"', 1)
+    check(bool(old_page), 'a stale index.html fixture is available for the negative test')
     stale_dir = tempfile.mkdtemp(prefix='sentinel-stale-ui-')
     with open(os.path.join(stale_dir, 'index.html'), 'w', encoding='utf-8') as f:
         f.write(old_page)

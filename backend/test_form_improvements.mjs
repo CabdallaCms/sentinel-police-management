@@ -155,5 +155,42 @@ try{
   assert.ok($('pvLinkedRecords').textContent.includes('unavailable offline'));
   console.log('ok: profile fetch ignores stale responses and reports offline data honestly');
   console.log('ok: linked profile escapes source data and does not invent proximity');
+
+  // Comprehensive #personDetailModal preview layout and the fingerprint
+  // signed-application status column / quick-view path.
+  assert.ok($('personDetailModal'),'dedicated person detail modal exists');
+  assert.ok($('fpReviewModal'),'dedicated clearance review / re-scan modal exists');
+  assert.ok(html.includes('Application Scanned Document'));
+  assert.ok(html.includes('Signed Application Document · re-scan'));
+  assert.match(html, /@media\(max-width:950px\)[\s\S]*?#personDetailModal \.pv-grid\.pd-bio-grid/);
+  assert.match(html, /@media\(max-width:680px\)[\s\S]*?#personDetailModal \.cm-body/);
+  run(`db.people=[{id:'P-DOC',name:'Ayaan Cabdi Xasan Axmed',first:'Ayaan',second:'Cabdi',third:'Xasan',fourth:'Axmed',
+    nationalId:'NID-1',passportId:'PASS-1',dob:'1997-04-18',pob:'Hargeisa',motherName:'Faadumo Cali',phone:'+252 63 555 0199',
+    residence:'Laascaanood',occupation:'Officer',fingerprintStatus:'captured',fingerprintHash:'BIO-P-DOC',units:['Fingerprint']}];
+    db.fingerprint=[{id:'FP-DOC',person:'P-DOC',purpose:'Travel',status:'Pending Review',signedDocumentPath:'/uploads/signed.pdf',signedDocumentName:'signed-application.pdf'}];
+    serverOn=true;currentUser={role:'SystemAdmin'};canWrite=()=>true;renderRegisterRow=()=>'<button>Approve</button>';fingerprintStatusBadge=()=>'<span>Captured</span>';`);
+  run('renderFingerprintTable()');
+  assert.match($('fpTable').innerHTML,/Signed &amp; Scanned/);
+  assert.match($('fpTable').innerHTML,/Quick view/);
+  assert.match($('fpTable').innerHTML,/Review \/ re-scan/);
+  run(`api=async path=>path.endsWith('/documents')?({total_count:1,scope_note:'Fingerprint Unit attachments',documents:[
+    {path:'/uploads/passport.jpg',name:'passport-scan.jpg',category:'Passport identity scan',source:'Fingerprint Unit',record_id:'FP-DOC'}
+  ]}):({residence:'Laascaanood',proximity_note:'No live coordinates',scope_note:'Scoped',items:[]});openPersonView('P-DOC');`);
+  await tick();
+  assert.equal($('personDetailModal').classList.contains('open'),true);
+  assert.equal($('pvModal').classList.contains('open'),true);
+  assert.ok($('pvModalBody').textContent.includes('Fourth Name'));
+  assert.ok($('pvModalBody').textContent.includes('National ID'));
+  assert.ok($('pvModalBody').textContent.includes('Passport ID'));
+  assert.equal($('personDetailDocCount').textContent,'1');
+  assert.ok($('personDocumentGrid').querySelector('img'));
+  assert.ok($('personDocumentGrid').textContent.includes('Passport identity scan'));
+  run(`db.officers=[{service_id:'POL-DOC',full_name:'Maxamed Faarax Nuur',mother_name:'Khadra Faarax',
+    date_of_birth:'1985-06-12',place_of_birth:'Ceerigaabo',contact_number:'+252 63 555 0101',rank:'Commander',unit:'General Patrol',
+    photo_path:'/uploads/officer.jpg',doc1_type:'National ID',doc1_path:'/uploads/officer-id.pdf'}];openOfficerView('POL-DOC');`);
+  assert.equal($('pvModalTitle').textContent,'Police Registration record · POL-DOC');
+  assert.ok($('pvModalBody').textContent.includes('Officer photograph'));
+  assert.ok($('pvModalBody').textContent.includes('National ID'));
+  console.log('ok: responsive person detail, document preview cards, police registration View and signed-scan table status');
   console.log('PASS: form and profile regressions');
 } finally {dom.window.close()}

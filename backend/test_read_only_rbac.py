@@ -277,7 +277,7 @@ def commander_read_suite(base, token):
                  '/api/officers/promotions', '/api/officers/discipline', '/api/stations',
                  '/api/vehicles', '/api/crimes', '/api/conduct', '/api/crime-cases',
                  '/api/suspect-alerts', '/api/checkpoint-events', '/api/clearance-applications',
-                 '/api/airport-records'):
+                 '/api/persons/P-0001/documents', '/api/airport-records'):
         status, _ = request(base, 'GET', path, token)
         check(status == 200, f'GET {path} -> {status}')
     _, dash = request(base, 'GET', '/api/dashboard', token)
@@ -292,6 +292,7 @@ def commander_write_suite(base, token):
         ('POST', '/api/persons', {'full_name': 'Refused Person'}),
         ('POST', '/api/airport-records', {'person_id': 'P-0001'}),
         ('POST', '/api/clearance-applications', {'person_id': 'P-0001'}),
+        ('POST', '/api/clearance-applications/FP-0001/signed-document', {}),
         ('POST', '/api/crime-cases', {'category': 'Theft'}),
         ('POST', '/api/suspect-alerts', {'person_id': 'P-0001'}),
         ('POST', '/api/checkpoint-events', {'person_id': 'P-0001'}),

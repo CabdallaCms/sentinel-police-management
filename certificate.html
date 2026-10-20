@@ -246,7 +246,7 @@
 <body>
 
 <div class="toolbar">
-  <a class="btn ghost" href="index.html?v=0f8552e">&larr; Back to system</a>
+  <a class="btn ghost" href="index.html?v=3376bdca">&larr; Back to system</a>
   <div style="flex:1"></div>
   <span id="statusBadge" class="badge amber">Checking&hellip;</span>
   <button class="btn green" id="printBtn" style="display:none" onclick="window.print()">&#128424; Print clearance certificate</button>
@@ -254,7 +254,7 @@
 
 <div id="sheet"><div class="page">
   <div class="watermark">
-    <img src="images/police_logo.png?v=0f8552e" alt="">
+    <img src="images/police_logo.png?v=3376bdca" alt="">
   </div>
 
   <div class="content">
@@ -265,7 +265,7 @@
       <div class="line2">Criminal Investigation Directorate</div>
     </div>
     <div class="logo-wrap">
-      <img src="images/police_logo.png?v=0f8552e" alt="Logo">
+      <img src="images/police_logo.png?v=3376bdca" alt="Logo">
     </div>
     <div class="right-text">
       <div>قوة شرطة ولاية الشمال الشرقي</div>
@@ -420,7 +420,7 @@ function locked(a){
     '<p>The clearance certificate for application <b>'+esc(id||'')+'</b> is only released after an authorized officer approves the application.</p>'+
     '<p>Current status: <b>'+esc((a&&a.status)?a.status:'Pending Review')+'</b>.</p>'+
     wait+
-    '<p><a class="btn" href="application.html?v=0f8552e&id='+encodeURIComponent(id||'')+'">Go to application review &rarr;</a></p></div>';
+    '<p><a class="btn" href="application.html?v=3376bdca&id='+encodeURIComponent(id||'')+'">Go to application review &rarr;</a></p></div>';
 }
 
 function certificate(a){
@@ -471,7 +471,7 @@ function forceSignIn(reason){
   document.getElementById('sheet').innerHTML=
     '<div class="lock"><div class="big">&#128274;</div><h2>Sign in required</h2>'+
     '<p>'+esc(reason||'Your session has expired')+'. Sign in through the main system to view this certificate.</p>'+
-    '<p><a class="btn" href="index.html?v=0f8552e">Go to sign in &rarr;</a></p></div>';
+    '<p><a class="btn" href="index.html?v=3376bdca">Go to sign in &rarr;</a></p></div>';
 }
 async function load(){
   const token=await getToken();
@@ -486,7 +486,7 @@ async function load(){
     document.getElementById('sheet').innerHTML=
       '<div class="lock"><div class="big">&#128274;</div><h2>Certificate unavailable</h2>'+
       '<p>Application '+esc(id||'')+' could not be loaded. Open it from the Fingerprint register while the server is running.</p>'+
-      '<p><a class="btn ghost" href="index.html?v=0f8552e">Back to system</a></p></div>';
+      '<p><a class="btn ghost" href="index.html?v=3376bdca">Back to system</a></p></div>';
   }
 }
 load();
