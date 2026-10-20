@@ -17,9 +17,8 @@
  *      +12h re-renders an ENABLED Approve button and the very same click
  *      handler now approves successfully (201 -> certificate unlocked).
  *   2. ADMIN BYPASS: the admin register row renders an enabled
- *      "Approve Application (Admin bypass)" button IMMEDIATELY after
- *      submission, and clicking it approves instantly (201,
- *      review_period_bypassed=true). The printable page shows the same
+ *      "Approve" button IMMEDIATELY after submission; clicking it approves
+ *      instantly (201, review_period_bypassed=true). The printable page shows the same
  *      bypass for an admin session.
  *   3. WORKING CLICK HANDLERS: syncServer() merges the server register into
  *      db.fingerprint (the old stray `cd` ReferenceError aborted it before
@@ -508,7 +507,9 @@ async function main() {
     // (application.html?v=<asset version>&id=...) so a deployment invalidates
     // the URL; the id must still be there.
     if (!/application\.html\?v=[A-Za-z0-9._-]+&id=/.test(row))
-      throw new Error('Review/Print link missing (or un-versioned): ' + row);
+      throw new Error('Print link missing (or un-versioned): ' + row);
+    if (!/>Print<\/a>/.test(row) || !/>Re-scan<\/button>/.test(row))
+      throw new Error('register actions must use compact Print and Re-scan labels: ' + row);
 
     // Rule 1 — the click handler refuses without touching the network.
     let trk = trackFetches(sbO);
@@ -574,8 +575,8 @@ async function main() {
     if (!row) throw new Error('application row missing from the admin register');
     if (/disabled="disabled"/.test(row))
       throw new Error('admin Approve button must NOT be disabled inside the window: ' + row);
-    if (!/Approve Application \(Admin bypass\)/.test(row))
-      throw new Error('admin button must advertise the bypass: ' + row);
+    if (!/Approve<\/button>/.test(row) || /Admin bypass/.test(row))
+      throw new Error('admin register action must use the compact Approve label: ' + row);
     trk = trackFetches(sbA);
     await probe(sbA.sandbox, `approveFP('${app2.application_id}')`);
     trk.restore();

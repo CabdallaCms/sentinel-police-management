@@ -68,7 +68,7 @@ The interface uses **no native browser dialogs**. All create/edit actions happen
 - **A4 print contract (both documents).** Blueprint `@page` rules (`application`: `size:A4; margin:0` with `.page{padding:6mm 8mm 4mm 8mm}` on paper; `certificate`: `size: A4 portrait; margin: 0`), plus `print-color-adjust: exact` and all web chrome (toolbar, buttons, badges, banners, toasts) hidden when printing. The application sheet drops `min-height` on paper (the single-sheet guarantee — a 297mm-tall box with zero `@page` margin spills a blank second page on engine rounding). The certificate fills the sheet (11pt/1.52 body, centered 11.5pt signature block pushed toward the footer bar) and QAYBTA 01 is a strict side-by-side executive grid (tinted 25% label cells, uppercase titles, equal-width entries). `backend/test_print_fit.py` — runnable as `python -m unittest backend.test_print_fit` or `python3 backend/test_print_fit.py` — pins the rules, the emblem placement (opacity band 0.08–0.12), blueprint wording verbatim (Somali + Arabic), every DOM binding/endpoint/lock hook, the transparent RGBA seal asset, and worst-case single-page height budgets (application 244.1mm ≤ 265mm envelope; certificate 281.1mm inside the 270–284mm filled-page envelope vs 297mm usable).
 - **Mandatory 12-hour review period.** Except for **Citizenship**, a clearance application can only be approved once `created_at + 12 hours` has elapsed. **Citizenship** is exempt from this wait: an authorized Fingerprint Officer can approve it immediately and then print the certificate. Approval, authentication and role checks are still required; the exemption is based on the stored purpose, not approval-request data. A **Fingerprint Officer** attempting an earlier approval gets HTTP 400 `Application is under mandatory 12-hour review period.`; a **System Administrator** bypasses the wait and can approve immediately. The lock is enforced in **three** places:
   - the backend gate on `POST /api/fingerprint/applications/{id}/approve`;
-  - the **Fingerprint register table** in `index.html`, where the Approve button is disabled and replaced by a `🔒 Review Lock (12h Required) - X hours remaining` badge the moment the application is created (admins see an enabled button with an "Admin bypass" label);
+  - the **Fingerprint register table** in `index.html`, where the Approve button is disabled and replaced by a `🔒 Review Lock (12h Required) - X hours remaining` badge the moment the application is created (admins see an enabled `Approve` action);
   - `application.html`, which reads `created_at` and the signed-in role and blocks the approve call client-side before any request is sent.
 - Role names are alias-tolerant: an officer stored as `fingerprint_officer` (or an account named `admin`) resolves to the canonical `FingerprintUnit` / `SystemAdmin` role for modules, RBAC gates, visibility flags and the review window.
 
@@ -117,7 +117,7 @@ UI and the API can never disagree:
   The role no longer holds `stations:manage`, so the station-management bypass is closed as well.
 - **Frontend view-only mode.** The Commander session applies `body.readonly-mode`, which hides
   every control marked `data-write` / `.write-action` (Register Officer, Add, Edit, Approve
-  Clearance, Open Case, the register's *Review/Print* link, …), drops the dashboard's
+  Clearance, Open Case, the register's *Print* link, …), drops the dashboard's
   quick-registration panel for a lock notice, swaps every action cell for a *View only* marker, and
   shows a **View-only** badge + banner in the top bar. On top of the CSS marker there is a
   **DOM hardener**: `hardenReadOnlyDom()` hides *any* element whose handler is a mutation entry
@@ -461,7 +461,7 @@ own family and never `policesearch`, 12 other role spellings must keep it, unkno
 dashboard-only, and `rbac_self_test()` must be clean.
 
 The frontend half of the same contract is pinned in `backend/test_frontend_session.mjs` (the
-sidebar-removal code path, no *Review/Print* link for a read-only session, `hardenReadOnlyDom()`
+sidebar-removal code path, no *Print* link for a read-only session, `hardenReadOnlyDom()`
 returning the number of controls it changed, the entry points and the local `api()` firewall) and in
 `backend/test_print_fit.py` (the `application.html` read-only contract: marked control, view-only
 note, fail-closed session seed, `/api/me` flags, `applyReadOnlyUi()`, and `approve()` refusing
@@ -505,7 +505,7 @@ Approve/Print button journey (Node ≥ 18; drives the real `index.html`, `applic
 node backend/test_approval_flow.mjs
 ```
 
-Reproduces the "the approve/print button does not work for either users or administrators" report end to end: `syncServer()` merges the server register into `db.fingerprint` (the stray `cd is not defined` line used to abort it before any row was painted), `checkBackendBuild()` resolves instead of rejecting with `seen is not defined`, the officer's fresh-application control renders disabled ("🔒 Review Locked (12h)" + remaining-hours badge) and `approveFP()` refuses without touching the network, the same handler approves successfully once the submission is backdated past +12 h, the admin row renders an enabled "✓ Approve Application (Admin bypass)" immediately and the click executes (201 → certificate), the stale-backend banner is created/removed correctly, the printable page's Approve button mirrors all three rules, and `certificate.html` releases its Print button only after an approval.
+Reproduces the "the approve/print button does not work for either users or administrators" report end to end: `syncServer()` merges the server register into `db.fingerprint` (the stray `cd is not defined` line used to abort it before any row was painted), `checkBackendBuild()` resolves instead of rejecting with `seen is not defined`, the officer's fresh-application control renders disabled ("🔒 Review Locked (12h)" + remaining-hours badge) and `approveFP()` refuses without touching the network, the same handler approves successfully once the submission is backdated past +12 h, the admin register row renders an enabled "✓ Approve" action immediately and the click executes (201 → certificate), the stale-backend banner is created/removed correctly, the printable page's Approve button retains its admin-bypass behavior, even when the 12-hour gate is active, and `certificate.html` releases its Print button only after an approval.
 
 Frontend session smoke test (Node ≥ 18; executes the real inline script against the real backend in a VM sandbox):
 
@@ -577,7 +577,7 @@ Pins the official-template rules for `application.html` / `certificate.html`: th
 1. Open **Airport** and type `Ayaan / Cabdi / Xasan / Axmed`, DOB `1997-04-18` and `10012345` — the unified identity form matches central person `P-0001` in real time and auto-fills the existing data.
 2. Open **Fingerprint Unit** and type the same identity; an exact match auto-fills the applicant fields.
 3. Complete clearance reason, guardian details, and attach **at least 2 applicant and 2 guardian documents** (plus an optional photo), then save.
-4. In the Fingerprint register click **Review/Print** to open `application.html` — print the Day-1 summary and use **Approve Application**. Sign in as `fp.officer` and the button is disabled with a "review lock" note until the mandatory 12-hour period has elapsed; sign in as `admin` and the same application can be approved instantly.
+4. In the Fingerprint register click **Print** to open `application.html` — print the Day-1 summary and use **Approve Application**. Sign in as `fp.officer` and the button is disabled with a "review lock" note until the mandatory 12-hour period has elapsed; sign in as `admin` and the same application can be approved instantly.
    **Citizenship exception:** no 12-hour delay applies; approve and print immediately. All other reasons keep the existing waiting period.
 5. After approval, click **Certificate** to open `certificate.html` — the Day-2 clearance certificate is now unlocked and printable.
 6. Open **CID Criminal Unit → Add suspect** and type a new identity. See the real-time match banner; submit **without a linked case** and the suspect is recorded with origin **Direct Intelligence Listing**. The **Suspect reason / alert details** field is **mandatory when no Crime Case is linked**; when a case IS linked it can be left empty and automatically defaults to `Linked to CID case {code} — {category}`. Submitting with an exact match reuses the existing central record.

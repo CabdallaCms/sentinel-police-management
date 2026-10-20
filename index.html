@@ -8,13 +8,13 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-60b7522f" />
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-fbfd77bb" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial;color:var(--ink);background:var(--bg)}
 button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
-.app{display:flex;min-height:100vh}.side{width:250px;background:var(--navy);color:#dce7f8;padding:24px 16px;position:fixed;height:100vh;overflow:auto}
+.app{display:flex;min-height:100vh}.side{width:210px;background:var(--navy);color:#dce7f8;padding:24px 16px;position:fixed;height:100vh;overflow:auto}
 .brand{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:800;letter-spacing:-.4px;padding:4px 10px 30px}
 .crest{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#3c83ff,#18c4ad);display:grid;place-items:center;color:white;font-weight:900}
 .side small{color:#88a0c2;text-transform:uppercase;font-size:10px;letter-spacing:1.5px;padding:0 12px}
@@ -22,7 +22,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .nav button{background:transparent;color:#b9cae4;text-align:left;padding:12px 13px;border-radius:10px;font-weight:600;display:flex;gap:12px;align-items:center;width:100%}
 .nav button.active,.nav button:hover{background:#233b63;color:#fff}.nav i{font-style:normal;width:20px;text-align:center}
 .side-footer{margin-top:26px;color:#8ea5c5;font-size:12px;line-height:1.6;padding:0 12px}
-.main{margin-left:250px;width:calc(100% - 250px);padding:28px 36px}
+.main{margin-left:210px;width:calc(100% - 210px);padding:28px 36px}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
 .eyebrow{color:var(--blue);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px}
 .top h1{margin:5px 0 0;font-size:29px;letter-spacing:-1px}
@@ -51,13 +51,16 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .search{position:relative}.search input{width:100%;padding:12px 14px 12px 38px;border:1px solid var(--line);border-radius:9px}
 .search span{position:absolute;left:14px;top:10px;color:#8c99ad}
 .table-wrap{width:100%;overflow:auto;max-height:calc(100vh - 280px);border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:var(--shadow)}
-.table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
-.table th{position:sticky;top:0;background:#f7f9ff;text-align:left;color:#75839a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:12px 12px;border-bottom:1px solid var(--line);z-index:2;white-space:nowrap}
-.table td{padding:13px 12px;border-bottom:1px solid #edf1f6;vertical-align:middle}
+.table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.table th{position:sticky;top:0;background:#f7f9ff;text-align:left;color:#75839a;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;border-bottom:1px solid var(--line);z-index:2;white-space:nowrap}
+.table td{padding:8px 10px;border-bottom:1px solid #edf1f6;vertical-align:middle}
 .table tr:last-child td{border-bottom:0}
 .table tr.clickable{cursor:pointer}.table tr.clickable:hover td{background:#f8faff}
-.table .actions{white-space:nowrap;text-align:right}
-.table .actions .btn{white-space:nowrap}
+.table .actions{white-space:nowrap;text-align:right;font-size:0}
+.table .actions .btn{white-space:nowrap;min-height:28px;padding:4px 8px;font-size:12px;line-height:1.2}
+.table .actions .btn + .btn{margin-left:4px}
+.table .actions .btn + .badge{margin-left:4px}
+.table .actions .muted{font-size:12px}
 .person{display:flex;align-items:center;gap:10px}.mini{width:30px;height:30px;border-radius:8px;background:#eaf0ff;color:var(--blue);display:grid;place-items:center;font-size:11px;font-weight:800;overflow:hidden}
 .mini img{width:100%;height:100%;object-fit:cover}
 .badge{display:inline-flex;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700}
@@ -401,8 +404,8 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
    independently answer 403 Forbidden, so hiding the button is never the only
    control. */
 body:not(.can-edit-records) .admin-edit{display:none !important}
-.row-actions{display:flex;gap:6px;align-items:center;white-space:nowrap}
-.row-actions .btn{padding:5px 10px;font-size:12px}
+.row-actions{display:flex;gap:4px;align-items:center;white-space:nowrap}
+.row-actions .btn{min-height:28px;padding:4px 8px;font-size:12px;line-height:1.2}
 .station-deploy-list{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:#33415c}
 .station-deploy-list li{margin:2px 0}
 /* ==== Global read-only role (Commander / High Command) ====
@@ -479,7 +482,7 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .app{min-height:100vh;width:100%}
 .side{
   position:fixed;inset:0 auto 0 0;z-index:1100;display:flex;flex-direction:column;
-  width:286px;height:100vh;height:100dvh;min-width:286px;overflow:hidden;
+  width:210px;height:100vh;height:100dvh;min-width:210px;overflow:hidden;
   padding:20px 14px 14px;background:linear-gradient(180deg,#0d1729 0%,#101d32 100%);
   border-right:1px solid var(--shell-border);box-shadow:8px 0 26px rgba(15,23,42,.055);
   transform:translateX(0);transition:transform .23s cubic-bezier(.2,.8,.2,1);
@@ -538,7 +541,7 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .side-env-dot{color:#34d399;font-size:8px;flex:none}
 #envBadge{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #uiBuild{display:block;color:#7186a3!important;font-size:9.5px!important;opacity:.82!important}
-.main{width:calc(100% - 286px);min-width:0;margin-left:286px;padding:27px clamp(22px,3.2vw,44px);transition:margin .2s ease,width .2s ease}
+.main{width:calc(100% - 210px);min-width:0;margin-left:210px;padding:27px clamp(22px,3.2vw,44px);transition:margin .2s ease,width .2s ease}
 .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid #dfe6ef}
 .top-heading{display:flex;align-items:center;gap:14px;flex:1 1 auto;min-width:0}
 .top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex:0 1 auto;min-width:0}
@@ -611,8 +614,8 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .search span{top:11px;color:#8493a8}
 .table-wrap{border-color:#e0e7f0;border-radius:12px;box-shadow:0 5px 16px rgba(15,23,42,.035)}
 .table{font-size:12.5px}
-.table th{background:#f7f9fc;color:#66768d;font-size:10px;font-weight:850;letter-spacing:.75px;padding:12px 13px;border-bottom-color:#e1e8f1}
-.table td{padding:12px 13px;border-bottom-color:#edf1f6;color:#334155;line-height:1.45}
+.table th{background:#f7f9fc;color:#66768d;font-size:11px;font-weight:850;letter-spacing:.75px;padding:8px 10px;border-bottom-color:#e1e8f1}
+.table td{padding:8px 10px;border-bottom-color:#edf1f6;color:#334155;line-height:1.45}
 .table tr.clickable:hover td{background:#f3f7fd}
 .badge{padding:4px 9px;font-size:10.5px;font-weight:800;letter-spacing:.05px}
 .badge.green{background:#dcf5e9;color:#116a4c}
@@ -682,15 +685,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .user-pill .urole{max-width:180px}
   .top h1{font-size:21px}
 }
-/* Desktop density at standard 100% browser zoom. Keep the page full-width,
-   reclaim space used by oversized gutters, and confine wide-register scrolling
-   to each table wrapper instead of the entire viewport. */
+/* Desktop density at standard 100% browser zoom. Reclaim oversized gutters,
+   keep register tables within the remaining workspace, and confine any
+   exceptional content overflow to the table wrapper rather than the viewport. */
 @media(min-width:951px){
   .main{padding:22px clamp(14px,2vw,30px)}
   .panel{padding:18px;margin-top:16px}
   .panel-head{gap:10px}
-  .table{font-size:12px}
-  .table th,.table td{padding:10px 9px}
+  .table{font-size:12.5px}
+  .table th,.table td{padding:8px 10px}
   .table-wrap{max-width:100%;overscroll-behavior-x:contain}
   .main>*,.main .panel,.main .unit-stats{min-width:0}
   body.sidebar-collapsed .side{transform:translateX(-105%);pointer-events:none}
@@ -698,13 +701,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   body.sidebar-collapsed .sidebar-scrim{display:none}
 }
 @media(min-width:951px) and (max-width:1280px){
-  .side{width:258px;min-width:258px;padding-inline:11px}
-  .main{width:calc(100% - 258px);margin-left:258px;padding:18px 14px}
+  .side{width:210px;min-width:210px;padding-inline:11px}
+  .main{width:calc(100% - 210px);margin-left:210px;padding:18px 14px}
   .panel{padding:15px}
   .panel-head{gap:8px}
-  .table{font-size:11.5px}
-  .table th,.table td{padding:8px 7px}
-  .table .actions .btn.small{padding:5px 6px;font-size:10.5px}
+  .table{font-size:12.5px}
+  .table th,.table td{padding:8px 10px}
+  .table .actions .btn.small{padding:4px 8px;font-size:12px}
   .cards{gap:10px}
   .card{padding:15px}
 }
@@ -6080,20 +6083,20 @@ function renderRegisterRow(item,currentUser){
   // Certificate link, everything else is a plain status label.
   if(isReadOnlyUser()){
     return approved
-      ? `<a class="btn green small" target="_blank" href="certificate.html?v=60b7522f&id=${encodeURIComponent(item.id)}">Certificate</a>`
+      ? `<a class="btn green small" target="_blank" href="certificate.html?v=fbfd77bb&id=${encodeURIComponent(item.id)}">Certificate</a>`
       : '<span class="muted">View only</span>';
   }
   let actionHtml='';
   if(staleBuild){
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="The running backend is not the review-lock build — approvals are disabled.">&#128274; Stale backend — locked</button>`;
   }else if(approved){
-    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=60b7522f&id=${encodeURIComponent(item.id)}">Certificate</a>`;
+    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=fbfd77bb&id=${encodeURIComponent(item.id)}">Certificate</a>`;
   }else if(isLocked){
     const remaining=Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed).toFixed(1);
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;">&#128274; Review Locked (12h)</button>
       <span class="badge amber" title="Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${remaining} hours remaining">${remaining}h remaining</span>`;
   }else{
-    actionHtml=`<button class="btn small" onclick="approveFP('${esc(item.id)}')">${isAdmin?'&#10003; Approve Application (Admin bypass)':'&#10003; Approve'}</button>`;
+    actionHtml=`<button class="btn small" onclick="approveFP('${esc(item.id)}')">&#10003; Approve</button>`;
   }
   return actionHtml;
 }
@@ -6153,7 +6156,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=60b7522f&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=fbfd77bb&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -6431,7 +6434,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=60b7522f&id=${encodeURIComponent(x.id)}">Review/Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Review / re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=fbfd77bb&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="7" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }

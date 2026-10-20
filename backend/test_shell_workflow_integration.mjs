@@ -41,6 +41,16 @@ try{
   assert.match(html,/body\.sidebar-collapsed \.main\{width:100%;margin-left:0\}/);
   assert.match(html,/body\.sidebar-collapsed \.side\{transform:translateX\(-105%\);pointer-events:none\}/);
   assert.match(html,/@media\(min-width:951px\) and \(max-width:1280px\)/);
+  assert.match(html,/width:210px;height:100vh;height:100dvh;min-width:210px/);
+  assert.match(html,/\.main\{width:calc\(100% - 210px\);min-width:0;margin-left:210px/);
+  assert.match(html,/\.table\{font-size:12\.5px\}/);
+  assert.match(html,/\.table th[^\n]*padding:8px 10px/);
+  assert.match(html,/\.table td\{padding:8px 10px/);
+  assert.match(html,/\.table \.actions\{white-space:nowrap;text-align:right;font-size:0\}/);
+  assert.match(html,/\.table \.actions \.btn\{[^\n]*padding:4px 8px;font-size:12px/);
+  assert.match(html,/\.table \.actions \.btn \+ \.btn\{margin-left:4px\}/);
+  assert.match(html,/\.row-actions\{display:flex;gap:4px;align-items:center;white-space:nowrap\}/);
+  assert.match(html,/\.row-actions \.btn\{min-height:28px;padding:4px 8px;font-size:12px/);
   assert.match(html,/\.main\{padding:22px clamp\(14px,2vw,30px\)\}/);
   // Valid controls must not inherit the red styling of invalid siblings.
   assert.ok(html.includes('input.invalid,select.invalid,textarea.invalid'));

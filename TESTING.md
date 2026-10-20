@@ -261,7 +261,7 @@ node backend/test_frontend_session.mjs             # pins the stamp shape + that
 3. `curl -sI localhost:8001/ | grep -i cache-control` → `no-store, no-cache, must-revalidate, max-age=0`;
    `curl -sI "localhost:8001/images/police_logo.png?v=0f8552e" | grep -i cache-control` →
    `public, max-age=31536000, immutable`.
-4. Open **View → Certificate / Review/Print** (devtools → Network): the created document URL carries
+4. Open **View → Certificate / Print** (devtools → Network): the created document URL carries
    `?v=0f8552e`.
 5. Open the app with a stale tab (`/?v=0f8552e`) and confirm the Actions column still renders.
 

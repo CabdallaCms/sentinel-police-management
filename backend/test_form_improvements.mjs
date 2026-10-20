@@ -176,7 +176,8 @@ try{
   run('renderFingerprintTable()');
   assert.match($('fpTable').innerHTML,/Signed &amp; Scanned/);
   assert.match($('fpTable').innerHTML,/Quick view/);
-  assert.match($('fpTable').innerHTML,/Review \/ re-scan/);
+  assert.match($('fpTable').innerHTML,/>Re-scan<\/button>/);
+  assert.match($('fpTable').innerHTML,/>Print<\/a>/);
   run(`api=async path=>path.endsWith('/documents')?({total_count:1,scope_note:'Fingerprint Unit attachments',documents:[
     {path:'/uploads/passport.jpg',name:'passport-scan.jpg',category:'Passport identity scan',source:'Fingerprint Unit',record_id:'FP-DOC'}
   ]}):({residence:'Laascaanood',proximity_note:'No live coordinates',scope_note:'Scoped',items:[]});openPersonView('P-DOC');`);

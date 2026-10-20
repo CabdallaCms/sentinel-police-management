@@ -538,9 +538,9 @@ function assertShellContract() {
   if (!/if\(navItemAllowed\(spec\.page,mods,isAdmin\)\) ensureNavItem\(spec\.page\);/.test(html)
       || !/else removeNavItem\(spec\.page\);/.test(html))
     throw new Error('applyNavForRole() must remove a denied module from the sidebar DOM');
-  // the fingerprint register's Review/Print link is a write-side action
-  if (!/\$\{canWrite\(\)\?`<a class="btn secondary small" data-write="1"[^`]*Review\/Print<\/a>[^`]*`:''\}/.test(html))
-    throw new Error('the fingerprint Review/Print link must be gated on canWrite()');
+  // the fingerprint register's Print link is a write-side action
+  if (!/\$\{canWrite\(\)\?`<a class="btn secondary small" data-write="1"[^`]*>Print<\/a>[^`]*`:''\}/.test(html))
+    throw new Error('the fingerprint Print link must be gated on canWrite()');
   // a build stamp so an operator can tell a stale cached page from a stale server.
   // The stamp carries the short commit the page was published from (the same
   // value as every `?v=` cache-busting parameter); comparing the sidebar footer
@@ -1014,13 +1014,13 @@ async function main() {
       throw new Error('hardenReadOnlyDom() must be available to every renderer');
     if (typeof probe(sb13, "hardenReadOnlyDom(document)") !== 'number')
       throw new Error('hardenReadOnlyDom() must report how many controls it changed');
-    // …and the fingerprint register hands the Commander no Review/Print link.
+    // …and the fingerprint register hands the Commander no Print link.
     const fpRows = probe(sb13,
       "(function(){ db.fingerprint=[{id:'FP-1',person:'P-1',purpose:'Travel',status:'Pending Review'," +
       "created_at:'2020-01-01 00:00:00'}]; try{renderFingerprintTable()}catch(_){} " +
       "return (document.getElementById('fpTable')||{}).innerHTML||'' })()");
     if (/Review\/Print/.test(fpRows) || /application\.html/.test(fpRows))
-      throw new Error('a read-only session must not be offered the Review/Print link: ' + fpRows);
+      throw new Error('a read-only session must not be offered the Print link: ' + fpRows);
     if (/approveFP\(/.test(fpRows))
       throw new Error('a read-only session must not be offered an approve action: ' + fpRows);
     // The API firewall refuses every mutation before it leaves the browser.
