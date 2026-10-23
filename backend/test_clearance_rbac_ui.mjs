@@ -16,6 +16,12 @@
  *   5. FIELD-LEVEL RBAC — in the person detail modal a regular officer may
  *      edit only phone / residence / occupation (identity inputs disabled and
  *      excluded from the PATCH payload), while an administrator edits all.
+ *   6. PERSON PROFILE PURPOSE — the person detail head card names the purpose
+ *      of the newest clearance application for that person (with an "earlier"
+ *      count) and stays quiet for people with no application.
+ *   7. ONE EDIT ACTION — the footer offers a single "Edit Details" action (no
+ *      "Edit profile" / "Edit / append details" pair) and no per-field
+ *      "Admin only" badges; locked fields are ordinary disabled inputs.
  *
  * Usage:  npm install --no-save --package-lock=false jsdom@26
  *         node backend/test_clearance_rbac_ui.mjs
@@ -78,6 +84,38 @@ try {
   assert.match($('fpTable').innerHTML, /purpose-chip employment/,
     'register Purpose column renders a labelled purpose chip');
   console.log('ok 1b: register Purpose column renders the purpose badge');
+
+  // The same purpose follows the person: the profile head card answers "why is
+  // this person being cleared?" without opening the Fingerprint register.
+  run(`db.people=[{id:'P-1',name:'Ayaan Cabdi Xasan Axmed'}];
+    db.fingerprint=[
+      {id:'FP-UI-2',person:'P-1',purpose:'Travel',status:'Approved',created_at:'2026-10-21 10:00:00'},
+      {id:'FP-UI-1',applicantPersonId:'P-1',person:'P-1',purpose:'Employment',
+       status:'Pending Review',created_at:'2026-10-20 09:00:00'}
+    ];
+    serverOn=false;
+    window._viewingPerson={id:'P-1',name:'Ayaan Cabdi Xasan Axmed',units:[]};
+    window._viewingOfficer=null;window._personDetailMode='person';window._personEditMode=false;
+    renderPersonDetail(window._viewingPerson,'person');`);
+  const personPurpose = $('pvModalBody').querySelector('.pv-idrow .pv-purpose-line');
+  assert.ok(personPurpose, 'the person profile head card carries a purpose line');
+  assert.match(personPurpose.textContent, /Clearance/i, 'the line is labelled Clearance');
+  assert.match(personPurpose.textContent, /Travel/i, 'the newest application supplies the purpose');
+  assert.match(personPurpose.querySelector('.purpose-chip').className, /travel/,
+    'the profile chip carries the Travel tone');
+  assert.match(personPurpose.textContent, /\+1 earlier/, 'earlier applications are summarised');
+  assert.equal(personPurpose.getAttribute('data-clearance-purpose'), 'Travel');
+  assert.match(personPurpose.getAttribute('title'), /FP-UI-2/,
+    'hovering names the application behind the chip');
+  run(`closeEntryModal('personDetailModal')`);
+
+  // A person with no clearance application keeps the header clean.
+  run(`window._viewingPerson={id:'P-2',name:'No Clearance Person',units:[]};
+    renderPersonDetail(window._viewingPerson,'person');`);
+  assert.equal($('pvModalBody').querySelector('.pv-purpose-line'), null,
+    'no purpose chip is invented for a person without an application');
+  run(`closeEntryModal('personDetailModal');db.people=[{id:'P-1',name:'Ayaan Cabdi Xasan Axmed'}];`);
+  console.log('ok 6: person profile header shows the clearance purpose for that person');
 
   // ------------------------------------------------------------------ 2 ----
   assert.equal(
@@ -202,6 +240,13 @@ try {
   }
   assert.match($('pvModalBody').textContent, /Role-based editing/,
     'the modal explains the field-level restriction');
+  assert.equal($('pvModalBody').querySelector('.pv-lock-tag'), null,
+    'locked fields carry no per-field indicator badge');
+  assert.doesNotMatch($('pvModalBody').textContent, /Admin only/i,
+    'the removed "ADMIN ONLY" badge text must not return for a restricted editor');
+  assert.match($('pdEdit-first').closest('.pv-field').className, /pv-locked/,
+    'a protected field is styled as locked (and disabled), not tagged');
+  assert.equal($('pdEdit-first').getAttribute('aria-readonly'), 'true');
 
   // Save as officer: only the three mutable fields leave the browser.
   $('pdEdit-phone').value = ' +252 63 999 0000 ';
@@ -282,6 +327,32 @@ try {
     'no restricted-edit policy is registered for an administrator');
   run(`closeDrawer()`);
   console.log('ok 5: field-level RBAC — officers edit phone/address/occupation only, admins edit all');
+
+  // ------------------------------------------------------------------ 7 ----
+  // A single, unambiguous edit entry point on the person profile.
+  run(`currentUser={role:'FingerprintUnit'};sessionUser=currentUser;isReadOnlyUser=()=>false;
+    window._viewingPerson=${JSON.stringify(record)};window._viewingOfficer=null;
+    window._personDetailMode='person';window._personEditMode=false;
+    renderPersonDetail(window._viewingPerson,'person');`);
+  let foot = $('pvModalBody').querySelector('.pv-foot');
+  const editActions = [...foot.querySelectorAll('button')]
+    .filter((b) => /edit/i.test(b.textContent) || /openPersonDrawer|startPersonEditMode/.test(b.getAttribute('onclick') || ''));
+  assert.equal(editActions.length, 1, 'the footer offers exactly one edit action');
+  assert.match(editActions[0].textContent, /Edit Details/);
+  assert.match(editActions[0].getAttribute('onclick') || '', /startPersonEditMode\(\)/,
+    'the single action opens the inline, role-aware editor');
+  assert.doesNotMatch(foot.textContent, /Edit profile|Edit \/ append details/,
+    'the old duplicate button labels are gone');
+
+  run(`window._personEditMode=true;renderPersonDetail(window._viewingPerson,'person');`);
+  foot = $('pvModalBody').querySelector('.pv-foot');
+  assert.equal(foot.querySelectorAll('[data-person-save]').length, 1,
+    'exactly one save control in edit mode');
+  assert.equal(foot.querySelector('[data-person-save]').textContent, 'Save details',
+    'the save control uses the same "details" wording as the entry point');
+  assert.match(foot.textContent, /Cancel/, 'the editor keeps a cancel path');
+  run(`window._personEditMode=false`);
+  console.log('ok 7: one clean "Edit Details" action replaces the duplicate edit entry points');
 
   console.log('ALL CLEARANCE / RBAC UI TESTS PASSED');
   // Let the identity-match continuations and the modal focus timers settle

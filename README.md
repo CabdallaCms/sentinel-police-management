@@ -722,13 +722,29 @@ regular officer. Uploading the signed scan (`POST
 **Field-level editing in Person Details.** Regular users may edit only **contact
 phone**, **residence address** and **occupation**; full legal names, mother's name,
 DOB/POB, National ID, passport ID, gender, email and every other biographic/legal
-field stay read-only (rendered with a `rbac-locked` class and a lock hint).
-SystemAdministrators / Admins edit every field. The rule is enforced in **both**
-places: the UI disables the inputs and sends only the permitted keys, and
-`PATCH /api/persons/<id>` refuses a protected change with **403** `code:
+field stay read-only. SystemAdministrators / Admins edit every field. The rule is
+enforced in **both** places: the UI disables the inputs and sends only the permitted
+keys, and `PATCH /api/persons/<id>` refuses a protected change with **403** `code:
 field_edit_forbidden` (plus `restricted_fields`, `editable_fields`,
 `admin_bypass: false`) — atomically, so a bundle containing one identity change
 persists nothing. An unchanged identity echo is allowed, and creating a new person
 (`POST /api/persons`, `/upsert`) is unchanged.
+
+**The person profile answers "why is this person being cleared?".** The detail
+head card carries a purpose chip for the **newest** clearance application of the
+viewed person (`personClearanceSummary()`), labelled `Clearance` with the same
+Education / Travel / Employment / Citizenship / Licence tones used everywhere else.
+When the person has more than one application the chip adds `+N earlier` and its
+tooltip names the application behind it. A person with no application keeps the
+header clean — no placeholder chip is invented.
+
+**One edit action, no indicator badges.** The person profile footer offers a single
+**✏ Edit Details** action that opens the role-aware inline editor (`Cancel` /
+`Save details`); the previous `Edit profile` + `Edit / append details` pair is
+gone, and the register's **+ New / update person** flow still covers creating a
+new identity or merging through the live match. Inside the editor, fields the role
+may not change are ordinary disabled inputs (`.pv-locked`, `aria-readonly=true`,
+hover hint) — the old per-field `🔒 Admin only` / `Derived` tags were removed and
+the restriction is explained once in the role note under the grid.
 
 See [TESTING.md](TESTING.md) for the suites and the officer UAT checklist.

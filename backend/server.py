@@ -678,6 +678,8 @@ UI_REQUIRED_MARKERS = (
     ('Certificate print lock', 'function certificatePrintState('),
     ('Fullscreen image viewer', 'id="imageLightbox"'),
     ('Person field-level RBAC', 'PERSON_SELF_EDITABLE_FIELDS'),
+    ('Single person edit action', '✏ Edit Details'),
+    ('Clearance purpose on the person profile', 'function personPurposeLine('),
     ('Desktop sidebar collapse', 'body.sidebar-collapsed .main{width:100%;margin-left:0}'),
     ('Five applicant document fields', "buildFileSlots('appDocs','appDoc',5"),
 )

@@ -420,7 +420,9 @@ inline script in jsdom with stubbed network writes.
 ### Officer UAT checklist
 1. **Purpose** — open Fingerprint: every row shows a Purpose chip; open one record and the
    modal header + summary repeat it; open `application.html` / `certificate.html` and check
-   the chip and the printed purpose line.
+   the chip and the printed purpose line. Then open a person's profile from the Central
+   Person Registry — the head card shows `Clearance · <purpose>` for the newest application
+   (`+N earlier` when there are more), and a person with no application shows no chip.
 2. **Photograph / documents** — open a person with a photograph: the photo renders as an
    image, clicking it (or any image document) opens the fullscreen viewer; wheel/`+`/`−`
    zoom, drag to pan, `0` resets, `Esc` closes; a PDF/scan keeps its file icon.
@@ -429,8 +431,12 @@ inline script in jsdom with stubbed network writes.
    link `certificate.html?id=…` says the certificate is locked. Upload the signed scan
    (`Re-scan` → *signed application*) and print immediately. As Admin the button is
    enabled from the start (`Admin bypass`).
-4. **Field-level RBAC** — sign in as a regular officer, open Person Details → Edit: only
-   Phone, Residence and Occupation accept input; the identity fields are disabled with the
-   lock hint, and saving sends only those three keys. Try the same with `curl`:
+4. **One edit action** — the person profile footer shows exactly one **✏ Edit Details**
+   button (no `Edit profile` / `Edit / append details` pair); it opens `Cancel` +
+   `Save details`. The register's **+ New / update person** flow still creates or merges.
+5. **Field-level RBAC** — sign in as a regular officer, open Person Details → **Edit
+   Details**: only Phone, Residence and Occupation accept input; the identity fields are
+   plain disabled inputs with no `ADMIN ONLY` tags (the role note below the grid explains
+   why), and saving sends only those three keys. Try the same with `curl`:
    `PATCH /api/persons/<id> {"full_name": "…"}` → **403** `field_edit_forbidden`, no change
    written. Sign in as Admin: every field edits and saves.

@@ -196,6 +196,12 @@ body.modal-open{overflow:hidden}
 .pv-id b{font-size:17px;display:block;line-height:1.3}
 .pv-id .muted{margin-top:2px}
 .pv-personid{display:inline-flex;align-items:center;gap:5px;margin-top:7px;background:#fff;border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:800;color:var(--blue)}
+.pv-idrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:7px}
+.pv-idrow .pv-personid{margin-top:0}
+.pv-purpose-line{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pv-purpose-line small{color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px}
+.pv-purpose-line .purpose-chip{font-size:10px;padding:2px 9px}
+.pv-purpose-line .pv-purpose-more{font-size:10.5px;color:var(--muted);font-weight:700}
 .pv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pv-field{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fbfcff;min-width:0}
 .pv-field small{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px}
@@ -1115,10 +1121,13 @@ body[data-theme="dark"] .fp-review-summary .pv-field.pv-purpose{background:linea
 .pv-field.pv-edit input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px #2563eb26}
 .pv-field.pv-edit input:disabled{background:var(--surface-alt);color:var(--muted);
   border-color:var(--line);cursor:not-allowed;font-weight:500}
-.pv-field.pv-edit.pv-locked{border-style:dashed;background:var(--surface-alt)}
-.pv-lock-tag{font-size:9px;font-weight:800;letter-spacing:.4px;color:#8a5a00;background:#fff2d6;
-  border:1px solid #f0d69a;border-radius:999px;padding:1px 7px;text-transform:uppercase;flex:none}
-body.dark-mode .pv-lock-tag,body[data-theme="dark"] .pv-lock-tag{background:#78350f55;color:#fde68a;border-color:#b45309}
+/* Locked (role-restricted) fields read as ordinary disabled inputs — no
+   per-field indicator badges. The role explanation lives once, in the note
+   below the grid, so the form stays calm and scannable. */
+.pv-field.pv-edit.pv-locked{border-color:var(--line);background:var(--surface-alt)}
+.pv-field.pv-edit.pv-locked small{color:#94a3b8}
+body.dark-mode .pv-field.pv-edit.pv-locked small,
+body[data-theme="dark"] .pv-field.pv-edit.pv-locked small{color:#94a3b8}
 .rbac-note{display:flex;gap:8px;align-items:flex-start;border:1px solid #c3d7ff;background:#f2f7ff;
   color:#1e3a8a;border-radius:10px;padding:9px 12px;font-size:11.5px;line-height:1.5;margin:10px 0 0}
 body.dark-mode .rbac-note,body[data-theme="dark"] .rbac-note{background:#162032;border-color:#3b82f6;color:#bfdbfe}
@@ -5265,14 +5274,17 @@ function personBioForm(record){
   const fields=personBioFields(record);
   const inputs=fields.map(f=>{
     if(f.key==='name'){
-      return `<div class="pv-field full"><small><span>Full Legal Name</span><span class="pv-lock-tag">Derived</span></small><b>${esc(f.value||'—')}</b><span class="muted" style="font-size:10.5px">Composed from the four legal name parts below.</span></div>`;
+      return `<div class="pv-field full"><small>Full Legal Name</small><b>${esc(f.value||'—')}</b><span class="muted" style="font-size:10.5px">Composed from the four legal name parts below.</span></div>`;
     }
     const allowed=admin||PERSON_SELF_EDITABLE_FIELDS.includes(f.key);
     const type=f.key==='dob'?'date':'text';
-    return `<label class="pv-field pv-edit${f.full?' full':''}${allowed?'':' pv-locked'}" for="pdEdit-${f.key}">
-      <small><span>${esc(f.label)}</span>${allowed?'':'<span class="pv-lock-tag">🔒 Admin only</span>'}</small>
+    // Locked fields are plain disabled inputs: the restriction is explained
+    // once in the note under the grid, never repeated as a per-field badge.
+    const lockHint=allowed?'':'Read-only for your role — only an administrator can edit legal identity fields.';
+    return `<label class="pv-field pv-edit${f.full?' full':''}${allowed?'':' pv-locked'}" for="pdEdit-${f.key}"${lockHint?` title="${esc(lockHint)}"`:''}>
+      <small>${esc(f.label)}</small>
       <input id="pdEdit-${f.key}" type="${type}" value="${esc(f.value)}" autocomplete="off"
-        ${allowed?'':'disabled aria-disabled="true"'}${f.key==='name'?' readonly':''}>
+        ${allowed?'':'disabled aria-disabled="true" aria-readonly="true"'}${f.key==='name'?' readonly':''}>
     </label>`;
   }).join('');
   return `<div class="pv-grid pd-bio-grid pd-edit-grid">${inputs}</div>
@@ -5343,7 +5355,7 @@ async function savePersonInlineEdit(){
   }catch(e){
     showFormError(e.message||'The person record could not be updated.',{notice:'personEditNotice',title:'Unable to Save'});
   }finally{
-    if(btn){btn.disabled=false;btn.textContent='Save profile'}
+    if(btn){btn.disabled=false;btn.textContent='Save details'}
   }
 }
 function renderOfficerRegistrationDetails(o){
@@ -5381,13 +5393,17 @@ function renderPersonDetail(record,mode){
   const photoCaption=(isOfficer?'Police Registration':'Central Person Registry')+' · '+personId;
   const head=`<div class="pv-headcard">${photoSrc
     ? `<button class="pv-photo pv-photo-btn" type="button" data-image-zoom="${esc(photoSrc)}" data-image-title="${esc('Photograph of '+displayName)}" data-image-caption="${esc(photoCaption)}" aria-label="Open photograph of ${esc(displayName)} in the fullscreen viewer"><img src="${esc(photoSrc)}" alt="Photo of ${esc(displayName)}"></button>`
-    : `<span class="pv-photo" aria-hidden="true">${esc(initials(displayName))}</span>`}<div class="pv-id"><b>${esc(displayName)}</b><div class="muted">${esc(nameSummary)}</div><span class="pv-personid">${isOfficer?'♙ Service ID':'🆔 Person ID'} · ${esc(personId)}</span></div></div>`;
+    : `<span class="pv-photo" aria-hidden="true">${esc(initials(displayName))}</span>`}<div class="pv-id"><b>${esc(displayName)}</b><div class="muted">${esc(nameSummary)}</div><div class="pv-idrow"><span class="pv-personid">${isOfficer?'♙ Service ID':'🆔 Person ID'} · ${esc(personId)}</span>${isOfficer?'':personPurposeLine(personId)}</div></div></div>`;
   const unitsHtml=isOfficer?'<span class="badge purple">Police Registration</span> '+(record.unit?`<span class="badge blue">${esc(record.unit)}</span>`:''):personUnitsHtml(record);
   const unitsBlock=isOfficer?renderOfficerRegistrationDetails(record):'';
   const editing=!isOfficer&&window._personEditMode===true&&canWrite();
+  // One edit entry point. "Edit Details" opens the inline editor, which already
+  // honours the role policy (contact fields editable, legal identity read-only
+  // for regular officers) — the old "Edit profile" / "Edit / append details"
+  // pair is gone so there is no ambiguity about which form to use.
   const foot=`<div class="pv-foot"><button class="btn ghost" type="button" onclick="closeEntryModal('personDetailModal')">Close</button>${!isOfficer&&canWrite()?(editing
-    ? `<button class="btn ghost" type="button" onclick="cancelPersonEditMode()">Cancel</button><button class="btn" type="button" data-write="1" data-person-save="1" onclick="savePersonInlineEdit()">Save profile</button>`
-    : `<button class="btn secondary" type="button" data-write="1" onclick="startPersonEditMode()">✏ Edit profile</button><button class="btn ghost" type="button" data-write="1" onclick="closeEntryModal('personDetailModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button>`):''}</div>`;
+    ? `<button class="btn ghost" type="button" onclick="cancelPersonEditMode()">Cancel</button><button class="btn" type="button" data-write="1" data-person-save="1" onclick="savePersonInlineEdit()">Save details</button>`
+    : `<button class="btn secondary" type="button" data-write="1" onclick="startPersonEditMode()">✏ Edit Details</button>`):''}</div>`;
   document.getElementById('pvModalTitle').textContent=(isOfficer?'Police Registration record · ':'Person detail · ')+personId;
   const subtitle=document.getElementById('personDetailSubtitle');if(subtitle)subtitle.textContent=isOfficer?'Police Personnel Registry · biographic details and supporting documents':'Central Person Registry · complete biographic profile, attachments and linked unit records';
   document.getElementById('pvModalBody').innerHTML=`${head}
@@ -6569,6 +6585,33 @@ function purposeIcon(purpose){
   return {employment:'💼',citizenship:'🛡',education:'🎓',travel:'✈',licence:'🪪'}[tone]||'📋';
 }
 
+// ---- clearance purpose on the person profile ------------------------------
+// A person profile must answer "why is this person being cleared?" without
+// opening the Fingerprint register. The applications for the viewed person are
+// resolved from the same filtered register cache (so unit scope still applies)
+// and the newest application supplies the purpose chip in the modal header.
+function personClearanceApplications(personKey){
+  const key=String(personKey||'').trim();
+  if(!key)return [];
+  return (db.fingerprint||[]).filter(x=>{
+    const ids=[x.applicantPersonId,x.person].map(v=>String(v==null?'':v).trim());
+    return ids.includes(key);
+  }).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+}
+function personClearanceSummary(personKey){
+  const items=personClearanceApplications(personKey);
+  if(!items.length)return null;
+  const latest=items[0];
+  return {items,latest,count:items.length,purpose:clearancePurpose(latest)};
+}
+function personPurposeLine(personKey){
+  const summary=personClearanceSummary(personKey);
+  if(!summary)return '';
+  const more=summary.count>1?`<span class="pv-purpose-more">+${summary.count-1} earlier</span>`:'';
+  const detail='Clearance purpose: '+(summary.purpose||'not recorded')+' · application '+summary.latest.id;
+  return `<span class="pv-purpose-line" data-clearance-purpose="${esc(summary.purpose||'')}" title="${esc(detail)}"><small>Clearance</small>${purposeBadge(summary.purpose)}${more}</span>`;
+}
+
 // ---- certificate print lock ------------------------------------------------
 // RULE: an approved certificate may only be printed by a regular officer once
 // the scanned signed application document has been uploaded. Administrators
@@ -7579,7 +7622,7 @@ async function syncServer(){
     // The review payload carries the 12-hour mandatory-review window state
     // (and whether the signed-in user may approve right now), so the register
     // can show why an approval is still locked.
-    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at,signedDocumentPath:x.signed_document_path||'',signedDocumentName:x.signed_document_name||'',applicantPhoto:x.applicant_photo||'','certificatePrint':x.certificate_print||null}));
+    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at,signedDocumentPath:x.signed_document_path||'',signedDocumentName:x.signed_document_name||'',applicantPersonId:x.applicant_person_id||'',applicantPhoto:x.applicant_photo||'','certificatePrint':x.certificate_print||null}));
     if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',summary:x.incident_summary,created_at:x.created_at||'',participants:[],evidence:[]}));
     if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     // Police Registrations: stations + officers now sync from the central DB.
