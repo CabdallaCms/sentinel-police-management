@@ -542,6 +542,80 @@ PERSON_FIELDS = NAME_PART_FIELDS + ('full_name', 'national_id', 'date_of_birth',
                                     'mother_name', 'place_of_birth', 'residence',
                                     'occupation', 'passport_id', 'photo_path')
 
+# ---- person record field-level edit authority -------------------------------
+# Editing an EXISTING person record is split by role:
+#   * Administrators (Admin / SystemAdmin) may edit every biographic and legal
+#     identity field.
+#   * Every other write-capable role (Fingerprint / Airport / CID / HR /
+#     Checkpoint officers) may correct only the mutable contact details:
+#     phone, residence address and occupation.
+# The identity columns (four name parts, derived full_name, date/place of
+# birth, mother's name, National ID, Passport ID, photo) stay read-only.
+#
+# This is additive to — never a replacement for — the existing validation in
+# the PATCH handler: the update loop below still writes only PERSON_FIELDS and
+# still ignores blank values. The check runs first so a protected change can
+# never be persisted, and a no-op submission (an older client echoing the
+# record back unchanged) keeps working exactly as before.
+PERSON_MUTABLE_FIELDS = ('phone', 'residence', 'occupation')
+PERSON_FIELD_EDIT_CODE = 'field_edit_forbidden'
+
+
+class PersonFieldEditForbidden(PermissionError):
+    """A non-admin session attempted to alter a protected identity field.
+
+    Carries its own HTTP status so the PATCH handler answers 403 Forbidden
+    (never the 401 used for a missing/insufficient session) and can list the
+    restricted fields for the client.
+    """
+
+    status_code = 403
+    http_status = 403
+    code = PERSON_FIELD_EDIT_CODE
+
+    def __init__(self, message, restricted=()):
+        super().__init__(message)
+        self.restricted = list(restricted)
+
+
+def protected_person_field_changes(existing, data, user):
+    """Protected PERSON_FIELDS a non-admin request would actually change.
+
+    Blank values are ignored because the PATCH route ignores them too, and a
+    value identical to the stored one is a no-op, so a client that echoes the
+    whole record back (the pre-RBAC drawer did exactly that) is not refused.
+    """
+    if is_admin_user(user) or not data:
+        return []
+    changed = []
+    for field in PERSON_FIELDS:
+        if field in PERSON_MUTABLE_FIELDS or field not in data:
+            continue
+        value = data.get(field)
+        if value is None:
+            continue
+        new_value = str(value).strip()
+        if not new_value:
+            continue
+        stored = str((existing or {}).get(field) or '').strip()
+        if new_value != stored:
+            changed.append(field)
+    return changed
+
+
+def enforce_person_field_permissions(existing, data, user):
+    """Raise 403 unless every protected-field change is administrator-issued.
+
+    Returns the (empty) list of violations for symmetry with the read paths.
+    """
+    restricted = protected_person_field_changes(existing, data, user)
+    if restricted:
+        raise PersonFieldEditForbidden(
+            'Legal identity fields can only be edited by an administrator '
+            f'(restricted: {", ".join(restricted)}). Regular officers may update '
+            'contact phone, residence address and occupation.', restricted)
+    return restricted
+
 # ---------------------------------------------------------------------------
 # Fingerprint / clearance-application policy.
 # ---------------------------------------------------------------------------
@@ -599,6 +673,11 @@ UI_REQUIRED_MARKERS = (
     ('Person document viewer', 'Documents &amp; Attachments'),
     ('Fingerprint signed scan column', 'Application Scanned Document'),
     ('Signed application re-scan upload', 'function uploadSignedApplicationDocument('),
+    ('Clearance purpose in review header', 'id="fpReviewPurposeBadge"'),
+    ('Applicant photograph thumbnail', "category:'Applicant photograph'"),
+    ('Certificate print lock', 'function certificatePrintState('),
+    ('Fullscreen image viewer', 'id="imageLightbox"'),
+    ('Person field-level RBAC', 'PERSON_SELF_EDITABLE_FIELDS'),
     ('Desktop sidebar collapse', 'body.sidebar-collapsed .main{width:100%;margin-left:0}'),
     ('Five applicant document fields', "buildFileSlots('appDocs','appDoc',5"),
 )
@@ -810,6 +889,42 @@ def review_gate_decision(app_row, user):
     if (app_row or {}).get('application_id'):
         payload['application_id'] = app_row['application_id']
     return 400, payload
+
+
+# ---- clearance certificate print policy ------------------------------------
+# RULE: the certificate print action stays locked for a regular officer until
+# the scanned signed application document has been uploaded. Administrators /
+# System Administrators bypass the restriction at any time; the globally
+# read-only Commander / High Command role keeps its view-only print access
+# (it holds no write authority and can only ever see approved files).
+# The state is computed per caller so the register, the review modal and the
+# printable certificate page all render from one authoritative answer.
+CERTIFICATE_PRINT_LOCK_REASON = ('Certificate printing is locked until the scanned '
+                                 'signed application document is uploaded.')
+
+
+def certificate_print_state(app, user, signed_scan_present=False):
+    """Return the certificate print permission for this caller and record."""
+    admin = is_admin_user(user)
+    read_only = is_read_only_user(user)
+    signed = bool(signed_scan_present)
+    unlocked = bool(admin or read_only or signed)
+    if admin:
+        reason = 'Administrator print bypass — the signed scan is not required.'
+    elif read_only:
+        reason = 'View-only command access — approved certificates stay printable.'
+    elif signed:
+        reason = ''
+    else:
+        reason = CERTIFICATE_PRINT_LOCK_REASON
+    return {'unlocked': unlocked,
+            'locked': not unlocked,
+            'requires_signed_scan': not (admin or read_only),
+            'signed_scan_present': signed,
+            'admin_bypass': admin,
+            'read_only_bypass': read_only,
+            'reason': reason,
+            'editable_by': 'admin' if admin else ('read_only' if read_only else 'officer')}
 
 
 def review_lock_self_test():
@@ -6191,6 +6306,22 @@ class API(BaseHTTPRequestHandler):
         self.send_json(403, {'error': str(exc), 'code': ADMIN_ONLY_CODE,
                              'admin_only': True, 'path': path or self.path})
 
+    def field_edit_403(self, exc, path=None):
+        """Answer an HTTP 403 Forbidden for a protected person-field change.
+
+        A regular officer may update only the mutable contact fields; this is
+        the single response shape `PATCH /api/persons/<id>` returns for an
+        attempted identity change (`code: field_edit_forbidden`), listing the
+        restricted fields and the ones the role may edit.
+        """
+        self.send_json(403, {'error': str(exc),
+                             'code': getattr(exc, 'code', PERSON_FIELD_EDIT_CODE),
+                             'field_edit_forbidden': True,
+                             'restricted_fields': list(getattr(exc, 'restricted', [])),
+                             'editable_fields': list(PERSON_MUTABLE_FIELDS),
+                             'admin_bypass': False,
+                             'path': path or self.path})
+
     # ---- static pages & uploads --------------------------------------------
     def serve_static(self, path):
         p = urlparse(path)
@@ -6435,7 +6566,7 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/clearance-applications':
                 rows = c.execute('''SELECT a.application_id,a.branch_id,b.name AS branch_name,
                     b.region AS branch_region,a.purpose,a.status,a.certificate_number,a.created_at,
-                    a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone,
+                    a.applicant_photo,a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone,
                     (SELECT d.file_path FROM clearance_signed_documents d
                      WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_path,
                     (SELECT d.file_name FROM clearance_signed_documents d
@@ -6449,11 +6580,18 @@ class API(BaseHTTPRequestHandler):
                     # `can_approve` is resolved per caller.
                     item['review'] = fingerprint_review_state(item)
                     item['can_approve'] = bool(is_admin_user(user) or not item['review']['review_locked'])
+                    # Certificate print lock: a regular officer may only print
+                    # the certificate once the signed scan exists (admins
+                    # bypass). Resolved per caller, like can_approve.
+                    item['signed_scan_present'] = bool(item.get('signed_document_path'))
+                    item['certificate_print'] = certificate_print_state(
+                        item, user, item['signed_scan_present'])
                     items.append(item)
                 result = {'items': items, 'review_window_hours': FINGERPRINT_REVIEW_WINDOW_HOURS}
             elif p.path.startswith('/api/clearance-applications/'):
                 aid = p.path.split('/')[3]
-                a = rowdict(c.execute('''SELECT a.*,p.full_name,p.national_id,p.date_of_birth,p.mother_name,
+                a = rowdict(c.execute('''SELECT a.*,p.person_id AS applicant_person_id,
+                    p.full_name,p.national_id,p.date_of_birth,p.mother_name,
                     p.place_of_birth,p.residence,p.occupation,p.passport_id,p.photo_path,p.phone,
                     b.name AS branch_name,b.region AS branch_region
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id
@@ -6470,6 +6608,10 @@ class API(BaseHTTPRequestHandler):
                 # 12-hour mandatory review window metadata for the printable page.
                 a['review'] = fingerprint_review_state(a)
                 a['can_approve'] = bool(is_admin_user(user) or not a['review']['review_locked'])
+                # Certificate print lock (signed scan required unless admin).
+                a['signed_scan_present'] = bool(a['signed_application_documents'])
+                a['certificate_print'] = certificate_print_state(
+                    a, user, a['signed_scan_present'])
                 result = a
             elif p.path == '/api/crime-cases':
                 rows = c.execute('''SELECT cc.*,b.name AS branch_name,b.region AS branch_region,
@@ -7549,6 +7691,10 @@ class API(BaseHTTPRequestHandler):
                 pid = p.path.split('/')[3]
                 row = c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone()
                 if not row: self.send_json(404,{'error':'Person not found'}); c.close(); return
+                # Field-level RBAC: administrators may edit every field, every
+                # other role only phone / residence / occupation. Checked
+                # before any UPDATE so a protected change is never persisted.
+                enforce_person_field_permissions(rowdict(row), data, user)
                 updates, params = [], []
                 for f in PERSON_FIELDS:
                     val = data.get(f)
@@ -7674,6 +7820,10 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
+        except PersonFieldEditForbidden as e:
+            # A non-admin tried to change a legal identity field → 403.
+            if c: c.close()
+            self.field_edit_403(e)
         except AdminOnlyWriteError as e:
             # Management-table edit attempted by a non-admin role → 403.
             if c: c.close()

@@ -232,6 +232,15 @@
   .btn.ghost{background:#eef1f6;color:#33415c}.btn.green{background:#0e6b4a}
   .badge{display:inline-flex;padding:5px 10px;border-radius:99px;font-size:12px;font-weight:800}
   .badge.amber{background:#fff3d9;color:#b7650e}.badge.green{background:#e3f7f1;color:#0e6b4a}
+  /* Clearance purpose — kept visible in the toolbar and in the locked screen. */
+  .purpose-chip{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:5px 12px;
+    font-size:12px;font-weight:800;letter-spacing:.35px;text-transform:uppercase;border:1px solid transparent}
+  .purpose-chip.employment{background:#e8f0ff;color:#1d4ed8;border-color:#c3d7ff}
+  .purpose-chip.citizenship{background:#f2e9ff;color:#6d28d9;border-color:#ddc9ff}
+  .purpose-chip.education{background:#e2f7ee;color:#0f7a55;border-color:#bce9d7}
+  .purpose-chip.travel{background:#fff3dd;color:#a16207;border-color:#f6dfae}
+  .purpose-chip.licence{background:#ffe9ea;color:#b4232f;border-color:#f7c7cb}
+  .purpose-chip.generic{background:#eef2f7;color:#475569;border-color:#dbe3ec}
   .lock{max-width:210mm;margin:0 auto;padding:80px 20px;text-align:center;font-family:Arial,sans-serif;color:#4a5a78}
   .lock .big{font-size:52px}
   .lock h2{margin:14px 0 8px;color:#0b1a30}
@@ -248,6 +257,7 @@
 <div class="toolbar">
   <a class="btn ghost" href="index.html?v=fbfd77bb">&larr; Back to system</a>
   <div style="flex:1"></div>
+  <span id="purposeBadge" class="purpose-chip generic" title="Clearance purpose">Purpose&hellip;</span>
   <span id="statusBadge" class="badge amber">Checking&hellip;</span>
   <button class="btn green" id="printBtn" style="display:none" onclick="window.print()">&#128424; Print clearance certificate</button>
 </div>
@@ -404,26 +414,76 @@ function set(id,value){
   if(el) el.innerHTML=value;
 }
 function ditem(){/* details are bound by id below */}
+function purposeTone(purpose){
+  const key=String(purpose||'').trim().toLowerCase();
+  if(key==='employment') return 'employment';
+  if(key==='citizenship') return 'citizenship';
+  if(key==='education') return 'education';
+  if(key==='travel') return 'travel';
+  if(key==='licence'||key==='license') return 'licence';
+  return 'generic';
+}
+function setPurpose(a){
+  const el=document.getElementById('purposeBadge');
+  if(!el) return;
+  const purpose=String((a&&a.purpose)||'').trim()||'Purpose not recorded';
+  el.className='purpose-chip '+purposeTone(purpose);
+  el.textContent=purpose;
+  el.title='Clearance purpose: '+purpose;
+}
+// Stored session fallbacks (never a developer/admin default).
+function storedUser(){
+  try{
+    let u=JSON.parse(localStorage.getItem('sentinel_user')||'null');
+    if(u&&u.user) u=u.user;
+    if(!u){const s=JSON.parse(localStorage.getItem('sentinelSession')||'null');u=(s&&s.user)||null}
+    return u||null;
+  }catch(_){return null}
+}
+function isAdminRole(role){
+  const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
+  return l==='systemadmin'||l==='admin'||l==='administrator';
+}
+function storedReadOnly(){
+  const u=storedUser();
+  if(!u) return false;
+  if(u.read_only===true||u.can_write===false) return true;
+  return /^(chief_commander|chiefcommander|chief\.commander|commander|commander_hq|commanderhq|command_hq|commandhq|hq_command|hqcommand|high_command|highcommand|police_hq|policehq)$/i
+    .test(String(u.role||''));
+}
+// The backend resolves this per caller; the client fallback mirrors it so an
+// older payload cannot unlock printing early.
+function certificatePrintAllowed(a){
+  if(a&&a.certificate_print&&typeof a.certificate_print.unlocked==='boolean') return a.certificate_print.unlocked;
+  const u=storedUser();
+  if(isAdminRole(u&&u.role)||(u&&u.is_admin===true)) return true;
+  if(storedReadOnly()) return true;
+  return Array.isArray(a&&a.signed_application_documents)&&a.signed_application_documents.length>0;
+}
 
-function locked(a){
+function locked(a,options){
+  setPurpose(a);
   const badge=document.getElementById('statusBadge');
   badge.className='badge amber';
   badge.textContent=(a&&a.status)?a.status:'Locked';
   document.getElementById('printBtn').style.display='none';
+  const custom=options||{};
   const rev=(a&&a.review)||{};
   const wait=(a&&a.status!=='Approved'&&rev.review_locked)
     ? '<div class="note">&#128274; Review Lock ('+esc(rev.review_window_hours||REVIEW_LOCK_HOURS)+'h Required) - '+
       esc(rev.hours_remaining)+' hours remaining. The certificate unlocks once an authorized officer approves the application'+
       ' (a System Administrator can bypass the mandatory review period).</div>' : '';
   document.getElementById('sheet').innerHTML=
-    '<div class="lock"><div class="big">&#128274;</div><h2>Certificate locked</h2>'+
-    '<p>The clearance certificate for application <b>'+esc(id||'')+'</b> is only released after an authorized officer approves the application.</p>'+
-    '<p>Current status: <b>'+esc((a&&a.status)?a.status:'Pending Review')+'</b>.</p>'+
+    '<div class="lock"><div class="big">&#128274;</div><h2>'+esc(custom.title||'Certificate locked')+'</h2>'+
+    '<p>'+esc(custom.message||('The clearance certificate for application '+String(id||'')+' is only released after an authorized officer approves the application.'))+'</p>'+
+    (custom.hideStatus?'':'<p>Current status: <b>'+esc((a&&a.status)?a.status:'Pending Review')+'</b>.</p>')+
     wait+
+    (custom.note?'<div class="note">'+esc(custom.note)+'</div>':'')+
     '<p><a class="btn" href="application.html?v=fbfd77bb&id='+encodeURIComponent(id||'')+'">Go to application review &rarr;</a></p></div>';
 }
 
 function certificate(a){
+  setPurpose(a);
   document.getElementById('statusBadge').className='badge green';
   document.getElementById('statusBadge').textContent='Approved';
   document.getElementById('printBtn').style.display='';
@@ -481,7 +541,19 @@ async function load(){
     if(r.status===401){ forceSignIn('Session expired (401 Unauthorized)'); return; }
     if(!r.ok)throw new Error('not found');
     const a=await r.json();
-    if(a.status==='Approved'&&a.certificate_number)certificate(a);else locked(a);
+    if(a.status==='Approved'&&a.certificate_number){
+      // The certificate is issued, but printing is a separate permission:
+      // a regular officer may print only once the scanned signed application
+      // document exists. Administrators (and the view-only Commander role)
+      // bypass the restriction — resolved by the backend per caller.
+      if(certificatePrintAllowed(a)) certificate(a);
+      else locked(a,{
+        title:'Certificate printing locked',
+        message:'The certificate for application '+String(id||'')+' has been issued, but printing stays locked for your role until the scanned signed application document is uploaded.',
+        hideStatus:true,
+        note:(a.certificate_print&&a.certificate_print.reason)
+          ||'Upload the signed application scan from the clearance review (Re-scan) to unlock printing. Administrators can print at any time.'});
+    }else locked(a);
   }catch(e){
     document.getElementById('sheet').innerHTML=
       '<div class="lock"><div class="big">&#128274;</div><h2>Certificate unavailable</h2>'+

@@ -462,6 +462,20 @@ async function main() {
       execFileSync(PYTHON, ['-c', py], { cwd: PROJECT_ROOT, env: serverEnv, stdio: 'inherit' });
     };
 
+    // Upload the re-scanned signed application through the real API. Used by
+    // the certificate print-lock checks below.
+    const uploadSignedScan = async (aid, name = 'signed-application.pdf') => {
+      const auth = await loginAs('fp.officer');
+      const fd = new FormData();
+      fd.append('signed_application_document',
+        new Blob(['%PDF-signed-approval-flow'], { type: 'application/pdf' }), name);
+      const r = await fetch(base + '/api/clearance-applications/' + aid + '/signed-document', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + auth.token }, body: fd,
+      });
+      if (!r.ok) throw new Error(`signed scan upload failed ${r.status}: ${await r.text()}`);
+      return await r.json();
+    };
+
     const fpRow = (sb, aid) => {
       const html = sb.getElementById('fpTable').innerHTML;
       return (html.match(/<tr>[\s\S]*?<\/tr>/g) || []).find((r) => r.includes(aid)) || '';
@@ -550,10 +564,26 @@ async function main() {
       `(db.fingerprint||[]).find(x => x.id === '${app1.application_id}')?.status === 'Approved'`),
       'officer approval flipped the row to Approved');
     row = fpRow(sbO, app1.application_id);
-    // Versioned link: certificate.html?v=<asset version>&id=...
-    if (!/certificate\.html\?v=[A-Za-z0-9._-]+&id=/.test(row))
-      throw new Error('approved row must offer the certificate: ' + row);
-    console.log('ok A2: officer — after 12h the Approve click executes (201) and unlocks the certificate');
+    // Rule 2 — APPROVED BUT NOT YET SCANNED: the certificate print action is
+    // locked for a regular officer until the signed application scan exists.
+    if (!/Certificate \(scan required\)/.test(row))
+      throw new Error('approved row without a signed scan must lock the certificate: ' + row);
+    if (/certificate\.html/.test(row))
+      throw new Error('the certificate link must not leak before the signed scan: ' + row);
+    if (!/disabled="disabled"/.test(row))
+      throw new Error('the locked certificate control must be disabled: ' + row);
+    console.log('ok A2: officer — approval issues the certificate but printing stays locked without a signed scan');
+
+    // Rule 2 — uploading the signed scan unlocks the certificate link.
+    const scan = await uploadSignedScan(app1.application_id);
+    if (!scan.document || !scan.document.path)
+      throw new Error('signed scan upload did not return a stored document: ' + JSON.stringify(scan));
+    await probe(sbO.sandbox, 'syncServer()');
+    await waitFor(() => {
+      const r3 = fpRow(sbO, app1.application_id);
+      return /certificate\.html\?v=[A-Za-z0-9._-]+&id=/.test(r3);
+    }, 'officer certificate unlocked after the signed scan upload');
+    console.log('ok A3: officer — uploading the scanned signed application unlocks the certificate');
 
     // ======================================================================
     // B) index.html — admin journey: instant bypass on a fresh application
@@ -719,16 +749,37 @@ async function main() {
     if (!/Review Lock \(12h Required\)/.test(pgC.getElementById('sheet').innerHTML))
       throw new Error('locked certificate must show the 12h review-lock note');
 
+    // app2 was approved by the ADMIN and has no signed scan: a regular
+    // officer still cannot print it, while the admin can (bypass).
     const pgC2 = buildPageSandbox({ file: 'certificate.html', port, storageDump: officerStorage,
-      search: '?id=' + app2.application_id, consoleSink: pSink3 });   // admin-approved above
+      search: '?id=' + app2.application_id, consoleSink: pSink3 });
     vm.runInContext(extractInlineScript('certificate.html'), pgC2.sandbox, { filename: 'certificate.js' });
-    await waitFor(() => pgC2.getElementById('printBtn').style.display === '',
-      'certificate Print button unlocked after approval');
-    if (pgC2.getElementById('statusBadge').textContent !== 'Approved')
+    await waitFor(() => /Certificate printing locked/.test(pgC2.getElementById('sheet').innerHTML),
+      'officer certificate print locked until the signed scan exists');
+    if (pgC2.getElementById('printBtn').style.display !== 'none')
+      throw new Error('the Print button must stay hidden while the signed scan is missing');
+
+    const pgCAdmin = buildPageSandbox({ file: 'certificate.html', port, storageDump: adminStorage,
+      search: '?id=' + app2.application_id, consoleSink: pSink3 });
+    vm.runInContext(extractInlineScript('certificate.html'), pgCAdmin.sandbox, { filename: 'certificate.js' });
+    await waitFor(() => pgCAdmin.getElementById('printBtn').style.display === '',
+      'admin certificate Print unlocked without a signed scan (bypass)');
+    if (!/^CL-/.test(pgCAdmin.getElementById('certNumber').innerHTML))
+      throw new Error('certificate number must render, got: ' + pgCAdmin.getElementById('certNumber').innerHTML);
+
+    // Uploading the signed scan unlocks the same certificate for the officer.
+    await uploadSignedScan(app2.application_id, 'admin-approved-signed.pdf');
+    const pgC3 = buildPageSandbox({ file: 'certificate.html', port, storageDump: officerStorage,
+      search: '?id=' + app2.application_id, consoleSink: pSink3 });
+    vm.runInContext(extractInlineScript('certificate.html'), pgC3.sandbox, { filename: 'certificate.js' });
+    await waitFor(() => pgC3.getElementById('printBtn').style.display === '',
+      'certificate Print unlocked for the officer after the signed scan upload');
+    if (pgC3.getElementById('statusBadge').textContent !== 'Approved')
       throw new Error('certificate badge must read Approved');
-    if (!/^CL-/.test(pgC2.getElementById('certNumber').innerHTML))
-      throw new Error('certificate number must render, got: ' + pgC2.getElementById('certNumber').innerHTML);
-    console.log('ok E: certificate.html — Print locked while pending, unlocked with CL-number after approval');
+    if (!/^CL-/.test(pgC3.getElementById('certNumber').innerHTML))
+      throw new Error('certificate number must render, got: ' + pgC3.getElementById('certNumber').innerHTML);
+    console.log('ok E: certificate.html — Print locked while pending AND while the signed scan is missing, '
+      + 'admin bypass, then unlocked for the officer');
 
     // F) Citizenship: immediate officer approval from the printable page,
     // with no 12h warning, then a real unlocked certificate.
@@ -743,13 +794,21 @@ async function main() {
       throw new Error('Citizenship must not have a waiting-period lock');
     await probe(citizenPage.sandbox,'approve()');
     await waitFor(()=>citizenPage.getElementById('statusBadge').textContent==='Approved','citizenship approved');
+    // Citizenship is exempt from the 12-hour review window, NOT from the
+    // signed-scan print lock: the officer still cannot print before the scan.
+    const citizenLocked = buildPageSandbox({file:'certificate.html',port,storageDump:officerStorage,
+      search:'?id='+citizen.application_id,consoleSink:[]});
+    vm.runInContext(extractInlineScript('certificate.html'),citizenLocked.sandbox);
+    await waitFor(()=>/Certificate printing locked/.test(citizenLocked.getElementById('sheet').innerHTML),
+      'citizenship certificate print locked without a signed scan');
+    await uploadSignedScan(citizen.application_id, 'citizenship-signed.pdf');
     const citizenCert = buildPageSandbox({file:'certificate.html',port,storageDump:officerStorage,
       search:'?id='+citizen.application_id,consoleSink:[]});
     vm.runInContext(extractInlineScript('certificate.html'),citizenCert.sandbox);
     await waitFor(()=>citizenCert.getElementById('printBtn').style.display==='','citizenship certificate printable');
     if(!/^CL-/.test(citizenCert.getElementById('certNumber').innerHTML))
       throw new Error('Citizenship certificate number missing');
-    console.log('ok F: Citizenship — officer approves immediately and certificate Print unlocks');
+    console.log('ok F: Citizenship — immediate approval; print unlocks once the signed scan is uploaded');
 
     console.log('ALL APPROVAL-FRONTEND TESTS PASSED');
     return 0;

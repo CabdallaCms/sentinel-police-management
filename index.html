@@ -1023,6 +1023,110 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 @media (prefers-reduced-motion: reduce){
   .btn-scan.is-scanning,.btn-scan.is-scanning .scan-glyph{animation:none}
 }
+
+/* ============================================================
+   CLEARANCE PURPOSE · CERTIFICATE PRINT LOCK · IMAGE VIEWER · RBAC EDIT
+   ------------------------------------------------------------
+   Presentation only. Every new rule is scoped to a new helper class
+   (purpose-chip / pd-doc-zoom / img-lightbox / pv-edit), so the existing
+   register, modal and print layouts are untouched when the feature is off.
+   ============================================================ */
+.purpose-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 11px;
+  font-size:11px;font-weight:800;letter-spacing:.45px;text-transform:uppercase;border:1px solid transparent;
+  white-space:nowrap;line-height:1.55}
+.purpose-chip .purpose-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.purpose-chip.employment{background:#e8f0ff;color:#1d4ed8;border-color:#c3d7ff}
+.purpose-chip.citizenship{background:#f2e9ff;color:#6d28d9;border-color:#ddc9ff}
+.purpose-chip.education{background:#e2f7ee;color:#0f7a55;border-color:#bce9d7}
+.purpose-chip.travel{background:#fff3dd;color:#a16207;border-color:#f6dfae}
+.purpose-chip.licence{background:#ffe9ea;color:#b4232f;border-color:#f7c7cb}
+.purpose-chip.generic{background:#eef2f7;color:#475569;border-color:#dbe3ec}
+body.dark-mode .purpose-chip.employment,body[data-theme="dark"] .purpose-chip.employment{background:#1e3a8a55;color:#bfdbfe;border-color:#3b82f6}
+body.dark-mode .purpose-chip.citizenship,body[data-theme="dark"] .purpose-chip.citizenship{background:#4c1d9555;color:#ddd6fe;border-color:#8b5cf6}
+body.dark-mode .purpose-chip.education,body[data-theme="dark"] .purpose-chip.education{background:#065f4655;color:#a7f3d0;border-color:#10b981}
+body.dark-mode .purpose-chip.travel,body[data-theme="dark"] .purpose-chip.travel{background:#78350f55;color:#fde68a;border-color:#d97706}
+body.dark-mode .purpose-chip.licence,body[data-theme="dark"] .purpose-chip.licence{background:#7f1d1d55;color:#fecaca;border-color:#ef4444}
+body.dark-mode .purpose-chip.generic,body[data-theme="dark"] .purpose-chip.generic{background:#334155;color:#cbd5e1;border-color:#475569}
+.fp-review-purpose{display:flex;align-items:center;gap:8px;flex:none}
+.fp-review-purpose .purpose-chip{font-size:12px;padding:5px 13px}
+.fp-review-summary .pv-field.pv-purpose{border-color:#c3d7ff;background:linear-gradient(135deg,#f4f8ff,#e9f1ff)}
+.fp-review-summary .pv-field.pv-purpose b{font-size:14px}
+body.dark-mode .fp-review-summary .pv-field.pv-purpose,
+body[data-theme="dark"] .fp-review-summary .pv-field.pv-purpose{background:linear-gradient(135deg,#162032,#1c2b45);border-color:#3b82f6}
+.purpose-line{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:12px;color:var(--muted)}
+.purpose-line b{color:var(--ink)}
+
+/* ---- clickable image documents (fullscreen viewer entry point) ---- */
+.pd-doc-preview.pd-doc-zoom{padding:0;border:0;display:block;width:100%;cursor:zoom-in;position:relative;background:var(--surface-alt)}
+.pd-doc-preview.pd-doc-zoom img{transition:transform .18s ease}
+.pd-doc-preview.pd-doc-zoom:hover img,.pd-doc-preview.pd-doc-zoom:focus-visible img{transform:scale(1.025)}
+.pd-doc-preview.pd-doc-zoom:focus-visible{outline:3px solid #2563eb;outline-offset:-3px}
+.pd-zoom-hint{position:absolute;right:8px;bottom:8px;display:inline-flex;align-items:center;gap:4px;
+  background:#0b1120cc;color:#e2e8f0;border-radius:999px;padding:3px 9px;font-size:10.5px;font-weight:700;
+  letter-spacing:.3px;pointer-events:none}
+.pd-doc-card-photo .pd-doc-preview{height:260px}
+.pv-photo.pv-photo-btn{padding:0;border:0;font:inherit;cursor:zoom-in;position:relative}
+.pv-photo.pv-photo-btn:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
+.pv-photo.pv-photo-btn:hover img{transform:scale(1.06)}
+.pv-photo.pv-photo-btn img{transition:transform .18s ease}
+.pv-photo.pv-photo-btn::after{content:'⤢';position:absolute;right:3px;bottom:2px;font-size:11px;color:#fff;
+  background:#0b1120b3;border-radius:6px;padding:0 4px;line-height:1.5;opacity:0;transition:opacity .15s ease}
+.pv-photo.pv-photo-btn:hover::after,.pv-photo.pv-photo-btn:focus-visible::after{opacity:1}
+
+/* ---- fullscreen image lightbox with zoom / pan ---- */
+.img-lightbox{position:fixed;inset:0;z-index:4000;display:none;flex-direction:column;
+  background:rgba(6,12,24,.94);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#e6edf8}
+.img-lightbox.open{display:flex}
+.ilb-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 18px;
+  border-bottom:1px solid #ffffff1f;flex:none;background:#0b1120e6}
+.ilb-title{min-width:0;font-size:13.5px;font-weight:700;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ilb-title small{display:block;font-size:11px;font-weight:500;color:#94a3b8;margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ilb-tools{display:flex;align-items:center;gap:7px;flex:none}
+.ilb-btn{border:1px solid #ffffff2e;background:#ffffff14;color:#e6edf8;border-radius:9px;
+  min-width:36px;height:36px;padding:0 11px;font-size:13px;font-weight:800;display:inline-flex;
+  align-items:center;justify-content:center;gap:5px;cursor:pointer;line-height:1}
+.ilb-btn:hover{background:#ffffff26}
+.ilb-btn:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
+.ilb-btn.ilb-close{background:#dc2626;border-color:#dc2626}
+.ilb-btn.ilb-close:hover{background:#ef4444}
+.ilb-zoomlevel{font-size:12px;font-weight:700;color:#cbd5e1;min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
+.ilb-stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;cursor:grab;touch-action:none;padding:10px}
+.ilb-stage.dragging{cursor:grabbing}
+.ilb-stage img{max-width:100%;max-height:100%;transform-origin:center center;user-select:none;
+  -webkit-user-drag:none;will-change:transform;box-shadow:0 24px 60px #00000080}
+.ilb-stage img.ilb-anim{transition:transform .12s ease}
+.ilb-foot{flex:none;padding:10px 18px;border-top:1px solid #ffffff1f;font-size:11.5px;color:#94a3b8;
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#0b1120e6}
+.ilb-foot a{color:#93c5fd}
+@media(max-width:680px){
+  .ilb-head{padding:10px 12px;flex-wrap:wrap}
+  .ilb-title{font-size:12px;max-width:100%}
+  .ilb-tools{width:100%;justify-content:space-between}
+  .ilb-foot{font-size:10.5px;padding:8px 12px}
+}
+
+/* ---- role-based field editing inside the person detail modal ---- */
+.pv-field.pv-edit{padding:8px 10px}
+.pv-field.pv-edit small{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.pv-field.pv-edit input{width:100%;margin-top:2px;border:1px solid var(--input-border,#cbd5e1);border-radius:8px;
+  background:var(--input-bg,#fff);color:var(--ink);padding:7px 9px;font:inherit;font-size:12.5px;font-weight:600}
+.pv-field.pv-edit input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px #2563eb26}
+.pv-field.pv-edit input:disabled{background:var(--surface-alt);color:var(--muted);
+  border-color:var(--line);cursor:not-allowed;font-weight:500}
+.pv-field.pv-edit.pv-locked{border-style:dashed;background:var(--surface-alt)}
+.pv-lock-tag{font-size:9px;font-weight:800;letter-spacing:.4px;color:#8a5a00;background:#fff2d6;
+  border:1px solid #f0d69a;border-radius:999px;padding:1px 7px;text-transform:uppercase;flex:none}
+body.dark-mode .pv-lock-tag,body[data-theme="dark"] .pv-lock-tag{background:#78350f55;color:#fde68a;border-color:#b45309}
+.rbac-note{display:flex;gap:8px;align-items:flex-start;border:1px solid #c3d7ff;background:#f2f7ff;
+  color:#1e3a8a;border-radius:10px;padding:9px 12px;font-size:11.5px;line-height:1.5;margin:10px 0 0}
+body.dark-mode .rbac-note,body[data-theme="dark"] .rbac-note{background:#162032;border-color:#3b82f6;color:#bfdbfe}
+.pd-edit-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.cert-lock-note{display:flex;gap:8px;align-items:flex-start;border:1px dashed #d9b36a;background:#fff8e8;
+  color:#7a5b17;border-radius:10px;padding:8px 11px;font-size:11px;line-height:1.5;margin-top:6px}
+body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{background:#33260a;border-color:#b45309;color:#fcd34d}
+.fp-lock-btn{opacity:.55;cursor:not-allowed;pointer-events:none}
 </style>
 </head>
 <body>
@@ -2036,6 +2140,31 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 </main></div>
 
 <datalist id="branchDatalist"></datalist>
+<!-- Fullscreen image viewer (person photographs + document scans).
+     Opened by any element carrying data-image-zoom; see wireImageLightbox().
+     Marked data-view / data-ro-keep so the read-only DOM hardener never
+     treats the viewer controls as mutation actions. -->
+<div class="img-lightbox" id="imageLightbox" data-view="1" data-ro-keep="1" role="dialog" aria-modal="true" aria-labelledby="ilbTitle" aria-hidden="true">
+  <div class="ilb-head">
+    <div class="ilb-title" id="ilbTitle">Image viewer<small id="ilbSubtitle"></small></div>
+    <div class="ilb-tools">
+      <button class="ilb-btn" type="button" onclick="zoomImageLightbox(-1)" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <span class="ilb-zoomlevel" id="ilbZoomLevel" aria-live="polite">100%</span>
+      <button class="ilb-btn" type="button" onclick="zoomImageLightbox(1)" aria-label="Zoom in" title="Zoom in (+)">＋</button>
+      <button class="ilb-btn" type="button" onclick="fitImageLightbox()" aria-label="Fit to screen" title="Fit to screen (0)">Fit</button>
+      <button class="ilb-btn" type="button" onclick="resetImageLightbox()" aria-label="Reset zoom" title="Reset zoom (R)">1:1</button>
+      <button class="ilb-btn" type="button" id="ilbOpenTab" onclick="openLightboxInTab()" aria-label="Open original in a new tab" title="Open original in a new tab">↗</button>
+      <button class="ilb-btn ilb-close" type="button" onclick="closeImageLightbox()" aria-label="Close image viewer (Escape)" title="Close (Esc)">✕</button>
+    </div>
+  </div>
+  <div class="ilb-stage" id="ilbStage">
+    <img id="ilbImage" alt="" draggable="false">
+  </div>
+  <div class="ilb-foot">
+    <span id="ilbCaption"></span>
+    <span>Scroll / pinch to zoom · drag to pan · Esc closes</span>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
 <div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
@@ -2049,7 +2178,7 @@ body[data-theme="dark"] .btn-scan.is-scan-success{
 <!-- Fingerprint clearance review & signed-paper re-scan workflow -->
 <div class="cmodal-ov" id="fpReviewModalOv" onclick="closeEntryModal('fpReviewModal')"></div>
 <div class="cmodal fp-review-modal" id="fpReviewModal" role="dialog" aria-modal="true" aria-labelledby="fpReviewTitle">
-  <div class="cm-head"><div><h3 id="fpReviewTitle">Clearance review</h3><div class="sub">Review the application and upload the applicant / guarantor signed scan</div></div><button class="iconbtn" onclick="closeEntryModal('fpReviewModal')" aria-label="Close">✕</button></div>
+  <div class="cm-head"><div><h3 id="fpReviewTitle">Clearance review</h3><div class="sub">Review the application and upload the applicant / guarantor signed scan</div></div><div class="fp-review-purpose" id="fpReviewPurposeWrap"><span class="purpose-chip generic" id="fpReviewPurposeBadge"><span class="purpose-dot"></span>Clearance purpose</span></div><button class="iconbtn" onclick="closeEntryModal('fpReviewModal')" aria-label="Close">✕</button></div>
   <div class="cm-body">
     <div class="notice" id="fpReviewNotice" role="status" aria-live="polite"></div>
     <div id="fpReviewSummary"><div class="empty">Loading clearance application…</div></div>
@@ -4432,8 +4561,19 @@ function fillIdentity(prefix,p){
   const fpStatusEl=document.getElementById(prefix+'-fpStatus');
   if(fpStatusEl&&bio.status)fpStatusEl.value=bio.status;
   const pv=document.getElementById(prefix+'-photoPrev');
-  if(pv){const src=p.photoPath||p.photoUrl||'';if(src){pv.src=src;pv.style.display='block'}else pv.style.display='none'}
+  if(pv){
+    const src=safeDocumentUrl(p.photoPath||p.photoUrl||'');
+    if(src){
+      pv.src=src;pv.style.display='block';pv.style.cursor='zoom-in';
+      pv.setAttribute('data-image-zoom',src);
+      pv.setAttribute('data-image-title','Person photograph');
+      pv.setAttribute('data-image-caption',p.name||p.full_name||'');
+    }else{pv.style.display='none';pv.removeAttribute('data-image-zoom')}
+  }
   const first=document.getElementById(prefix+'-first');if(first)clearEditedError({target:first});
+  // Re-assert the role policy: setLocked() above releases blank fields, and a
+  // regular officer must not gain an editable identity field that way.
+  applyIdentityEditPolicy(prefix);
 }
 function clearIdentity(prefix,p){
   ['first','second','third','fourth','dob','national','passport','mother','address','phone','pob','occupation'].forEach(k=>{
@@ -4667,7 +4807,7 @@ async function ensureLocalIdentity(d){
 // ============================ drawer ============================
 function openDrawer(title,bodyHtml,footHtml){cancelEntryFocus();document.getElementById('drawerTitle').textContent=title;document.getElementById('drawerBody').innerHTML=bodyHtml;document.getElementById('drawerFoot').innerHTML=footHtml||'';clearInvalid();hideModalAlert();document.getElementById('overlay').classList.add('on');document.getElementById('drawer').classList.add('on');document.body.classList.add('modal-open')}
 function closeDrawer(){cancelEntryFocus();document.getElementById('overlay').classList.remove('on');document.getElementById('drawer').classList.remove('on');document.body.classList.remove('modal-open');hideModalAlert();clearInvalid()}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('drawer').classList.contains('on'))closeDrawer()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!imageLightboxOpen()&&document.getElementById('drawer').classList.contains('on'))closeDrawer()});
 // ---- Centered entry modals (unit registration forms) ----------------------
 // Operational pages (Fingerprint · Airport · Stations · Officers · Crimes ·
 // Cars) keep their registers full-width; each entry form lives in a centered
@@ -4723,19 +4863,64 @@ function closeEntryModal(id){
   },220);
 }
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
+  // The fullscreen image viewer owns Escape while it is open — closing it must
+  // never also close the person/clearance modal underneath.
+  if(imageLightboxOpen())return;
   document.querySelectorAll('.cmodal.open').forEach(m=>closeEntryModal(m.id));
 });
 function val(id){return document.getElementById(id).value.trim()}
 
 // ---- unified central person drawer (create / view & update) ----
+// Fields a regular (non-admin) officer may edit on an EXISTING person record.
+// The drawer honours exactly the same policy as the person detail modal:
+// phone / residence / occupation stay editable, every legal identity field is
+// locked even when the stored value is blank, and only those three fields are
+// sent on save. Administrators keep the full form.
+const IDENTITY_POLICY_FIELDS=['first','second','third','fourth','dob','national','passport','mother','pob'];
+function setIdentityEditPolicy(prefix,policy){
+  window._identityEditPolicy=window._identityEditPolicy||{};
+  window._identityEditPolicy[prefix]=policy||null;
+  applyIdentityEditPolicy(prefix);
+}
+function applyIdentityEditPolicy(prefix){
+  const policy=(window._identityEditPolicy||{})[prefix];
+  if(!policy||!policy.identityLocked)return;
+  IDENTITY_POLICY_FIELDS.forEach(k=>{
+    const el=document.getElementById(prefix+'-'+k);
+    if(!el)return;
+    el.readOnly=true;
+    el.classList.add('locked','rbac-locked');
+    el.setAttribute('aria-readonly','true');
+    el.title='Read-only for your role — only an administrator can edit legal identity fields.';
+  });
+  // The three mutable contact fields stay editable for the restricted role:
+  // fillIdentity() locks every non-empty field to protect matched data, so
+  // the policy explicitly releases the fields this role IS allowed to change.
+  ['phone','address','occupation'].forEach(k=>{
+    const el=document.getElementById(prefix+'-'+k);
+    if(!el)return;
+    el.readOnly=false;
+    el.classList.remove('locked','rbac-locked');
+    el.removeAttribute('aria-readonly');
+    el.title='';
+  });
+}
+function identityEditIsRestricted(existingId){
+  return !!existingId&&!sessionIsAdmin(null);
+}
 function openPersonDrawer(prefill,onSaved){
   if(guardReadOnly('Creating or updating a person record')) return;
   const p=prefill&&prefill.id?prefill:null;
+  const restricted=identityEditIsRestricted(p&&p.id);
   const body=`
   <div class="hint" style="margin-bottom:14px">${p?'Edit or append to this existing identity — the Central Person Registry is matched in real time and the profile is merged, never duplicated.':'Enter the identity below. The Central Person Registry is matched <b>in real time</b>; an exact match auto-fills existing data, otherwise a new Central Person record is created on save.'}</div>
+  ${restricted?'<div class="rbac-note" role="note"><span aria-hidden="true">🔒</span><span><b>Role-based editing.</b> You may update <b>Contact Phone</b>, <b>Residence Address</b> and <b>Occupation</b>. Legal identity fields (names, date of birth, National ID, Passport ID) are read-only for your role.</span></div>':''}
   <form novalidate class="form" id="personDrawerForm">${identityFormHTML('pd')}</form>`;
   openDrawer(p?'Update identity profile':'New central person',body,
     `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitPersonDrawer(${p?`'${p.id}'`:'null'})">${p?'Save updates':'Save person'}</button>`);
+  // Set the policy BEFORE matching fills the form: fillIdentity() re-applies it
+  // after every auto-fill / suggestion pick.
+  setIdentityEditPolicy('pd',restricted?{identityLocked:true}:null);
   if(p)fillIdentity('pd',p);
   wireIdentity('pd');
   window._personDrawerCb=onSaved||null;
@@ -4743,25 +4928,37 @@ function openPersonDrawer(prefill,onSaved){
 async function submitPersonDrawer(existingId){
   if(guardReadOnly('Saving a person record')) return;
   clearInvalid();
-  const d=window._identityWires.pd.read(),v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'pd',names:v.names});return}
+  const restricted=identityEditIsRestricted(existingId);
+  const d=window._identityWires.pd.read();
+  if(!restricted){
+    const v=validateIdentity(d);if(!v.ok){showFormError(v.msg,{prefix:'pd',names:v.names});return}
+  }
   const data={name:[d.first,d.second,d.third,d.fourth].filter(Boolean).join(' '),first:d.first,second:d.second,third:d.third,fourth:d.fourth,
     nationalId:d.national,passportId:d.passport,dob:d.dob,motherName:d.mother,residence:d.address,pob:d.pob,phone:d.phone,occupation:d.occupation};
-  if(!data.nationalId&&!data.passportId){showFormError('National ID or Passport ID is required.',{prefix:'pd',names:['national','passport'],title:'Unable to Save'});return}
+  if(!restricted&&!data.nationalId&&!data.passportId){showFormError('National ID or Passport ID is required.',{prefix:'pd',names:['national','passport'],title:'Unable to Save'});return}
+  // Only the mutable contact fields leave the browser for a restricted edit.
+  const payload=restricted?{phone:d.phone,residence:d.address,occupation:d.occupation}:stripServer(data);
   try{
     let saved;
     if(serverOn){
-      if(existingId){await api('/api/persons/'+existingId,{method:'PATCH',body:JSON.stringify(stripServer(data))});saved=mapPerson((await api('/api/persons/'+existingId)))}
+      if(existingId){const result=await api('/api/persons/'+existingId,{method:'PATCH',body:JSON.stringify(payload)});
+        saved=mapPerson(result&&result.person?result.person:(await api('/api/persons/'+existingId)))}
       else saved=await upsertPerson(data);
+    }else if(restricted){
+      const local=(db.people||[]).find(x=>String(x.id)===String(existingId));
+      if(local){local.phone=payload.phone;local.residence=payload.residence;local.occupation=payload.occupation;local.updated='today';persist();saved=local}
+      else saved=null;
     }else saved=await upsertPerson(data);
     if(saved&&saved.id)persistPrefixBiometrics('pd',saved.id,saved.id);
     persist();
-    closeDrawer();renderAll();toast(existingId?'Identity profile updated':'Person saved to central registry');
+    closeDrawer();renderAll();toast(existingId?(restricted?'Contact details updated':'Identity profile updated'):'Person saved to central registry');
     if(window._personDrawerCb)window._personDrawerCb(saved);
   }catch(e){showFormError(e.message||'The person could not be saved.',{prefix:'pd',title:'Unable to Save'})}
 }
 window._viewingPerson=null;
 window._viewingOfficer=null;
 window._personDetailMode='person';
+window._personEditMode=false;
 let personDocumentRequest=0;
 
 function safeDocumentUrl(value){
@@ -4772,25 +4969,50 @@ function safeDocumentUrl(value){
   if(/^blob:/i.test(url))return url;
   return '';
 }
-function documentExtension(doc){
-  const path=String(doc&& (doc.name||doc.file_name||doc.path||doc.file_path)||'');
-  const ext=(path.match(/\.([a-z0-9]+)(?:\?|$)/i)||[])[1]||'';
-  return ext.toLowerCase();
+// Extension of a file name / URL (query string and fragment stripped).
+function fileExtensionOf(value){
+  const clean=String(value||'').split(/[?#]/)[0];
+  const m=clean.match(/\.([a-z0-9]+)$/i);
+  return m?m[1].toLowerCase():'';
 }
+// Documents store a friendly label ("Applicant photograph") that carries no
+// extension, while the stored path does ("/uploads/….jpg"). Resolving BOTH is
+// what lets an applicant photograph render as an image instead of falling
+// through to the generic file icon.
+function documentExtension(doc){
+  const name=doc&&(doc.name||doc.file_name||doc.fileName)||'';
+  const path=doc&&(doc.path||doc.file_path||doc.url)||'';
+  return fileExtensionOf(name)||fileExtensionOf(path);
+}
+const IMAGE_EXTENSIONS=['jpg','jpeg','png','webp','gif','bmp','svg','avif'];
+const IMAGE_MIME_BY_EXT={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',
+  gif:'image/gif',bmp:'image/bmp',svg:'image/svg+xml',avif:'image/avif'};
 function renderPersonDocuments(documents,emptyMessage){
   const docs=Array.isArray(documents)?documents.filter(d=>d&&typeof d==='object'):[];
   if(!docs.length)return `<div class="pd-doc-empty"><b>No documents attached</b>${esc(emptyMessage||'No identity documents or application files are available for this record.')}</div>`;
   return `<div class="pd-doc-grid">${docs.map(doc=>{
     const name=doc.name||doc.file_name||doc.fileName||'Attached document';
     const category=doc.category||doc.label||'Identity document';
-    const url=safeDocumentUrl(doc.path||doc.file_path||doc.url);
+    const rawPath=doc.path||doc.file_path||doc.url||'';
+    const url=safeDocumentUrl(rawPath);
     const ext=documentExtension(doc);
     const mime=String(doc.file_type||doc.mime_type||'').toLowerCase();
-    const isImage=(mime.startsWith('image/')&&!/tiff/.test(mime))||['jpg','jpeg','png','webp','gif','bmp'].includes(ext);
+    // A photograph whose label has no extension still resolves through the
+    // stored path (an /uploads/*.jpg scan, a blob: preview from the re-scan
+    // input) and is therefore rendered as an actual image thumbnail.
+    const isImage=(mime.startsWith('image/')&&!/tiff/.test(mime))
+      ||(!mime.includes('tiff')&&IMAGE_EXTENSIONS.includes(ext));
     const isPdf=mime==='application/pdf'||ext==='pdf';
+    const isPhoto=/photograph|photo|portrait/i.test(category);
     let preview='';
     if(url&&isImage){
-      preview=`<a class="pd-doc-preview" href="${esc(url)}" target="_blank" rel="noopener" aria-label="Open ${esc(name)} full size"><img src="${esc(url)}" alt="Preview of ${esc(name)}" loading="lazy"></a>`;
+      // The thumbnail itself is the viewer entry point: a button (keyboard
+      // reachable) that opens the fullscreen lightbox with zoom / pan.
+      preview=`<button class="pd-doc-preview pd-doc-zoom" type="button"
+        data-image-zoom="${esc(url)}" data-image-title="${esc(name)}"
+        data-image-caption="${esc([category,doc.source].filter(Boolean).join(' · '))}"
+        aria-label="Open ${esc(name)} in the fullscreen image viewer">
+        <img src="${esc(url)}" alt="Preview of ${esc(name)}" loading="lazy"><span class="pd-zoom-hint" aria-hidden="true">🔍 Zoom</span></button>`;
     }else if(url&&isPdf){
       preview=`<div class="pd-doc-preview"><iframe src="${esc(url)}#view=FitH" title="Preview of ${esc(name)}" loading="lazy"></iframe></div>`;
     }else{
@@ -4798,14 +5020,157 @@ function renderPersonDocuments(documents,emptyMessage){
       preview=`<div class="pd-doc-preview"><div class="pd-file-icon"><span aria-hidden="true">${isPdf?'▤':'📄'}</span><b>${esc(label)} · ${esc(name)}</b></div></div>`;
     }
     const detail=[doc.source,doc.record_id?'Record '+doc.record_id:'',doc.uploaded_at?'Uploaded '+doc.uploaded_at:'',doc.uploaded_by?'By '+doc.uploaded_by:''].filter(Boolean).join(' · ');
-    return `<article class="pd-doc-card">${preview}<div class="pd-doc-meta"><strong>${esc(category)}</strong><small>${esc(name)}</small>${detail?`<small>${esc(detail)}</small>`:''}<div class="pd-doc-actions">${url?`<a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">Open full size</a><a class="btn ghost small" href="${esc(url)}" download="${esc(name)}">Download</a>`:'<span class="muted" style="font-size:11px">Preview unavailable for this local attachment</span>'}</div></div></article>`;
+    return `<article class="pd-doc-card${isPhoto?' pd-doc-card-photo':''}"${isPhoto?' data-document-category="Applicant photograph"':''}>${preview}<div class="pd-doc-meta"><strong>${esc(category)}</strong><small>${esc(name)}</small>${detail?`<small>${esc(detail)}</small>`:''}<div class="pd-doc-actions">${url?`${isImage?`<button class="btn secondary small" type="button" data-image-zoom="${esc(url)}" data-image-title="${esc(name)}" data-image-caption="${esc(detail||category)}">Zoom / inspect</button>`:''}<a class="btn ghost small" href="${esc(url)}" target="_blank" rel="noopener">Open full size</a><a class="btn ghost small" href="${esc(url)}" download="${esc(name)}">Download</a>`:'<span class="muted" style="font-size:11px">Preview unavailable for this local attachment</span>'}</div></div></article>`;
   }).join('')}</div>`;
+}
+// ---- fullscreen image viewer (zoom / pan) ---------------------------------
+// One shared lightbox serves every person photograph and document scan. It is
+// opened through `data-image-zoom` attributes (delegated click handler below),
+// so no inline handler has to embed a document name or URL.
+const LIGHTBOX_MIN_ZOOM=1;
+const LIGHTBOX_MAX_ZOOM=6;
+let lightboxZoom=1,lightboxPanX=0,lightboxPanY=0,lightboxDrag=null,lightboxReturnFocus=null,lightboxWired=false;
+function lightboxEl(id){return document.getElementById(id)}
+function imageLightboxOpen(){
+  const box=lightboxEl('imageLightbox');
+  return !!(box&&box.classList&&box.classList.contains('open'));
+}
+function clampLightboxZoom(value){return Math.min(LIGHTBOX_MAX_ZOOM,Math.max(LIGHTBOX_MIN_ZOOM,value))}
+function applyLightboxTransform(animate){
+  const img=lightboxEl('ilbImage');if(!img)return;
+  if(img.classList)img.classList.toggle('ilb-anim',!!animate);
+  img.style.transform=`translate(${lightboxPanX}px,${lightboxPanY}px) scale(${lightboxZoom})`;
+  const level=lightboxEl('ilbZoomLevel');
+  if(level)level.textContent=Math.round(lightboxZoom*100)+'%';
+  const stage=lightboxEl('ilbStage');
+  if(stage&&stage.classList)stage.classList.toggle('dragging',!!lightboxDrag);
+}
+function resetLightboxPan(){lightboxPanX=0;lightboxPanY=0}
+function openImageLightbox(url,title,caption){
+  const src=safeDocumentUrl(url);
+  if(!src){toast('Image unavailable','This attachment has no readable image URL.');return}
+  const box=lightboxEl('imageLightbox'),img=lightboxEl('ilbImage');
+  if(!box||!img)return;
+  wireImageLightbox();
+  lightboxReturnFocus=(typeof document!=='undefined')?document.activeElement:null;
+  img.src=src;
+  img.alt=title?('Full image: '+title):'Full image';
+  const titleEl=lightboxEl('ilbTitle');
+  if(titleEl)titleEl.innerHTML=`${esc(title||'Image viewer')}<small id="ilbSubtitle">${esc(caption||'')}</small>`;
+  const cap=lightboxEl('ilbCaption');if(cap)cap.textContent=caption||'';
+  const openTab=lightboxEl('ilbOpenTab');if(openTab)openTab.style.display=/^blob:/i.test(src)?'none':'';
+  lightboxZoom=1;resetLightboxPan();
+  box.classList.add('open');box.setAttribute('aria-hidden','false');
+  if(document.body)document.body.style.overflow='hidden';
+  applyLightboxTransform(false);
+  const closeBtn=box.querySelector&&box.querySelector('.ilb-close');
+  if(closeBtn&&closeBtn.focus){try{closeBtn.focus({preventScroll:true})}catch(_){try{closeBtn.focus()}catch(__){}}}
+}
+function closeImageLightbox(){
+  const box=lightboxEl('imageLightbox');
+  if(!box||!(box.classList&&box.classList.contains('open')))return;
+  box.classList.remove('open');box.setAttribute('aria-hidden','true');
+  if(document.body)document.body.style.overflow='';
+  lightboxZoom=1;resetLightboxPan();lightboxDrag=null;
+  const img=lightboxEl('ilbImage');if(img){img.style.transform='';img.removeAttribute('src')}
+  if(lightboxReturnFocus&&lightboxReturnFocus.focus){try{lightboxReturnFocus.focus({preventScroll:true})}catch(_){}}
+  lightboxReturnFocus=null;
+}
+function zoomImageLightbox(delta,clientX,clientY){
+  if(!imageLightboxOpen())return;
+  const stage=lightboxEl('ilbStage');
+  const before=lightboxZoom;
+  const next=clampLightboxZoom(before*(delta>0?1.35:1/1.35));
+  if(next===before)return;
+  if(stage&&stage.getBoundingClientRect){
+    const rect=stage.getBoundingClientRect();
+    const cx=(clientX==null?rect.left+rect.width/2:clientX)-(rect.left+rect.width/2);
+    const cy=(clientY==null?rect.top+rect.height/2:clientY)-(rect.top+rect.height/2);
+    const ratio=next/before;
+    lightboxPanX=cx-(cx-lightboxPanX)*ratio;
+    lightboxPanY=cy-(cy-lightboxPanY)*ratio;
+  }
+  lightboxZoom=next;
+  if(lightboxZoom===1)resetLightboxPan();
+  applyLightboxTransform(true);
+}
+function resetImageLightbox(){
+  if(!imageLightboxOpen())return;
+  lightboxZoom=1;resetLightboxPan();applyLightboxTransform(true);
+}
+function fitImageLightbox(){resetImageLightbox()}
+function openLightboxInTab(){
+  const img=lightboxEl('ilbImage');
+  const src=img&&img.getAttribute&&img.getAttribute('src');
+  if(src){try{window.open(src,'_blank','noopener,noreferrer')}catch(_){}}
+}
+function wireImageLightbox(){
+  if(lightboxWired)return;
+  const stage=lightboxEl('ilbStage');
+  if(!stage||typeof stage.addEventListener!=='function')return;
+  lightboxWired=true;
+  stage.addEventListener('wheel',event=>{
+    if(!imageLightboxOpen())return;
+    if(event.preventDefault)event.preventDefault();
+    zoomImageLightbox(event.deltaY<0?1:-1,event.clientX,event.clientY);
+  },{passive:false});
+  stage.addEventListener('dblclick',event=>{
+    if(!imageLightboxOpen())return;
+    if(lightboxZoom>1)resetImageLightbox();else zoomImageLightbox(1,event.clientX,event.clientY);
+  });
+  stage.addEventListener('pointerdown',event=>{
+    if(!imageLightboxOpen()||lightboxZoom<=1)return;
+    lightboxDrag={id:event.pointerId,x:event.clientX,y:event.clientY,panX:lightboxPanX,panY:lightboxPanY};
+    if(stage.setPointerCapture&&event.pointerId!=null){try{stage.setPointerCapture(event.pointerId)}catch(_){}}
+    if(stage.classList)stage.classList.add('dragging');
+  });
+  stage.addEventListener('pointermove',event=>{
+    if(!lightboxDrag)return;
+    lightboxPanX=lightboxDrag.panX+(event.clientX-lightboxDrag.x);
+    lightboxPanY=lightboxDrag.panY+(event.clientY-lightboxDrag.y);
+    applyLightboxTransform(false);
+  });
+  const endDrag=()=>{if(!lightboxDrag)return;lightboxDrag=null;if(stage.classList)stage.classList.remove('dragging')};
+  stage.addEventListener('pointerup',endDrag);
+  stage.addEventListener('pointercancel',endDrag);
+  stage.addEventListener('pointerleave',endDrag);
+}
+// One delegated opener for every image thumbnail / photograph on the page.
+if(typeof document!=='undefined'&&typeof document.addEventListener==='function'){
+  document.addEventListener('click',event=>{
+    const target=event.target;
+    const trigger=target&&typeof target.closest==='function'?target.closest('[data-image-zoom]'):null;
+    if(!trigger)return;
+    if(event.preventDefault)event.preventDefault();
+    openImageLightbox(trigger.getAttribute('data-image-zoom'),
+      trigger.getAttribute('data-image-title'),
+      trigger.getAttribute('data-image-caption'));
+  });
+  document.addEventListener('keydown',event=>{
+    if(!imageLightboxOpen())return;
+    const key=event.key;
+    if(key==='Escape'){if(event.preventDefault)event.preventDefault();if(event.stopPropagation)event.stopPropagation();closeImageLightbox();return}
+    if(key==='+'||key==='='){if(event.preventDefault)event.preventDefault();zoomImageLightbox(1);return}
+    if(key==='-'||key==='_'){if(event.preventDefault)event.preventDefault();zoomImageLightbox(-1);return}
+    if(key==='0'||key==='r'||key==='R'){if(event.preventDefault)event.preventDefault();resetImageLightbox();return}
+    if(lightboxZoom>1&&(key==='ArrowLeft'||key==='ArrowRight'||key==='ArrowUp'||key==='ArrowDown')){
+      if(event.preventDefault)event.preventDefault();
+      const step=42;
+      if(key==='ArrowLeft')lightboxPanX-=step;
+      if(key==='ArrowRight')lightboxPanX+=step;
+      if(key==='ArrowUp')lightboxPanY-=step;
+      if(key==='ArrowDown')lightboxPanY+=step;
+      applyLightboxTransform(false);
+    }
+  });
 }
 function localPersonDocuments(p){
   const docs=Array.isArray(p&&(p.documents||p.attachments))?[...(p.documents||p.attachments)]:[];
   const photo=safeDocumentUrl(p&&(p.photoPath||p.photo_path||p.photoUrl));
   if(photo&&!docs.some(d=>safeDocumentUrl(d&&(d.path||d.file_path||d.url))===photo)){
-    docs.unshift({path:photo,name:'Profile photograph',category:'Profile photograph',source:'Central Person Registry'});
+    const ext=fileExtensionOf(photo);
+    docs.unshift({path:photo,name:'Profile photograph',category:'Profile photograph',
+      source:'Central Person Registry',file_type:IMAGE_MIME_BY_EXT[ext]||''});
   }
   return docs;
 }
@@ -4843,6 +5208,37 @@ function personUnitsHtml(p){
   });
   return fallback.map(u=>`<span class="badge blue">${esc(u)}</span>`).join(' ');
 }
+// ---- role-based field editing in the person detail modal -------------------
+// Administrators (Admin / SystemAdmin) may edit every biographic and legal
+// identity field. A regular officer may only correct the mutable contact
+// details — phone, residence address and occupation. The identity fields stay
+// visibly locked (with the reason) so the restriction is obvious, and the
+// backend independently refuses a protected-field change for a non-admin.
+const PERSON_SELF_EDITABLE_FIELDS=['phone','residence','occupation'];
+const PERSON_IDENTITY_FIELD_KEYS=['name','first','second','third','fourth','dob','pob','motherName','nationalId','passportId'];
+function personFieldEditAllowed(key){
+  if(sessionIsAdmin(null)) return true;
+  return PERSON_SELF_EDITABLE_FIELDS.includes(key);
+}
+// Canonical biographic field set (shared by the read-only grid and the editor).
+function personBioFields(record){
+  const r=record||{};
+  return [
+    {key:'name',label:'Full Legal Name',value:r.name||r.full_name||'',full:true},
+    {key:'first',label:'First Name',value:r.first||r.first_name||''},
+    {key:'second',label:'Second Name',value:r.second||r.second_name||''},
+    {key:'third',label:'Third Name',value:r.third||r.third_name||''},
+    {key:'fourth',label:'Fourth Name',value:r.fourth||r.fourth_name||''},
+    {key:'dob',label:'Date of Birth',value:r.dob||r.date_of_birth||''},
+    {key:'pob',label:'Place of Birth',value:r.pob||r.place_of_birth||''},
+    {key:'motherName',label:"Mother's Name",value:r.motherName||r.mother_name||''},
+    {key:'nationalId',label:'National ID',value:r.nationalId||r.national_id||''},
+    {key:'passportId',label:'Passport ID',value:r.passportId||r.passport_id||''},
+    {key:'phone',label:'Contact Phone',value:r.phone||r.contact_number||''},
+    {key:'residence',label:'Residence Address',value:r.residence||'',full:true},
+    {key:'occupation',label:'Occupation',value:r.occupation||''}
+  ];
+}
 function personBioGrid(record,mode){
   const isOfficer=mode==='officer';
   const name=record.name||record.full_name||'';
@@ -4858,18 +5254,97 @@ function personBioGrid(record,mode){
     ['Passport ID','Not stored in the Police Registration record'],['Contact Phone',record.contact_number||''],
     ['Residence Address',[record.town_village,record.district_of_origin,record.region_of_origin].filter(Boolean).join(', ')],
     ['Occupation / Assignment',[record.rank,record.unit].filter(Boolean).join(' · ')]
-  ]:[
-    ['Full Legal Name',name,'full'],['First Name',record.first||record.first_name||''],
-    ['Second Name',record.second||record.second_name||''],['Third Name',record.third||record.third_name||''],
-    ['Fourth Name',record.fourth||record.fourth_name||''],['Date of Birth',record.dob||record.date_of_birth||''],
-    ['Place of Birth',record.pob||record.place_of_birth||''],["Mother's Name",record.motherName||record.mother_name||''],
-    ['National ID',record.nationalId||record.national_id||''],['Passport ID',record.passportId||record.passport_id||''],
-    ['Contact Phone',record.phone||record.contact_number||''],['Residence Address',record.residence||'','full'],
-    ['Occupation',record.occupation||'']
-  ];
+  ]:personBioFields(record).map(f=>[f.label,f.value,f.full?'full':'']);
   const standard=fields.map(([label,value,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(label)}</small><b>${esc(value||'—')}</b></div>`).join('');
   const biometric=`<div class="pv-field full"><small>Biometric Status</small><div class="pd-bio-status"><span class="badge ${statusClass}">${bio.status==='captured'?'✓':bio.status==='pending'?'⏳':'⚠'} ${esc(status)}</span>${bio.hash?`<code class="fp-status-badge">${esc(bio.hash)}</code>`:''}</div></div>`;
   return `<div class="pv-grid pd-bio-grid">${standard}${biometric}</div>`;
+}
+// Editable variant of the biographic grid (person records only).
+function personBioForm(record){
+  const admin=sessionIsAdmin(null);
+  const fields=personBioFields(record);
+  const inputs=fields.map(f=>{
+    if(f.key==='name'){
+      return `<div class="pv-field full"><small><span>Full Legal Name</span><span class="pv-lock-tag">Derived</span></small><b>${esc(f.value||'—')}</b><span class="muted" style="font-size:10.5px">Composed from the four legal name parts below.</span></div>`;
+    }
+    const allowed=admin||PERSON_SELF_EDITABLE_FIELDS.includes(f.key);
+    const type=f.key==='dob'?'date':'text';
+    return `<label class="pv-field pv-edit${f.full?' full':''}${allowed?'':' pv-locked'}" for="pdEdit-${f.key}">
+      <small><span>${esc(f.label)}</span>${allowed?'':'<span class="pv-lock-tag">🔒 Admin only</span>'}</small>
+      <input id="pdEdit-${f.key}" type="${type}" value="${esc(f.value)}" autocomplete="off"
+        ${allowed?'':'disabled aria-disabled="true"'}${f.key==='name'?' readonly':''}>
+    </label>`;
+  }).join('');
+  return `<div class="pv-grid pd-bio-grid pd-edit-grid">${inputs}</div>
+    <div class="rbac-note" role="note"><span aria-hidden="true">${admin?'🛡':'🔒'}</span><span>${
+      admin?'Administrator authority — every biographic and legal identity field on this profile can be edited.'
+      :'<b>Role-based editing.</b> You may update <b>Contact Phone</b>, <b>Residence Address</b> and <b>Occupation</b>. Legal identity fields (full names, date of birth, National ID, Passport ID) are read-only for your role — ask an administrator to correct them.'}</span></div>
+    <div class="notice err" id="personEditNotice" role="alert" style="display:none"></div>`;
+}
+function personEditPayloadFromRecord(record){
+  const r=record||{};
+  return {first_name:r.first||'',second_name:r.second||'',third_name:r.third||'',fourth_name:r.fourth||'',
+    full_name:r.name||'',date_of_birth:r.dob||'',place_of_birth:r.pob||'',mother_name:r.motherName||'',
+    national_id:r.nationalId||'',passport_id:r.passportId||'',phone:r.phone||'',
+    residence:r.residence||'',occupation:r.occupation||''};
+}
+function startPersonEditMode(){
+  if(guardReadOnly('Editing a person record'))return;
+  if(!window._viewingPerson||window._personDetailMode!=='person')return;
+  window._personEditMode=true;
+  renderPersonDetail(window._viewingPerson,'person');
+  setPersonDetailTab('overview');
+}
+function cancelPersonEditMode(){
+  window._personEditMode=false;
+  if(window._viewingPerson)renderPersonDetail(window._viewingPerson,'person');
+}
+async function savePersonInlineEdit(){
+  if(guardReadOnly('Editing a person record'))return;
+  const p=window._viewingPerson;
+  if(!p||window._personDetailMode!=='person')return;
+  const admin=sessionIsAdmin(null);
+  const value=key=>{const el=document.getElementById('pdEdit-'+key);return el?String(el.value==null?'':el.value).trim():''};
+  const payload={phone:value('phone'),residence:value('residence'),occupation:value('occupation')};
+  if(admin){
+    const parts=['first','second','third','fourth'].map(value);
+    if(!parts[0]){
+      showFormError('A person record needs at least a first name.',{notice:'personEditNotice',title:'Unable to Save'});
+      return;
+    }
+    Object.assign(payload,{
+      first_name:parts[0],second_name:parts[1],third_name:parts[2],fourth_name:parts[3],
+      full_name:parts.filter(Boolean).join(' '),
+      date_of_birth:value('dob'),place_of_birth:value('pob'),mother_name:value('motherName'),
+      national_id:value('nationalId'),passport_id:value('passportId')
+    });
+  }
+  const notice=document.getElementById('personEditNotice');
+  if(notice){notice.className='notice';notice.style.display='none';notice.textContent=''}
+  const btn=document.querySelector('#personDetailModal .pv-foot [data-person-save]');
+  if(btn){btn.disabled=true;btn.textContent='Saving…'}
+  try{
+    let saved=null;
+    if(serverOn){
+      const result=await api('/api/persons/'+encodeURIComponent(p.id),{method:'PATCH',body:JSON.stringify(payload)});
+      saved=mapPerson((result&&(result.person||result))||payload);
+    }else{
+      saved=mapPerson({...personEditPayloadFromRecord(p),...payload,person_id:p.id});
+    }
+    const merged={...p,...saved};
+    db.people=(db.people||[]).map(x=>String(x.id)===String(p.id)?{...x,...merged}:x);
+    window._viewingPerson=merged;
+    window._personEditMode=false;
+    persist();
+    renderPersonDetail(merged,'person');
+    setPersonDetailTab('overview');
+    renderAll();
+    toast(admin?'Identity profile updated':'Contact details updated',p.id);
+  }catch(e){
+    showFormError(e.message||'The person record could not be updated.',{notice:'personEditNotice',title:'Unable to Save'});
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Save profile'}
+  }
 }
 function renderOfficerRegistrationDetails(o){
   const station=stationById(o.station_id||o.station);
@@ -4886,13 +5361,13 @@ function openPersonView(id){
     if(officer)return openOfficerView(id);
     toast('Person not found','No central registry record matches '+id);return;
   }
-  window._viewingPerson=p;window._viewingOfficer=null;window._personDetailMode='person';
+  window._viewingPerson=p;window._viewingOfficer=null;window._personDetailMode='person';window._personEditMode=false;
   renderPersonDetail(p,'person');
 }
 function openOfficerView(id){
   const o=(db.officers||[]).find(x=>String(x.service_id||x.id)===String(id));
   if(!o){toast('Officer not found','No Police Registration record matches '+id);return}
-  window._viewingPerson=null;window._viewingOfficer=o;window._personDetailMode='officer';
+  window._viewingPerson=null;window._viewingOfficer=o;window._personDetailMode='officer';window._personEditMode=false;
   renderPersonDetail(o,'officer');
 }
 function renderPersonDetail(record,mode){
@@ -4903,10 +5378,16 @@ function renderPersonDetail(record,mode){
   const photoSrc=safeDocumentUrl(photoCandidate);
   const nameSummary=isOfficer?`Service ID · ${personId}`:
     `${record.nationalId||record.national_id||record.passportId||record.passport_id||'No ID / passport on file'}${(record.nationalId||record.national_id)&&(record.passportId||record.passport_id)?' · Passport '+(record.passportId||record.passport_id):''}`;
-  const head=`<div class="pv-headcard"><span class="pv-photo" aria-hidden="true">${photoSrc?`<img src="${esc(photoSrc)}" alt="Photo of ${esc(displayName)}">`:esc(initials(displayName))}</span><div class="pv-id"><b>${esc(displayName)}</b><div class="muted">${esc(nameSummary)}</div><span class="pv-personid">${isOfficer?'♙ Service ID':'🆔 Person ID'} · ${esc(personId)}</span></div></div>`;
+  const photoCaption=(isOfficer?'Police Registration':'Central Person Registry')+' · '+personId;
+  const head=`<div class="pv-headcard">${photoSrc
+    ? `<button class="pv-photo pv-photo-btn" type="button" data-image-zoom="${esc(photoSrc)}" data-image-title="${esc('Photograph of '+displayName)}" data-image-caption="${esc(photoCaption)}" aria-label="Open photograph of ${esc(displayName)} in the fullscreen viewer"><img src="${esc(photoSrc)}" alt="Photo of ${esc(displayName)}"></button>`
+    : `<span class="pv-photo" aria-hidden="true">${esc(initials(displayName))}</span>`}<div class="pv-id"><b>${esc(displayName)}</b><div class="muted">${esc(nameSummary)}</div><span class="pv-personid">${isOfficer?'♙ Service ID':'🆔 Person ID'} · ${esc(personId)}</span></div></div>`;
   const unitsHtml=isOfficer?'<span class="badge purple">Police Registration</span> '+(record.unit?`<span class="badge blue">${esc(record.unit)}</span>`:''):personUnitsHtml(record);
   const unitsBlock=isOfficer?renderOfficerRegistrationDetails(record):'';
-  const foot=`<div class="pv-foot"><button class="btn ghost" type="button" onclick="closeEntryModal('personDetailModal')">Close</button>${!isOfficer&&canWrite()?`<button class="btn secondary" type="button" onclick="closeEntryModal('personDetailModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button>`:''}</div>`;
+  const editing=!isOfficer&&window._personEditMode===true&&canWrite();
+  const foot=`<div class="pv-foot"><button class="btn ghost" type="button" onclick="closeEntryModal('personDetailModal')">Close</button>${!isOfficer&&canWrite()?(editing
+    ? `<button class="btn ghost" type="button" onclick="cancelPersonEditMode()">Cancel</button><button class="btn" type="button" data-write="1" data-person-save="1" onclick="savePersonInlineEdit()">Save profile</button>`
+    : `<button class="btn secondary" type="button" data-write="1" onclick="startPersonEditMode()">✏ Edit profile</button><button class="btn ghost" type="button" data-write="1" onclick="closeEntryModal('personDetailModal');openPersonDrawer(window._viewingPerson)">Edit / append details</button>`):''}</div>`;
   document.getElementById('pvModalTitle').textContent=(isOfficer?'Police Registration record · ':'Person detail · ')+personId;
   const subtitle=document.getElementById('personDetailSubtitle');if(subtitle)subtitle.textContent=isOfficer?'Police Personnel Registry · biographic details and supporting documents':'Central Person Registry · complete biographic profile, attachments and linked unit records';
   document.getElementById('pvModalBody').innerHTML=`${head}
@@ -4915,7 +5396,7 @@ function renderPersonDetail(record,mode){
       <button class="person-detail-tab" type="button" role="tab" aria-selected="false" data-detail-tab="documents" onclick="setPersonDetailTab('documents')">Documents &amp; Attachments <span class="badge gray tab-count" id="personDetailDocCount">…</span></button>
       <button class="person-detail-tab" type="button" role="tab" aria-selected="false" data-detail-tab="linked" onclick="setPersonDetailTab('linked')">${isOfficer?'Registration Details':'Linked Unit Records'}</button>
     </div>
-    <section class="person-detail-panel active" role="tabpanel" data-person-detail-panel="overview"><div class="pd-section-heading"><div><h4>Biographic Information</h4><p>Complete identity details available in the ${isOfficer?'Police Registration':'Central Person Registry'} record.</p></div></div>${personBioGrid(record,mode)}${!isOfficer&&unitsHtml?`<section class="pv-units"><small>Linked Units</small><div>${unitsHtml}</div></section>`:''}</section>
+    <section class="person-detail-panel active" role="tabpanel" data-person-detail-panel="overview"><div class="pd-section-heading"><div><h4>Biographic Information</h4><p>${editing?'Update the profile fields your role may change, then save. Locked fields need an administrator.':'Complete identity details available in the '+(isOfficer?'Police Registration':'Central Person Registry')+' record.'}</p></div></div>${editing?personBioForm(record):personBioGrid(record,mode)}${!isOfficer&&unitsHtml?`<section class="pv-units"><small>Linked Units</small><div>${unitsHtml}</div></section>`:''}</section>
     <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="documents"><div class="pd-section-heading"><div><h4>Documents &amp; Attachments</h4><p>Readable previews of identity documents, passport scans, application files and supporting attachments. Open any item full size for inspection.</p></div></div><div id="personDocumentGrid"><div class="pd-doc-empty"><b>Loading documents…</b>Checking attachments available to your unit.</div></div><p class="pd-scope-note" id="personDocumentScopeNote"></p></section>
     <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="linked"><div class="pd-section-heading"><div><h4>${isOfficer?'Police Registration details':'Linked Unit Records'}</h4><p>${isOfficer?'Service, assignment, guarantor and registration details.':'Branch provenance and source information for linked records within your access scope.'}</p></div></div><div id="pvLinkedRecords">${isOfficer?unitsBlock:'<p class="muted">Loading branch and source details…</p>'}</div></section>${foot}`;
   openEntryModal('personDetailModal');
@@ -5418,7 +5899,7 @@ function guardReadOnly(action){
 // them when a write-capable officer signs in on the same tab. A MutationObserver
 // re-runs it after every repaint, so a newly rendered button can never slip
 // through — on any department page.
-const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal"|'stViewModal'|"stViewModal")|openStationEdit|openPersonDrawer|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
+const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal"|'stViewModal'|"stViewModal")|openStationEdit|openPersonDrawer|startPersonEditMode|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
 // The visible label of a mutation action: "+ New case", "＋ Add suspect",
 // "Approve", "Edit", "Save", "Delete", "New", "Register …", "Nominate",
 // "Record …", "Upload", "Submit", "Verify", "Confirm", "Reject", "Enable" /
@@ -6058,11 +6539,91 @@ function reviewLockState(x){
     label:locked?`Review Lock (${REVIEW_LOCK_HOURS}h Required) - ${remaining.toFixed(1)} hours remaining`:''};
 }
 
+// ---- clearance purpose (single source of truth for every surface) ---------
+// The purpose is a first-class part of a clearance application: it decides the
+// mandatory review window (Citizenship is exempt) and it appears in the
+// register, the review modal and the printable pages. Keeping the label,
+// colour tone and markup here means those four surfaces can never disagree.
+const CLEARANCE_PURPOSES=['Employment','Citizenship','Education','Travel','Licence'];
+function clearancePurpose(item){
+  const raw=String((item&&item.purpose)||item||'').trim();
+  if(!raw) return '';
+  const known=CLEARANCE_PURPOSES.find(p=>p.toLowerCase()===raw.toLowerCase());
+  return known||raw;
+}
+function purposeTone(purpose){
+  const key=String(purpose||'').trim().toLowerCase();
+  if(key==='employment') return 'employment';
+  if(key==='citizenship') return 'citizenship';
+  if(key==='education') return 'education';
+  if(key==='travel') return 'travel';
+  if(key==='licence'||key==='license') return 'licence';
+  return 'generic';
+}
+function purposeBadge(purpose,extraClass){
+  const label=clearancePurpose(purpose)||'Purpose not recorded';
+  return `<span class="purpose-chip ${purposeTone(label)}${extraClass?' '+extraClass:''}"><span class="purpose-dot" aria-hidden="true"></span>${esc(label)}</span>`;
+}
+function purposeIcon(purpose){
+  const tone=purposeTone(purpose);
+  return {employment:'💼',citizenship:'🛡',education:'🎓',travel:'✈',licence:'🪪'}[tone]||'📋';
+}
+
+// ---- certificate print lock ------------------------------------------------
+// RULE: an approved certificate may only be printed by a regular officer once
+// the scanned signed application document has been uploaded. Administrators
+// (Admin / SystemAdmin) bypass the restriction at any time, and the globally
+// read-only Commander/HQ oversight role keeps its view-only print access
+// (it holds no write authority and already only sees approved files).
+// `certificate_print` is computed by the backend per caller; the client-side
+// fallback mirrors it so an offline / cached register cannot unlock early.
+function signedScanPresent(item){
+  if(!item) return false;
+  if(item.signedDocumentPath||item.signed_document_path
+     ||item.signedDocumentName||item.signed_document_name) return true;
+  if(Array.isArray(item.signed_application_documents)&&item.signed_application_documents.length) return true;
+  if(item.signed_application_document||item.signedApplicationDocument) return true;
+  const state=item.certificate_print||item.certificatePrint;
+  return !!(state&&state.signed_scan_present===true);
+}
+function sessionIsAdmin(user){
+  if(isAdminRole((user&&user.role)||'')) return true;
+  if(user&&user.is_admin===true) return true;
+  if(currentUser&&(isAdminRole(currentUser.role)||currentUser.is_admin===true)) return true;
+  if(sessionUser&&(isAdminRole(sessionUser.role)||sessionUser.is_admin===true)) return true;
+  if(sessionVisibility&&sessionVisibility.is_admin===true) return true;
+  return isAdminRole(signedInRole());
+}
+function certificatePrintState(item,user){
+  const admin=sessionIsAdmin(user);
+  const readOnly=isReadOnlyUser();
+  const signed=signedScanPresent(item);
+  const serverState=(item&&(item.certificate_print||item.certificatePrint))||null;
+  const serverUnlocked=(serverState&&typeof serverState.unlocked==='boolean')?serverState.unlocked:null;
+  const unlocked=admin||readOnly||(serverUnlocked===null?signed:serverUnlocked);
+  const reason=(serverState&&serverState.reason)
+    ||(admin?'Administrator print bypass — the signed scan is not required.'
+    :readOnly?'View-only command access — approved certificates stay printable.'
+    :'Certificate printing is locked until the scanned signed application document is uploaded.');
+  return {unlocked,locked:!unlocked,admin,readOnly,signed,reason};
+}
+function certificateLockedControl(item,state){
+  const title=esc(state.reason);
+  return `<button class="btn small fp-lock-btn" type="button" disabled="disabled" aria-disabled="true"
+    style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="${title}">&#128274; Certificate (scan required)</button>`;
+}
+function certificateControlHtml(item,state){
+  return state.unlocked
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=fbfd77bb&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    : certificateLockedControl(item,state);
+}
+
 // Renders the Approve / Certificate action for one register row.
 //
 //   isAdmin = currentUser.role === 'admin' || 'SystemAdmin'
 //   hoursElapsed = (now - created_at) / 1h
 //   isLocked = !isAdmin && (hoursElapsed < 12 || created_at missing)
+//   printState = certificate print lock (signed scan required unless admin)
 //
 // Fail-closed: a row without a usable created_at is treated as locked, and
 // the locked control carries disabled + pointer-events:none + opacity:0.5
@@ -6077,20 +6638,21 @@ function renderRegisterRow(item,currentUser){
   const staleBuild = backendIsStale();
   const isLocked = staleBuild || (!isAdmin && !citizenshipExempt(item) && (hoursElapsed < REVIEW_LOCK_HOURS || !(createdAtTime>0)));
   const approved = !staleBuild && (item.status==='Approved' || item.status==='APPROVED');
+  const printState = certificatePrintState(item,currentUser);
 
   // Global read-only role (Commander / High Command): the register renders
   // in strict view-only mode — an approved file keeps its printable
   // Certificate link, everything else is a plain status label.
   if(isReadOnlyUser()){
     return approved
-      ? `<a class="btn green small" target="_blank" href="certificate.html?v=fbfd77bb&id=${encodeURIComponent(item.id)}">Certificate</a>`
+      ? certificateControlHtml(item,printState)
       : '<span class="muted">View only</span>';
   }
   let actionHtml='';
   if(staleBuild){
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;" title="The running backend is not the review-lock build — approvals are disabled.">&#128274; Stale backend — locked</button>`;
   }else if(approved){
-    actionHtml=`<a class="btn green small" target="_blank" href="certificate.html?v=fbfd77bb&id=${encodeURIComponent(item.id)}">Certificate</a>`;
+    actionHtml=certificateControlHtml(item,printState);
   }else if(isLocked){
     const remaining=Math.max(0,REVIEW_LOCK_HOURS-hoursElapsed).toFixed(1);
     actionHtml=`<button class="btn small" disabled="disabled" style="opacity:0.5;pointer-events:none;cursor:not-allowed;">&#128274; Review Locked (12h)</button>
@@ -6123,16 +6685,31 @@ function setFpReviewNotice(message,isError){
 function renderClearanceReview(record){
   if(!record)return;
   const id=record.application_id||record.id||window._reviewingClearanceId;
-  const personName=record.full_name||record.person_name||person(record.person_id||record.person)?.name||'Applicant';
+  const applicantPersonId=record.applicant_person_id||record.person_id||record.person||'';
+  const personName=record.full_name||record.person_name||person(applicantPersonId)?.name||'Applicant';
   const status=record.status||'Pending Review';
+  const purpose=clearancePurpose(record);
   document.getElementById('fpReviewTitle').textContent='Clearance review · '+id;
+  // The purpose sits in the modal header AND in the first summary tile: it is
+  // the reason the applicant is being cleared and drives the review window.
+  const purposeBadgeEl=document.getElementById('fpReviewPurposeBadge');
+  if(purposeBadgeEl){
+    purposeBadgeEl.className='purpose-chip '+purposeTone(purpose);
+    purposeBadgeEl.innerHTML='<span class="purpose-dot" aria-hidden="true"></span>'+esc(purpose||'Purpose not recorded');
+    purposeBadgeEl.title='Clearance purpose: '+(purpose||'not recorded');
+  }
+  const reviewSummaryRow={...record,id,status,purpose};
+  const printState=certificatePrintState(reviewSummaryRow,currentUser);
+  const printLockNote=(String(status).toUpperCase()==='APPROVED'&&printState.locked)
+    ? `<div class="cert-lock-note" role="note"><span aria-hidden="true">&#128274;</span><span><b>Certificate printing locked.</b> ${esc(printState.reason)} Upload the signed application scan below and the certificate unlocks automatically for your role.</span></div>`
+    : '';
   const summary=document.getElementById('fpReviewSummary');
   if(summary)summary.innerHTML=`<div class="fp-review-summary">
-    <div class="pv-field"><small>Applicant</small><b>${esc(personName)}</b><small>${esc(record.person_id||record.person||'')}</small></div>
-    <div class="pv-field"><small>Application / purpose</small><b>${esc(id)}</b><small>${esc(record.purpose||'')}</small></div>
+    <div class="pv-field"><small>Applicant</small><b>${esc(personName)}</b><small>${esc(applicantPersonId)}</small></div>
+    <div class="pv-field pv-purpose"><small>Clearance purpose</small><b>${purposeBadge(purpose)}</b><small>Application ${esc(id)}</small></div>
     <div class="pv-field"><small>Application status</small><b><span class="badge ${status==='Approved'?'green':status==='Rejected'?'red':'blue'}">${esc(status)}</span></b><small>${record.certificate_number?esc(record.certificate_number):'No certificate issued'}</small></div>
     <div class="pv-field"><small>Submitted</small><b>${esc(record.created_at||'Not recorded')}</b><small>${record.branch_name?esc(record.branch_name)+' · '+esc(record.branch_region||''):''}</small></div>
-  </div><div class="hint">Print the application for the applicant and guarantor to sign. Attach the re-scanned signed paper below; each upload is retained as a version.</div>`;
+  </div>${printLockNote}<div class="hint">Print the application for the applicant and guarantor to sign. Attach the re-scanned signed paper below; each upload is retained as a version.</div>`;
   const cachedLatest=(record.signedDocumentPath||record.signed_document_path)?{
     path:record.signedDocumentPath||record.signed_document_path,
     name:record.signedDocumentName||record.signed_document_name||'Signed application scan'
@@ -6151,7 +6728,15 @@ function renderClearanceReview(record){
   }
   const applicantDocs=clearanceFiles(record.applicant_docs,'Applicant identity / supporting document',id);
   const guardianDocs=clearanceFiles(record.guardian_docs,'Guarantor supporting document',id);
-  if(record.applicant_photo)applicantDocs.unshift({path:record.applicant_photo,name:'Applicant photograph',category:'Applicant photograph',source:'Fingerprint Unit · clearance application',record_id:id});
+  const applicantPhotoPath=record.applicant_photo||record.applicantPhoto||'';
+  if(applicantPhotoPath){
+    // The friendly label has no extension — carry the image MIME resolved from
+    // the stored path so the card renders the photograph, not a file icon.
+    const photoExt=fileExtensionOf(applicantPhotoPath);
+    applicantDocs.unshift({path:applicantPhotoPath,name:'Applicant photograph',
+      category:'Applicant photograph',source:'Fingerprint Unit · clearance application',
+      record_id:id,file_type:IMAGE_MIME_BY_EXT[photoExt]||''});
+  }
   const original=document.getElementById('fpOriginalDocuments');
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
@@ -6428,7 +7013,7 @@ function renderFingerprintTable(){
    const tdCls=hi?' class="bio-match-cell"':'';
    const signedPath=safeDocumentUrl(x.signedDocumentPath||x.signed_document_path);
    const signedCell=signedPath?`<div class="fp-signed-cell"><span class="badge green">✓ Signed &amp; Scanned</span><br><a class="btn ghost small" href="${esc(signedPath)}" target="_blank" rel="noopener" title="Open ${esc(x.signedDocumentName||'signed application scan')}">Quick view</a></div>`:'<span class="badge amber">⏳ Awaiting Re-scan</span>';
-   return `<tr><td${tdCls}>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td${tdCls}><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td${tdCls}>${esc(x.purpose)}</td>
+   return `<tr><td${tdCls}>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td${tdCls}><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td${tdCls}>${x.purpose?purposeBadge(x.purpose):'<span class="muted">—</span>'}</td>
    <td${tdCls}>${fingerprintStatusBadge(x,p)}</td>
    <td${tdCls}><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
@@ -6549,7 +7134,13 @@ async function approveFP(id){
       // register route. A Fingerprint Officer is blocked by the mandatory
       // 12-hour review period (HTTP 400); a System Administrator bypasses it.
       await api('/api/fingerprint/applications/'+id+'/approve',{method:'POST',body:'{}'});
-      await syncServer();toast('Approved — certificate unlocked for printing');
+      await syncServer();
+      // The certificate itself is only printable once the signed scan exists
+      // (administrators bypass). Say which state the officer is in.
+      const approvedRow=(db.fingerprint||[]).find(a=>String(a.id)===String(id));
+      const printState=certificatePrintState(approvedRow||{id,status:'Approved'},currentUser);
+      toast(printState.locked?'Approved — certificate print locked until the signed scan is uploaded'
+                            :'Approved — certificate unlocked for printing');
       if(window._reviewingClearanceId===id)closeEntryModal('fpReviewModal')}
   else{
     // Offline / demo path — the mandatory review window still applies here,
@@ -6988,7 +7579,7 @@ async function syncServer(){
     // The review payload carries the 12-hour mandatory-review window state
     // (and whether the signed-in user may approve right now), so the register
     // can show why an approval is still locked.
-    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at,signedDocumentPath:x.signed_document_path||'',signedDocumentName:x.signed_document_name||''}));
+    if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at,signedDocumentPath:x.signed_document_path||'',signedDocumentName:x.signed_document_name||'',applicantPhoto:x.applicant_photo||'','certificatePrint':x.certificate_print||null}));
     if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',summary:x.incident_summary,created_at:x.created_at||'',participants:[],evidence:[]}));
     if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
     // Police Registrations: stations + officers now sync from the central DB.

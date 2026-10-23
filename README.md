@@ -678,3 +678,57 @@ mirror is view-only even for an administrator — it is edited in Branch Managem
 `can_edit_records` / `can_edit_stations` are the reusable capability flags the same
 administration rule exposes to every management table, so admins keep full edit
 access wherever an inline Edit action exists.
+
+## Clearance purpose, document viewer, certificate print lock & field-level RBAC (testing branch)
+
+**Clearance purpose is visible everywhere a clearance record is read.**
+`GET /api/fingerprint/applications` keeps returning the stored `purpose`
+(Education / Travel / Employment / Citizenship / Licence) and the frontend renders
+it as a colour-coded chip instead of hiding it in the detail JSON:
+
+- the **Fingerprint register** gained a `Purpose` column (`purposeBadge()`), so the
+  queue can be scanned without opening a record;
+- the **review modal** (`openClearanceReview`) shows the purpose chip in its header
+  and in the summary grid next to the applicant tile;
+- the printable **`application.html`** and **`certificate.html`** pages show the same
+  chip in their toolbars and inside the printed purpose line.
+
+**Photographs and documents open in a fullscreen viewer.**
+Every applicant/person photograph and every image document card in the person
+detail modal is rendered as an `<img>` (extension-aware `documentExtension()`), not
+as a generic file icon, and carries `data-image-zoom`. Clicking one opens
+`#imageLightbox`: wheel or `+` / `−` zoom (25 %–400 %), drag to pan, `0` / *Reset*
+to fit, *Open in new tab*, and `Esc` / backdrop click to close. Non-image documents
+keep their file icon and open link.
+
+**Certificate printing is locked until the signed paper application is scanned.**
+`certificate_print_state()` is the single source of truth and is published as
+`certificate_print` on the clearance list and detail payloads:
+
+```json
+{"unlocked": false, "locked": true, "requires_signed_scan": true,
+ "signed_scan_present": false, "admin_bypass": false,
+ "read_only_bypass": false, "reason": "Scan the signed ...", "editable_by": [...]}
+```
+
+Unlocked = **SystemAdmin / Admin** (bypass), **Commander / High Command**
+(view-only, prints what an officer issued) or **`signed_scan_present`** for
+everyone else. The register row, the review modal, `application.html` and
+`certificate.html` all gate on that verdict — the deep link is refused too, so a
+bookmarked `certificate.html?id=…` cannot print an unlocked certificate for a
+regular officer. Uploading the signed scan (`POST
+/api/fingerprint/applications/<id>/signed-document`) unlocks it immediately.
+
+**Field-level editing in Person Details.** Regular users may edit only **contact
+phone**, **residence address** and **occupation**; full legal names, mother's name,
+DOB/POB, National ID, passport ID, gender, email and every other biographic/legal
+field stay read-only (rendered with a `rbac-locked` class and a lock hint).
+SystemAdministrators / Admins edit every field. The rule is enforced in **both**
+places: the UI disables the inputs and sends only the permitted keys, and
+`PATCH /api/persons/<id>` refuses a protected change with **403** `code:
+field_edit_forbidden` (plus `restricted_fields`, `editable_fields`,
+`admin_bypass: false`) — atomically, so a bundle containing one identity change
+persists nothing. An unchanged identity echo is allowed, and creating a new person
+(`POST /api/persons`, `/upsert`) is unchanged.
+
+See [TESTING.md](TESTING.md) for the suites and the officer UAT checklist.

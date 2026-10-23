@@ -117,6 +117,17 @@
   .btn[disabled]{opacity:.45;cursor:not-allowed;filter:grayscale(.4)}
   .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:99px;font-size:12px;font-weight:800}
   .badge.amber{background:#fff3d9;color:var(--orange)}.badge.green{background:#e3f7f1;color:var(--green)}
+  /* Clearance purpose — always visible in the page header, also when printing
+     the application for signature. */
+  .purpose-chip{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:5px 12px;
+    font-size:12px;font-weight:800;letter-spacing:.35px;text-transform:uppercase;border:1px solid transparent}
+  .purpose-chip.employment{background:#e8f0ff;color:#1d4ed8;border-color:#c3d7ff}
+  .purpose-chip.citizenship{background:#f2e9ff;color:#6d28d9;border-color:#ddc9ff}
+  .purpose-chip.education{background:#e2f7ee;color:#0f7a55;border-color:#bce9d7}
+  .purpose-chip.travel{background:#fff3dd;color:#a16207;border-color:#f6dfae}
+  .purpose-chip.licence{background:#ffe9ea;color:#b4232f;border-color:#f7c7cb}
+  .purpose-chip.generic{background:#eef2f7;color:#475569;border-color:#dbe3ec}
+  @media print{.purpose-chip{border-color:#000!important;background:#fff!important;color:#000!important}}
   .lockbar{padding:9px 16px;background:#fff8ec;border-bottom:1px solid #f2ddae;color:#7a5b17;font-family:Arial,sans-serif;font-size:13px;display:none}
   .lockbar.on{display:block}
   .lockbar.err{background:#fdecee;border-color:#f3c3c8;color:#8a2230}
@@ -140,6 +151,7 @@
 <div class="toolbar">
   <a class="btn ghost" href="index.html?v=fbfd77bb">&larr; Back to system</a>
   <div style="flex:1"></div>
+  <span id="purposeBadge" class="purpose-chip generic" title="Clearance purpose">Purpose&hellip;</span>
   <span id="statusBadge" class="badge amber">Pending Review</span>
   <button class="btn" onclick="window.print()">&#128424; Print application</button>
   <button class="btn green" data-write="1" id="approveBtn" onclick="approve()">&#10003; Approve Application</button>
@@ -303,6 +315,23 @@ function isAdminRole(role){
   const l=String(role||'').toLowerCase().replace(/[^a-z]/g,'');
   return l==='systemadmin'||l==='admin'||l==='administrator';
 }
+function purposeTone(purpose){
+  const key=String(purpose||'').trim().toLowerCase();
+  if(key==='employment') return 'employment';
+  if(key==='citizenship') return 'citizenship';
+  if(key==='education') return 'education';
+  if(key==='travel') return 'travel';
+  if(key==='licence'||key==='license') return 'licence';
+  return 'generic';
+}
+function setPurpose(a){
+  const el=document.getElementById('purposeBadge');
+  if(!el) return;
+  const purpose=String((a&&a.purpose)||'').trim()||'Purpose not recorded';
+  el.className='purpose-chip '+purposeTone(purpose);
+  el.textContent=purpose;
+  el.title='Clearance purpose: '+purpose;
+}
 function storedUser(){
   try{
     let u=null;
@@ -336,6 +365,7 @@ function reviewLock(a){
 
 function render(a){
   app=a;
+  setPurpose(a);
   const approved=a.status==='Approved';
   const badge=document.getElementById('statusBadge');
   badge.className='badge '+(approved?'green':'amber');
@@ -349,7 +379,11 @@ function render(a){
   if(approved){
     btn.disabled=false;btn.title='';btn.removeAttribute('disabled');btn.setAttribute('style','');
     btn.innerHTML='&#10003; Approve Application';
-    lockbar(a.certificate_number?('Approved — certificate '+esc(a.certificate_number)+' is unlocked for printing.'):'');
+    const printState=a.certificate_print||null;
+    const printLocked=!!(printState&&printState.locked);
+    lockbar(a.certificate_number?(printLocked
+      ? 'Approved — certificate '+esc(a.certificate_number)+' is issued, but printing stays locked until the signed application scan is uploaded.'
+      : 'Approved — certificate '+esc(a.certificate_number)+' is unlocked for printing.'):'');
   }else if(lock.locked){
     // Hard-disabled: attribute + inline pointer-events/opacity so the control
     // is physically unclickable even if an older stylesheet is cached.

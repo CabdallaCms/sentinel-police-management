@@ -19,6 +19,8 @@ PYTHON="$PWD/.venv/bin/python" node backend/test_approval_flow.mjs
 .venv/bin/python backend/test_dynamic_branches.py
 .venv/bin/python backend/test_read_only_rbac.py
 .venv/bin/python backend/test_print_fit.py
+.venv/bin/python backend/test_field_level_rbac.py
+node backend/test_clearance_rbac_ui.mjs
 ```
 
 The linked-record suite **always** provisions isolated PostgreSQL. Review-gate,
@@ -369,3 +371,66 @@ the station View/Edit feature — switch to the feature branch or merge it first
 New checks: CWD-first resolution, `--ui-check` pass/fail + diagnosis content, the startup refusal
 naming the resolution source, a **running** server answering `503` when the page goes stale and
 recovering to `200` when restored.
+
+## Clearance purpose, document viewer, certificate print lock, field-level RBAC (2026-10-23)
+
+### What changed
+- **Purpose visibility** — `purposeBadge()` / `purposeTone()` / `purposeIcon()` render the
+  stored clearance reason (Education · Travel · Employment · Citizenship · Licence) as a
+  chip in the Fingerprint register (`Purpose` column), in the review modal header + summary,
+  in `application.html` and in `certificate.html`. `GET /api/fingerprint/applications`
+  already returned `purpose`; no route or column was added.
+- **Photographs are images, not icons** — `fileExtensionOf()` / `documentExtension()` decide
+  image vs. document, the applicant photo (list `applicant_photo`, detail
+  `applicant_photo`) renders as `<img>`, and `#imageLightbox` adds fullscreen zoom/pan
+  (wheel, `+`/`−`, `0`, *Open in new tab*, `Esc`).
+- **Certificate print lock** — `certificate_print_state()` in `backend/server.py` returns
+  `{unlocked, locked, requires_signed_scan, signed_scan_present, admin_bypass,
+  read_only_bypass, reason, editable_by}` and is attached to every clearance row and
+  detail. Unlocked = admin (bypass) · Commander/High Command (view-only bypass) ·
+  `signed_scan_present`. Gated in the register row, the review modal,
+  `application.html` and `certificate.html` (deep link included).
+- **Field-level RBAC** — `PERSON_SELF_EDITABLE_FIELDS = ['phone','residence','occupation']`
+  in the frontend and `PERSON_MUTABLE_FIELDS` on the server. `PATCH /api/persons/<id>`
+  answers **403** `code: field_edit_forbidden` when a non-admin changes a protected
+  field; nothing is written, not even the permitted keys in the same bundle. Admins
+  edit everything. `POST /api/persons` / `/upsert` are unchanged, and `applicant_person_id`
+  (the database id) is now returned next to the human `person_id` so the review modal can
+  fetch the right document manifest.
+
+### Automated
+```sh
+.venv/bin/python backend/test_field_level_rbac.py   # 7 tests: mutable-only PATCH, atomic
+                                                   # 403 per protected field, unchanged
+                                                   # echo, admin bypass, Commander 403,
+                                                   # print lock → scan → unlocked,
+                                                   # applicant photo in the manifest
+node backend/test_clearance_rbac_ui.mjs            # jsdom: purpose chip, photo <img>,
+                                                   # lock/bypass labels, lightbox, RBAC
+                                                   # editor in modal + identity drawer
+PYTHON="$PWD/.venv/bin/python" node backend/test_approval_flow.mjs
+.venv/bin/python backend/test_review_gate.py
+.venv/bin/python backend/test_station_actions.py   # feature markers + cache-busting
+```
+
+`test_field_level_rbac.py` reuses the `test_review_gate` pgserver harness (throwaway
+cluster, temporary `SENTINEL_UPLOADS`); `test_clearance_rbac_ui.mjs` evaluates the real
+inline script in jsdom with stubbed network writes.
+
+### Officer UAT checklist
+1. **Purpose** — open Fingerprint: every row shows a Purpose chip; open one record and the
+   modal header + summary repeat it; open `application.html` / `certificate.html` and check
+   the chip and the printed purpose line.
+2. **Photograph / documents** — open a person with a photograph: the photo renders as an
+   image, clicking it (or any image document) opens the fullscreen viewer; wheel/`+`/`−`
+   zoom, drag to pan, `0` resets, `Esc` closes; a PDF/scan keeps its file icon.
+3. **Certificate lock** — as a Fingerprint Officer approve an application **without** a
+   signed scan: the register shows `Certificate (scan required)`, disabled, and the deep
+   link `certificate.html?id=…` says the certificate is locked. Upload the signed scan
+   (`Re-scan` → *signed application*) and print immediately. As Admin the button is
+   enabled from the start (`Admin bypass`).
+4. **Field-level RBAC** — sign in as a regular officer, open Person Details → Edit: only
+   Phone, Residence and Occupation accept input; the identity fields are disabled with the
+   lock hint, and saving sends only those three keys. Try the same with `curl`:
+   `PATCH /api/persons/<id> {"full_name": "…"}` → **403** `field_edit_forbidden`, no change
+   written. Sign in as Admin: every field edits and saves.
