@@ -21,6 +21,7 @@ PYTHON="$PWD/.venv/bin/python" node backend/test_approval_flow.mjs
 .venv/bin/python backend/test_print_fit.py
 .venv/bin/python backend/test_field_level_rbac.py
 node backend/test_clearance_rbac_ui.mjs
+node backend/test_reverse_sequence_ui.mjs
 ```
 
 The linked-record suite **always** provisions isolated PostgreSQL. Review-gate,
@@ -440,3 +441,44 @@ inline script in jsdom with stubbed network writes.
    why), and saving sends only those three keys. Try the same with `curl`:
    `PATCH /api/persons/<id> {"full_name": "…"}` → **403** `field_edit_forbidden`, no change
    written. Sign in as Admin: every field edits and saves.
+
+## Register row numbering — reverse sequence `#` (2026-10-23)
+
+### What changed
+- A compact leading **`#`** column on every primary register. The number is the
+  **filtered** row count minus the row index, so the top (newest) row shows the
+  total and the bottom (oldest) row shows `1`.
+- Shared helpers `reverseSequence(index,total)` / `sequenceCell(index,total,cls)` /
+  `sequenceHead()` (next to `paintTableCount`, `index.html`). Tables: Fingerprint,
+  Central Person Registry, Airport, CID cases, CID suspects, Checkpoint screening,
+  Registered Stations, Police Officers, Vehicles, Crime intake and the three
+  Central Police Search tabs.
+- Header/body column counts stay equal, empty-state `colspan` widened with each
+  table, and **Actions remains the last column**; the column is 46 px wide
+  (38 px ≤640 px) with tabular figures so `9`/`10` align.
+
+### Automated
+```sh
+node backend/test_reverse_sequence_ui.mjs
+```
+
+It pins: 4 applications read `4 3 2 1`; the search box renumbers the filtered view;
+a newly added application becomes the new `total`; every register's header and row
+cell counts match with `#` as the first cell and Actions last; filtered People /
+Stations tables number from their filtered count; every empty-state `colspan`
+equals the widened header; all three police-search tabs carry the column.
+
+`UI_REQUIRED_MARKERS` gained `('Reverse sequence # column', 'function sequenceCell(')`,
+so a stale page missing the column now fails startup and `python backend/server.py
+--ui-check`.
+
+### Officer UAT checklist
+1. Open **Fingerprint**: the first row is numbered with the number of applications
+   currently listed and the last row is `1`; add a new application and the top
+   number increases by one.
+2. Type in the register search box: the numbers renumber to the filtered count
+   (a single match is `1`) and return to the full range when cleared.
+3. Check **Persons**, **Airport**, **CID**, **Checkpoints**, **Police Stations**,
+   **Police Officers**, **Vehicles**, **Crime intake** and **Central Police
+   Search** (officers / stations / vehicles): each starts with `#`, the Actions
+   column is still last, and nothing overflows on a narrow window.

@@ -61,6 +61,16 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .table .actions .btn + .btn{margin-left:4px}
 .table .actions .btn + .badge{margin-left:4px}
 .table .actions .muted{font-size:12px}
+/* Reverse sequence column: the registers render newest-first, so the leading
+   number counts DOWN the visible (filtered) rows — top row = total, last row
+   = 1. Compact, right-aligned, tabular figures so 9/10 align. */
+.table th.seq,.table td.seq{width:46px;min-width:46px;max-width:56px;text-align:right;
+  white-space:nowrap;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.table th.seq{color:#8b99ad;padding-right:12px}
+.table td.seq{color:var(--muted);font-weight:700;font-size:11.5px;padding-right:12px}
+.table tbody tr:hover td.seq{color:var(--ink)}
+body.dark-mode .table td.seq,body[data-theme="dark"] .table td.seq{color:#94a3b8}
+@media(max-width:640px){.table th.seq,.table td.seq{width:38px;min-width:38px;padding-right:8px;font-size:11px}}
 .person{display:flex;align-items:center;gap:10px}.mini{width:30px;height:30px;border-radius:8px;background:#eaf0ff;color:var(--blue);display:grid;place-items:center;font-size:11px;font-weight:800;overflow:hidden}
 .mini img{width:100%;height:100%;object-fit:cover}
 .badge{display:inline-flex;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700}
@@ -1334,7 +1344,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
   </div>
 </div>
 <div id="centralBioAlert" class="match-banner bio-match-banner" role="alert" aria-live="polite"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Fingerprint</th><th>Linked unit records</th><th>Actions</th></tr></thead><tbody id="peopleTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Person</th><th>Person ID</th><th>National ID</th><th>Passport</th><th>Fingerprint</th><th>Linked unit records</th><th>Actions</th></tr></thead><tbody id="peopleTable"></tbody></table></div>
 </div>
 </section>
 
@@ -1347,7 +1357,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <div class="panel">
 <div class="panel-head"><div><h2>Fingerprint register</h2><div class="sub">Applications, review and clearance certificates</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="fpSearch" placeholder="Search application, person, purpose or status…" oninput="renderFingerprintTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('fpDrawer')">＋ New Clearance Application</button></div></div>
 <div class="hint" style="margin-bottom:14px"><b>Day 1:</b> open an application to print the review summary for the applicant to verify. <b>Day 2:</b> after an officer approves, the clearance certificate unlocks for printing. <b>Mandatory review:</b> Citizenship applications can be approved and printed immediately. Other reasons require a 12-hour review period; a System Administrator can approve immediately.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Application</th><th>Person</th><th>Purpose</th><th>Fingerprint</th><th>Status</th><th>Application Scanned Document</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Application</th><th>Person</th><th>Purpose</th><th>Fingerprint</th><th>Status</th><th>Application Scanned Document</th><th>Actions</th></tr></thead><tbody id="fpTable"></tbody></table></div>
 </div>
 </section>
 <!-- New clearance application -->
@@ -1393,7 +1403,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Passenger records</h2><div class="sub">Airport unit register · Hargeisa Local Airport</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="airSearch" placeholder="Search passenger, flight, date or route…" oninput="renderAirportTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('airDrawer')">＋ Register Airport Passenger</button></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Fingerprint</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Passenger</th><th>Movement</th><th>Date</th><th>Flight</th><th>Fingerprint</th><th>Actions</th></tr></thead><tbody id="airTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register airport passenger -->
@@ -1437,12 +1447,12 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <div class="panel">
 <div class="panel-head"><div><h2>Crime cases</h2><div class="sub">CID Criminal Unit · open a case for the full workspace</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="caseSearch" placeholder="Search case, category, location or status…" oninput="renderCases()"></div><button class="btn" data-write="1" onclick="openCaseDrawer()">+ New case</button></div></div>
 <div class="hint" style="margin-bottom:14px">Open a case to access its three workspace tabs: <b>Details &amp; incident summary</b>, <b>Participants &amp; suspect linkage</b>, and <b>Evidence &amp; media</b>.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th><th>Actions</th></tr></thead><tbody id="caseTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Case</th><th>Category</th><th>Location</th><th>Status</th><th>Participants</th><th>Actions</th></tr></thead><tbody id="caseTable"></tbody></table></div>
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Suspect list</h2><div class="sub">Shared alert view for checkpoints and airport — the linked case is <b>optional</b></div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="suspectSearch" placeholder="Search person, case, role or alert…" oninput="renderSuspectTable()"></div><button class="btn" data-write="1" onclick="openAddSuspect()">＋ Add suspect</button></div></div>
 <div class="hint">Operational units see an alert and identification match prompt — not confidential CID case notes. Suspects listed without a case are recorded with a <b>Direct Intelligence Listing</b> or <b>Manual Entry</b> origin.</div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th><th>Actions</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Person</th><th>Linked case / origin</th><th>Role</th><th>Alert</th><th>Actions</th></tr></thead><tbody id="suspectTable"></tbody></table></div>
 </div>
 </section>
 
@@ -1538,7 +1548,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
   using the chips above.
   <span id="cpScopeHint" style="margin-left:6px"></span>
 </div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Fingerprint</th><th>Screening</th><th>Action</th><th>Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Time</th><th>Location</th><th>Traveler</th><th>Guardian</th><th>Fingerprint</th><th>Screening</th><th>Action</th><th>Actions</th></tr></thead><tbody id="cpTable"></tbody></table></div>
 <div class="empty" id="cpEmpty" style="display:none">No stops recorded</div>
 <div class="sub" id="cpTableCount" style="margin-top:8px;display:none">0</div>
 </div>
@@ -1572,7 +1582,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <div class="panel">
 <div class="panel-head"><div><h2>Registered stations</h2><div class="sub">Each station provides the default Region → District → Village for its officers and cars</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="stCount" style="display:none">0</span><button class="btn admin-write" data-write="1" onclick="openEntryModal('stDrawer')">＋ Register Station</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="stSearch" placeholder="Central Station Search — name, code, region, district or village…" oninput="renderStationsTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Actions</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Actions</th></tr></thead><tbody id="stationsTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register police station (SystemAdmin / stations:manage only) -->
@@ -1661,7 +1671,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <div class="panel">
 <div class="panel-head"><div><h2>Registered officers</h2><div class="sub">Service ID, rank, unit, assigned station and duty status</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="offCount" style="display:none">0</span><button class="btn" data-write="1" onclick="openEntryModal('offDrawer')">＋ Register Officer</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="offSearch" placeholder="Central Officer Search — name, service ID, rank, unit or station…" oninput="renderOfficersTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th><th>Actions</th></tr></thead><tbody id="officersTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th><th>Actions</th></tr></thead><tbody id="officersTable"></tbody></table></div>
 </div>
 </div><!-- /hrPane-register -->
 
@@ -1903,7 +1913,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 </div>
 <div class="panel">
 <div class="panel-head"><div><h2>Crime files</h2><div class="sub">Linked to station and desk officer</div></div><div class="table-toolbar"><div class="search"><span>⌕</span><input id="crmSearch" placeholder="Search file number, category, station, officer or status…" oninput="renderCrimesTable()"></div><button class="btn" data-write="1" onclick="openEntryModal('crmDrawer')">＋ Register Crime / Victim Intake</button></div></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>File</th><th>Category</th><th>Station</th><th>Officer</th><th>Status</th></tr></thead><tbody id="crimesTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>File</th><th>Category</th><th>Station</th><th>Officer</th><th>Status</th></tr></thead><tbody id="crimesTable"></tbody></table></div>
 </div>
 </section>
 <!-- Register crime / victim intake -->
@@ -1963,7 +1973,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <div class="panel">
 <div class="panel-head"><div><h2>Registered vehicles</h2><div class="sub">Security badge shown on every record</div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge gray" id="carCount" style="display:none">0</span><button class="btn" data-write="1" onclick="openEntryModal('carDrawer')">＋ Register Vehicle</button></div></div>
 <div class="search" style="margin-bottom:12px"><span>⌕</span><input id="carSearch" placeholder="Central Vehicle Search — plate, VIN, make, owner, station or alert…" oninput="renderCarsTable()"></div>
-<div class="table-wrap"><table class="table"><thead><tr><th>ID / Plate</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Alert</th></tr></thead><tbody id="carsTable"></tbody></table></div>
+<div class="table-wrap"><table class="table"><thead><tr><th class="seq" scope="col" title="Reverse sequence — newest record first">#</th><th>ID / Plate</th><th>Vehicle</th><th>Category</th><th>Station / owner</th><th>Alert</th></tr></thead><tbody id="carsTable"></tbody></table></div>
 </div>
 </section>
 <!-- Vehicle registry -->
@@ -5591,16 +5601,16 @@ function renderPeople(){
     const hb=(window._highlightedPersonId&&b.id===window._highlightedPersonId)?1:0;
     return hb-ha;
   });
-  const rows=sorted.map(p=>{
+  const rows=sorted.map((p,index)=>{
    const isHi=!!(window._highlightedPersonId&&p.id===window._highlightedPersonId);
    return `
    <tr class="clickable${isHi?' bio-match-row':''}" data-person-id="${esc(p.id)}" onclick="openPersonView('${esc(p.id)}')">
-    <td><div class="person"><span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span><div><b>${esc(p.name)}</b>${isHi?' <span class="badge green">⚡ Biometric Match</span>':''}<br><small class="muted">DOB ${esc(p.dob||'—')} · POB ${esc(p.pob||'—')} · Mother: ${esc(p.motherName||'—')}</small></div></div></td>
+    ${sequenceCell(index,sorted.length)}<td><div class="person"><span class="mini">${(p.photoPath||p.photoUrl)?`<img src="${p.photoPath||p.photoUrl}">`:esc(initials(p.name))}</span><div><b>${esc(p.name)}</b>${isHi?' <span class="badge green">⚡ Biometric Match</span>':''}<br><small class="muted">DOB ${esc(p.dob||'—')} · POB ${esc(p.pob||'—')} · Mother: ${esc(p.motherName||'—')}</small></div></div></td>
     <td><b>${esc(p.id)}</b></td><td>${esc(p.nationalId||'—')}</td><td>${esc(p.passportId||'—')}</td>
     <td>${fingerprintStatusBadge(p,p)}</td>
     <td>${(p.units||[]).map(u=>'<span class="badge blue">'+esc(u)+'</span>').join(' ')}</td>
     <td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openPersonView('${esc(p.id)}')">View</button></td></tr>`}).join('');
-  peopleTable.innerHTML=rows||'<tr><td colspan="7" class="empty">No people found</td></tr>';
+  peopleTable.innerHTML=rows||'<tr><td colspan="8" class="empty">No people found</td></tr>';
 }
 // ============================ dashboard (role / scope aware) ============================
 // The dashboard pulls its metrics from /api/dashboard, which is computed on the
@@ -6274,12 +6284,12 @@ function renderCheckpointTable(){
     return;
   }
   if(empty) empty.style.display = 'none';
-  tbody.innerHTML = searchedCheckpoints.map(x => {
+  tbody.innerHTML = searchedCheckpoints.map((x, index) => {
     const locLabel = x.checkpoint_location || (x.location_code ? x.location_code + ' Checkpoint' : x.location);
     const p = person(x.person);
     const isHi = !!(window._highlightedPersonId && x.person === window._highlightedPersonId);
     return `<tr${isHi?' class="bio-match-row"':''} data-event-id="${esc(x.event_id||x.id||'')}" data-loc="${esc(x.location_code||'')}">
-      <td>${esc(x.time)}</td><td>${esc(locLabel||'—')}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td>
+      ${sequenceCell(index,searchedCheckpoints.length)}<td>${esc(x.time)}</td><td>${esc(locLabel||'—')}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td>
       <td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}${x.purpose?` · ${esc(x.purpose)}`:''}</small></td>
       <td><b>${esc(x.guardianName||'—')}</b><br><small class="muted">${esc(x.guardianRelationship||'')}${(x.travelerDocs||x.guardianDocs)?` · 📎 ${x.travelerDocs||0}/2 + ${x.guardianDocs||0}/2`:''}</small></td>
       <td>${fingerprintStatusBadge(x,p)}</td>
@@ -7051,12 +7061,12 @@ function renderFingerprintTable(){
     const bio=resolveFingerprintInfo(x,p);
     return [x.id,x.purpose,x.status,x.certificate,x.branch,p&&p.name,x.person,bio.hash,bio.status,x.signedDocumentName,x.signedDocumentPath].some(v=>normTxt(v).includes(q));
   });
-  fpTable.innerHTML=list.map(x=>{const p=person(x.person);
+  fpTable.innerHTML=list.map((x,index)=>{const p=person(x.person);
    const hi=!!(window._highlightedPersonId&&x.person===window._highlightedPersonId);
    const tdCls=hi?' class="bio-match-cell"':'';
    const signedPath=safeDocumentUrl(x.signedDocumentPath||x.signed_document_path);
    const signedCell=signedPath?`<div class="fp-signed-cell"><span class="badge green">✓ Signed &amp; Scanned</span><br><a class="btn ghost small" href="${esc(signedPath)}" target="_blank" rel="noopener" title="Open ${esc(x.signedDocumentName||'signed application scan')}">Quick view</a></div>`:'<span class="badge amber">⏳ Awaiting Re-scan</span>';
-   return `<tr><td${tdCls}>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td${tdCls}><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td${tdCls}>${x.purpose?purposeBadge(x.purpose):'<span class="muted">—</span>'}</td>
+   return `<tr>${sequenceCell(index,list.length,hi?'bio-match-cell':'')}<td${tdCls}>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td${tdCls}><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td${tdCls}>${x.purpose?purposeBadge(x.purpose):'<span class="muted">—</span>'}</td>
    <td${tdCls}>${fingerprintStatusBadge(x,p)}</td>
    <td${tdCls}><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
@@ -7064,7 +7074,7 @@ function renderFingerprintTable(){
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
      ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=b2b2d360&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
-   </td></tr>`}).join('')||`<tr><td colspan="7" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
+   </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
 function renderAirportTable(){
   const q=normTxt((document.getElementById('airSearch')||{}).value||'');
@@ -7075,9 +7085,9 @@ function renderAirportTable(){
     const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));
     return [p&&p.name,x.person,x.move,x.date,x.flight,x.airline,route,x.branch,bio.hash,bio.status].some(v=>normTxt(v).includes(q));
   });
-  airTable.innerHTML=list.map(x=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));
+  airTable.innerHTML=list.map((x,index)=>{let p=person(x.person);const route=x.route||([x.origin,x.dest].filter(Boolean).join(' / '));
     const hi=!!(window._highlightedPersonId&&x.person===window._highlightedPersonId);
-    return `<tr${hi?' class="bio-match-row"':''}><td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small>${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td>${fingerprintStatusBadge(x,p)}</td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No passengers match that search':'No passenger records'}</td></tr>`;
+    return `<tr${hi?' class="bio-match-row"':''}>${sequenceCell(index,list.length,hi?'bio-match-cell':'')}<td><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${esc(x.move)}</td><td>${esc(x.date)}</td><td>${esc(x.flight)}${x.airline?`<br><small class="muted">${esc(x.airline)}</small>`:''}<br><small class="muted">${esc(route||'—')}</small>${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td>${fingerprintStatusBadge(x,p)}</td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="7" class="empty">${q?'No passengers match that search':'No passenger records'}</td></tr>`;
 }
 function renderSuspectTable(){
   const q=normTxt((document.getElementById('suspectSearch')||{}).value||'');
@@ -7086,15 +7096,15 @@ function renderSuspectTable(){
     const p=person(x.person);
     return [p&&p.name,x.person,x.case,x.role,x.alert,x.origin].some(v=>normTxt(v).includes(q));
   });
-  suspectTable.innerHTML=list.map(x=>`<tr><td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||`<tr><td colspan="5" class="empty">${q?'No suspects match that search':'No active alerts'}</td></tr>`;
+  suspectTable.innerHTML=list.map((x,index)=>`<tr>${sequenceCell(index,list.length)}<td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||`<tr><td colspan="6" class="empty">${q?'No suspects match that search':'No active alerts'}</td></tr>`;
 }
 function renderCases(){
   if(!window.caseTable)return;
   const q=normTxt((document.getElementById('caseSearch')||{}).value||'');
   const list=(db.cases||[]).filter(c=>!q||[c.id,c.category,c.location,c.branch,c.status,c.summary].some(v=>normTxt(v).includes(q)));
-  caseTable.innerHTML=list.map(c=>{
+  caseTable.innerHTML=list.map((c,index)=>{
     const parts=c.participants?c.participants.length:(db.suspects.filter(s=>s.case===c.id).length);
-    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')"><td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}${c.branch?`<br><small class="muted">${esc(c.branch)}</small>`:''}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td><td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openCase('${esc(c.id)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="6" class="empty">${q?'No cases match that search':'No cases yet'}</td></tr>`;
+    return `<tr class="clickable" onclick="openCase('${esc(c.id)}')">${sequenceCell(index,list.length)}<td><b>${esc(c.id)}</b></td><td>${esc(c.category)}</td><td>${esc(c.location)}${c.branch?`<br><small class="muted">${esc(c.branch)}</small>`:''}</td><td><span class="badge blue">${esc(c.status)}</span></td><td>${parts}</td><td class="actions"><button class="btn secondary small" onclick="event.stopPropagation();openCase('${esc(c.id)}')">View</button></td></tr>`}).join('')||`<tr><td colspan="7" class="empty">${q?'No cases match that search':'No cases yet'}</td></tr>`;
 }
 
 // ============================ fingerprint ============================
@@ -8871,6 +8881,24 @@ function paintTableCount(id,list,total){
   el.textContent=(list||[]).length===total?String(total):((list||[]).length+' / '+total);
   el.style.display='';
 }
+// ---- reverse sequence column (#) -----------------------------------------
+// Every primary register renders newest-first, so its row numbers count DOWN
+// the table: the first visible row is the total number of filtered records and
+// the last row is 1. Recomputing from `list.length` on every paint means the
+// numbers follow the search box, the location chips and new registrations with
+// no extra bookkeeping. Usage inside a renderer:
+//     list.map((row,index)=>`<tr>${sequenceCell(index,list.length)}…`)
+function reverseSequence(index,total){
+  const n=Number(total||0)-Number(index||0);
+  return n>0?n:0;
+}
+function sequenceCell(index,total,extraClass){
+  const n=reverseSequence(index,total);
+  return `<td class="seq${extraClass?' '+extraClass:''}" data-seq="${n}" aria-label="Record ${n} of ${total}">${n}</td>`;
+}
+function sequenceHead(label){
+  return `<th class="seq" scope="col" title="${esc(label||'Sequence — newest record first')}">#</th>`;
+}
 // ==================== HR Directorate tabs (Police Officers) =================
 // The Police Officers register is split into three tabs: the officer
 // registration form, the GREEN promotions & commendations queue and the RED
@@ -9236,13 +9264,13 @@ function renderStationsTable(){
   const q=searchValue('stSearch');
   const list=all.filter(s=>!q||[s.name,s.code,s.region,s.district,s.village,s.station_tier,s.notes]
     .some(v=>normTxt(v).includes(q)));
-  const rows=list.map(s=>`<tr>
+  const rows=list.map((s,index)=>`<tr>${sequenceCell(index,list.length)}
     <td><b>${esc(s.name)}</b>${s.notes?`<br><small class="muted">${esc(s.notes)}</small>`:''}</td>
     <td>${esc(s.code)}</td>
     <td><span class="badge blue">${esc(s.region)}</span></td>
     <td>${esc(s.district)}</td><td>${esc(s.village)}</td>
     <td>${stationRowActions(s)}</td></tr>`).join('');
-  tb.innerHTML=rows||`<tr><td colspan="6" class="empty">${q?'No station matches that search':'No stations registered yet'}</td></tr>`;
+  tb.innerHTML=rows||`<tr><td colspan="7" class="empty">${q?'No station matches that search':'No stations registered yet'}</td></tr>`;
   paintTableCount('stCount',list,all.length);
 }
 
@@ -9578,13 +9606,13 @@ function renderOfficersTable(){
       .some(v=>normTxt(v).includes(q));
   });
   paintTableCount('offCount',list,all.length);
-  const rows=list.map(o=>{const st=stationById(o.station_id);
-    return `<tr><td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
+  const rows=list.map((o,index)=>{const st=stationById(o.station_id);
+    return `<tr>${sequenceCell(index,list.length)}<td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
     <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
     <td>${st?esc(st.name)+' <small class="muted">('+esc(st.code)+')</small>':esc(o.station_name||o.station_id||'—')}</td>
     <td>${fingerprintStatusBadge(o,null)}</td>
     <td>${dutyBadge(o.duty_status)}</td><td class="actions"><button class="btn secondary small" type="button" data-view="1" onclick="openOfficerView('${esc(o.service_id||o.id)}')">View</button></td></tr>`}).join('');
-  tb.innerHTML=rows||`<tr><td colspan="8" class="empty">${q?'No officer matches that search':'No officers registered yet'}</td></tr>`;
+  tb.innerHTML=rows||`<tr><td colspan="9" class="empty">${q?'No officer matches that search':'No officers registered yet'}</td></tr>`;
 }
 function vehicleAlertBadge(alert){
   const a=alert||'Clean / Normal';
@@ -9604,14 +9632,14 @@ function renderCarsTable(){
       .some(v=>normTxt(v).includes(q));
   });
   paintTableCount('carCount',list,all.length);
-  const rows=list.map(c=>{const st=stationById(c.station);
+  const rows=list.map((c,index)=>{const st=stationById(c.station);
     const who=c.category==='Civilian / Commercial'?esc(c.owner_full_name||'Civilian'):(st?esc(st.name):esc(c.station||'—'));
-    return `<tr><td><b>${esc(c.plate)}</b><br><small class="muted">${esc(c.id||'')}</small></td>
+    return `<tr>${sequenceCell(index,list.length)}<td><b>${esc(c.plate)}</b><br><small class="muted">${esc(c.id||'')}</small></td>
     <td>${esc(c.make||c.type||'')}${c.model?`<br><small class="muted">${esc(c.model)}</small>`:''}</td>
     <td>${esc(c.category||'Police Fleet')}</td>
     <td>${who}</td>
     <td>${vehicleAlertBadge(c.security_alert)}</td></tr>`}).join('');
-  tb.innerHTML=rows||`<tr><td colspan="5" class="empty">${q?'No vehicle matches that search':'No vehicles registered yet'}</td></tr>`;
+  tb.innerHTML=rows||`<tr><td colspan="6" class="empty">${q?'No vehicle matches that search':'No vehicles registered yet'}</td></tr>`;
 }
 // ---- Central Police Search: one location filter across all three registers ----
 let psType='officers';
@@ -9640,7 +9668,7 @@ function renderPoliceSearch(){
   const stationOf=o=>stationById(o.station_id||o.station);
   let rows='',count=0;
   if(psType==='officers'){
-    head.innerHTML='<tr><th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th><th>Actions</th></tr>';
+    head.innerHTML='<tr>'+sequenceHead('Reverse sequence — newest record first')+'<th>Officer</th><th>Service ID</th><th>Rank</th><th>Unit</th><th>Station</th><th>Fingerprint</th><th>Duty</th><th>Actions</th></tr>';
     const list=(db.officers||[]).filter(o=>{
       const st=stationOf(o);
       // Filter on the officer's own stored origin (Region → District → Town).
@@ -9648,33 +9676,33 @@ function renderPoliceSearch(){
         && textMatch(o.full_name,o.service_id,o.rank,o.unit,o.contact_number,st&&st.name,st&&st.code);
     });
     count=list.length;
-    rows=list.map(o=>{const st=stationOf(o);
-      return `<tr><td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
+    rows=list.map((o,index)=>{const st=stationOf(o);
+      return `<tr>${sequenceCell(index,list.length)}<td><b>${esc(o.full_name)}</b><br><small class="muted">${esc(o.contact_number||'')}</small></td>
       <td><span class="badge blue">${esc(o.service_id)}</span></td><td>${esc(o.rank)}</td><td>${esc(o.unit)}</td>
       <td>${st?esc(st.name):esc(o.station_name||'—')}</td><td>${fingerprintStatusBadge(o,null)}</td><td>${dutyBadge(o.duty_status)}</td><td class="actions"><button class="btn secondary small" type="button" data-view="1" onclick="openOfficerView('${esc(o.service_id||o.id)}')">View</button></td></tr>`}).join('');
   }else if(psType==='stations'){
-    head.innerHTML='<tr><th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Officers</th><th>Cars</th></tr>';
+    head.innerHTML='<tr>'+sequenceHead('Reverse sequence — newest record first')+'<th>Station</th><th>Code</th><th>Region</th><th>District</th><th>Village/Town</th><th>Officers</th><th>Cars</th></tr>';
     const list=(db.stations||[]).filter(s=>psLocMatch(s,f)&&textMatch(s.name,s.code,s.notes));
     count=list.length;
-    rows=list.map(s=>`<tr>
+    rows=list.map((s,index)=>`<tr>${sequenceCell(index,list.length)}
       <td><b>${esc(s.name)}</b></td><td>${esc(s.code)}</td>
       <td><span class="badge blue">${esc(s.region)}</span></td><td>${esc(s.district)}</td><td>${esc(s.village)}</td>
       <td>${(db.officers||[]).filter(o=>(o.station_id||o.station)===s.id).length}</td>
       <td>${(db.cars||[]).filter(c=>c.station===s.id).length}</td></tr>`).join('');
   }else{
-    head.innerHTML='<tr><th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th><th>Alert</th></tr>';
+    head.innerHTML='<tr>'+sequenceHead('Reverse sequence — newest record first')+'<th>Plate</th><th>Vehicle</th><th>Station</th><th>Region</th><th>District</th><th>Village/Town</th><th>Alert</th></tr>';
     const list=(db.cars||[]).filter(c=>{
       const st=stationOf(c);
       return psLocMatch(recordLocation(c),f)
         && textMatch(c.plate,c.type,c.make,c.model,c.vin,st&&st.name,st&&st.code,c.security_alert);
     });
     count=list.length;
-    rows=list.map(c=>{const st=stationOf(c);
-      return `<tr><td><b>${esc(c.plate)}</b></td>
+    rows=list.map((c,index)=>{const st=stationOf(c);
+      return `<tr>${sequenceCell(index,list.length)}<td><b>${esc(c.plate)}</b></td>
       <td>${esc(c.make||c.type||'')}${c.model?` <small class="muted">${esc(c.model)}</small>`:''}</td>
       <td>${st?esc(st.name):'—'}</td>${locationCells(c)}<td>${vehicleAlertBadge(c.security_alert)}</td></tr>`}).join('');
   }
-  tb.innerHTML=rows||`<tr><td colspan="${psType==='officers'?8:7}" class="empty">No records match the current filter</td></tr>`;
+  tb.innerHTML=rows||`<tr><td colspan="${psType==='officers'?9:8}" class="empty">No records match the current filter</td></tr>`;
   const cnt=document.getElementById('psCount');
   if(cnt){cnt.textContent=count;cnt.style.display='';}
 }
@@ -9733,10 +9761,10 @@ function renderCrimesTable(){
   const q=normTxt((document.getElementById('crmSearch')||{}).value||'');
   const list=(db.crimes||[]).filter(x=>!q||[x.file_number,x.category,x.station_code,x.branch_name,x.branch_region,
     x.officer_name,x.officer_service_id,x.case_status].some(v=>normTxt(v).includes(q)));
-  const rows=list.map(x=>`<tr><td><b>${esc(x.file_number)}</b></td><td>${esc(x.category)}</td>
+  const rows=list.map((x,index)=>`<tr>${sequenceCell(index,list.length)}<td><b>${esc(x.file_number)}</b></td><td>${esc(x.category)}</td>
     <td>${esc(x.station_code||'')}${x.branch_name?`<br><small class="muted">${esc(x.branch_name)} · ${esc(x.branch_region||'')}</small>`:''}</td><td>${esc(x.officer_name||x.officer_service_id||'')}</td>
     <td>${esc(x.case_status||'')}</td></tr>`).join('');
-  tb.innerHTML=rows||`<tr><td colspan="5" class="empty">${q?'No crime files match that search':'No crime files yet'}</td></tr>`;
+  tb.innerHTML=rows||`<tr><td colspan="6" class="empty">${q?'No crime files match that search':'No crime files yet'}</td></tr>`;
 }
 async function saveCrime(e){
   e.preventDefault(); clearInvalid();

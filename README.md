@@ -748,3 +748,36 @@ hover hint) — the old per-field `🔒 Admin only` / `Derived` tags were remove
 the restriction is explained once in the role note under the grid.
 
 See [TESTING.md](TESTING.md) for the suites and the officer UAT checklist.
+
+## Register row numbering — reverse sequence `#` (testing branch)
+
+Every primary register now opens with a compact **`#`** column. Because the
+registers render newest-first, the number counts **down** the visible rows:
+
+| Position | Example (6 records) |
+|----------|--------------------|
+| first row (newest record) | `6` |
+| second row | `5` |
+| … | … |
+| last row (oldest record) | `1` |
+
+The number is derived from the **filtered** result set on every paint
+(`reverseSequence(index,total)` → `total − index`), so typing in the table search
+box, switching a checkpoint location chip, or registering a new record
+immediately renumbers the table — no refresh, cache or extra state.
+
+```js
+list.map((row, index) => `<tr>${sequenceCell(index, list.length)} … </tr>`)
+```
+
+- **Where** — Fingerprint register, Central Person Registry, Airport register,
+  CID cases, CID suspects, Checkpoint screening, Registered Stations, Police
+  Officers, Vehicles, Crime intake and all three Central Police Search tabs.
+- **Layout** — a fixed 46 px (38 px on small screens) right-aligned column with
+  tabular figures; the header and body counts stay in step, the empty-state
+  `colspan` was widened with the table and **Actions stays the last column**, so
+  nothing else moved and `.table-wrap` still scrolls horizontally on narrow
+  screens.
+- **Markup** — `<th class="seq" scope="col">#</th>` and
+  `<td class="seq" data-seq="6">6</td>` (the `data-seq` attribute is what the UI
+  suite asserts against). Highlighted biometric-match rows tint the number too.

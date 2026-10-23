@@ -680,6 +680,7 @@ UI_REQUIRED_MARKERS = (
     ('Person field-level RBAC', 'PERSON_SELF_EDITABLE_FIELDS'),
     ('Single person edit action', '✏ Edit Details'),
     ('Clearance purpose on the person profile', 'function personPurposeLine('),
+    ('Reverse sequence # column', 'function sequenceCell('),
     ('Desktop sidebar collapse', 'body.sidebar-collapsed .main{width:100%;margin-left:0}'),
     ('Five applicant document fields', "buildFileSlots('appDocs','appDoc',5"),
 )
