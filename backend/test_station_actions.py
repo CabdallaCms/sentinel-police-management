@@ -196,7 +196,7 @@ def cache_busting_suite(base, env_overrides=None):
     """
     print('== 6. Static asset versioning (cache busting) ==')
     version = srv.ASSET_VERSION
-    check(bool(version) and version == 'b2b2d360',
+    check(bool(version) and version == '69e17fff',
           f'the server publishes the feature-commit asset version ({version})')
     check(srv.static_asset_version_consistent(),
           'every `?v=` stamp in index / application / certificate matches ASSET_VERSION')
