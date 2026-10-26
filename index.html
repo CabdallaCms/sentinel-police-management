@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-9cb433a8" />
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-9cb433a8-hierarchy1" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -6672,7 +6672,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=9cb433a8&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=9cb433a8-hierarchy1&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -6809,7 +6809,7 @@ function renderClearanceReview(record){
   if(auditMount)auditMount.innerHTML=auditHtml;
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=9cb433a8&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=9cb433a8-hierarchy1&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -7087,7 +7087,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=9cb433a8&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=9cb433a8-hierarchy1&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -7358,9 +7358,7 @@ function openCheckpointDrawer(){
   // RBAC: a Checkpoint user is scoped to a single location — lock the picker.
   const scope = (sessionUser && (sessionUser.location_scope || (isCheckpointRole(sessionUser.role)?scopeFromRole(sessionUser.role):''))) || '';
   const isAdmin = !!(sessionVisibility && sessionVisibility.is_admin);
-  const opts = ['South','West','East'].map(l =>
-    `<option value="${l}" ${!isAdmin && l===scope ? 'selected' : ''}${!isAdmin && l!==scope && scope ? ' disabled' : ''}>${l} Checkpoint</option>`
-  ).join('');
+  const opts = '<option value="">Loading registered checkpoints…</option>';
   const lockHint = (!isAdmin && scope) ? `<div class="hint" style="margin-bottom:10px;background:#fff7e6;border-color:#f0dcae;color:#7a5b17"><b>RBAC:</b> You are assigned to <b>${esc(scope)} Checkpoint</b> — only your assigned location can be recorded.</div>` : '';
   openDrawer('Record checkpoint stop',`
    <div class="hint" style="margin-bottom:14px">Structured screening: both the <b>traveler</b> and the <b>guardian</b> are matched against the Central Person Registry <b>in real time</b> — select a match to auto-fill, or type a new identity.</div>
@@ -7380,6 +7378,7 @@ function openCheckpointDrawer(){
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitCheckpoint()">Record stop</button>`);
   refreshBranchSelect('cpBranch','checkpoint');
+  refreshCheckpointOptions(scope);
   buildFileSlots('cpDocs','tdoc',2,['Traveler document 1 *','Traveler document 2 (optional)']);
   buildFileSlots('gdDocs','gdoc',2,['Guardian document 1 *','Guardian document 2 (optional)']);
   wireIdentity('cp');
@@ -7391,12 +7390,27 @@ function openCheckpointDrawer(){
     else if(pv)pv.style.display='none';
   });
 }
+async function refreshCheckpointOptions(scope=''){
+  const select=document.getElementById('cpLoc');if(!select)return;
+  try{
+    const response=await api('/api/checkpoints');
+    let rows=Array.isArray(response.items)?response.items:[];
+    if(isCheckpointRole(sessionUser?.role)&&sessionUser?.checkpoint_id)rows=rows.filter(x=>String(x.id)===String(sessionUser.checkpoint_id));
+    select.innerHTML='<option value="">— Select checkpoint —</option>'+rows.map(x=>`<option value="${x.id}">${esc(x.name)} · ${esc(x.region||'Region not recorded')} / ${esc(x.district||'District not recorded')} (${esc(x.checkpoint_code)})</option>`).join('');
+    if(sessionUser?.checkpoint_id)select.value=String(sessionUser.checkpoint_id);
+    else if(scope){const match=rows.find(x=>x.legacy_code===scope||x.checkpoint_code===scope);if(match)select.value=String(match.id);}
+    if(isCheckpointRole(sessionUser?.role))select.disabled=true;
+    const cp=rows.find(x=>String(x.id)===String(select.value));
+    const branch=document.getElementById('cpBranch');if(cp?.branch_id&&branch){branch.value=String(cp.branch_id);}
+  }catch(e){select.innerHTML='<option value="">Checkpoint list unavailable</option>';}
+}
+
 async function submitCheckpoint(){
   clearInvalid();
   const d=window._identityWires.cp.read(),v=validateTraveler(d);if(!v.ok){showFormError(v.msg,{prefix:'cp',names:v.names});return}
   const gd=window._identityWires.gd.read(),gv=validateGuardian(gd);if(!gv.ok){showFormError(gv.msg,{prefix:'gd',names:gv.names});return}
-  const branchId=val('cpBranch');
-  if(!branchId){showFormError('Select a Checkpoint Unit branch.',{names:['cpBranch'],title:'Unable to Save'});return}
+  const branchId=val('cpBranch'),checkpointId=val('cpLoc');
+  if(!checkpointId){showFormError('Select a registered checkpoint.',{names:['cpLoc'],title:'Unable to Save'});return}
   const trDocs=collectFiles('tdoc',2),gdDocs=collectFiles('gdoc',2);
   if(trDocs.length<1){showFormError('Attach at least 1 traveler document.',{names:['cpDocs'],title:'Unable to Save'});return}
   if(gdDocs.length<1){showFormError('Attach at least 1 guardian document.',{names:['gdDocs'],title:'Unable to Save'});return}
@@ -7407,7 +7421,7 @@ async function submitCheckpoint(){
     if(serverOn){
       const fd=new FormData();
       const fields={...identityServer(d),person_id:matchedPersonId('cp'),branch_id:branchId,current_address:d.address,permanent_address:d.permanent,
-        purpose_of_visit:d.purpose,location:cpLoc.value,notes:cpNotes.value,
+        purpose_of_visit:d.purpose,location:cpLoc.options[cpLoc.selectedIndex]?.text||'',checkpoint_id:checkpointId,notes:cpNotes.value,
         guardian_first_name:gd.first,guardian_second_name:gd.second,guardian_third_name:gd.third,
         guardian_fourth_name:gd.fourth,guardian_name:[gd.first,gd.second,gd.third,gd.fourth].filter(Boolean).join(' '),
         guardian_relationship:gd.relationship,guardian_phone:gd.phone,guardian_address:gd.permanent,
@@ -7422,8 +7436,9 @@ async function submitCheckpoint(){
       try{ console.log('[cp] POST /api/checkpoint-events response:', r); }catch(_){}
       // Capture the server's authoritative location fields BEFORE we
       // close the drawer (which destroys the cpLoc DOM element).
-      const newLocation = r.checkpoint_location || (cpLoc.value + ' Checkpoint');
-      const newLocationCode = r.location_code || cpLoc.value;
+      const selectedCheckpointLabel=cpLoc.options[cpLoc.selectedIndex]?.text||'';
+      const newLocation = r.checkpoint_location || selectedCheckpointLabel;
+      const newLocationCode = r.location_code || checkpointId;
       const newNotes = cpNotes.value;
       const cpBio = persistPrefixBiometrics('cp', r.person_id || matchedPersonId('cp'), r.event_id);
       closeDrawer();
@@ -8757,162 +8772,146 @@ async function toggleUserActive(uid, active){
   }catch(e){ showFormError(e.message || 'Update failed'); }
 }
 
+let userLocationHierarchyCache=null;
+const USER_HQ_LOCATIONS=['Central HQ','Police Headquarters','Chief Commander HQ','HR Directorate HQ','Fingerprint Unit HQ','CID Headquarters','Airport Control HQ'];
+function userLocationFields(prefix){return `
+  <div class="grid2">
+    <div class="field"><label>Region</label><select id="${prefix}-region" onchange="refreshUserLocationCascade('${prefix}')"><option value="">Loading regions…</option></select></div>
+    <div class="field"><label>District</label><select id="${prefix}-district" onchange="refreshUserLocationCascade('${prefix}')" disabled><option value="">Select region first</option></select></div>
+  </div>
+  <div class="grid2">
+    <div class="field" id="${prefix}-assignment-wrap"><label>Station / Branch *</label><select id="${prefix}-assignment" onchange="syncUserLocationSelection('${prefix}')" required disabled><option value="">Select district first</option></select></div>
+    <div class="field" id="${prefix}-checkpoint-wrap" style="display:none"><label>Checkpoint *</label><select id="${prefix}-checkpoint" onchange="syncUserLocationSelection('${prefix}')" disabled><option value="">Select district first</option></select></div>
+  </div>
+  <input type="hidden" id="${prefix}-branch"><input type="hidden" id="${prefix}-scope">`}
 function openNewUserDrawer(){
-  if(guardReadOnly('Registering a user')) return;
-  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest','StationCommander','PoliceStationOfficer'];
-  const labels = (sessionRoster && sessionRoster.role_labels) || {};
-  const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
-  const body = `
-    <form novalidate id="newUserForm" class="form">
-      <div class="grid2">
-        <div class="field"><label>Username *</label><input id="nu-username" required></div>
-        <div class="field"><label>Display name *</label><input id="nu-display" required placeholder="e.g. Officer H. Xasan"></div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>Role *</label>
-          <select id="nu-role" onchange="refreshUserLocationOptions()">
-            ${roles.map(r => `<option value="${r}">${esc(labels[r] || r)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field"><label>Location scope (Checkpoint roles only)</label>
-          <select id="nu-scope">
-            <option value="">(none)</option>
-            ${locs.map(l => `<option value="${l}">${l} Checkpoint</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>Branch / Station *</label><select id="nu-branch" required><option value="">Loading registered stations…</option></select></div>
-        <div class="field"><label>Password *</label><input id="nu-password" type="password" required minlength="6" placeholder="At least 6 characters"></div>
-      </div>
-    </form>
-  `;
-  const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
-                <button class="btn" onclick="submitNewUser()">Create officer</button>`;
-  openDrawer('New officer', body, foot);
-  refreshUserLocationOptions();
-  refreshUserStationOptions('nu-branch', '');
+  if(guardReadOnly('Registering a user'))return;
+  const roles=(sessionRoster&&sessionRoster.roles)||['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest','StationCommander','PoliceStationOfficer'];
+  const labels=(sessionRoster&&sessionRoster.role_labels)||{};
+  const body=`<form novalidate id="newUserForm" class="form">
+    <div class="grid2"><div class="field"><label>Username *</label><input id="nu-username" required></div><div class="field"><label>Display name *</label><input id="nu-display" required></div></div>
+    <div class="field"><label>Role *</label><select id="nu-role" onchange="refreshUserLocationOptions('nu')">${roles.map(r=>`<option value="${esc(r)}">${esc(labels[r]||r)}</option>`).join('')}</select></div>
+    ${userLocationFields('nu')}
+    <div class="field"><label>Password *</label><input id="nu-password" type="password" required minlength="6" placeholder="At least 6 characters"></div>
+  </form>`;
+  openDrawer('New officer',body,`<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitNewUser()">Create officer</button>`);
+  refreshUserLocationOptions('nu');refreshUserStationOptions('nu-assignment','');
 }
-function refreshUserLocationOptions(){
-  const role = document.getElementById('nu-role').value;
-  const scopeEl = document.getElementById('nu-scope');
-  if(!scopeEl) return;
-  scopeEl.disabled = !isCheckpointRole(role);
-  if(!isCheckpointRole(role)) scopeEl.value = '';
-}
-async function refreshUserStationOptions(selectId, selectedValue){
-  const select=document.getElementById(selectId);
-  if(!select)return;
-  const current=selectedValue||select.value||'';
-  select.disabled=true;
-  select.innerHTML='<option value="">Loading registered stations…</option>';
-  const hq=[
-    {name:'Central HQ',region:'HQ'},
-    {name:'Police Headquarters',region:'HQ'},
-    {name:'Chief Commander HQ',region:'HQ'},
-    {name:'HR Directorate HQ',region:'HQ'},
-    {name:'Fingerprint Unit HQ',region:'HQ'},
-    {name:'CID Headquarters',region:'HQ'},
-    {name:'Airport Control HQ',region:'HQ'}
-  ];
-  try{
-    const response=await api('/api/stations');
-    const rows=Array.isArray(response.items)?response.items:[];
-    const seen=new Set();
-    const options=[];
-    [...hq,...rows].forEach(st=>{
-      const name=String(st.name||st.station_name||'').trim();
-      if(!name)return;
-      const region=String(st.region||'').trim();
-      const district=String(st.district||'').trim();
-      const value=st.region&&rows.filter(x=>String(x.name||'').toLowerCase()===name.toLowerCase()).length>1
-        ? `${name} · ${region}${district?' · '+district:''}` : name;
-      if(seen.has(value.toLowerCase()))return;
-      seen.add(value.toLowerCase());
-      const code=st.code||st.station_id||st.id||'';
-      const label=st.region==='HQ'?name:`${name}${code?' ('+code+')':''}${region?' · '+region:''}${district?' · '+district:''}`;
-      options.push({value,label});
-    });
-    if(current&&!seen.has(current.toLowerCase()))options.unshift({value:current,label:current+' · existing assignment'});
-    select.innerHTML='<option value="">— Select station or HQ unit —</option>'+options.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
-    select.value=current;
-    if(current&&!select.value){
-      const option=document.createElement('option');option.value=current;option.textContent=current+' · existing assignment';select.appendChild(option);select.value=current;
-    }
-  }catch(e){
-    select.innerHTML='<option value="">Station list unavailable — retry</option>';
-  }finally{select.disabled=false;}
-}
-
-async function submitNewUser(){
-  if(guardReadOnly('Registering a user')) return;
-  const data = {
-    username: document.getElementById('nu-username').value.trim(),
-    display_name: document.getElementById('nu-display').value.trim(),
-    role: document.getElementById('nu-role').value,
-    branch: document.getElementById('nu-branch').value.trim(),
-    location_scope: document.getElementById('nu-scope').value || null,
-    password: document.getElementById('nu-password').value,
-    active: true,
-  };
-  if(!data.username || !data.display_name || !data.role || !data.password){
-    showFormError('Please fill username, display name, role and password.',{names:['nu-username','nu-display','nu-role','nu-branch','nu-password'].filter(id=>!val(id))}); return;
-  }
-  try{
-    await api('/api/admin/users', {method:'POST', body: JSON.stringify(data)});
-    closeDrawer(); toast('Officer created'); renderUserTable();
-  }catch(e){ showFormError(e.message || 'Create failed'); }
-}
-
 function openEditUserDrawer(u){
-  if(guardReadOnly('Editing a user record')) return;
-  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest','StationCommander','PoliceStationOfficer'];
-  const labels = (sessionRoster && sessionRoster.role_labels) || {};
-  const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
-  const body = `
-    <form novalidate id="editUserForm" class="form">
-      <div class="grid2">
-        <div class="field"><label>Username</label><input value="${esc(u.username)}" disabled></div>
-        <div class="field"><label>Display name</label><input id="eu-display" value="${esc(u.display_name)}"></div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>Role</label>
-          <select id="eu-role" onchange="document.getElementById('eu-scope').disabled=!isCheckpointRole(this.value)">
-            ${roles.map(r => `<option value="${r}" ${r===u.role?'selected':''}>${esc(labels[r] || r)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field"><label>Location scope</label>
-          <select id="eu-scope" ${isCheckpointRole(u.role)?'':'disabled'}>
-            <option value="">(none)</option>
-            ${locs.map(l => `<option value="${l}" ${l===u.location_scope?'selected':''}>${l} Checkpoint</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>Branch / Station *</label><select id="eu-branch" required><option value="">Loading registered stations…</option></select></div>
-        <div class="field"><label>New password (optional)</label><input id="eu-password" type="password" minlength="6" placeholder="Leave blank to keep"></div>
-      </div>
-    </form>
-  `;
-  const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
-                <button class="btn" onclick="submitEditUser(${u.id})">Save changes</button>`;
-  openDrawer('Edit officer · ' + u.username, body, foot);
-  refreshUserStationOptions('eu-branch', u.branch||'');
+  if(guardReadOnly('Editing a user record'))return;
+  const roles=(sessionRoster&&sessionRoster.roles)||['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest','StationCommander','PoliceStationOfficer'];
+  const labels=(sessionRoster&&sessionRoster.role_labels)||{};
+  const body=`<form novalidate id="editUserForm" class="form">
+    <div class="grid2"><div class="field"><label>Username</label><input value="${esc(u.username)}" disabled></div><div class="field"><label>Display name</label><input id="eu-display" value="${esc(u.display_name)}"></div></div>
+    <div class="field"><label>Role</label><select id="eu-role" onchange="refreshUserLocationOptions('eu')">${roles.map(r=>`<option value="${esc(r)}" ${r===u.role?'selected':''}>${esc(labels[r]||r)}</option>`).join('')}</select></div>
+    ${userLocationFields('eu')}
+    <div class="field"><label>New password (optional)</label><input id="eu-password" type="password" minlength="6" placeholder="Leave blank to keep"></div>
+  </form>`;
+  openDrawer('Edit officer · '+u.username,body,`<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitEditUser(${u.id})">Save changes</button>`);
+  refreshUserLocationOptions('eu');refreshUserStationOptions('eu-assignment','',u);
+}
+function refreshUserLocationOptions(prefix='nu'){
+  const checkpointRole=isCheckpointRole(document.getElementById(prefix+'-role')?.value||'');
+  const assignmentWrap=document.getElementById(prefix+'-assignment-wrap'), checkpointWrap=document.getElementById(prefix+'-checkpoint-wrap');
+  if(assignmentWrap)assignmentWrap.style.display=checkpointRole?'none':'';
+  if(checkpointWrap)checkpointWrap.style.display=checkpointRole?'':'';
+  const assignment=document.getElementById(prefix+'-assignment'), checkpoint=document.getElementById(prefix+'-checkpoint');
+  if(assignment)assignment.required=!checkpointRole;if(checkpoint)checkpoint.required=checkpointRole;
+  syncUserLocationSelection(prefix);
+}
+function userDistrict(prefix){
+  const regionId=document.getElementById(prefix+'-region')?.value,districtId=document.getElementById(prefix+'-district')?.value;
+  return (userLocationHierarchyCache||[]).find(r=>String(r.id)===String(regionId))?.districts?.find(d=>String(d.id)===String(districtId))||null;
+}
+function refreshUserLocationCascade(prefix){
+  const region=document.getElementById(prefix+'-region'),district=document.getElementById(prefix+'-district');if(!region||!district)return;
+  const keep=district.value,r=(userLocationHierarchyCache||[]).find(x=>String(x.id)===String(region.value)),rows=r?.districts||[];
+  district.innerHTML='<option value="">— Select district —</option>'+rows.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  if(rows.some(d=>String(d.id)===String(keep)))district.value=keep;
+  const d=userDistrict(prefix),assignment=document.getElementById(prefix+'-assignment'),checkpoint=document.getElementById(prefix+'-checkpoint');
+  if(assignment){const old=assignment.value,opts=[];
+    (d?.stations||[]).forEach(x=>opts.push({value:'station:'+x.location_id,label:`${x.name} (${x.code||x.station_id}) · Station`}));
+    (d?.branches||[]).forEach(x=>opts.push({value:'branch:'+x.id,label:`${x.name} · ${(x.unit_type||'branch').replaceAll('_',' ')}`}));
+    assignment.innerHTML='<option value="">— Select station or branch —</option>'+USER_HQ_LOCATIONS.map(x=>`<option value="hq:${esc(x)}">${esc(x)} · HQ</option>`).join('')+opts.map(o=>`<option value="${o.value}">${esc(o.label)}</option>`).join('');
+    if(opts.some(o=>o.value===old)||old.startsWith('hq:'))assignment.value=old;
+    assignment.disabled=false;
+  }
+  if(checkpoint){const old=checkpoint.value,cps=d?.checkpoints||[];
+    checkpoint.innerHTML='<option value="">— Select checkpoint —</option>'+cps.map(x=>`<option value="${x.id}">${esc(x.name)} (${esc(x.checkpoint_code)})${x.legacy_code?' · '+esc(x.legacy_code)+' legacy':''}</option>`).join('');
+    if(cps.some(x=>String(x.id)===String(old)))checkpoint.value=old;checkpoint.disabled=!cps.length;
+  }
+  syncUserLocationSelection(prefix);
+}
+function syncUserLocationSelection(prefix){
+  const d=userDistrict(prefix),role=document.getElementById(prefix+'-role')?.value||'';
+  const assignment=document.getElementById(prefix+'-assignment'),checkpoint=document.getElementById(prefix+'-checkpoint');
+  const branch=document.getElementById(prefix+'-branch'),scope=document.getElementById(prefix+'-scope');
+  if(isCheckpointRole(role)){
+    const cp=d?.checkpoints?.find(x=>String(x.id)===String(checkpoint?.value));
+    if(scope)scope.value=cp?(cp.legacy_code||cp.checkpoint_code):'';
+    if(branch)branch.value=cp?(cp.branch_name||cp.station_name||cp.name):'';
+  }else{
+    const val=assignment?.value||'';
+    if(val.startsWith('hq:')){
+      const region=document.getElementById(prefix+'-region'),district=document.getElementById(prefix+'-district');
+      if(region)region.value='';if(district){district.innerHTML='<option value="">Select region first</option>';district.value='';district.disabled=true;}
+      if(branch)branch.value=val.slice(3);if(scope)scope.value='';return;
+    }
+    const all=[...(d?.stations||[]).map(x=>({value:'station:'+x.station_id,name:x.name})),...(d?.branches||[]).map(x=>({value:'branch:'+x.id,name:x.name}))];
+    const selected=all.find(x=>x.value===val);if(branch)branch.value=selected?.name||'';if(scope)scope.value='';
+  }
+}
+async function refreshUserStationOptions(selectId,selectedValue='',existingUser=null){
+  const select=document.getElementById(selectId);if(!select)return;
+  const prefix=selectId.startsWith('eu-')?'eu':'nu';select.disabled=true;select.innerHTML='<option value="">Loading locations…</option>';
+  try{
+    if(!userLocationHierarchyCache){const response=await api('/api/stations');userLocationHierarchyCache=response.hierarchy?.regions||response.regions||[];}
+    const region=document.getElementById(prefix+'-region'),district=document.getElementById(prefix+'-district');
+    region.innerHTML='<option value="">— Select region —</option>'+userLocationHierarchyCache.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('');
+    if(existingUser?.region_id)region.value=existingUser.region_id;
+    refreshUserLocationCascade(prefix);
+    if(existingUser?.district_id)district.value=existingUser.district_id;
+    refreshUserLocationCascade(prefix);
+    const assignment=document.getElementById(prefix+'-assignment'),checkpoint=document.getElementById(prefix+'-checkpoint');
+    if(selectedValue)assignment.value=selectedValue;
+    if(existingUser&&!selectedValue){
+      const d=userDistrict(prefix), legacyName=String(existingUser.branch||'').toLowerCase();
+      const st=(d?.stations||[]).find(x=>String(x.name||'').toLowerCase()===legacyName);
+      const br=(d?.branches||[]).find(x=>String(x.name||'').toLowerCase()===legacyName);
+      if(st)assignment.value='station:'+st.location_id;else if(br)assignment.value='branch:'+br.id;
+      else if(USER_HQ_LOCATIONS.some(x=>x.toLowerCase()===legacyName))assignment.value='hq:'+existingUser.branch;
+    }
+    if(existingUser?.checkpoint_id)checkpoint.value=existingUser.checkpoint_id;
+    else if(existingUser?.location_scope){const cp=(userDistrict(prefix)?.checkpoints||[]).find(x=>x.legacy_code===existingUser.location_scope||x.checkpoint_code===existingUser.location_scope);if(cp)checkpoint.value=cp.id;}
+    refreshUserLocationOptions(prefix);syncUserLocationSelection(prefix);
+  }catch(e){select.innerHTML='<option value="">Location hierarchy unavailable — retry</option>';}
+  finally{select.disabled=false;}
+}
+function userLocationPayload(prefix){
+  const value=document.getElementById(prefix+'-assignment')?.value||'';
+  return {branch:document.getElementById(prefix+'-branch')?.value||'',location_scope:document.getElementById(prefix+'-scope')?.value||null,
+    region_id:document.getElementById(prefix+'-region')?.value||null,district_id:document.getElementById(prefix+'-district')?.value||null,
+    station_id:value.startsWith('station:')?value.split(':')[1]:null,branch_id:value.startsWith('branch:')?value.split(':')[1]:null,
+    checkpoint_id:document.getElementById(prefix+'-checkpoint')?.value||null};
+}
+async function submitNewUser(){
+  if(guardReadOnly('Registering a user'))return;
+  const data={username:document.getElementById('nu-username').value.trim(),display_name:document.getElementById('nu-display').value.trim(),role:document.getElementById('nu-role').value,
+    ...userLocationPayload('nu'),password:document.getElementById('nu-password').value,active:true};
+  if(!data.username||!data.display_name||!data.role||!data.password){showFormError('Please fill username, display name, role and password.');return;}
+  if(isCheckpointRole(data.role)&&!data.checkpoint_id){showFormError('Select a checkpoint for this role.');return;}
+  if(!isCheckpointRole(data.role)&&!data.branch){showFormError('Select a station or branch.');return;}
+  try{await api('/api/admin/users',{method:'POST',body:JSON.stringify(data)});closeDrawer();toast('Officer created');renderUserTable();}
+  catch(e){showFormError(e.message||'Create failed');}
 }
 async function submitEditUser(uid){
-  if(guardReadOnly('Updating a user record')) return;
-  const data = {
-    display_name: document.getElementById('eu-display').value.trim(),
-    role: document.getElementById('eu-role').value,
-    branch: document.getElementById('eu-branch').value.trim(),
-    location_scope: document.getElementById('eu-scope').value || null,
-  };
-  const pw = document.getElementById('eu-password').value;
-  if(pw) data.password = pw;
-  try{
-    await api('/api/admin/users/'+uid, {method:'PATCH', body: JSON.stringify(data)});
-    closeDrawer(); toast('Officer updated'); renderUserTable();
-  }catch(e){ showFormError(e.message || 'Update failed'); }
+  if(guardReadOnly('Updating a user record'))return;
+  const data={display_name:document.getElementById('eu-display').value.trim(),role:document.getElementById('eu-role').value,...userLocationPayload('eu')};
+  const pw=document.getElementById('eu-password').value;if(pw)data.password=pw;
+  if(isCheckpointRole(data.role)&&!data.checkpoint_id){showFormError('Select a checkpoint for this role.');return;}
+  if(!isCheckpointRole(data.role)&&!data.branch){showFormError('Select a station or branch.');return;}
+  try{await api('/api/admin/users/'+uid,{method:'PATCH',body:JSON.stringify(data)});closeDrawer();toast('Officer updated');renderUserTable();}
+  catch(e){showFormError(e.message||'Update failed');}
 }
 
 // ============================ registration modules (stations / officers / cars) ============================

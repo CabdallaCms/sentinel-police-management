@@ -63,6 +63,27 @@ def request(base, method, path, token=None, body=None):
     except urllib.error.HTTPError as error:
         return error.code, json.loads(error.read().decode())
 
+def request_multipart(base, path, token, fields, files):
+    boundary='----sentinel-test-'+str(time.time_ns())
+    chunks=[]
+    for key,value in fields.items():
+        chunks.extend([f'--{boundary}\r\n'.encode(),
+            f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode(),
+            str(value).encode(),b'\r\n'])
+    for key,(filename,content,content_type) in files.items():
+        chunks.extend([f'--{boundary}\r\n'.encode(),
+            f'Content-Disposition: form-data; name="{key}"; filename="{filename}"\r\n'.encode(),
+            f'Content-Type: {content_type}\r\n\r\n'.encode(),content,b'\r\n'])
+    chunks.append(f'--{boundary}--\r\n'.encode())
+    req=urllib.request.Request(base+path,data=b''.join(chunks),method='POST')
+    req.add_header('Content-Type',f'multipart/form-data; boundary={boundary}')
+    if token:req.add_header('Authorization','Bearer '+token)
+    try:
+        with urllib.request.urlopen(req,timeout=20) as response:
+            return response.status,json.loads(response.read().decode())
+    except urllib.error.HTTPError as error:
+        return error.code,json.loads(error.read().decode())
+
 
 PG_SERVE = '''
 import pathlib, sys, pgserver
@@ -121,6 +142,10 @@ def run_api_suite(base):
         tokens[username] = result['token']
 
     admin, fp, cid = tokens['admin'], tokens['fp.officer'], tokens['cid.officer']
+    status, legacy_checkpoint_login = request(base,'POST','/api/login',body={
+        'username':'cp.south','password':'ChangeMe123!'})
+    check(status==200 and legacy_checkpoint_login.get('user',{}).get('checkpoint_id'),
+          'legacy South checkpoint account is migrated to its hierarchy-backed checkpoint ID')
 
     # Exercise the self-service password route with a least-privilege station role.
     username = f'arena_station_{time.time_ns()}'
@@ -177,8 +202,10 @@ def run_api_suite(base):
     check(status == 200 and {e.get('action') for e in events} >= {'CREATE', 'UPDATE'},
           'Person Details exposes create/edit audit history')
     check(any(e.get('actor_name') == 'Officer A. Hassan' and e.get('actor_username') == 'admin'
-              and e.get('actor_label') for e in events),
-          'audit history attributes actions to the active user identity (badge or explicit account id)')
+              and 'Badge #Not recorded' in e.get('actor_label','')
+              and 'User: admin' in e.get('actor_label','')
+              and 'at Central HQ' in e.get('actor_label','') for e in events),
+          'audit history explicitly names display name, unavailable badge, username and assigned station/branch')
 
     status, catalogue = request(base, 'GET', '/api/branches', admin)
     check(status == 200, 'administrator reads the branch catalogue')
@@ -300,6 +327,70 @@ def run_api_suite(base):
     # We just verify the branch appears in catalogue with police_station unit; mirroring is verified by stationOptions frontend
     check(ps_branch.get('region') == 'Sool', 'Police Stations branch retains its region')
 
+    status, hierarchy = request(base, 'GET', '/api/locations/hierarchy', admin)
+    check(status == 200 and any(r.get('districts') for r in hierarchy.get('regions', [])),
+          'hierarchy endpoint exposes structured Regions and Districts')
+    sool=next(r for r in hierarchy['regions'] if r['name']=='Sool')
+    lasanod=next(d for d in sool['districts'] if d['name']=='Laascaanood')
+    station=next(st for st in lasanod['stations'] if st['station_id']=='ST-004')
+    check(station.get('location_id') and station.get('region_id')==sool['id']
+          and station.get('district_id')==lasanod['id'],
+          'station payload carries valid normalized parent IDs without changing its public station_id')
+    status, checkpoints = request(base, 'GET', '/api/checkpoints', admin)
+    check(status == 200 and any(cp.get('legacy_code')=='South' and cp.get('region_id')==sool['id']
+                                for cp in checkpoints.get('items', [])),
+          'legacy checkpoint scopes resolve to uniquely identified, region/district-backed checkpoint rows')
+    status, checkpoint_created = request(base, 'POST', '/api/checkpoints', admin, {
+        'name':'Arena North Gate','region_id':sool['id'],'district_id':lasanod['id'],
+        'station_id':station['location_id']})
+    check(status == 201 and checkpoint_created['checkpoint']['checkpoint_code'].startswith('CP-'),
+          'administrator can create a scalable checkpoint linked to a real station and hierarchy')
+    cp=checkpoint_created['checkpoint']
+    cp_username=f'arena_cp_{time.time_ns()}'
+    status, cp_user = request(base, 'POST', '/api/admin/users', admin, {
+        'username':cp_username,'display_name':'Checkpoint Testuser',
+        'role':'checkpoint_officer','checkpoint_id':cp['id'],'region_id':sool['id'],
+        'district_id':lasanod['id'],'password':'StartPass123!'})
+    check(status == 201 and cp_user.get('user',{}).get('checkpoint_id')==cp['id']
+          and cp_user.get('user',{}).get('location_scope')==cp['checkpoint_code'],
+          'checkpoint officer assignment persists checkpoint and parent IDs, including a non-static checkpoint')
+    status, cp_session=request(base,'POST','/api/login',body={'username':cp_username,'password':'StartPass123!'})
+    cp_token=cp_session.get('token')
+    check(status==200 and cp_token,'new checkpoint officer can sign in under the existing session contract')
+    event_fields={'first_name':'Dynamic','second_name':'Checkpoint','third_name':'Traveler','fourth_name':'Test',
+        'date_of_birth':'1990-01-01','purpose_of_visit':'Transit','current_address':'Laascaanood',
+        'permanent_address':'Laascaanood','location':cp['checkpoint_code'],'checkpoint_id':cp['id'],
+        'guardian_first_name':'Guardian','guardian_second_name':'Test','guardian_relationship':'Parent',
+        'guardian_phone':'+252 63 555 0101','guardian_address':'Laascaanood','guardian_occupation':'Officer'}
+    status, dynamic_event=request_multipart(base,'/api/checkpoint-events',admin,event_fields,{
+        'doc_tr_0':('traveler.txt',b'traveler document','text/plain'),
+        'doc_gd_0':('guardian.txt',b'guardian document','text/plain'),
+        'photo':('traveler.jpg',b'fake image bytes','image/jpeg')})
+    check(status==201 and dynamic_event.get('checkpoint_id')==cp['id'],
+          'checkpoint event writes persist the selected scalable checkpoint ID')
+    status, scoped_events=request(base,'GET','/api/checkpoint-events',cp_token)
+    check(status==200 and any(e.get('checkpoint_id')==cp['id'] for e in scoped_events.get('items',[]))
+          and all(e.get('checkpoint_id')==cp['id'] for e in scoped_events.get('items',[])),
+          'checkpoint officer reads are filtered by the assigned checkpoint entity, not static location labels')
+    status, checkpoint_role_change=request(base,'PATCH',f"/api/admin/users/{cp_user['user']['id']}",admin,{'role':'PoliceStationOfficer'})
+    check(status==200 and checkpoint_role_change['user'].get('checkpoint_id') is None,
+          'legacy role-only account edits remain supported when a checkpoint has a real station parent')
+    station_user_name=f'arena_hierarchy_user_{time.time_ns()}'
+    status, assigned_user=request(base,'POST','/api/admin/users',admin,{
+        'username':station_user_name,'display_name':'Hierarchy Station User','role':'PoliceStationOfficer',
+        'region_id':sool['id'],'district_id':lasanod['id'],'station_id':station['location_id'],
+        'branch':'Las Anod Station','password':'StartPass123!'})
+    check(status==201 and assigned_user['user'].get('station_id')==station['location_id']
+          and assigned_user['user'].get('district_id')==lasanod['id'],
+          'station-role user assignment persists valid station, region and district IDs')
+    local_station_branch=next(b for b in lasanod['branches'] if b.get('unit_type')=='police_station')
+    status, moved_user=request(base,'PATCH',f"/api/admin/users/{assigned_user['user']['id']}",admin,{
+        'region_id':sool['id'],'district_id':lasanod['id'],'branch_id':local_station_branch['id'],
+        'branch':local_station_branch['name'],'role':'PoliceStationOfficer'})
+    check(status==200 and moved_user.get('user',{}).get('branch_id')==local_station_branch['id']
+          and moved_user.get('user',{}).get('station_id') is None,
+          'Edit Officer can switch from station to branch within the selected hierarchy')
+
 
 def run_frontend_contract():
     html = open(INDEX, encoding='utf-8').read()
@@ -313,9 +404,11 @@ def run_frontend_contract():
     check('policeStationBranches' in html and 'syntheticStationFromBranch' in html
           and 'BR-' in html and 'stationOptions' in html,
           'Police Stations branches synthesize into station dropdowns via BR- synthetic ids')
-    check('id="nu-branch" required' in html and 'id="eu-branch" required' in html
-          and 'refreshUserStationOptions' in html and "api('/api/stations')" in html,
-          'User Management uses live station/HQ dropdowns for create and edit')
+    check('id=\"${prefix}-region\"' in html and 'id=\"${prefix}-district\"' in html
+          and 'id=\"${prefix}-assignment\"' in html and 'id=\"${prefix}-checkpoint\"' in html
+          and 'refreshUserLocationCascade' in html and 'refreshUserStationOptions' in html
+          and 'refreshCheckpointOptions' in html and "api('/api/stations')" in html,
+          'User Management uses cascading Region → District → Station/Branch or Checkpoint selectors')
     check('StationCommander' in html and 'PoliceStationOfficer' in html,
           'Station Commander and Police Station Officer are selectable roles')
     check('+ Add New Branch' in html and '<section id="branches" class="page">' in html

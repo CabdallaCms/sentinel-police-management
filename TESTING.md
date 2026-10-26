@@ -490,3 +490,36 @@ so a stale page missing the column now fails startup and `python backend/server.
 3. In **Fingerprint Unit → Clearance Applications**, open a record. The review details show the creator and approval actor, and the register/re-scan history identifies the uploader. Create/approve/rescan actions should be attributed to the signed-in user, including their badge when the account maps to a Police Registration service ID.
 4. As System Admin, open **User Management → New officer** and verify **Branch / Station** is a select populated from live `GET /api/stations`, with registered station entries and HQ units. Repeat with **Edit officer** and confirm the current assignment is preserved. Verify **Station Commander** and **Police Station Officer** appear in Role. These new titles intentionally have dashboard-only access until their operational RBAC policy is separately defined.
 5. Run `python3 backend/server.py --ui-check`, then the integration/DOM suites listed in the repository. The asset stamp must be `9cb433a8` consistently across `index.html`, `application.html`, `certificate.html`, and `backend/server.py`.
+
+## Hierarchical locations and audit attribution (2026-10-26)
+
+The PostgreSQL migration adds normalized `regions` and `districts`, enforces
+valid parent IDs on stations and branches, and adds uniquely coded
+`checkpoints` linked to a real station or branch. Existing text fields, route
+shapes, station IDs, authentication cookies, and checkpoint role aliases remain
+available. `GET /api/stations` preserves its `items` array and adds a nested
+`hierarchy`, `regions`, and checkpoint catalogue; `GET /api/locations/hierarchy`
+and `GET /api/checkpoints` provide focused structured reads. Existing South,
+East, and West scopes are retained only as aliases to hierarchy-backed legacy
+checkpoint records.
+
+New Officer / Edit Officer use Region → District → Station/Branch selectors,
+or Region → District → Checkpoint for checkpoint roles. Audit labels in Person
+Details, Clearance, and Linked Unit Records use the explicit pattern
+`Display Name (Badge #number-or-Not recorded, User: username) at station/branch`.
+The application never invents a badge or location when source records do not
+contain one.
+
+Focused checks:
+
+```sh
+.venv/bin/python backend/test_dynamic_branches.py
+node backend/test_hierarchy_ui.mjs
+python3 backend/server.py --ui-check
+```
+
+The database-backed suite verifies legacy routes, new parent IDs, creation of a
+non-static checkpoint, checkpoint officer assignment, and explicit audit
+attribution. The jsdom suite exercises cascading selector behavior and the
+rendered audit label. Run the other PostgreSQL-aware suites documented above
+for cross-feature regression coverage.

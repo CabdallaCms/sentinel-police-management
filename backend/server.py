@@ -222,11 +222,27 @@ SCHEMA = '''
 CREATE TABLE IF NOT EXISTS users(
   id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL,
   display_name TEXT NOT NULL, role TEXT NOT NULL,
-  branch TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER DEFAULT 1
+  branch TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER DEFAULT 1,
+  checkpoint_id INTEGER, region_id INTEGER, district_id INTEGER,
+  station_id INTEGER, branch_id INTEGER
 );
 CREATE TABLE IF NOT EXISTS locations(
   id SERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL,
   label TEXT NOT NULL, kind TEXT NOT NULL
+);
+-- Normalized location hierarchy. Legacy text fields on operational tables are
+-- retained as API compatibility columns; the IDs below are authoritative.
+CREATE TABLE IF NOT EXISTS regions(
+  id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, code TEXT NOT NULL UNIQUE,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
+);
+CREATE TABLE IF NOT EXISTS districts(
+  id SERIAL PRIMARY KEY, region_id INTEGER NOT NULL REFERENCES regions(id) ON DELETE RESTRICT,
+  name TEXT NOT NULL, code TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(region_id,name), UNIQUE(id,region_id),
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE TABLE IF NOT EXISTS police_branches(
   id SERIAL PRIMARY KEY,
@@ -234,6 +250,9 @@ CREATE TABLE IF NOT EXISTS police_branches(
   region TEXT NOT NULL,
   district TEXT,
   unit_type TEXT NOT NULL CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport','police_station')),
+  region_id INTEGER REFERENCES regions(id) ON DELETE RESTRICT,
+  district_id INTEGER,
+  UNIQUE(id,region_id,district_id),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_police_branches_name_region_unit
@@ -311,6 +330,7 @@ CREATE TABLE IF NOT EXISTS checkpoint_events(
   id SERIAL PRIMARY KEY, event_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id),
   branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
+  checkpoint_id INTEGER,
   location TEXT NOT NULL, location_code TEXT, checkpoint_location TEXT,
   screening_result TEXT NOT NULL,
   action_taken TEXT NOT NULL DEFAULT 'Cleared', notes TEXT,
@@ -327,6 +347,8 @@ CREATE TABLE IF NOT EXISTS police_stations(
   id SERIAL PRIMARY KEY, station_id TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL, code TEXT UNIQUE NOT NULL,
   region TEXT NOT NULL, district TEXT NOT NULL, village TEXT,
+  region_id INTEGER REFERENCES regions(id) ON DELETE RESTRICT,
+  district_id INTEGER,
   -- commander_id / deputy_id reference officers(id), while officers
   -- references police_stations(id) back — a circular foreign key.
   -- PostgreSQL validates REFERENCES at DDL time (SQLite did not), so these
@@ -338,8 +360,30 @@ CREATE TABLE IF NOT EXISTS police_stations(
   -- Administration edits (View / Edit station drawer): who last changed the
   -- record and when. Written only by the SystemAdmin-only update path.
   updated_at TEXT, updated_by INTEGER REFERENCES users(id),
+  UNIQUE(id,region_id,district_id),
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
+-- Canonical structured station/branch overlay. police_branches remains the
+-- compatibility table/API source; this one-to-one table gives it strict
+-- hierarchy links without breaking existing branch IDs or response shapes.
+CREATE TABLE IF NOT EXISTS stations_branches(
+  branch_id INTEGER PRIMARY KEY REFERENCES police_branches(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, region_id INTEGER NOT NULL REFERENCES regions(id) ON DELETE RESTRICT,
+  district_id INTEGER NOT NULL, unit_type TEXT NOT NULL,
+  FOREIGN KEY (district_id,region_id) REFERENCES districts(id,region_id) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS checkpoints(
+  id SERIAL PRIMARY KEY, checkpoint_code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL, region_id INTEGER NOT NULL REFERENCES regions(id) ON DELETE RESTRICT,
+  district_id INTEGER NOT NULL, station_id INTEGER REFERENCES police_stations(id) ON DELETE SET NULL,
+  branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
+  active INTEGER NOT NULL DEFAULT 1, legacy_code TEXT,
+  created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')),
+  FOREIGN KEY (district_id,region_id) REFERENCES districts(id,region_id) ON DELETE RESTRICT,
+  CHECK (station_id IS NOT NULL OR branch_id IS NOT NULL OR legacy_code IS NOT NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_checkpoints_legacy_code
+  ON checkpoints(LOWER(legacy_code)) WHERE legacy_code IS NOT NULL;
 CREATE TABLE IF NOT EXISTS officers(
   id SERIAL PRIMARY KEY, service_id TEXT UNIQUE NOT NULL,
   -- Section 1: Official & System identifiers
@@ -452,6 +496,11 @@ CREATE TABLE IF NOT EXISTS audit_events(
 ADDED_COLUMNS = {
     'users': [
         ('location_scope', "ALTER TABLE users ADD COLUMN location_scope TEXT"),
+        ('checkpoint_id', "ALTER TABLE users ADD COLUMN checkpoint_id INTEGER"),
+        ('region_id', "ALTER TABLE users ADD COLUMN region_id INTEGER"),
+        ('district_id', "ALTER TABLE users ADD COLUMN district_id INTEGER"),
+        ('station_id', "ALTER TABLE users ADD COLUMN station_id INTEGER"),
+        ('branch_id', "ALTER TABLE users ADD COLUMN branch_id INTEGER"),
     ],
     'persons': [
         ('first_name', "ALTER TABLE persons ADD COLUMN first_name TEXT"),
@@ -515,14 +564,19 @@ ADDED_COLUMNS = {
         # without joining the locations table.
         ('location_code', "ALTER TABLE checkpoint_events ADD COLUMN location_code TEXT"),
         ('checkpoint_location', "ALTER TABLE checkpoint_events ADD COLUMN checkpoint_location TEXT"),
+        ('checkpoint_id', "ALTER TABLE checkpoint_events ADD COLUMN checkpoint_id INTEGER"),
     ],
     'crime_incidents': [
         ('branch_id', "ALTER TABLE crime_incidents ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
     ],
     'police_branches': [
         ('district', "ALTER TABLE police_branches ADD COLUMN district TEXT"),
+        ('region_id', "ALTER TABLE police_branches ADD COLUMN region_id INTEGER"),
+        ('district_id', "ALTER TABLE police_branches ADD COLUMN district_id INTEGER"),
     ],
     'police_stations': [
+        ('region_id', "ALTER TABLE police_stations ADD COLUMN region_id INTEGER"),
+        ('district_id', "ALTER TABLE police_stations ADD COLUMN district_id INTEGER"),
         ('station_tier', "ALTER TABLE police_stations ADD COLUMN station_tier TEXT"),
         ('commander_id', "ALTER TABLE police_stations ADD COLUMN commander_id INTEGER REFERENCES officers(id)"),
         ('deputy_id', "ALTER TABLE police_stations ADD COLUMN deputy_id INTEGER REFERENCES officers(id)"),
@@ -652,7 +706,7 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '9cb433a8'
+ASSET_VERSION = '9cb433a8-hierarchy1'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
@@ -670,6 +724,9 @@ UI_REQUIRED_MARKERS = (
     ('Edit modal entry point', 'function openStationEdit('),
     ('Self-service password rotation', '/api/auth/change-password'),
     ('Dynamic user station selector', 'function refreshUserStationOptions('),
+    ('Cascading region district checkpoint selectors', 'function refreshUserLocationCascade('),
+    ('Region and district selector controls', 'function userLocationFields('),
+    ('Registered checkpoint selector control', 'async function refreshCheckpointOptions('),
     ('Explicit audit attribution display', 'function renderAuditTrail('),
     ('admin-only Edit gate', "body:not(.can-edit-records) .admin-edit"),
     ('Person detail modal', 'id="personDetailModal"'),
@@ -1543,6 +1600,8 @@ UNIT_ROLE_ALIASES = {
 
 # Canonical checkpoint location codes. The data uses the short codes ('South',
 # 'East', 'West') so the scoping stays in sync with existing seed data.
+# Legacy API / role aliases only. Canonical checkpoints are normalized rows in
+# the PostgreSQL `checkpoints` table and are not limited to these values.
 CHECKPOINT_LOCATIONS = ('South', 'East', 'West')
 
 # Branch departments are stored as stable API values in `police_branches`.
@@ -2193,6 +2252,9 @@ def user_view(user):
         'spec_role': spec_role,
         'role_label': ROLE_LABELS.get(raw_role, raw_role),
         'branch': user.get('branch') or '',
+        'region_id': user.get('region_id'), 'district_id': user.get('district_id'),
+        'station_id': user.get('station_id'), 'branch_id': user.get('branch_id'),
+        'checkpoint_id': user.get('checkpoint_id'),
         'location_scope': scope,
         'location': location,
         'modules': sorted(modules),
@@ -2288,7 +2350,7 @@ def checkpoint_scope(user):
     # officer's location. The location_scope column is the
     # authoritative source for any Checkpoint officer.
     stored_scope = user.get('location_scope')
-    if stored_scope and stored_scope in CHECKPOINT_LOCATIONS:
+    if stored_scope:
         return stored_scope
     # Otherwise, derive the scope from the role (legacy code path).
     aliases_to_try = [role, role.lower(), normalize_role(role)]
@@ -2380,6 +2442,166 @@ def relax_not_null(c, table, col):
     every row, every foreign key and every index intact.
     """
     c.execute(f'ALTER TABLE {table} ALTER COLUMN {col} DROP NOT NULL')
+
+def _location_slug(value):
+    slug = re.sub(r'[^A-Za-z0-9]+', '-', str(value or '').strip()).strip('-').upper()
+    return slug[:24] or 'LOC'
+
+
+def _ensure_region_id(c, name):
+    name = re.sub(r'\s+', ' ', str(name or '')).strip()
+    if not name:
+        raise ValueError('region is required for a hierarchical location')
+    row = c.execute('SELECT id FROM regions WHERE LOWER(name)=LOWER(%s)', (name,)).fetchone()
+    if row:
+        return row['id']
+    base = REGION_CODES.get(name, _location_slug(name))
+    code = base
+    collision = c.execute('SELECT 1 FROM regions WHERE LOWER(code)=LOWER(%s)', (code,)).fetchone()
+    if collision:
+        code = f'{base[:18]}-{hashlib.sha1(name.lower().encode()).hexdigest()[:5].upper()}'
+    return c.execute('INSERT INTO regions(name,code) VALUES(%s,%s) RETURNING id',
+                      (name, code)).fetchone()['id']
+
+
+def _ensure_district_id(c, region_id, name):
+    name = re.sub(r'\s+', ' ', str(name or '')).strip()
+    if not name:
+        raise ValueError('district is required for a hierarchical location')
+    row = c.execute('SELECT id FROM districts WHERE region_id=%s AND LOWER(name)=LOWER(%s)',
+                    (region_id, name)).fetchone()
+    if row:
+        return row['id']
+    code = _location_slug(name)
+    return c.execute('INSERT INTO districts(region_id,name,code) VALUES(%s,%s,%s) RETURNING id',
+                      (region_id, name, code)).fetchone()['id']
+
+
+def migrate_location_hierarchy(c):
+    # Backfill and enforce Region -> District -> operational location FKs.
+    pairs = set()
+    for table in ('police_branches', 'police_stations'):
+        rows = c.execute(f'SELECT region,district FROM {table}').fetchall()
+        pairs.update((str(r['region'] or '').strip(), str(r['district'] or '').strip())
+                     for r in rows if str(r['region'] or '').strip() and str(r['district'] or '').strip())
+    for region, district in sorted(pairs, key=lambda pair:(pair[0].lower(),pair[1].lower())):
+        rid = _ensure_region_id(c, region)
+        _ensure_district_id(c, rid, district)
+    for table in ('police_branches', 'police_stations'):
+        rows = c.execute(f'SELECT id,region,district FROM {table}').fetchall()
+        for row in rows:
+            rid = _ensure_region_id(c, row['region'])
+            did = _ensure_district_id(c, rid, row['district'])
+            c.execute(f'UPDATE {table} SET region_id=%s,district_id=%s WHERE id=%s',
+                      (rid,did,row['id']))
+    c.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_regions_name_ci ON regions(LOWER(name))')
+    c.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_districts_name_ci ON districts(region_id,LOWER(name))')
+    for table, prefix in (('police_branches','branches'),('police_stations','stations')):
+        c.execute(f'ALTER TABLE {table} ALTER COLUMN region_id SET NOT NULL')
+        c.execute(f'ALTER TABLE {table} ALTER COLUMN district_id SET NOT NULL')
+        c.execute(f'''DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_{prefix}_district_region') THEN
+            ALTER TABLE {table} ADD CONSTRAINT fk_{prefix}_district_region
+              FOREIGN KEY (district_id,region_id) REFERENCES districts(id,region_id) ON DELETE RESTRICT;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_{prefix}_region') THEN
+            ALTER TABLE {table} ADD CONSTRAINT fk_{prefix}_region
+              FOREIGN KEY (region_id) REFERENCES regions(id) ON DELETE RESTRICT;
+          END IF;
+        END $$''')
+    c.execute('''INSERT INTO stations_branches(branch_id,name,region_id,district_id,unit_type)
+        SELECT id,name,region_id,district_id,unit_type FROM police_branches
+        ON CONFLICT(branch_id) DO UPDATE SET name=EXCLUDED.name,
+          region_id=EXCLUDED.region_id,district_id=EXCLUDED.district_id,unit_type=EXCLUDED.unit_type''')
+    c.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_police_branches_location_parent ON police_branches(id,region_id,district_id)')
+    c.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_police_stations_location_parent ON police_stations(id,region_id,district_id)')
+    c.execute('''DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_checkpoint_station_hierarchy') THEN
+        ALTER TABLE checkpoints ADD CONSTRAINT fk_checkpoint_station_hierarchy
+          FOREIGN KEY(station_id,region_id,district_id)
+          REFERENCES police_stations(id,region_id,district_id) ON DELETE RESTRICT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_checkpoint_branch_hierarchy') THEN
+        ALTER TABLE checkpoints ADD CONSTRAINT fk_checkpoint_branch_hierarchy
+          FOREIGN KEY(branch_id,region_id,district_id)
+          REFERENCES police_branches(id,region_id,district_id) ON DELETE RESTRICT;
+      END IF;
+    END $$''')
+    c.execute('''UPDATE checkpoint_events ce SET checkpoint_id=cp.id FROM checkpoints cp
+        WHERE ce.checkpoint_id IS NULL AND cp.legacy_code IS NOT NULL
+          AND LOWER(cp.legacy_code)=LOWER(COALESCE(ce.location_code,ce.location))''')
+    c.execute('''UPDATE checkpoint_events ce SET checkpoint_id=cp.id FROM checkpoints cp
+        WHERE ce.checkpoint_id IS NULL AND cp.legacy_code IS NULL AND cp.branch_id=ce.branch_id''')
+    c.execute('''UPDATE users u SET checkpoint_id=cp.id FROM checkpoints cp
+        WHERE u.checkpoint_id IS NULL AND
+          (LOWER(COALESCE(cp.legacy_code,''))=LOWER(u.location_scope)
+           OR LOWER(cp.checkpoint_code)=LOWER(u.location_scope))''')
+    c.execute('''DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_users_checkpoint') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_checkpoint FOREIGN KEY(checkpoint_id)
+          REFERENCES checkpoints(id) ON DELETE SET NULL;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_checkpoint_events_checkpoint') THEN
+        ALTER TABLE checkpoint_events ADD CONSTRAINT fk_checkpoint_events_checkpoint FOREIGN KEY(checkpoint_id)
+          REFERENCES checkpoints(id) ON DELETE SET NULL;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_users_region') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_region FOREIGN KEY(region_id) REFERENCES regions(id) ON DELETE SET NULL;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_users_district_region') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_district_region FOREIGN KEY(district_id,region_id) REFERENCES districts(id,region_id) ON DELETE SET NULL;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_users_station') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_station FOREIGN KEY(station_id) REFERENCES police_stations(id) ON DELETE SET NULL;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_users_branch') THEN
+        ALTER TABLE users ADD CONSTRAINT fk_users_branch FOREIGN KEY(branch_id) REFERENCES police_branches(id) ON DELETE SET NULL;
+      END IF;
+    END $$''')
+    c.execute('''CREATE OR REPLACE FUNCTION sentinel_set_location_ids() RETURNS trigger AS $$
+    DECLARE rid integer; did integer; region_name text; district_name text; rcode text; dcode text;
+    BEGIN
+      region_name := regexp_replace(trim(COALESCE(NEW.region,'')), '\\s+', ' ', 'g');
+      district_name := regexp_replace(trim(COALESCE(NEW.district,'')), '\\s+', ' ', 'g');
+      IF region_name='' OR district_name='' THEN
+        RAISE EXCEPTION 'region and district are required for operational locations';
+      END IF;
+      SELECT id INTO rid FROM regions WHERE LOWER(name)=LOWER(region_name) LIMIT 1;
+      IF rid IS NULL THEN
+        rcode := upper(regexp_replace(region_name, '[^A-Za-z0-9]+', '-', 'g'));
+        rcode := left(COALESCE(NULLIF(rcode,''),'LOC'),24);
+        IF EXISTS (SELECT 1 FROM regions WHERE LOWER(code)=LOWER(rcode)) THEN
+          rcode := left(rcode,18)||'-'||upper(substr(md5(lower(region_name)),1,5));
+        END IF;
+        INSERT INTO regions(name,code) VALUES(region_name,rcode) RETURNING id INTO rid;
+      END IF;
+      SELECT id INTO did FROM districts WHERE region_id=rid AND LOWER(name)=LOWER(district_name) LIMIT 1;
+      IF did IS NULL THEN
+        dcode := upper(regexp_replace(district_name, '[^A-Za-z0-9]+', '-', 'g'));
+        INSERT INTO districts(region_id,name,code) VALUES(rid,district_name,left(COALESCE(NULLIF(dcode,''),'DISTRICT'),24)) RETURNING id INTO did;
+      END IF;
+      NEW.region := region_name; NEW.district := district_name;
+      NEW.region_id := rid; NEW.district_id := did;
+      RETURN NEW;
+    END; $$ LANGUAGE plpgsql''')
+    c.execute('''CREATE OR REPLACE FUNCTION sentinel_sync_station_branch() RETURNS trigger AS $$
+    BEGIN
+      INSERT INTO stations_branches(branch_id,name,region_id,district_id,unit_type)
+      VALUES(NEW.id,NEW.name,NEW.region_id,NEW.district_id,NEW.unit_type)
+      ON CONFLICT(branch_id) DO UPDATE SET name=EXCLUDED.name,region_id=EXCLUDED.region_id,
+        district_id=EXCLUDED.district_id,unit_type=EXCLUDED.unit_type;
+      RETURN NEW;
+    END; $$ LANGUAGE plpgsql''')
+    c.execute('''DROP TRIGGER IF EXISTS trg_location_ids_police_branches ON police_branches;
+      CREATE TRIGGER trg_location_ids_police_branches BEFORE INSERT OR UPDATE OF region,district
+      ON police_branches FOR EACH ROW EXECUTE FUNCTION sentinel_set_location_ids()''')
+    c.execute('''DROP TRIGGER IF EXISTS trg_location_ids_police_stations ON police_stations;
+      CREATE TRIGGER trg_location_ids_police_stations BEFORE INSERT OR UPDATE OF region,district
+      ON police_stations FOR EACH ROW EXECUTE FUNCTION sentinel_set_location_ids()''')
+    c.execute('''DROP TRIGGER IF EXISTS trg_sync_stations_branches ON police_branches;
+      CREATE TRIGGER trg_sync_stations_branches AFTER INSERT OR UPDATE OF name,region,district,unit_type
+      ON police_branches FOR EACH ROW EXECUTE FUNCTION sentinel_sync_station_branch()''')
+
 
 def migrate(c):
     """Idempotent in-place migration of an existing PostgreSQL database.
@@ -2485,6 +2707,7 @@ def migrate(c):
                     c.execute("UPDATE police_branches SET district=%s WHERE id=%s", (district, r['id']))
         except Exception:
             pass
+    migrate_location_hierarchy(c)
     # Circular foreign key closure: police_stations.commander_id / deputy_id
     # point at officers(id) while officers.station_id points back at
     # police_stations(id). The CREATE TABLE script must declare them as plain
@@ -2548,13 +2771,9 @@ def init_db():
             c.execute('''INSERT INTO police_branches(name,region,district,unit_type)
                          VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
                       (branch_name, region, district, unit_type))
-    # Canonical checkpoint locations — referenced by both the data and the RBAC layer.
-    if c.execute('SELECT COUNT(*) FROM locations').fetchone()[0] == 0:
-        for code, label in (('South', 'South Checkpoint'),
-                             ('East', 'East Checkpoint'),
-                             ('West', 'West Checkpoint')):
-            c.execute('INSERT INTO locations(code,label,kind) VALUES(%s,%s,%s)',
-                      (code, label, 'Checkpoint'))
+    # Do not create static checkpoint entities in the legacy `locations`
+    # table. Scalable checkpoint rows are seeded below in `checkpoints` and
+    # every row is tied to real Region / District parents.
     # Seed the Station Registration table so the officer form's "Assigned
     # Station" dropdown is populated on first run. Mirrors the frontend seed
     # gazetteer (Sool / Sanaag / East Togdheer).
@@ -2574,6 +2793,55 @@ def init_db():
             c.execute('INSERT INTO police_stations(station_id,name,code,region,district,village,'
                       'station_tier,cell_capacity) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)',
                       (sid, name, code, region, district, village, tier, cells))
+    # Seed hierarchy-backed checkpoint entities for every Checkpoint Unit
+    # branch. The legacy South/East/West values remain as compatibility aliases
+    # for existing accounts and API clients, but now resolve to real records.
+    legacy_checkpoint_parents = {
+        'South': ('Sool', 'Laascaanood'),
+        'East': ('East Togdheer', 'Buuhoodle'),
+        'West': ('Sanaag', 'Ceerigaabo'),
+    }
+    for b in c.execute("SELECT id,name,region,district,region_id,district_id FROM police_branches WHERE unit_type='checkpoint' ORDER BY id").fetchall():
+        station = c.execute('''SELECT id FROM police_stations WHERE region_id=%s AND district_id=%s
+                               ORDER BY id LIMIT 1''', (b['region_id'],b['district_id'])).fetchone()
+        c.execute('''INSERT INTO checkpoints(checkpoint_code,name,region_id,district_id,station_id,branch_id)
+            VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(checkpoint_code) DO UPDATE SET
+            name=EXCLUDED.name,region_id=EXCLUDED.region_id,district_id=EXCLUDED.district_id,
+            station_id=EXCLUDED.station_id,branch_id=EXCLUDED.branch_id''',
+            (f"BR-{b['id']}", b['name'], b['region_id'], b['district_id'],
+             station['id'] if station else None, b['id']))
+    for legacy_code, (region_name, district_name) in legacy_checkpoint_parents.items():
+        rid = _ensure_region_id(c, region_name)
+        did = _ensure_district_id(c, rid, district_name)
+        branch = c.execute('''SELECT id FROM police_branches WHERE unit_type='checkpoint'
+            AND region_id=%s AND district_id=%s ORDER BY id LIMIT 1''',(rid,did)).fetchone()
+        station = c.execute('''SELECT id FROM police_stations WHERE region_id=%s AND district_id=%s
+            ORDER BY id LIMIT 1''',(rid,did)).fetchone()
+        c.execute('''INSERT INTO checkpoints(checkpoint_code,name,region_id,district_id,station_id,branch_id,legacy_code)
+            VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(checkpoint_code) DO NOTHING''',
+            (f'LEGACY-{legacy_code.upper()}', f'{legacy_code} Checkpoint', rid, did,
+             station['id'] if station else None, branch['id'] if branch else None, legacy_code))
+    c.execute('''UPDATE checkpoint_events ce SET checkpoint_id=cp.id FROM checkpoints cp
+        WHERE ce.checkpoint_id IS NULL AND cp.legacy_code IS NOT NULL
+          AND LOWER(cp.legacy_code)=LOWER(COALESCE(ce.location_code,ce.location))''')
+    c.execute('''UPDATE checkpoint_events ce SET checkpoint_id=cp.id FROM checkpoints cp
+        WHERE ce.checkpoint_id IS NULL AND cp.legacy_code IS NULL AND cp.branch_id=ce.branch_id''')
+    c.execute('''UPDATE users u SET checkpoint_id=cp.id FROM checkpoints cp
+        WHERE u.checkpoint_id IS NULL AND
+          (LOWER(COALESCE(cp.legacy_code,''))=LOWER(u.location_scope)
+           OR LOWER(cp.checkpoint_code)=LOWER(u.location_scope))''')
+    c.execute('''UPDATE users u SET region_id=cp.region_id,district_id=cp.district_id,
+        station_id=COALESCE(cp.station_id,u.station_id),branch_id=COALESCE(cp.branch_id,u.branch_id),
+        branch=COALESCE(b.name,st.name,u.branch)
+        FROM checkpoints cp LEFT JOIN police_branches b ON b.id=cp.branch_id
+        LEFT JOIN police_stations st ON st.id=cp.station_id
+        WHERE u.checkpoint_id=cp.id''')
+    c.execute('''UPDATE users u SET station_id=st.id,region_id=st.region_id,district_id=st.district_id
+        FROM police_stations st WHERE u.station_id IS NULL AND u.branch_id IS NULL
+          AND LOWER(u.branch)=LOWER(st.name)''')
+    c.execute('''UPDATE users u SET branch_id=b.id,region_id=b.region_id,district_id=b.district_id
+        FROM police_branches b WHERE u.station_id IS NULL AND u.branch_id IS NULL
+          AND LOWER(u.branch)=LOWER(b.name)''')
     # Normalise the legacy admin account + seed a representative user per role
     # so the RBAC flow is exercised by default. The existing admin keeps its
     # password (idempotent — we only re-tag it on first run).
@@ -2593,6 +2861,22 @@ def init_db():
             c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,password_hash) '
                       'VALUES(%s,%s,%s,%s,%s,%s)',
                       (u, dn, role, branch, scope, password_hash(pw)))
+    # The seeded representative accounts are inserted after the schema/data
+    # migration above; resolve their legacy text locations in the same startup.
+    c.execute('''UPDATE users u SET checkpoint_id=cp.id,region_id=cp.region_id,district_id=cp.district_id,
+        station_id=COALESCE(cp.station_id,u.station_id),branch_id=COALESCE(cp.branch_id,u.branch_id),
+        branch=COALESCE(b.name,st.name,u.branch)
+        FROM checkpoints cp LEFT JOIN police_branches b ON b.id=cp.branch_id
+        LEFT JOIN police_stations st ON st.id=cp.station_id
+        WHERE u.checkpoint_id IS NULL AND
+          (LOWER(COALESCE(cp.legacy_code,''))=LOWER(u.location_scope)
+           OR LOWER(cp.checkpoint_code)=LOWER(u.location_scope))''')
+    c.execute('''UPDATE users u SET station_id=st.id,region_id=st.region_id,district_id=st.district_id
+        FROM police_stations st WHERE u.station_id IS NULL AND u.branch_id IS NULL
+          AND LOWER(u.branch)=LOWER(st.name)''')
+    c.execute('''UPDATE users u SET branch_id=b.id,region_id=b.region_id,district_id=b.district_id
+        FROM police_branches b WHERE u.station_id IS NULL AND u.branch_id IS NULL
+          AND LOWER(u.branch)=LOWER(b.name)''')
     if c.execute('SELECT COUNT(*) FROM persons').fetchone()[0] == 0:
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation,passport_id)
@@ -2653,6 +2937,8 @@ def branch_view(row):
         'name': row['name'],
         'region': row['region'],
         'district': district,
+        'region_id': row['region_id'] if 'region_id' in row.keys() else None,
+        'district_id': row['district_id'] if 'district_id' in row.keys() else None,
         'unit_type': row['unit_type'],
     }
 
@@ -2813,7 +3099,7 @@ def require_auth(handler):
     if not user_id: raise PermissionError('Authentication required')
     c = get_db_connection()
     user = rowdict(c.execute(
-        'SELECT id,username,display_name,role,branch,location_scope,active '
+        'SELECT id,username,display_name,role,branch,location_scope,active,region_id,district_id,station_id,branch_id,checkpoint_id '
         'FROM users WHERE id=%s AND active=1',(user_id,)).fetchone())
     c.close()
     if not user: raise PermissionError('Authentication required')
@@ -2822,17 +3108,21 @@ def require_auth(handler):
 def user_attribution(c, user_id=None, user=None):
     """Resolve a stable actor label from the existing user/officer records.
 
-    No schema change is needed: an officer service_id is the badge when the
-    account maps to a personnel row; badge-shaped usernames are a safe legacy
-    fallback. Other accounts are explicitly identified as accounts, never
-    presented as a fabricated badge number.
+    No schema change is needed: an officer service_id is the badge only when
+    the account maps to a personnel row. A username that merely resembles a
+    badge is not enough evidence; unavailable badges are explicitly marked
+    "Not recorded" rather than inferred.
     """
-    if user is None and user_id is not None:
-        row = c.execute('SELECT id,username,display_name FROM users WHERE id=%s', (user_id,)).fetchone()
-        user = rowdict(row) if row else None
+    if user_id is not None:
+        row = c.execute('SELECT id,username,display_name,branch FROM users WHERE id=%s', (user_id,)).fetchone()
+        db_user = rowdict(row) if row else None
+        if db_user:
+            db_user.update(user or {})
+            user = db_user
     if not user:
-        return {'display_name': 'Unknown user', 'badge_number': '',
-                'username': '', 'actor_label': 'Unknown user'}
+        return {'display_name': 'Unknown user', 'badge_number': '', 'username': '',
+                'unit': 'Station/branch not recorded',
+                'actor_label': 'Unknown user (Badge #Not recorded, User: Not recorded) at Station/branch not recorded'}
     username = str(user.get('username') or '')
     display = str(user.get('display_name') or username or 'Unknown user')
     officer = c.execute('''SELECT service_id FROM officers
@@ -2840,11 +3130,12 @@ def user_attribution(c, user_id=None, user=None):
         ORDER BY CASE WHEN LOWER(service_id)=LOWER(%s) THEN 0 ELSE 1 END, id LIMIT 1''',
         (display, username, username)).fetchone()
     badge = str(officer['service_id']) if officer else ''
-    if not badge and re.fullmatch(r'[A-Za-z]{1,10}-[A-Za-z0-9-]+', username):
-        badge = username
-    actor = f'{display} (Badge #{badge})' if badge else f'{display} (Account: {username or "unavailable"})'
+    badge_display = badge or 'Not recorded'
+    username_display = username or 'Not recorded'
+    unit = str(user.get('branch') or '').strip() or 'Station/branch not recorded'
+    actor = f'{display} (Badge #{badge_display}, User: {username_display}) at {unit}'
     return {'display_name': display, 'badge_number': badge,
-            'username': username, 'actor_label': actor}
+            'username': username, 'unit': unit, 'actor_label': actor}
 
 
 def audit_history(c, pairs):
@@ -2855,26 +3146,33 @@ def audit_history(c, pairs):
     clauses = ' OR '.join('(a.entity=%s AND a.entity_id=%s)' for _ in pairs)
     args = [value for pair in pairs for value in pair]
     rows = c.execute(f'''SELECT a.id,a.action,a.entity,a.entity_id,a.details,a.created_at,
-        u.id AS actor_id,u.username AS actor_username,u.display_name AS actor_name
+        u.id AS actor_id,u.username AS actor_username,u.display_name AS actor_name,u.branch AS actor_branch
         FROM audit_events a LEFT JOIN users u ON u.id=a.user_id
         WHERE {clauses} ORDER BY a.id DESC''', args).fetchall()
     out = []
     for raw in rows:
         item = rowdict(raw)
         attribution = user_attribution(c, item.get('actor_id'), {
-            'username': item.get('actor_username'), 'display_name': item.get('actor_name')})
+            'username': item.get('actor_username'), 'display_name': item.get('actor_name'),
+            'branch': item.get('actor_branch')})
         details = item.get('details') or ''
         recorded_actor, separator, remainder = details.partition(' — ')
         # New events persist the actor label in details, retaining the exact
         # display name / badge as it appeared at action time even if the user
         # profile is later edited. Legacy events fall back to current account
         # attribution resolved above.
-        actor_label = recorded_actor if separator and recorded_actor else attribution['actor_label']
-        recorded_badge = re.search(r'\(Badge #([^)]*)\)', actor_label)
-        item.update(actor_name=attribution['display_name'],
-                    actor_badge_number=recorded_badge.group(1) if recorded_badge else attribution['badge_number'],
-                    actor_username=attribution['username'], actor_label=actor_label,
-                    details=remainder if separator else details)
+        # Keep complete action-time labels where available. Earlier audit
+        # versions stored abbreviated labels; those are rebuilt from current
+        # account data with explicit Not recorded values for missing fields.
+        explicit = re.fullmatch(r'(.+?) [(]Badge #([^)]*), User: ([^)]*)[)] at (.+)', recorded_actor) if separator else None
+        actor_label = recorded_actor if explicit else attribution['actor_label']
+        actor_name = explicit.group(1) if explicit else attribution['display_name']
+        actor_badge = explicit.group(2) if explicit else attribution['badge_number']
+        actor_username = explicit.group(3) if explicit else attribution['username']
+        actor_unit = explicit.group(4) if explicit else attribution['unit']
+        item.update(actor_name=actor_name, actor_badge_number=actor_badge,
+                    actor_username=actor_username, actor_unit=actor_unit,
+                    actor_label=actor_label, details=remainder if separator else details)
         out.append(item)
     return out
 
@@ -2964,11 +3262,14 @@ def station_view(row):
         return row[name] if name in keys else default
     return {
         'id': row['station_id'],
+        'location_id': col('id'),
         'station_id': row['station_id'],
         'name': row['name'],
         'code': row['code'],
         'region': row['region'],
         'district': row['district'],
+        'region_id': col('region_id'),
+        'district_id': col('district_id'),
         'village': row['village'],
         'notes': row['notes'],
         'station_tier': col('station_tier'),
@@ -2981,6 +3282,139 @@ def station_view(row):
         'updated_by': col('updated_by'),
         'created_at': row['created_at'],
     }
+
+
+def checkpoint_view(row):
+    if not row: return None
+    keys = row.keys() if hasattr(row, 'keys') else []
+    def col(name, default=None): return row[name] if name in keys else default
+    return {'id':row['id'],'checkpoint_id':row['id'],'checkpoint_code':row['checkpoint_code'],
+        'code':row['checkpoint_code'],'name':row['name'],'region_id':row['region_id'],
+        'district_id':row['district_id'],'region':col('region'),'district':col('district'),
+        'station_id':col('station_id'),'station_name':col('station_name'),
+        'branch_id':col('branch_id'),'branch_name':col('branch_name'),
+        'legacy_code':col('legacy_code'),'active':bool(col('active',1))}
+
+
+def location_hierarchy(c):
+    regions=c.execute('SELECT id,name,code FROM regions WHERE active=1 ORDER BY name').fetchall()
+    districts=c.execute('''SELECT d.id,d.region_id,d.name,d.code FROM districts d
+        JOIN regions r ON r.id=d.region_id WHERE d.active=1 AND r.active=1 ORDER BY r.name,d.name''').fetchall()
+    stations=c.execute('SELECT * FROM police_stations ORDER BY name').fetchall()
+    branches=c.execute('''SELECT b.*,sb.region_id,sb.district_id FROM stations_branches sb
+        JOIN police_branches b ON b.id=sb.branch_id ORDER BY b.name''').fetchall()
+    checkpoints=c.execute('''SELECT cp.*,r.name AS region,d.name AS district,
+        st.name AS station_name,b.name AS branch_name FROM checkpoints cp
+        JOIN regions r ON r.id=cp.region_id JOIN districts d ON d.id=cp.district_id
+        LEFT JOIN police_stations st ON st.id=cp.station_id
+        LEFT JOIN police_branches b ON b.id=cp.branch_id
+        WHERE cp.active=1 ORDER BY r.name,d.name,cp.name''').fetchall()
+    out=[]; region_by_id={}; district_by_id={}
+    for row in regions:
+        item={'id':row['id'],'name':row['name'],'code':row['code'],'districts':[]}
+        out.append(item); region_by_id[row['id']]=item
+    for row in districts:
+        parent=region_by_id.get(row['region_id'])
+        if not parent: continue
+        item={'id':row['id'],'name':row['name'],'code':row['code'],'region_id':row['region_id'],
+              'stations':[],'branches':[],'checkpoints':[]}
+        parent['districts'].append(item); district_by_id[row['id']]=item
+    for row in stations:
+        if row['district_id'] in district_by_id:
+            district_by_id[row['district_id']]['stations'].append(station_view(row))
+    for row in branches:
+        if row['district_id'] in district_by_id:
+            district_by_id[row['district_id']]['branches'].append(branch_view(row))
+    for row in checkpoints:
+        if row['district_id'] in district_by_id:
+            district_by_id[row['district_id']]['checkpoints'].append(checkpoint_view(row))
+    return {'regions':out}
+
+
+def checkpoint_rows(c, active_only=True):
+    clause='WHERE cp.active=1' if active_only else ''
+    rows=c.execute(f'''SELECT cp.*,r.name AS region,d.name AS district,st.name AS station_name,
+        b.name AS branch_name FROM checkpoints cp JOIN regions r ON r.id=cp.region_id
+        JOIN districts d ON d.id=cp.district_id LEFT JOIN police_stations st ON st.id=cp.station_id
+        LEFT JOIN police_branches b ON b.id=cp.branch_id {clause} ORDER BY r.name,d.name,cp.name''').fetchall()
+    return [checkpoint_view(row) for row in rows]
+
+
+
+def resolve_user_location(c, data, role, current=None):
+    current=current or {}
+    def optional_id(key, fallback=None):
+        value=data.get(key, fallback)
+        if value in (None,''): return None
+        try: return int(value)
+        except (TypeError,ValueError): raise ValueError(f'{key} must be a valid ID')
+    region_id=optional_id('region_id',current.get('region_id'))
+    district_id=optional_id('district_id',current.get('district_id'))
+    station_id=optional_id('station_id',current.get('station_id'))
+    branch_id=optional_id('branch_id',current.get('branch_id'))
+    if 'branch_id' in data and data.get('branch_id') not in (None,'') and 'station_id' not in data:
+        station_id=None
+    if 'station_id' in data and data.get('station_id') not in (None,'') and 'branch_id' not in data:
+        branch_id=None
+    checkpoint_id=optional_id('checkpoint_id',current.get('checkpoint_id'))
+    branch=str(data.get('branch',current.get('branch','Central HQ')) or '').strip() or 'Central HQ'
+    scope=canonical_location_scope(data.get('location_scope',current.get('location_scope')))
+    legacy_text_only=('branch' in data and not {'region_id','district_id','station_id','branch_id','checkpoint_id'}.intersection(data))
+    if legacy_text_only and not is_checkpoint_role(role):
+        region_id=district_id=station_id=branch_id=None
+    if not is_checkpoint_role(role) and current.get('checkpoint_id') and not {'station_id','branch_id'}.intersection(data):
+        # A legacy role-only PATCH keeps a meaningful single parent instead
+        # of carrying both a checkpoint's optional station and branch links.
+        if branch_id: station_id=None
+        elif station_id: branch_id=None
+    if is_checkpoint_role(role):
+        cp=None
+        if checkpoint_id:
+            cp=c.execute('''SELECT cp.*,r.name AS region,d.name AS district,st.name AS station_name,b.name AS branch_name
+                FROM checkpoints cp JOIN regions r ON r.id=cp.region_id JOIN districts d ON d.id=cp.district_id
+                LEFT JOIN police_stations st ON st.id=cp.station_id LEFT JOIN police_branches b ON b.id=cp.branch_id
+                WHERE cp.id=%s AND cp.active=1''',(checkpoint_id,)).fetchone()
+        if cp is None:
+            token=scope or str(data.get('checkpoint_code') or '').strip()
+            if token:
+                cp=c.execute('''SELECT cp.*,r.name AS region,d.name AS district,st.name AS station_name,b.name AS branch_name
+                    FROM checkpoints cp JOIN regions r ON r.id=cp.region_id JOIN districts d ON d.id=cp.district_id
+                    LEFT JOIN police_stations st ON st.id=cp.station_id LEFT JOIN police_branches b ON b.id=cp.branch_id
+                    WHERE cp.active=1 AND (LOWER(cp.checkpoint_code)=LOWER(%s) OR LOWER(cp.name)=LOWER(%s)
+                      OR LOWER(COALESCE(cp.legacy_code,''))=LOWER(%s)) ORDER BY cp.id LIMIT 1''',
+                    (token,token,token)).fetchone()
+        if not cp: raise ValueError('checkpoint_id is required and must identify an active checkpoint')
+        if region_id and region_id != cp['region_id']: raise ValueError('checkpoint must belong to the selected region')
+        if district_id and district_id != cp['district_id']: raise ValueError('checkpoint must belong to the selected district')
+        region_id=cp['region_id']; district_id=cp['district_id']; checkpoint_id=cp['id']
+        scope=cp['legacy_code'] or cp['checkpoint_code']
+        branch=cp['branch_name'] or cp['station_name'] or branch
+        station_id=cp['station_id']; branch_id=cp['branch_id']
+    else:
+        checkpoint_id=None; scope=None
+        if station_id and branch_id: raise ValueError('select either a station or a branch, not both')
+        if legacy_text_only:
+            loc=c.execute('SELECT id,name,region_id,district_id,region,district FROM police_stations WHERE LOWER(name)=LOWER(%s) ORDER BY id LIMIT 1',(branch,)).fetchone()
+            if loc: station_id=loc['id']
+            else:
+                loc=c.execute('SELECT id,name,region_id,district_id,region,district FROM police_branches WHERE LOWER(name)=LOWER(%s) ORDER BY id LIMIT 1',(branch,)).fetchone()
+                if loc: branch_id=loc['id']
+        elif station_id:
+            loc=c.execute('SELECT id,name,region_id,district_id,region,district FROM police_stations WHERE id=%s',(station_id,)).fetchone()
+            if not loc: raise ValueError('station_id does not identify a registered station')
+        elif branch_id:
+            loc=c.execute('SELECT id,name,region_id,district_id,region,district FROM police_branches WHERE id=%s',(branch_id,)).fetchone()
+            if not loc: raise ValueError('branch_id does not identify a registered branch')
+        else: loc=None
+        if loc:
+            if region_id and region_id != loc['region_id']: raise ValueError('station/branch must belong to the selected region')
+            if district_id and district_id != loc['district_id']: raise ValueError('station/branch must belong to the selected district')
+            region_id=loc['region_id']; district_id=loc['district_id']; branch=loc['name']
+        elif region_id or district_id:
+            parent=c.execute('SELECT 1 FROM districts WHERE id=%s AND region_id=%s',(district_id,region_id)).fetchone()
+            if not parent: raise ValueError('district must belong to the selected region')
+    return {'region_id':region_id,'district_id':district_id,'station_id':station_id,
+            'branch_id':branch_id,'checkpoint_id':checkpoint_id,'location_scope':scope,'branch':branch}
 
 
 def new_station_code(c, region):
@@ -4465,10 +4899,13 @@ def build_analytics(c, user):
     by_loc = {code: 0 for code in CHECKPOINT_LOCATIONS}
     by_loc_age = {code: {'<18': 0, '18-30': 0, '31-50': 0, '50+': 0, 'Unknown': 0}
                   for code in CHECKPOINT_LOCATIONS}
-    rows = c.execute('''SELECT ce.location, p.date_of_birth
-        FROM checkpoint_events ce JOIN persons p ON p.id=ce.person_id''').fetchall()
+    rows = c.execute('''SELECT ce.location,COALESCE(cp.legacy_code,cp.checkpoint_code,ce.location_code,ce.location) AS checkpoint_key,
+        cp.name AS checkpoint_name,p.date_of_birth FROM checkpoint_events ce
+        JOIN persons p ON p.id=ce.person_id LEFT JOIN checkpoints cp ON cp.id=ce.checkpoint_id''').fetchall()
+    checkpoint_labels={}
     for r in rows:
-        loc = (r['location'] or '').strip()
+        loc = (r['checkpoint_key'] or r['location'] or '').strip()
+        if r['checkpoint_name']: checkpoint_labels[loc]=r['checkpoint_name']
         if loc not in by_loc:
             by_loc[loc] = 0
             by_loc_age[loc] = {'<18': 0, '18-30': 0, '31-50': 0, '50+': 0, 'Unknown': 0}
@@ -4480,8 +4917,10 @@ def build_analytics(c, user):
         bucket = age_to_bucket(age)
         by_loc_age.setdefault(loc, {'<18': 0, '18-30': 0, '31-50': 0, '50+': 0, 'Unknown': 0})
         by_loc_age[loc][bucket] = by_loc_age[loc].get(bucket, 0) + 1
+    volume_locations=list(CHECKPOINT_LOCATIONS)+sorted(k for k in by_loc if k not in CHECKPOINT_LOCATIONS)
     volume = {
-        'by_location': [{'label': k, 'count': by_loc.get(k, 0)} for k in CHECKPOINT_LOCATIONS],
+        'by_location': [{'label': checkpoint_labels.get(k,k), 'code':k,'count':by_loc.get(k,0)}
+                        for k in volume_locations],
         'demographics': {loc: [{'label': k, 'count': v.get(k, 0)} for k in
                                 ('<18', '18-30', '31-50', '50+', 'Unknown')]
                          for loc, v in by_loc_age.items()},
@@ -4641,12 +5080,17 @@ def checkpoint_scope_sql(scope, alias='ce'):
            f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,'')))=%s "
            f"OR LOWER(TRIM(COALESCE({alias}.location,'')))=%s "
            f"OR LOWER(TRIM(COALESCE({alias}.location,''))) ILIKE %s "
-           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,''))) ILIKE %s)")
-    return (sql, (s, s, f'{s} checkpoint', s, f'%{s}%', f'%{s}%'))
+           f"OR LOWER(TRIM(COALESCE({alias}.checkpoint_location,''))) ILIKE %s "
+           f"OR EXISTS (SELECT 1 FROM checkpoints cpx WHERE cpx.id={alias}.checkpoint_id AND "
+           f"(LOWER(cpx.checkpoint_code)=%s OR LOWER(cpx.name)=%s OR LOWER(COALESCE(cpx.legacy_code,''))=%s)))")
+    return (sql, (s, s, f'{s} checkpoint', s, f'%{s}%', f'%{s}%', s, s, s))
 
 
 def checkpoint_code_of(row):
-    """Canonical checkpoint code (South / East / West) for an event row."""
+    """Return the normalized entity code, retaining legacy aliases for old rows."""
+    registered=_val(row,'registered_checkpoint_code') or _val(row,'checkpoint_code')
+    if registered:
+        return str(registered).strip()
     for key in ('location_code', 'checkpoint_location', 'location'):
         v = str(_val(row, key, '') or '').strip()
         if not v:
@@ -4780,8 +5224,9 @@ def cid_checkpoint_analytics(c, user):
     scope = checkpoint_scope(user)
     where, params = checkpoint_scope_sql(scope)
     rows = c.execute(f'''SELECT ce.person_id, ce.location, ce.location_code,
-            ce.checkpoint_location, ce.screening_result, ce.created_at
-        FROM checkpoint_events ce {where} ORDER BY ce.id''', params).fetchall()
+            ce.checkpoint_location, COALESCE(cp.legacy_code,cp.checkpoint_code) AS registered_checkpoint_code,
+            cp.name AS registered_checkpoint_name,ce.screening_result,ce.created_at
+        FROM checkpoint_events ce LEFT JOIN checkpoints cp ON cp.id=ce.checkpoint_id {where} ORDER BY ce.id''', params).fetchall()
     total = len(rows)
     flagged = sum(1 for r in rows
                   if str(_val(r, 'screening_result', '') or '').strip().lower() == 'flagged match')
@@ -4789,17 +5234,22 @@ def cid_checkpoint_analytics(c, user):
     today = _today()
     today_count = sum(1 for r in rows
                       if str(_val(r, 'created_at', '') or '').strip()[:10] == today)
-    locations = (scope,) if scope in CHECKPOINT_LOCATIONS else CHECKPOINT_LOCATIONS
+    dynamic_codes=sorted({checkpoint_code_of(r) for r in rows
+                          if checkpoint_code_of(r) not in CHECKPOINT_LOCATIONS and checkpoint_code_of(r)!='Other'})
+    locations = [scope] if scope else list(CHECKPOINT_LOCATIONS)+dynamic_codes
     per_location = []
     for code in locations:
         at = [r for r in rows if checkpoint_code_of(r) == code]
         hits = sum(1 for r in at
                    if str(_val(r, 'screening_result', '') or '').strip().lower() == 'flagged match')
-        per_location.append({'label': code, 'checkpoint': f'{code} Checkpoint',
+        names={str(_val(r,'registered_checkpoint_name','') or '').strip() for r in at}
+        names.discard('')
+        label=next(iter(names)) if names and code not in CHECKPOINT_LOCATIONS else f'{code} Checkpoint'
+        per_location.append({'label': code, 'checkpoint': label,
                              'count': len(at), 'screenings': len(at),
                              'flagged': hits, 'cleared': len(at) - hits,
                              'flag_rate': pct(hits, len(at))})
-    other = [r for r in rows if checkpoint_code_of(r) not in CHECKPOINT_LOCATIONS]
+    other = [r for r in rows if checkpoint_code_of(r) == 'Other']
     if other:
         per_location.append({'label': 'Other', 'checkpoint': 'Unassigned location',
                              'count': len(other), 'screenings': len(other),
@@ -6556,6 +7006,12 @@ class API(BaseHTTPRequestHandler):
                                             'conduct_classifications':{k: list(v) for k, v in CONDUCT_CLASSIFICATIONS.items()},
                                             'conduct_statuses':list(CONDUCT_STATUSES)})
             user = require_auth(self)
+            if p.path == '/api/locations/hierarchy':
+                c=get_db_connection(); result=location_hierarchy(c); c.close()
+                return self.send_json(200,result)
+            if p.path == '/api/locations/hierarchy':
+                c=get_db_connection(); result=location_hierarchy(c); c.close()
+                return self.send_json(200,result)
             # The branch catalogue has a dedicated early dispatch: keep it
             # ahead of the generic register router so `/api/branches` and its
             # canonicalized aliases can never fall through to the catch-all 404.
@@ -6606,6 +7062,8 @@ class API(BaseHTTPRequestHandler):
                 '/api/admin/users': 'admin',
                 '/api/admin/analytics': 'analytics',
                 '/api/stations': 'stations',
+                '/api/locations/hierarchy': 'stations',
+                '/api/checkpoints': 'checkpoints',
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
                 '/api/vehicles': 'cars',
@@ -6787,7 +7245,7 @@ class API(BaseHTTPRequestHandler):
                 result = case
             elif p.path == '/api/admin/users' or p.path.startswith('/api/admin/users/'):
                 if p.path == '/api/admin/users':
-                    rows = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active
+                    rows = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active,region_id,district_id,station_id,branch_id,checkpoint_id
                         FROM users ORDER BY id ASC''').fetchall()
                     result = {'items':[user_view(rowdict(r)) for r in rows],
                               'roles': list(ALL_ROLES),
@@ -6797,7 +7255,7 @@ class API(BaseHTTPRequestHandler):
                     uid = p.path.split('/')[4]
                     if not uid or not uid.isdigit():
                         self.send_json(400, {'error': 'user id required'}); c.close(); return
-                    row = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active
+                    row = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active,region_id,district_id,station_id,branch_id,checkpoint_id
                         FROM users WHERE id=%s''', (int(uid),)).fetchone()
                     if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
                     result = {'user': user_view(rowdict(row)),
@@ -6906,6 +7364,8 @@ class API(BaseHTTPRequestHandler):
                 # 'location' / 'checkpoint_location' is still caught.
                 scope = checkpoint_scope(user)
                 base_cols = '''ce.event_id,ce.branch_id,b.name AS branch_name,b.region AS branch_region,
+                    ce.checkpoint_id,cp.checkpoint_code AS registered_checkpoint_code,
+                    cp.name AS registered_checkpoint_name,
                     ce.location,ce.location_code,ce.checkpoint_location,
                     ce.screening_result,ce.action_taken,ce.notes,ce.created_at,
                     ce.purpose_of_visit,ce.current_address,ce.permanent_address,
@@ -6922,19 +7382,25 @@ class API(BaseHTTPRequestHandler):
                         f"SELECT {base_cols} FROM checkpoint_events ce "
                         f"JOIN persons p ON p.id=ce.person_id "
                         f"LEFT JOIN police_branches b ON b.id=ce.branch_id "
+                        f"LEFT JOIN checkpoints cp ON cp.id=ce.checkpoint_id "
                         f"WHERE (LOWER(TRIM(COALESCE(ce.location_code,'')))=%s "
                         f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
                         f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,'')))=%s "
                         f"OR LOWER(TRIM(COALESCE(ce.location,'')))=%s "
                         f"OR LOWER(TRIM(COALESCE(ce.location,''))) ILIKE %s "
-                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) ILIKE %s) "
+                        f"OR LOWER(TRIM(COALESCE(ce.checkpoint_location,''))) ILIKE %s "
+                        f"OR LOWER(COALESCE(cp.checkpoint_code,''))=%s "
+                        f"OR LOWER(COALESCE(cp.name,''))=%s "
+                        f"OR LOWER(COALESCE(cp.legacy_code,''))=%s) "
                         f"ORDER BY ce.id DESC",
                         (scope.lower(), scope.lower(), f"{scope.lower()} checkpoint",
-                         scope.lower(), f"%{scope.lower()}%", f"%{scope.lower()}%")).fetchall()
+                         scope.lower(), f"%{scope.lower()}%", f"%{scope.lower()}%",
+                         scope.lower(),scope.lower(),scope.lower())).fetchall()
                 else:
                     rows = c.execute(f"SELECT {base_cols} FROM checkpoint_events ce "
                                      f"JOIN persons p ON p.id=ce.person_id "
                                      f"LEFT JOIN police_branches b ON b.id=ce.branch_id "
+                                     f"LEFT JOIN checkpoints cp ON cp.id=ce.checkpoint_id "
                                      f"ORDER BY ce.id DESC").fetchall()
                 # Surface the explicit location metadata in every response item
                 # so the frontend can render the friendly label without re-deriving it.
@@ -6943,12 +7409,17 @@ class API(BaseHTTPRequestHandler):
                     item = rowdict(r)
                     if not item.get('location_code'):
                         item['location_code'] = (item.get('location') or '').split()[0] or None
-                    if not item.get('checkpoint_location') and item.get('location_code'):
+                    if item.get('registered_checkpoint_name'):
+                        item['checkpoint_location'] = item['registered_checkpoint_name']
+                        item['location_code'] = item.get('registered_checkpoint_code') or item.get('location_code')
+                    elif not item.get('checkpoint_location') and item.get('location_code'):
                         item['checkpoint_location'] = f"{item['location_code']} Checkpoint"
                     items.append(item)
-                result = {'items': items,
-                          'scope': scope,
-                          'visible_locations': [scope] if scope else list(CHECKPOINT_LOCATIONS)}
+                dynamic_locations=[cp['checkpoint_code'] for cp in checkpoint_rows(c)
+                                   if not cp.get('legacy_code')]
+                visible_locations=([scope] if scope else list(CHECKPOINT_LOCATIONS)+dynamic_locations)
+                result = {'items': items, 'scope': scope,
+                          'visible_locations': visible_locations}
             elif p.path.startswith('/api/stations/'):
                 # ---- station detail (the Actions → View drawer) ------------
                 # Full record: registry fields, deployment counters and the
@@ -7010,7 +7481,11 @@ class API(BaseHTTPRequestHandler):
                         stations.append(synthetic_station_from_branch_row(b))
                 except Exception:
                     pass
-                result = {'items': stations}
+                hierarchy=location_hierarchy(c)
+                result={'items':stations,'hierarchy':hierarchy,'regions':hierarchy['regions'],
+                        'checkpoints':checkpoint_rows(c)}
+            elif p.path == '/api/checkpoints':
+                result={'items':checkpoint_rows(c)}
             elif p.path == '/api/officers':
                 result = {'items': [officer_view(r) for r in officer_rows(c)]}
             elif p.path == '/api/crimes':
@@ -7255,6 +7730,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
                 '/api/stations': 'admin',
+                '/api/checkpoints': 'admin',
                 '/api/officers': 'officers',
                 '/api/crimes': 'crimes',
                 '/api/vehicles': 'admin',
@@ -7502,18 +7978,22 @@ class API(BaseHTTPRequestHandler):
                 if role not in accepted_roles:
                     raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))} '
                                      '(Checkpoint aliases such as CheckpointSouth / cp_south are also accepted)')
-                scope = canonical_location_scope(
-                    data.get('location_scope') or derived_scope or ROLE_LOCATION_SCOPE.get(role))
-                if is_checkpoint_role(role) and not scope:
-                    raise ValueError('location_scope is required for Checkpoint roles')
-                if scope and scope not in CHECKPOINT_LOCATIONS:
-                    raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
+                location_data=dict(data)
+                if derived_scope and not location_data.get('location_scope') and not location_data.get('checkpoint_id'):
+                    location_data['location_scope']=derived_scope
+                location = resolve_user_location(c, location_data, role)
+                scope = location['location_scope']
+                if is_checkpoint_role(role) and not location.get('checkpoint_id'):
+                    raise ValueError('checkpoint_id is required for Checkpoint roles')
                 if c.execute('SELECT 1 FROM users WHERE username=%s', (username,)).fetchone():
                     self.send_json(409, {'error': f'Username "{username}" already exists'}); c.close(); return
-                c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s)''',
+                branch=location['branch']
+                c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active,
+                    region_id,district_id,station_id,branch_id,checkpoint_id)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
                     (username, display_name, role, branch, scope, password_hash(password),
-                     1 if data.get('active', True) else 0))
+                     1 if data.get('active', True) else 0,location['region_id'],location['district_id'],
+                     location['station_id'],location['branch_id'],location['checkpoint_id']))
                 new = rowdict(c.execute('SELECT * FROM users WHERE username=%s', (username,)).fetchone())
                 audit(c, user, 'CREATE', 'user', str(new['id']), username)
                 c.commit()
@@ -7614,41 +8094,35 @@ class API(BaseHTTPRequestHandler):
                 if not guardian_person:
                     match, _ = find_by_id(c, gd_identity)
                     guardian_person = c.execute('SELECT id FROM persons WHERE id=%s',(match['id'],)).fetchone() if match else None
-                location = (data.get('location') or '').strip()
-                if not location: raise ValueError('location is required')
-                # Normalise casing / trailing whitespace to the canonical
-                # short code so every row stored on disk has a clean
-                # 'South' / 'East' / 'West' short code in BOTH the legacy
-                # 'location' column and the 'location_code' column. The
-                # case-insensitive SQL then matches every row and the
-                # badge display stays consistent across officers.
-                location_lower = location.lower()
-                if location_lower in [c.lower() for c in CHECKPOINT_LOCATIONS]:
-                    location_code = next(c for c in CHECKPOINT_LOCATIONS
-                                          if c.lower() == location_lower)
-                else:
-                    # 'south checkpoint' / 'South Checkpoint' / etc. -> the
-                    # canonical short code (e.g. 'South' / 'East' / 'West').
-                    first_token = location_lower.split()[0].strip()
-                    matched = next((c for c in CHECKPOINT_LOCATIONS
-                                    if c.lower() == first_token), None)
-                    if matched:
-                        location_code = matched
-                    else:
-                        # Unknown location: keep the original (lowercased)
-                        # token so the error message is informative and the
-                        # row can still be stored for audit purposes.
-                        location_code = first_token
-                # The legacy 'location' column is also normalised to the
-                # short code so all three columns agree.
-                location = location_code
-                # RBAC: a Checkpoint user can only create events at their own
-                # location. Admins (and any non-checkpoint officer) may post
-                # to any valid checkpoint code.
-                scope = checkpoint_scope(user)
-                if scope and location != scope:
-                    raise ValueError(
-                        f'Checkpoint officers can only record stops at their assigned location ({scope})')
+                location = (data.get('location') or data.get('checkpoint_code') or '').strip()
+                checkpoint_id=data.get('checkpoint_id')
+                checkpoint=None
+                if checkpoint_id not in (None,''):
+                    try: checkpoint_id=int(checkpoint_id)
+                    except (TypeError,ValueError): raise ValueError('checkpoint_id must be valid')
+                    checkpoint=c.execute('''SELECT cp.*,r.name AS region,d.name AS district FROM checkpoints cp
+                        JOIN regions r ON r.id=cp.region_id JOIN districts d ON d.id=cp.district_id
+                        WHERE cp.id=%s AND cp.active=1''',(checkpoint_id,)).fetchone()
+                elif location:
+                    checkpoint=c.execute('''SELECT cp.*,r.name AS region,d.name AS district FROM checkpoints cp
+                        JOIN regions r ON r.id=cp.region_id JOIN districts d ON d.id=cp.district_id
+                        WHERE cp.active=1 AND (LOWER(cp.checkpoint_code)=LOWER(%s) OR LOWER(cp.name)=LOWER(%s)
+                          OR LOWER(COALESCE(cp.legacy_code,''))=LOWER(%s)) ORDER BY cp.id LIMIT 1''',
+                        (location,location,location)).fetchone()
+                if not checkpoint: raise ValueError('Select a registered checkpoint')
+                if branch and checkpoint['branch_id'] and int(branch['id']) != int(checkpoint['branch_id']):
+                    raise ValueError('checkpoint does not belong to the selected branch')
+                event_branch=branch
+                if event_branch is None and checkpoint['branch_id']:
+                    event_branch=c.execute('SELECT * FROM police_branches WHERE id=%s',(checkpoint['branch_id'],)).fetchone()
+                location_code=checkpoint['legacy_code'] or checkpoint['checkpoint_code']
+                location=location_code
+                checkpoint_location=checkpoint['name']
+                scope=checkpoint_scope(user)
+                if scope and str(scope).lower() not in (str(location_code).lower(),str(checkpoint['checkpoint_code']).lower(),str(checkpoint['name']).lower()):
+                    raise ValueError(f'Checkpoint officers can only record stops at their assigned checkpoint ({scope})')
+                if is_checkpoint_role(user.get('role')) and user.get('checkpoint_id') and int(user['checkpoint_id']) != int(checkpoint['id']):
+                    raise ValueError('Checkpoint officers can only record stops at their assigned checkpoint')
                 alerted = c.execute('''SELECT 1 FROM suspect_alerts WHERE person_id=%s AND role='Suspect'
                     AND alert_status='Active alert' LIMIT 1''',(person['id'],)).fetchone()
                 screen = 'Flagged match' if alerted else 'No active alert'
@@ -7665,14 +8139,14 @@ class API(BaseHTTPRequestHandler):
                 # persisted in canonical form.)
                 checkpoint_location = f'{location_code} Checkpoint'
                 event_id = 'CP-'+str(int(time.time()*1000))[-8:]
-                c.execute('''INSERT INTO checkpoint_events(event_id,person_id,branch_id,location,location_code,
+                c.execute('''INSERT INTO checkpoint_events(event_id,person_id,branch_id,checkpoint_id,location,location_code,
                     checkpoint_location,screening_result,action_taken,notes,purpose_of_visit,
                     current_address,permanent_address,traveler_photo,traveler_docs,
                     guardian_person_id,guardian_name,guardian_relationship,guardian_phone,
                     guardian_address,guardian_occupation,guardian_national_id,guardian_passport_id,
                     guardian_docs,created_by)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (event_id,person['id'],branch['id'] if branch else None,
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (event_id,person['id'],event_branch['id'] if event_branch else None,checkpoint['id'],
                      location,location_code,checkpoint_location,screen,action,
                      (data.get('notes') or '').strip(),purpose,current_addr,
                      (data.get('permanent_address') or '').strip(),photo['path'],json.dumps(tr_docs),
@@ -7689,11 +8163,69 @@ class API(BaseHTTPRequestHandler):
                 result = {'event_id':event_id,'person_id':person['person_id'],'location':location,
                           'location_code':location_code,
                           'checkpoint_location':checkpoint_location,
-                          'branch':branch_view(branch) if branch else None,
+                          'branch':branch_view(event_branch) if event_branch else None,
+                          'checkpoint_id':checkpoint['id'],'checkpoint_code':checkpoint['checkpoint_code'],
                           'screening_result':screen,'action_taken':action,'alerted':bool(alerted),
                           'guardian_person_id':guardian_person['person_id'] if guardian_person else None,
                           'traveler_docs':len(tr_docs),'guardian_docs':len(gd_docs),
                           'identity':identity_result(c,data,person)}
+            elif p.path == '/api/checkpoints':
+                data=body_json(self)
+                name=re.sub(r'\s+',' ',str(data.get('name') or '')).strip()
+                if not name: raise ValueError('checkpoint name is required')
+                try: region_id=int(data.get('region_id')); district_id=int(data.get('district_id'))
+                except (TypeError,ValueError): raise ValueError('valid region_id and district_id are required')
+                parent=c.execute('''SELECT r.id AS region_id,r.code,d.id AS district_id FROM districts d
+                    JOIN regions r ON r.id=d.region_id WHERE r.id=%s AND d.id=%s AND r.active=1 AND d.active=1''',
+                    (region_id,district_id)).fetchone()
+                if not parent: raise ValueError('district must belong to the selected region')
+                station_id=data.get('station_id'); branch_id=data.get('branch_id')
+                station_id=int(station_id) if station_id not in (None,'') else None
+                branch_id=int(branch_id) if branch_id not in (None,'') else None
+                if station_id and not c.execute('SELECT 1 FROM police_stations WHERE id=%s AND region_id=%s AND district_id=%s',
+                        (station_id,region_id,district_id)).fetchone(): raise ValueError('station must belong to the selected district')
+                if branch_id and not c.execute('SELECT 1 FROM police_branches WHERE id=%s AND region_id=%s AND district_id=%s',
+                        (branch_id,region_id,district_id)).fetchone(): raise ValueError('branch must belong to the selected district')
+                if not station_id and not branch_id: raise ValueError('checkpoint must be linked to a station or branch')
+                code=re.sub(r'\s+','-',str(data.get('checkpoint_code') or '').strip()).upper()
+                if not code:
+                    seq=c.execute('SELECT COUNT(*) FROM checkpoints WHERE region_id=%s',(region_id,)).fetchone()[0]+1
+                    code=f"CP-{parent['code']}-{seq:03d}"
+                row=c.execute('''INSERT INTO checkpoints(checkpoint_code,name,region_id,district_id,station_id,branch_id)
+                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,checkpoint_code,name,region_id,district_id,station_id,branch_id,active''',
+                    (code,name,region_id,district_id,station_id,branch_id)).fetchone()
+                event_row=rowdict(row)
+                event_row['region']=c.execute('SELECT name FROM regions WHERE id=%s',(region_id,)).fetchone()['name']
+                event_row['district']=c.execute('SELECT name FROM districts WHERE id=%s',(district_id,)).fetchone()['name']
+                audit(c,user,'CREATE','checkpoint',code,f"{name} · {parent['code']} · district {district_id}")
+                c.commit(); result={'checkpoint':checkpoint_view(event_row),'created':True}
+            elif p.path == '/api/checkpoints':
+                data=body_json(self); name=re.sub(r'\s+',' ',str(data.get('name') or '')).strip()
+                if not name: raise ValueError('checkpoint name is required')
+                try: region_id=int(data.get('region_id')); district_id=int(data.get('district_id'))
+                except (TypeError,ValueError): raise ValueError('valid region_id and district_id are required')
+                parent=c.execute('''SELECT r.id AS region_id,r.code,d.id AS district_id FROM districts d
+                    JOIN regions r ON r.id=d.region_id WHERE r.id=%s AND d.id=%s AND r.active=1 AND d.active=1''',
+                    (region_id,district_id)).fetchone()
+                if not parent: raise ValueError('district must belong to the selected region')
+                station_id=data.get('station_id'); branch_id=data.get('branch_id')
+                station_id=int(station_id) if station_id not in (None,'') else None
+                branch_id=int(branch_id) if branch_id not in (None,'') else None
+                if station_id and not c.execute('SELECT 1 FROM police_stations WHERE id=%s AND region_id=%s AND district_id=%s',(station_id,region_id,district_id)).fetchone(): raise ValueError('station must belong to the selected district')
+                if branch_id and not c.execute('SELECT 1 FROM police_branches WHERE id=%s AND region_id=%s AND district_id=%s',(branch_id,region_id,district_id)).fetchone(): raise ValueError('branch must belong to the selected district')
+                if not station_id and not branch_id: raise ValueError('checkpoint must be linked to a station or branch')
+                code=re.sub(r'\s+','-',str(data.get('checkpoint_code') or '').strip()).upper()
+                if not code:
+                    seq=c.execute('SELECT COUNT(*) FROM checkpoints WHERE region_id=%s',(region_id,)).fetchone()[0]+1
+                    code=f"CP-{parent['code']}-{seq:03d}"
+                row=c.execute('''INSERT INTO checkpoints(checkpoint_code,name,region_id,district_id,station_id,branch_id)
+                    VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,checkpoint_code,name,region_id,district_id,station_id,branch_id,active''',
+                    (code,name,region_id,district_id,station_id,branch_id)).fetchone()
+                event_row=rowdict(row)
+                event_row['region']=c.execute('SELECT name FROM regions WHERE id=%s',(region_id,)).fetchone()['name']
+                event_row['district']=c.execute('SELECT name FROM districts WHERE id=%s',(district_id,)).fetchone()['name']
+                audit(c,user,'CREATE','checkpoint',code,f"{name} · {parent['code']} · district {district_id}")
+                c.commit(); result={'checkpoint':checkpoint_view(event_row),'created':True}
             elif p.path == '/api/stations':
                 # Management-table write: SystemAdmin only. The module gate
                 # above already restricts the route to the 'admin' module /
@@ -7919,7 +8451,7 @@ class API(BaseHTTPRequestHandler):
                 row = c.execute('SELECT * FROM users WHERE id=%s', (int(uid),)).fetchone()
                 if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
                 updates, params = [], []
-                for f in ('display_name', 'branch'):
+                for f in ('display_name',):
                     if f in data and str(data[f]).strip():
                         updates.append(f'{f}=%s'); params.append(str(data[f]).strip())
                 if 'role' in data:
@@ -7948,11 +8480,17 @@ class API(BaseHTTPRequestHandler):
                         if default_scope:
                             updates.append('location_scope=%s'); params.append(default_scope)
                         # else: keep the existing scope (no-op).
-                if 'location_scope' in data:
-                    scope = canonical_location_scope(data['location_scope'])
-                    if scope and scope not in CHECKPOINT_LOCATIONS:
-                        raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
-                    updates.append('location_scope=%s'); params.append(scope)
+                effective_role = role if 'role' in data else (row.get('role') or '')
+                location_keys={'branch','region_id','district_id','station_id','branch_id','checkpoint_id','checkpoint_code','location_scope'}
+                if location_keys.intersection(data) or 'role' in data:
+                    location_data=dict(data)
+                    if 'role' in data and derived_scope and not location_data.get('location_scope') and not location_data.get('checkpoint_id'):
+                        location_data['location_scope']=derived_scope
+                    location=resolve_user_location(c,location_data,effective_role,current=row)
+                    for field in ('branch','location_scope','region_id','district_id','station_id','branch_id','checkpoint_id'):
+                        updates.append(f'{field}=%s'); params.append(location[field])
+                    if is_checkpoint_role(effective_role) and not location.get('checkpoint_id'):
+                        raise ValueError('checkpoint_id is required for Checkpoint roles')
                 if 'active' in data:
                     updates.append('active=%s'); params.append(1 if data['active'] else 0)
                 if data.get('password'):
