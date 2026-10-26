@@ -584,6 +584,22 @@ async function main() {
       return /certificate\.html\?v=[A-Za-z0-9._-]+&id=/.test(r3);
     }, 'officer certificate unlocked after the signed scan upload');
     console.log('ok A3: officer — uploading the scanned signed application unlocks the certificate');
+    const auditResponse=await fetch(base+'/api/clearance-applications/'+app1.application_id,{
+      headers:{Authorization:'Bearer '+oAuth.token}
+    });
+    const auditedApplication=await auditResponse.json();
+    const appActions=(auditedApplication.audit_trail||[]).map(event=>event.action);
+    if(!auditResponse.ok||!appActions.includes('CREATE')||!appActions.includes('APPROVE')
+       ||!appActions.includes('UPLOAD')||!auditedApplication.approved_by_attribution?.actor_label
+       ||!auditedApplication.signed_application_documents?.[0]?.uploaded_by_actor_label)
+      throw new Error('clearance create/approve/re-scan attribution missing: '+JSON.stringify(auditedApplication));
+    const linkedResponse=await fetch(base+'/api/persons/'+encodeURIComponent(app1.person_id)+'/linked-records',{
+      headers:{Authorization:'Bearer '+oAuth.token}
+    });
+    const linkedAudit=await linkedResponse.json();
+    if(!linkedResponse.ok||!(linkedAudit.audit_trail||[]).some(event=>event.entity==='clearance_signed_document'&&event.action==='UPLOAD'))
+      throw new Error('linked person record must show re-scan audit attribution: '+JSON.stringify(linkedAudit));
+    console.log('ok A4: clearance and linked-person audit history names the creator, approver and re-scan uploader');
 
     // ======================================================================
     // B) index.html — admin journey: instant bypass on a fresh application

@@ -26,7 +26,7 @@
  *
  * Usage:  node backend/test_conduct_frontend.mjs
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +35,38 @@ import vm from 'node:vm';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.dirname(ROOT);
+
+const PYTHON = process.env.PYTHON || 'python3';
+const PG_SERVE = `
+import pathlib, sys, pgserver
+d=pathlib.Path(sys.argv[1]); d.mkdir(parents=True, exist_ok=True)
+srv=pgserver.get_server(str(d))
+print(d, flush=True)
+sys.stdin.read()
+`;
+function provisionDatabase(tmp) {
+  if ((process.env.SENTINEL_DATABASE_URL || '').trim()
+      || ['SENTINEL_DB_HOST','SENTINEL_DB_PORT','SENTINEL_DB_USER','SENTINEL_DB_PASSWORD','SENTINEL_DB_NAME'].some(k=>process.env[k])) {
+    return Promise.resolve({env:{},stop:()=>{}});
+  }
+  const probe=spawnSync(PYTHON,['-c','import pgserver'],{stdio:'ignore'});
+  if(probe.status!==0)return Promise.resolve(null);
+  const child=spawn(PYTHON,['-c',PG_SERVE,path.join(tmp,'pgdata')],{stdio:['pipe','pipe','inherit']});
+  return new Promise(resolve=>{
+    let settled=false;let output='';
+    const timeout=setTimeout(()=>{if(!settled){settled=true;child.kill('SIGKILL');resolve(null)}},90000);
+    child.stdout.on('data',chunk=>{
+      output+=String(chunk);
+      const m=output.match(/^(\/\S+)$/m);
+      if(m&&!settled){settled=true;clearTimeout(timeout);resolve({
+        env:{SENTINEL_DB_HOST:m[1],SENTINEL_DB_NAME:'postgres',SENTINEL_DB_USER:'postgres',SENTINEL_DB_PASSWORD:''},
+        stop:()=>child.kill('SIGKILL')
+      })}
+    });
+    child.on('exit',()=>{if(!settled){settled=true;clearTimeout(timeout);resolve(null)}});
+  });
+}
+
 
 function freePort() {
   return new Promise((resolve) => {
@@ -218,10 +250,12 @@ async function main() {
   const port = await freePort();
   const tmp = `/tmp/sentinel-conduct-test-${Date.now()}`;
   mkdirSync(tmp, { recursive: true });
-  const proc = spawn('python3', [path.join(ROOT, 'server.py')], {
+  const database=await provisionDatabase(tmp);
+  if(!database){console.log('SKIP: no PostgreSQL test database available.');return 0;}
+  const proc = spawn(PYTHON, [path.join(ROOT, 'server.py')], {
     env: {
       ...process.env,
-      SENTINEL_DB: `${tmp}/db.sqlite`,
+      ...database.env,
       SENTINEL_UPLOADS: `${tmp}/uploads`,
       PORT: String(port),
     },
@@ -441,6 +475,7 @@ async function main() {
     return 0;
   } finally {
     proc.kill();
+    database.stop();
   }
 }
 

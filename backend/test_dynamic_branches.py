@@ -121,6 +121,65 @@ def run_api_suite(base):
         tokens[username] = result['token']
 
     admin, fp, cid = tokens['admin'], tokens['fp.officer'], tokens['cid.officer']
+
+    # Exercise the self-service password route with a least-privilege station role.
+    username = f'arena_station_{time.time_ns()}'
+    status, created_user = request(base, 'POST', '/api/admin/users', admin, {
+        'username': username, 'display_name': 'Arena Station Test',
+        'role': 'StationCommander', 'branch': 'Central HQ', 'password': 'StartPass123!'
+    })
+    check(status == 201 and created_user.get('user', {}).get('role') == 'StationCommander',
+          'administrator can provision a Station Commander using the existing user schema')
+    status, station_session = request(base, 'POST', '/api/login', body={
+        'username': username, 'password': 'StartPass123!'
+    })
+    check(status == 200, 'new station-role account can sign in')
+    station_token = station_session['token']
+    status, role_profile = request(base, 'GET', '/api/me', station_token)
+    check(status == 200 and role_profile.get('modules') == ['dashboard'],
+          'new station-role assignment receives no unreviewed operational permissions')
+    status, profile_roles = request(base, 'GET', '/api/me', admin)
+    check(status == 200 and {'StationCommander','PoliceStationOfficer'}.issubset(set(profile_roles.get('roles', []))),
+          'both station roles are returned in the selectable role catalogue')
+    status, invalid_current = request(base, 'POST', '/api/auth/change-password', station_token, {
+        'current_password': 'wrong', 'new_password': 'NewPass123!', 'confirm_new_password': 'NewPass123!'
+    })
+    check(status == 400, 'password rotation rejects an incorrect current password')
+    status, mismatch = request(base, 'POST', '/api/auth/change-password', station_token, {
+        'current_password': 'StartPass123!', 'new_password': 'NewPass123!', 'confirm_new_password': 'Different123!'
+    })
+    check(status == 400, 'password rotation rejects mismatched confirmation')
+    status, rotated = request(base, 'POST', '/api/auth/change-password', station_token, {
+        'current_password': 'StartPass123!', 'new_password': 'NewPass123!', 'confirm_new_password': 'NewPass123!'
+    })
+    check(status == 200 and rotated.get('ok'), 'self-service password rotation accepts a valid current password and policy-compliant password')
+    status, relogin = request(base, 'POST', '/api/login', body={
+        'username': username, 'password': 'NewPass123!'
+    })
+    check(status == 200, 'rotated password is immediately usable')
+    status, old_login = request(base, 'POST', '/api/login', body={
+        'username': username, 'password': 'StartPass123!'
+    })
+    check(status == 401, 'old password is no longer valid after rotation')
+
+    audit_nid = f'AUDIT-{time.time_ns()}'
+    status, new_person = request(base, 'POST', '/api/persons', admin, {
+        'full_name': 'Audit Attribution Subject', 'national_id': audit_nid
+    })
+    person_id = (new_person.get('person') or {}).get('person_id')
+    check(status == 201 and bool(person_id), 'audit fixture person is created')
+    status, _ = request(base, 'PATCH', f'/api/persons/{person_id}', admin, {
+        'phone': '+252 63 000 1010'
+    })
+    check(status == 200, 'audit fixture person is edited')
+    status, linked = request(base, 'GET', f'/api/persons/{person_id}/linked-records', admin)
+    events = linked.get('audit_trail', [])
+    check(status == 200 and {e.get('action') for e in events} >= {'CREATE', 'UPDATE'},
+          'Person Details exposes create/edit audit history')
+    check(any(e.get('actor_name') == 'Officer A. Hassan' and e.get('actor_username') == 'admin'
+              and e.get('actor_label') for e in events),
+          'audit history attributes actions to the active user identity (badge or explicit account id)')
+
     status, catalogue = request(base, 'GET', '/api/branches', admin)
     check(status == 200, 'administrator reads the branch catalogue')
     status, bare_catalogue = request(base, 'GET', '/branches', admin)
@@ -254,9 +313,11 @@ def run_frontend_contract():
     check('policeStationBranches' in html and 'syntheticStationFromBranch' in html
           and 'BR-' in html and 'stationOptions' in html,
           'Police Stations branches synthesize into station dropdowns via BR- synthetic ids')
-    check('branchDatalist' in html and 'refreshUserBranchDatalist' in html
-          and 'list="branchDatalist"' in html,
-          'User Management branch fields expose dynamic branches (incl. Police Stations) via datalist')
+    check('id="nu-branch" required' in html and 'id="eu-branch" required' in html
+          and 'refreshUserStationOptions' in html and "api('/api/stations')" in html,
+          'User Management uses live station/HQ dropdowns for create and edit')
+    check('StationCommander' in html and 'PoliceStationOfficer' in html,
+          'Station Commander and Police Station Officer are selectable roles')
     check('+ Add New Branch' in html and '<section id="branches" class="page">' in html
           and 'data-page="branches" data-modules="admin"' in html,
           'SystemAdmin Administration navigation exposes a dedicated Branch Management page')

@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-69e17fff" />
+<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-9cb433a8" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -1272,6 +1272,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
       <div class="avatar" id="userInitials">?</div>
       <div class="header-user-copy"><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
       <button class="logout admin-only" id="gotoAdmin" type="button" onclick="go('admin')" title="User management" aria-label="User management">⚙</button>
+      <button class="logout" id="changePasswordBtn" type="button" data-write="1" onclick="openChangePasswordDrawer()" title="Change password" aria-label="Change password">Change password</button>
       <button class="logout logout-signout" id="logoutBtn" type="button" onclick="doLogout()" title="Sign out" aria-label="Sign out"><span aria-hidden="true">↪</span><span>Sign out</span></button>
     </div>
   </div>
@@ -2158,7 +2159,6 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 </section>
 </main></div>
 
-<datalist id="branchDatalist"></datalist>
 <!-- Fullscreen image viewer (person photographs + document scans).
      Opened by any element carrying data-image-zoom; see wireImageLightbox().
      Marked data-view / data-ro-keep so the read-only DOM hardener never
@@ -2201,6 +2201,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
   <div class="cm-body">
     <div class="notice" id="fpReviewNotice" role="status" aria-live="polite"></div>
     <div id="fpReviewSummary"><div class="empty">Loading clearance application…</div></div>
+    <div id="fpReviewAuditTrail"></div>
     <div class="pd-section-heading"><div><h4>Original applicant &amp; guarantor attachments</h4><p>Inspect the identity files submitted with the application before reviewing the returned signed paper.</p></div></div>
     <div id="fpOriginalDocuments"><div class="pd-doc-empty"><b>Loading original attachments…</b></div></div>
     <section class="fp-signed-upload" aria-labelledby="fpSignedHeading">
@@ -2527,7 +2528,7 @@ function invalidFormFields(root){
     'prmOfficer','prmRank','prmReason','dscOfficer','dscType','dscSummary',
     'crmBranch','crmStation','crmOfficer','crmCat','crmWhen','crmLoc','crmDesc',
     'carPlate','carVin','carEngine','carMake','branchName','branchRegion','branchUnitType',
-    'nu-username','nu-display','nu-role','nu-password','cdType','cdClassification','cdSubmittedAt'];
+    'nu-username','nu-display','nu-role','nu-branch','nu-password','cdType','cdClassification','cdSubmittedAt'];
   required.forEach(requireField);
   if(field('spCase')&&!value('spCase'))requireField('spNote');
   if(field('cwCaseSel')&&!value('cwCaseSel'))requireField('cwPartNote');
@@ -2668,7 +2669,6 @@ async function loadBranchCatalog(force=false){
     regions:Array.isArray(data.regions)?data.regions:[],
     districts:Array.isArray(data.districts)?data.districts:[],
     unit_types:Array.isArray(data.unit_types)?data.unit_types:[]};
-  try{ refreshUserBranchDatalist(); }catch(_){}
   try{ if(typeof refreshStationSelects==='function') refreshStationSelects(); }catch(_){}
   return branchCatalog;
 }
@@ -5500,9 +5500,14 @@ function renderPersonLinkedRecords(data){
     <div class="pv-grid" style="margin-top:12px">
       <div class="pv-field"><small>Recording unit branch</small><b>${esc(r.branch_name||'Not recorded (legacy / unassigned)')}</b><small>${esc(r.branch_source)} → police_branches</small></div>
       <div class="pv-field"><small>Geographic context</small><b>${esc(r.branch_region||'Region not recorded')}</b><span>${esc(r.location_context||'No additional location recorded')}</span></div>
-      <div class="pv-field"><small>Uploaded by / current account branch</small><b>${esc(r.uploaded_by||'Not recorded')} · ${esc(r.uploader_branch||'Branch not recorded')}</b><small>${esc(r.uploader_source)}</small></div>
+      <div class="pv-field"><small>Created by · current account branch</small><b>${esc(r.uploaded_by_actor_label||r.uploaded_by||'Not recorded')} · ${esc(r.uploader_branch||'Branch not recorded')}</b><small>${esc(r.uploader_source)}</small></div>
       <div class="pv-field"><small>Source record / recorded at (UTC)</small><b>${esc(r.source_table)} · ${esc(r.record_id)}</b><span>${esc(r.created_at||'Time not recorded')}</span></div>
-    </div></article>`).join(''):'<p class="empty">No linked unit records are available within your access scope.</p>');
+    </div></article>`).join(''):'<p class="empty">No linked unit records are available within your access scope.</p>')+
+  renderAuditTrail(data.audit_trail||[]);
+}
+function renderAuditTrail(events){
+  if(!Array.isArray(events)||!events.length)return '<section class="panel" style="margin:12px 0;padding:16px;box-shadow:none"><b>Audit history</b><p class="empty">No audited actions are recorded for these visible records.</p></section>';
+  return `<section class="panel" style="margin:12px 0;padding:16px;box-shadow:none"><b>Audit history</b><div class="timeline" style="margin-top:12px">${events.map(ev=>`<div class="event"><span class="dot"></span><div><b>${esc(ev.action)} · ${esc(ev.entity)} ${esc(ev.entity_id||'')}</b><div>${esc(ev.actor_label||ev.actor_name||'Unknown user')}${ev.details?` · ${esc(ev.details)}`:''}</div><small class="muted">${esc(ev.created_at||'Time not recorded')}</small></div></div>`).join('')}</div></section>`;
 }
 
 // ---- add suspect (optional linked case) ----
@@ -6667,7 +6672,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=69e17fff&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=9cb433a8&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -6792,9 +6797,19 @@ function renderClearanceReview(record){
   }
   const original=document.getElementById('fpOriginalDocuments');
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
+  const auditHtml=renderAuditTrail(record.audit_trail||[]);
+  const createdActor=record.created_by_attribution?.actor_label;
+  const approvedActor=record.approved_by_attribution?.actor_label;
+  if(summary&& (createdActor||approvedActor))summary.insertAdjacentHTML('beforeend',`<div class="pv-grid" style="margin-top:12px">${createdActor?`<div class="pv-field"><small>Created by</small><b>${esc(createdActor)}</b></div>`:''}${approvedActor?`<div class="pv-field"><small>Approved by</small><b>${esc(approvedActor)}</b></div>`:''}</div>`);
+  if(history&&current.length){
+    const attribution=current.map(d=>d.uploaded_by_actor_label||d.uploaded_by).filter(Boolean);
+    if(attribution.length)history.insertAdjacentHTML('beforeend',`<p class="hint">Re-scanned by ${esc(attribution.join(' · '))}</p>`);
+  }
+  const auditMount=document.getElementById('fpReviewAuditTrail');
+  if(auditMount)auditMount.innerHTML=auditHtml;
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=69e17fff&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=9cb433a8&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -7065,14 +7080,14 @@ function renderFingerprintTable(){
    const hi=!!(window._highlightedPersonId&&x.person===window._highlightedPersonId);
    const tdCls=hi?' class="bio-match-cell"':'';
    const signedPath=safeDocumentUrl(x.signedDocumentPath||x.signed_document_path);
-   const signedCell=signedPath?`<div class="fp-signed-cell"><span class="badge green">✓ Signed &amp; Scanned</span><br><a class="btn ghost small" href="${esc(signedPath)}" target="_blank" rel="noopener" title="Open ${esc(x.signedDocumentName||'signed application scan')}">Quick view</a></div>`:'<span class="badge amber">⏳ Awaiting Re-scan</span>';
+   const signedCell=signedPath?`<div class="fp-signed-cell"><span class="badge green">✓ Signed &amp; Scanned</span>${x.signed_document_attribution?.actor_label?`<br><small class="muted">Scanned by ${esc(x.signed_document_attribution.actor_label)}</small>`:''}<br><a class="btn ghost small" href="${esc(signedPath)}" target="_blank" rel="noopener" title="Open ${esc(x.signedDocumentName||'signed application scan')}">Quick view</a></div>`:'<span class="badge amber">⏳ Awaiting Re-scan</span>';
    return `<tr>${sequenceCell(index,list.length,hi?'bio-match-cell':'')}<td${tdCls}>${esc(x.id)}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td${tdCls}><b>${esc(p?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td${tdCls}>${x.purpose?purposeBadge(x.purpose):'<span class="muted">—</span>'}</td>
    <td${tdCls}>${fingerprintStatusBadge(x,p)}</td>
-   <td${tdCls}><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}</td>
+   <td${tdCls}><span class="badge ${(x.status==='Approved')?'green':'blue'}">${esc(x.status)}</span>${(x.status==='Approved')&&x.certificate?`<br><small class="muted">${esc(x.certificate)}</small>`:''}${x.approved_by_attribution?.actor_label?`<br><small class="muted">Approved by ${esc(x.approved_by_attribution.actor_label)}</small>`:''}</td>
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=69e17fff&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=9cb433a8&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -8657,7 +8672,6 @@ async function saveBranch(e){
           try{ renderStationsTable(); }catch(_){}
           try{ if(typeof renderUnitStats==='function') renderUnitStats(); }catch(_){}
           try{ if(typeof refreshStationSelects==='function') refreshStationSelects(); }catch(_){}
-          try{ if(typeof refreshUserBranchDatalist==='function') refreshUserBranchDatalist(); }catch(_){}
         }
       }
     }catch(_){}
@@ -8704,6 +8718,36 @@ async function renderUserTable(){
   }
 }
 
+function openChangePasswordDrawer(){
+  if(!sessionUser)return;
+  openDrawer('Change password', `
+    <form novalidate id="changePasswordForm" class="form" onsubmit="event.preventDefault();submitPasswordChange()">
+      <div class="hint">Choose a new password with at least 6 characters. Your current password is verified before the update is saved.</div>
+      <div class="field"><label for="cp-current">Current password *</label><input id="cp-current" type="password" autocomplete="current-password" required></div>
+      <div class="field"><label for="cp-new">New password *</label><input id="cp-new" type="password" autocomplete="new-password" minlength="6" required></div>
+      <div class="field"><label for="cp-confirm">Confirm new password *</label><input id="cp-confirm" type="password" autocomplete="new-password" minlength="6" required></div>
+    </form>`,
+    '<button class="btn ghost" type="button" onclick="closeDrawer()">Cancel</button><button class="btn" type="button" onclick="submitPasswordChange()">Update password</button>');
+  setTimeout(()=>document.getElementById('cp-current')?.focus(),0);
+}
+async function submitPasswordChange(){
+  const current=document.getElementById('cp-current')?.value||'';
+  const next=document.getElementById('cp-new')?.value||'';
+  const confirm=document.getElementById('cp-confirm')?.value||'';
+  const fail=(message,ids)=>showFormError(message,{names:ids,title:'Password not changed'});
+  if(!current)return fail('Enter your current password.',['cp-current']);
+  if(next.length<6)return fail('New password must be at least 6 characters.',['cp-new']);
+  if(next!==confirm)return fail('New password and confirmation do not match.',['cp-confirm']);
+  try{
+    await api('/api/auth/change-password',{method:'POST',body:JSON.stringify({
+      current_password:current,new_password:next,confirm_new_password:confirm
+    })});
+    closeDrawer();toast('Password changed','Your new password is now active.');
+  }catch(e){
+    showFormError(e.message||'Password change failed.',{names:e.message==='Current password is incorrect'?['cp-current']:[],title:'Password not changed'});
+  }
+}
+
 async function toggleUserActive(uid, active){
   if(guardReadOnly('Enabling / disabling a user')) return;
   try{
@@ -8715,7 +8759,7 @@ async function toggleUserActive(uid, active){
 
 function openNewUserDrawer(){
   if(guardReadOnly('Registering a user')) return;
-  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
+  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest','StationCommander','PoliceStationOfficer'];
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
   const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
   const body = `
@@ -8738,7 +8782,7 @@ function openNewUserDrawer(){
         </div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Branch <small class="muted">(dynamic — Police Stations included)</small></label><input id="nu-branch" list="branchDatalist" placeholder="e.g. Buuhoodle Branch · Sool or Central HQ"></div>
+        <div class="field"><label>Branch / Station *</label><select id="nu-branch" required><option value="">Loading registered stations…</option></select></div>
         <div class="field"><label>Password *</label><input id="nu-password" type="password" required minlength="6" placeholder="At least 6 characters"></div>
       </div>
     </form>
@@ -8747,7 +8791,7 @@ function openNewUserDrawer(){
                 <button class="btn" onclick="submitNewUser()">Create officer</button>`;
   openDrawer('New officer', body, foot);
   refreshUserLocationOptions();
-  refreshUserBranchDatalist();
+  refreshUserStationOptions('nu-branch', '');
 }
 function refreshUserLocationOptions(){
   const role = document.getElementById('nu-role').value;
@@ -8756,27 +8800,50 @@ function refreshUserLocationOptions(){
   scopeEl.disabled = !isCheckpointRole(role);
   if(!isCheckpointRole(role)) scopeEl.value = '';
 }
-function refreshUserBranchDatalist(){
-  const dl=document.getElementById('branchDatalist');
-  if(!dl) return;
-  // ensure catalogue is loaded — fire and forget if not
-  if(!branchCatalog.loaded){ loadBranchCatalog().then(()=>refreshUserBranchDatalist()); return; }
-  const branches=branchCatalog.items||[];
-  const seen=new Set();
-  const opts=[];
-  // keep Central HQ at top, then every branch (name · region)
-  const staticOpts=['Central HQ','HR Directorate','Fingerprint Unit','Airport Control','CID Unit'];
-  staticOpts.forEach(v=>{ if(!seen.has(v)){ seen.add(v); opts.push(`<option value="${esc(v)}">`); }});
-  branches.forEach(b=>{
-    const withDistrict=b.district?`${b.name} · ${b.district} · ${b.region}`:`${b.name} · ${b.region}`;
-    const label=`${b.name} · ${b.region}`;
-    if(!seen.has(withDistrict)){ seen.add(withDistrict); opts.push(`<option value="${esc(withDistrict)}">`); }
-    if(!seen.has(label)){ seen.add(label); opts.push(`<option value="${esc(label)}">`); }
-    if(!seen.has(b.name)){ seen.add(b.name); opts.push(`<option value="${esc(b.name)}">`); }
-    if(b.district && !seen.has(b.district)){ seen.add(b.district); opts.push(`<option value="${esc(b.district)}">`); }
-  });
-  dl.innerHTML=opts.join('');
+async function refreshUserStationOptions(selectId, selectedValue){
+  const select=document.getElementById(selectId);
+  if(!select)return;
+  const current=selectedValue||select.value||'';
+  select.disabled=true;
+  select.innerHTML='<option value="">Loading registered stations…</option>';
+  const hq=[
+    {name:'Central HQ',region:'HQ'},
+    {name:'Police Headquarters',region:'HQ'},
+    {name:'Chief Commander HQ',region:'HQ'},
+    {name:'HR Directorate HQ',region:'HQ'},
+    {name:'Fingerprint Unit HQ',region:'HQ'},
+    {name:'CID Headquarters',region:'HQ'},
+    {name:'Airport Control HQ',region:'HQ'}
+  ];
+  try{
+    const response=await api('/api/stations');
+    const rows=Array.isArray(response.items)?response.items:[];
+    const seen=new Set();
+    const options=[];
+    [...hq,...rows].forEach(st=>{
+      const name=String(st.name||st.station_name||'').trim();
+      if(!name)return;
+      const region=String(st.region||'').trim();
+      const district=String(st.district||'').trim();
+      const value=st.region&&rows.filter(x=>String(x.name||'').toLowerCase()===name.toLowerCase()).length>1
+        ? `${name} · ${region}${district?' · '+district:''}` : name;
+      if(seen.has(value.toLowerCase()))return;
+      seen.add(value.toLowerCase());
+      const code=st.code||st.station_id||st.id||'';
+      const label=st.region==='HQ'?name:`${name}${code?' ('+code+')':''}${region?' · '+region:''}${district?' · '+district:''}`;
+      options.push({value,label});
+    });
+    if(current&&!seen.has(current.toLowerCase()))options.unshift({value:current,label:current+' · existing assignment'});
+    select.innerHTML='<option value="">— Select station or HQ unit —</option>'+options.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+    select.value=current;
+    if(current&&!select.value){
+      const option=document.createElement('option');option.value=current;option.textContent=current+' · existing assignment';select.appendChild(option);select.value=current;
+    }
+  }catch(e){
+    select.innerHTML='<option value="">Station list unavailable — retry</option>';
+  }finally{select.disabled=false;}
 }
+
 async function submitNewUser(){
   if(guardReadOnly('Registering a user')) return;
   const data = {
@@ -8789,7 +8856,7 @@ async function submitNewUser(){
     active: true,
   };
   if(!data.username || !data.display_name || !data.role || !data.password){
-    showFormError('Please fill username, display name, role and password.',{names:['nu-username','nu-display','nu-role','nu-password'].filter(id=>!val(id))}); return;
+    showFormError('Please fill username, display name, role and password.',{names:['nu-username','nu-display','nu-role','nu-branch','nu-password'].filter(id=>!val(id))}); return;
   }
   try{
     await api('/api/admin/users', {method:'POST', body: JSON.stringify(data)});
@@ -8799,7 +8866,7 @@ async function submitNewUser(){
 
 function openEditUserDrawer(u){
   if(guardReadOnly('Editing a user record')) return;
-  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
+  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest','StationCommander','PoliceStationOfficer'];
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
   const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
   const body = `
@@ -8822,7 +8889,7 @@ function openEditUserDrawer(u){
         </div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Branch <small class="muted">(dynamic — Police Stations included)</small></label><input id="eu-branch" list="branchDatalist" value="${esc(u.branch||'')}"></div>
+        <div class="field"><label>Branch / Station *</label><select id="eu-branch" required><option value="">Loading registered stations…</option></select></div>
         <div class="field"><label>New password (optional)</label><input id="eu-password" type="password" minlength="6" placeholder="Leave blank to keep"></div>
       </div>
     </form>
@@ -8830,7 +8897,7 @@ function openEditUserDrawer(u){
   const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
                 <button class="btn" onclick="submitEditUser(${u.id})">Save changes</button>`;
   openDrawer('Edit officer · ' + u.username, body, foot);
-  refreshUserBranchDatalist();
+  refreshUserStationOptions('eu-branch', u.branch||'');
 }
 async function submitEditUser(uid){
   if(guardReadOnly('Updating a user record')) return;

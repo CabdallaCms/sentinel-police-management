@@ -652,7 +652,7 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '69e17fff'
+ASSET_VERSION = '9cb433a8'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
@@ -668,6 +668,9 @@ UI_REQUIRED_MARKERS = (
     ('Actions column', 'data-station-action="view"'),
     ('View drawer entry point', 'function openStationView('),
     ('Edit modal entry point', 'function openStationEdit('),
+    ('Self-service password rotation', '/api/auth/change-password'),
+    ('Dynamic user station selector', 'function refreshUserStationOptions('),
+    ('Explicit audit attribution display', 'function renderAuditTrail('),
     ('admin-only Edit gate', "body:not(.can-edit-records) .admin-edit"),
     ('Person detail modal', 'id="personDetailModal"'),
     ('Person document viewer', 'Documents &amp; Attachments'),
@@ -1264,6 +1267,10 @@ ROLE_CHECKPOINT_WEST = 'CheckpointWest'
 # every write control so each register renders in view-only mode. It is NOT a
 # SystemAdmin (no user management).
 ROLE_CHIEF = 'chief_commander'
+# Newly selectable, least-privilege account types. They intentionally receive
+# dashboard-only access until a separately reviewed station RBAC policy exists.
+ROLE_STATION_COMMANDER = 'StationCommander'
+ROLE_POLICE_STATION_OFFICER = 'PoliceStationOfficer'
 # Accepted spellings of the command role ('Commander', 'High Command', …).
 # A deployment that stores any of them gets the identical global read-only
 # authority because `canonical_unit_role()` resolves them all to ROLE_CHIEF.
@@ -1404,7 +1411,7 @@ def normalize_role(role):
 
 ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID, ROLE_HR,
              ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST,
-             ROLE_CHIEF)
+             ROLE_CHIEF, ROLE_STATION_COMMANDER, ROLE_POLICE_STATION_OFFICER)
 
 # Spec-facing snake_case name for every canonical role. Surfaced by
 # /api/me as `role_alias` (and `spec_role`) so a client can key its UI off
@@ -1417,6 +1424,8 @@ SPEC_ROLE_ALIASES = {
     ROLE_CID: 'cid_officer',
     ROLE_HR: 'hr_officer',
     ROLE_CHIEF: 'chief_commander',
+    ROLE_STATION_COMMANDER: 'station_commander',
+    ROLE_POLICE_STATION_OFFICER: 'police_station_officer',
 }
 SPEC_ROLE_DEFAULT = 'fingerprint_officer'
 
@@ -1711,6 +1720,8 @@ ROLE_LABELS = {
     ROLE_CHECKPOINT_EAST: 'Checkpoint Officer (East)',
     ROLE_CHECKPOINT_WEST: 'Checkpoint Officer (West)',
     ROLE_CHIEF: 'Chief Commander (HQ / Command)',
+    ROLE_STATION_COMMANDER: 'Station Commander',
+    ROLE_POLICE_STATION_OFFICER: 'Police Station Officer',
 }
 
 # Map a role to the operational modules it is allowed to use. Admins get
@@ -1768,6 +1779,10 @@ ROLE_MODULES = {
     # 'checkpoint_officer', the module set and scope lookup resolve to
     # the same answer.
     ROLE_CHECKPOINT_OFFICER: {'dashboard', 'checkpoints'},
+    # No operational module or mutation permission is implicitly granted to
+    # the new station titles; this preserves existing RBAC boundaries.
+    ROLE_STATION_COMMANDER: {'dashboard'},
+    ROLE_POLICE_STATION_OFFICER: {'dashboard'},
 }
 
 # Map a role to the checkpoint location it is scoped to (or None for non-checkpoint roles).
@@ -1778,6 +1793,8 @@ ROLE_LOCATION_SCOPE = {
     ROLE_CID: None,
     ROLE_HR: None,
     ROLE_CHIEF: None,
+    ROLE_STATION_COMMANDER: None,
+    ROLE_POLICE_STATION_OFFICER: None,
     ROLE_CHECKPOINT_SOUTH: 'South',
     ROLE_CHECKPOINT_EAST: 'East',
     ROLE_CHECKPOINT_WEST: 'West',
@@ -2802,9 +2819,71 @@ def require_auth(handler):
     if not user: raise PermissionError('Authentication required')
     return user_view(user)
 
+def user_attribution(c, user_id=None, user=None):
+    """Resolve a stable actor label from the existing user/officer records.
+
+    No schema change is needed: an officer service_id is the badge when the
+    account maps to a personnel row; badge-shaped usernames are a safe legacy
+    fallback. Other accounts are explicitly identified as accounts, never
+    presented as a fabricated badge number.
+    """
+    if user is None and user_id is not None:
+        row = c.execute('SELECT id,username,display_name FROM users WHERE id=%s', (user_id,)).fetchone()
+        user = rowdict(row) if row else None
+    if not user:
+        return {'display_name': 'Unknown user', 'badge_number': '',
+                'username': '', 'actor_label': 'Unknown user'}
+    username = str(user.get('username') or '')
+    display = str(user.get('display_name') or username or 'Unknown user')
+    officer = c.execute('''SELECT service_id FROM officers
+        WHERE LOWER(full_name)=LOWER(%s) OR LOWER(service_id)=LOWER(%s)
+        ORDER BY CASE WHEN LOWER(service_id)=LOWER(%s) THEN 0 ELSE 1 END, id LIMIT 1''',
+        (display, username, username)).fetchone()
+    badge = str(officer['service_id']) if officer else ''
+    if not badge and re.fullmatch(r'[A-Za-z]{1,10}-[A-Za-z0-9-]+', username):
+        badge = username
+    actor = f'{display} (Badge #{badge})' if badge else f'{display} (Account: {username or "unavailable"})'
+    return {'display_name': display, 'badge_number': badge,
+            'username': username, 'actor_label': actor}
+
+
+def audit_history(c, pairs):
+    """Audit entries for visible (entity, entity_id) pairs, newest first."""
+    pairs = [(str(entity), str(entity_id)) for entity, entity_id in pairs if entity_id is not None]
+    if not pairs:
+        return []
+    clauses = ' OR '.join('(a.entity=%s AND a.entity_id=%s)' for _ in pairs)
+    args = [value for pair in pairs for value in pair]
+    rows = c.execute(f'''SELECT a.id,a.action,a.entity,a.entity_id,a.details,a.created_at,
+        u.id AS actor_id,u.username AS actor_username,u.display_name AS actor_name
+        FROM audit_events a LEFT JOIN users u ON u.id=a.user_id
+        WHERE {clauses} ORDER BY a.id DESC''', args).fetchall()
+    out = []
+    for raw in rows:
+        item = rowdict(raw)
+        attribution = user_attribution(c, item.get('actor_id'), {
+            'username': item.get('actor_username'), 'display_name': item.get('actor_name')})
+        details = item.get('details') or ''
+        recorded_actor, separator, remainder = details.partition(' — ')
+        # New events persist the actor label in details, retaining the exact
+        # display name / badge as it appeared at action time even if the user
+        # profile is later edited. Legacy events fall back to current account
+        # attribution resolved above.
+        actor_label = recorded_actor if separator and recorded_actor else attribution['actor_label']
+        recorded_badge = re.search(r'\(Badge #([^)]*)\)', actor_label)
+        item.update(actor_name=attribution['display_name'],
+                    actor_badge_number=recorded_badge.group(1) if recorded_badge else attribution['badge_number'],
+                    actor_username=attribution['username'], actor_label=actor_label,
+                    details=remainder if separator else details)
+        out.append(item)
+    return out
+
+
 def audit(c, user, action, entity, entity_id, details=''):
+    actor = user_attribution(c, user=user)
+    stored_details = f"{actor['actor_label']} — {details}" if details else actor['actor_label']
     c.execute('INSERT INTO audit_events(user_id,action,entity,entity_id,details) VALUES(%s,%s,%s,%s,%s)',
-              (user['id'], action, entity, entity_id, details))
+              (user['id'], action, entity, entity_id, stored_details))
 
 def new_person_id(c):
     while True:
@@ -4160,7 +4239,8 @@ def linked_person_records(c, person, user):
             extra = ' AND ' + where.removeprefix('WHERE ') if where else ''
         rows = c.execute(f"""SELECT a.{record_key} AS record_id,a.created_at,
             b.id AS branch_id,b.name AS branch_name,b.region AS branch_region,
-            u.display_name AS uploaded_by,u.branch AS uploader_branch,
+            u.id AS uploaded_by_id,u.display_name AS uploaded_by,u.username AS uploaded_username,
+            u.branch AS uploader_branch,
             {context} AS location_context
             FROM {table} a {case_join}
             LEFT JOIN police_branches b ON b.id={branch_ref}
@@ -4169,13 +4249,31 @@ def linked_person_records(c, person, user):
             (person['id'], *params)).fetchall()
         for row in rows:
             item = rowdict(row)
-            item.update(unit=label, source_table=table,
+            actor = user_attribution(c, item.get('uploaded_by_id'), {
+                'username': item.get('uploaded_username'), 'display_name': item.get('uploaded_by')})
+            item.update(uploaded_by_badge_number=actor['badge_number'],
+                        uploaded_by_actor_label=actor['actor_label'],
+                        unit=label, source_table=table,
                         branch_source=('crime_cases.branch_id via suspect_alerts.case_id'
                                        if module == 'cid' else table + '.branch_id'),
                         uploader_source=table + '.created_by → users (current account details)')
             items.append(item)
     items.sort(key=lambda item: (item.get('created_at') or '', item['record_id']), reverse=True)
+    audit_pairs = [('person', person['person_id'])]
+    audit_pairs.extend(({'airport_passengers':'airport_record',
+                         'clearance_applications':'clearance_application',
+                         'checkpoint_events':'checkpoint_event',
+                         'suspect_alerts':'suspect_alert'}[item['source_table']], item['record_id'])
+                       for item in items)
+    clearance_ids = [item['record_id'] for item in items
+                     if item['source_table'] == 'clearance_applications']
+    if clearance_ids:
+        marks = ','.join(['%s'] * len(clearance_ids))
+        scans = c.execute(f'SELECT id FROM clearance_signed_documents WHERE application_id IN ({marks})',
+                          clearance_ids).fetchall()
+        audit_pairs.extend(('clearance_signed_document', str(scan['id'])) for scan in scans)
     return {'person_id': person['person_id'], 'items': items,
+            'audit_trail': audit_history(c, audit_pairs),
             'residence': person.get('residence'),
             'nearby_branch': None,
             'proximity_note': 'Not determined — no live location or branch coordinates are recorded. '
@@ -4257,16 +4355,21 @@ def person_document_records(c, person, user):
                 append(app['applicant_photo'], os.path.basename(app['applicant_photo']),
                        'Applicant photograph', 'Fingerprint Unit · clearance application',
                        aid, app['created_at'])
-        signed = c.execute('''SELECT d.file_path,d.file_name,d.file_type,d.created_at,
-            d.application_id,u.display_name AS uploaded_by
+        signed = c.execute('''SELECT d.id,d.file_path,d.file_name,d.file_type,d.created_at,
+            d.application_id,u.id AS uploaded_by_id,u.display_name AS uploaded_by,
+            u.username AS uploaded_username
             FROM clearance_signed_documents d
             JOIN clearance_applications a ON a.application_id=d.application_id
             LEFT JOIN users u ON u.id=d.uploaded_by
             WHERE a.person_id=%s ORDER BY d.id DESC''', (person['id'],)).fetchall()
         for item in signed:
+            attribution = user_attribution(c, item.get('uploaded_by_id'), {
+                'username':item.get('uploaded_username'), 'display_name':item.get('uploaded_by')})
+            scan_audit = audit_history(c, [('clearance_signed_document', str(item['id']))])
+            uploader = next((event['actor_label'] for event in scan_audit if event['action'] == 'UPLOAD'), attribution['actor_label'])
             append(item['file_path'], item['file_name'], 'Signed clearance application · scanned',
                    'Fingerprint Unit · signed application re-scan', item['application_id'],
-                   item['created_at'], item['file_type'], item['uploaded_by'])
+                   item['created_at'], item['file_type'], uploader)
 
     if 'checkpoints' in modules:
         scope_sql, scope_params = checkpoint_scope_sql(checkpoint_scope(user), 'ce')
@@ -6569,11 +6672,15 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/clearance-applications':
                 rows = c.execute('''SELECT a.application_id,a.branch_id,b.name AS branch_name,
                     b.region AS branch_region,a.purpose,a.status,a.certificate_number,a.created_at,
-                    a.applicant_photo,a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone,
+                    a.created_by AS created_by_id,a.applicant_photo,a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone,
                     (SELECT d.file_path FROM clearance_signed_documents d
                      WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_path,
+                    (SELECT d.id FROM clearance_signed_documents d
+                     WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_id,
                     (SELECT d.file_name FROM clearance_signed_documents d
-                     WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_name
+                     WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_name,
+                    (SELECT d.uploaded_by FROM clearance_signed_documents d
+                     WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_uploaded_by_id
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id
                     LEFT JOIN police_branches b ON b.id=a.branch_id ORDER BY a.id DESC''').fetchall()
                 items = []
@@ -6582,6 +6689,22 @@ class API(BaseHTTPRequestHandler):
                     # 12-hour mandatory review window — admins bypass it, so
                     # `can_approve` is resolved per caller.
                     item['review'] = fingerprint_review_state(item)
+                    audit_pairs = [('clearance_application', item['application_id'])]
+                    if item.get('signed_document_id'):
+                        audit_pairs.append(('clearance_signed_document', str(item['signed_document_id'])))
+                    item['audit_trail'] = audit_history(c, audit_pairs)
+                    creator = next((ev for ev in item['audit_trail'] if ev['action'] == 'CREATE'), None)
+                    item['created_by_attribution'] = ({'display_name':creator['actor_name'],
+                        'badge_number':creator['actor_badge_number'],'actor_label':creator['actor_label']}
+                        if creator else user_attribution(c, item.get('created_by_id')))
+                    scanner = next((ev for ev in item['audit_trail'] if ev['entity'] == 'clearance_signed_document' and ev['action'] == 'UPLOAD'), None)
+                    item['signed_document_attribution'] = ({'display_name':scanner['actor_name'],
+                        'badge_number':scanner['actor_badge_number'],'actor_label':scanner['actor_label']}
+                        if scanner else (user_attribution(c, item.get('signed_document_uploaded_by_id')) if item.get('signed_document_uploaded_by_id') else None))
+                    approval = next((ev for ev in item['audit_trail'] if ev['action'] == 'APPROVE'), None)
+                    item['approved_by_attribution'] = ({'display_name':approval['actor_name'],
+                        'badge_number':approval['actor_badge_number'],'actor_label':approval['actor_label']}
+                        if approval else None)
                     item['can_approve'] = bool(is_admin_user(user) or not item['review']['review_locked'])
                     # Certificate print lock: a regular officer may only print
                     # the certificate once the signed scan exists (admins
@@ -6602,10 +6725,35 @@ class API(BaseHTTPRequestHandler):
                     WHERE a.application_id=%s''',(aid,)).fetchone())
                 if not a: self.send_json(404,{'error':'Application not found'}); c.close(); return
                 signed_rows = c.execute('''SELECT d.id,d.file_path AS path,d.file_name AS name,
-                    d.file_type,d.created_at AS uploaded_at,u.display_name AS uploaded_by
+                    d.file_type,d.created_at AS uploaded_at,u.id AS uploaded_by_id,
+                    u.display_name AS uploaded_by,u.username AS uploaded_username
                     FROM clearance_signed_documents d LEFT JOIN users u ON u.id=d.uploaded_by
                     WHERE d.application_id=%s ORDER BY d.id DESC''', (aid,)).fetchall()
-                a['signed_application_documents'] = [rowdict(r) for r in signed_rows]
+                a['signed_application_documents'] = []
+                for raw_doc in signed_rows:
+                    doc = rowdict(raw_doc)
+                    attribution = user_attribution(c, doc.get('uploaded_by_id'), {
+                        'username': doc.get('uploaded_username'), 'display_name': doc.get('uploaded_by')})
+                    doc['uploaded_by_badge_number'] = attribution['badge_number']
+                    doc['uploaded_by_actor_label'] = attribution['actor_label']
+                    a['signed_application_documents'].append(doc)
+                audit_pairs = [('clearance_application', aid)] + [
+                    ('clearance_signed_document', str(doc['id'])) for doc in a['signed_application_documents']]
+                a['audit_trail'] = audit_history(c, audit_pairs)
+                creator = next((ev for ev in a['audit_trail'] if ev['action'] == 'CREATE'), None)
+                a['created_by_attribution'] = ({'display_name':creator['actor_name'],
+                    'badge_number':creator['actor_badge_number'],'actor_label':creator['actor_label']}
+                    if creator else user_attribution(c, a.get('created_by')))
+                for doc in a['signed_application_documents']:
+                    event = next((ev for ev in a['audit_trail'] if ev['entity'] == 'clearance_signed_document'
+                                  and ev['entity_id'] == str(doc['id']) and ev['action'] == 'UPLOAD'), None)
+                    if event:
+                        doc['uploaded_by_actor_label'] = event['actor_label']
+                        doc['uploaded_by_badge_number'] = event['actor_badge_number']
+                approval = next((ev for ev in a['audit_trail'] if ev['action'] == 'APPROVE'), None)
+                a['approved_by_attribution'] = ({'display_name':approval['actor_name'],
+                    'badge_number':approval['actor_badge_number'],'actor_label':approval['actor_label']}
+                    if approval else None)
                 a['signed_application_document'] = (a['signed_application_documents'][0]
                                                      if a['signed_application_documents'] else None)
                 # 12-hour mandatory review window metadata for the printable page.
@@ -6993,6 +7141,27 @@ class API(BaseHTTPRequestHandler):
             # route-specific logic (login / logout above stay exempt so the
             # role can still open and close a session).
             enforce_read_only(user, 'POST', p.path)
+            if p.path == '/api/auth/change-password':
+                c = get_db_connection()
+                data = body_json(self)
+                current = str(data.get('current_password') or '')
+                new_password = str(data.get('new_password') or '')
+                confirmation = str(data.get('confirm_new_password') or '')
+                if not current:
+                    raise ValueError('Current password is required')
+                if len(new_password) < 6:
+                    raise ValueError('New password must be at least 6 characters')
+                if new_password != confirmation:
+                    raise ValueError('New password and confirmation do not match')
+                row = c.execute('SELECT password_hash FROM users WHERE id=%s AND active=1',
+                                (user['id'],)).fetchone()
+                if not row or row['password_hash'] != password_hash(current):
+                    self.send_json(400, {'error':'Current password is incorrect'}); c.close(); return
+                c.execute('UPDATE users SET password_hash=%s WHERE id=%s',
+                          (password_hash(new_password), user['id']))
+                audit(c, user, 'PASSWORD_CHANGE', 'user', str(user['id']), 'Self-service password rotation')
+                c.commit(); c.close()
+                return self.send_json(200, {'ok':True, 'message':'Password changed successfully'})
             # Keep branch creation out of the generic route table: normalize
             # `/branches`, `/branches/`, and `/api/branches/` first, then
             # dispatch the canonical path here before any catch-all handling.
