@@ -234,6 +234,12 @@ CREATE TABLE IF NOT EXISTS police_branches(
   region TEXT NOT NULL,
   district TEXT,
   unit_type TEXT NOT NULL CHECK (unit_type IN ('fingerprint','crime','checkpoint','airport','police_station')),
+  -- Lifecycle: Branch Management toggles a branch Active / Inactive instead of
+  -- deleting it, so every existing foreign key (records filed under the
+  -- branch), officer posting and audit row keeps pointing at the same row.
+  active INTEGER DEFAULT 1,
+  updated_at TEXT,
+  updated_by INTEGER,
   created_at TEXT DEFAULT (to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_police_branches_name_region_unit
@@ -533,6 +539,12 @@ ADDED_COLUMNS = {
     ],
     'police_branches': [
         ('district', "ALTER TABLE police_branches ADD COLUMN district TEXT"),
+        # Branch Management lifecycle (Active / Inactive toggle) and edit
+        # provenance. Added in place so an existing database keeps every
+        # foreign key and audit row that already points at the branch.
+        ('active', "ALTER TABLE police_branches ADD COLUMN active INTEGER DEFAULT 1"),
+        ('updated_at', "ALTER TABLE police_branches ADD COLUMN updated_at TEXT"),
+        ('updated_by', "ALTER TABLE police_branches ADD COLUMN updated_by INTEGER"),
     ],
     'police_stations': [
         ('station_tier', "ALTER TABLE police_stations ADD COLUMN station_tier TEXT"),
@@ -664,11 +676,11 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = 'b4d29a71'
+ASSET_VERSION = 'e7c41b90'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-sidebar-scope-1-' + ASSET_VERSION
+UI_BUILD = 'sentinel-branch-crud-1-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -747,6 +759,14 @@ UI_REQUIRED_MARKERS = (
     ('Navigation scope filter', 'function unitInNavScope('),
     ('Unit Directory authority gate', 'function unitDirectoryAllowed('),
     ('Unit Directory visibility switch', 'function applyUnitDirectoryVisibility('),
+    # ---- this release: Branch Management edit / deactivate + legacy cleanup --
+    ('Branch Actions column', 'data-branch-action="edit"'),
+    ('Branch edit modal', 'id="branchEditModal"'),
+    ('Branch edit save handler', 'async function saveBranchEdit('),
+    ('Branch active/inactive toggle', 'function branchIsActive('),
+    ('Legacy placement cleanup tool', 'id="branchLegacyPanel"'),
+    ('Legacy batch assignment', 'async function assignLegacyBranches('),
+    ('Live branch catalogue repaint', 'function repaintBranchConsumers('),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
@@ -781,6 +801,12 @@ def canonical_api_path(path):
     # the same authenticated handler (and the same SystemAdmin write gate).
     if path.rstrip('/') in (BRANCHES_API, BRANCHES_API_BARE):
         return BRANCHES_API
+    # A single branch (`/branches/<id>`, `/api/branches/<id>`) canonicalizes to
+    # the same member path, so the Branch Management PATCH/DELETE-alias write
+    # gate and the read handler cannot diverge between the two spellings.
+    for bare in (BRANCHES_API, BRANCHES_API_BARE):
+        if path.startswith(bare + '/'):
+            return BRANCHES_API + path[len(bare):]
     if path == FINGERPRINT_API_ALIAS or path.startswith(FINGERPRINT_API_ALIAS + '/'):
         return CLEARANCE_API + path[len(FINGERPRINT_API_ALIAS):]
     return path
@@ -3128,6 +3154,14 @@ def migrate(c):
                 EXCEPTION WHEN duplicate_object THEN NULL;
                 END;
             END $$;''')
+    # Branch lifecycle backfill: rows that existed before the Active / Inactive
+    # column was introduced are Active. A deactivated branch is NEVER deleted —
+    # records filed under it, officer postings and audit rows keep their FK.
+    if 'police_branches' in tables:
+        try:
+            c.execute('UPDATE police_branches SET active=1 WHERE active IS NULL')
+        except Exception:
+            pass
     # Backfill district for branches created before the district column existed.
     if 'police_branches' in tables:
         try:
@@ -3329,21 +3363,490 @@ def password_hash(value): return hashlib.sha256(value.encode()).hexdigest()
 def rowdict(row): return dict(row) if row else None
 
 
+# ---------------------------------------------------------------------------
+# Branch lifecycle + legacy placement (Branch Management)
+# ---------------------------------------------------------------------------
+# A branch is NEVER deleted: Branch Management edits it in place and toggles it
+# Active / Inactive, so `police_branches.id` stays the foreign-key target for
+# every record filed under it, every officer posting and every audit row.
+# The rules below live here and ONLY here, so the API handlers, the views, the
+# cleanup tool and the PyTest suite can never disagree.
+BRANCH_EDITABLE_FIELDS = ('name', 'region', 'district', 'unit_type', 'active')
+
+# Values legacy rows carry when their placement was never recorded. They are
+# exactly the placeholders the sidebar collapses into 'Unassigned region' /
+# 'Unassigned district'.
+BRANCH_PLACEHOLDER_PLACEMENTS = frozenset({
+    '', 'unassigned', 'unassigned region', 'unassigned district',
+    'checkpoint areas', 'none', 'n/a', '-', 'unknown',
+})
+
+
+def branch_field(row, key, default=None):
+    """Read a branch column from a dict / RealDictRow / partial row safely.
+
+    `police_branches` gained `district`, `active`, `updated_at` and `updated_by`
+    over time and a few call sites still select only the original four columns,
+    so every reader tolerates a shape that predates a column instead of
+    crashing on a KeyError.
+    """
+    if row is None:
+        return default
+    try:
+        value = row[key]
+    except (KeyError, IndexError, TypeError):
+        getter = getattr(row, 'get', None)
+        value = getter(key, default) if callable(getter) else default
+    return default if value is None else value
+
+
+def clean_branch_text(value):
+    """Collapse whitespace and trim — the stored shape of every branch label."""
+    return re.sub(r'\s+', ' ', str(value if value is not None else '')).strip()
+
+
+def branch_is_active(row):
+    """True unless the row is explicitly stored inactive (legacy NULL = Active)."""
+    value = branch_field(row, 'active', 1)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in (
+        '0', 'false', 'no', 'off', 'inactive', 'disabled', 'deactivated', 'none')
+
+
+def normalise_branch_active(value):
+    """Coerce an Active / Inactive toggle into the stored 1 / 0 flag."""
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if value is None:
+        raise ValueError('active must be Active/Inactive (true/false)')
+    if isinstance(value, (int, float)):
+        if int(value) in (0, 1):
+            return int(value)
+        raise ValueError('active must be Active/Inactive (true/false)')
+    text = str(value).strip().lower()
+    if text in ('1', 'true', 'yes', 'y', 'on', 'active', 'enabled'):
+        return 1
+    if text in ('0', 'false', 'no', 'n', 'off', 'inactive', 'disabled', 'deactivated'):
+        return 0
+    raise ValueError('active must be Active/Inactive (true/false)')
+
+
+def branch_legacy_reason(row):
+    """Why a branch still lands under 'Unassigned district' — or '' when placed.
+
+    The sidebar tree groups a unit with no district under 'Unassigned district'
+    (and one with no region under 'Unassigned region'). Legacy rows — bare
+    'East / South / West Checkpoint' entries and rows created before the
+    district column existed — are the rows the Batch placement tool rewrites;
+    this predicate is the single source for the table badge, the API's
+    `unassigned` list and the cleanup tool's selection.
+    """
+    region = clean_branch_text(branch_field(row, 'region', ''))
+    district = clean_branch_text(branch_field(row, 'district', ''))
+    if region.lower() in BRANCH_PLACEHOLDER_PLACEMENTS:
+        return 'No region assigned'
+    if district.lower() in BRANCH_PLACEHOLDER_PLACEMENTS:
+        return 'No district assigned'
+    known = STATION_DISTRICTS.get(region)
+    if known:
+        if district not in known:
+            return f'District \u201c{district}\u201d is not part of {region}'
+        return ''
+    if district.lower() == region.lower():
+        return 'No district assigned'
+    return ('Region \u201c' + region + '\u201d is outside the gazetteer ('
+            + ' \u00b7 '.join(STATION_REGIONS) + ')')
+
+
+def validate_branch_placement(region, district, allow_unchanged=False):
+    """Validate a Region \u2192 District placement; returns the cleaned pair.
+
+    Mirrors the station registry rules: a gazetteer region accepts only its own
+    districts and a placement can never repeat the region name as its district
+    (the legacy fallback the cleanup tool exists to fix). `allow_unchanged`
+    keeps an edit that did not touch the placement from being blocked by a
+    pre-existing legacy pair.
+    """
+    region = clean_branch_text(region)
+    district = clean_branch_text(district)
+    if not region:
+        raise ValueError('Branch region is required')
+    if len(region) > 100:
+        raise ValueError('Branch region must be 100 characters or fewer')
+    if not district:
+        raise ValueError('District is required \u2014 choose the district this branch sits in')
+    if len(district) > 100:
+        raise ValueError('District must be 100 characters or fewer')
+    known = STATION_DISTRICTS.get(region)
+    if known:
+        if district not in known:
+            raise ValueError(f'District must belong to {region}: ' + ', '.join(known))
+        return region, district
+    if district.lower() == region.lower() and not allow_unchanged:
+        raise ValueError(f'Choose a gazetteer district for {region} instead of '
+                         'repeating the region name')
+    return region, district
+
+
+def plan_branch_update(existing, data):
+    """Validate a Branch Management edit; returns the columns to write.
+
+    Pure (no database access), so the PyTest suite pins every rule without a
+    live PostgreSQL cluster: PATCH semantics (only supplied fields move), the
+    Region/District validation, the Active/Inactive coercion and the
+    changed-field bookkeeping the audit row prints.
+    """
+    data = data or {}
+    supplied = {key: data[key] for key in BRANCH_EDITABLE_FIELDS if key in data}
+    if not supplied:
+        raise ValueError('Nothing to update \u2014 send name, region, district, '
+                         'unit_type or active')
+    current = {
+        'name': clean_branch_text(branch_field(existing, 'name', '')),
+        'region': clean_branch_text(branch_field(existing, 'region', '')),
+        'district': clean_branch_text(branch_field(existing, 'district', '')),
+        'unit_type': clean_branch_text(branch_field(existing, 'unit_type', '')),
+        'active': 1 if branch_is_active(existing) else 0,
+    }
+    values, changed = {}, []
+    if 'name' in supplied:
+        name = clean_branch_text(supplied['name'])
+        if not name:
+            raise ValueError('Branch name is required')
+        if len(name) > 160:
+            raise ValueError('Branch name must be 160 characters or fewer')
+        if name != current['name']:
+            values['name'] = name
+            changed.append('name')
+    region, district = current['region'], current['district']
+    if 'region' in supplied:
+        region = clean_branch_text(supplied['region'])
+        if not region:
+            raise ValueError('Branch region is required')
+        if len(region) > 100:
+            raise ValueError('Branch region must be 100 characters or fewer')
+    if 'district' in supplied:
+        district = clean_branch_text(supplied['district'])
+    if 'region' in supplied or 'district' in supplied:
+        region, district = validate_branch_placement(
+            region, district, allow_unchanged='region' not in supplied)
+        if region != current['region']:
+            values['region'] = region
+            changed.append('region')
+        if district != current['district']:
+            values['district'] = district
+            changed.append('district')
+    if 'unit_type' in supplied:
+        unit_type = normalize_branch_unit_type(supplied['unit_type'])
+        if unit_type != current['unit_type']:
+            values['unit_type'] = unit_type
+            changed.append('unit_type')
+    if 'active' in supplied:
+        active = normalise_branch_active(supplied['active'])
+        if active != current['active']:
+            values['active'] = active
+            changed.append('active')
+    after = dict(current, **values)
+    return {'values': values, 'changed': changed, 'unchanged': not changed,
+            'previous': current, 'result': after}
+
+
 def branch_view(row):
-    """Public branch catalogue shape used by `/api/branches` and intake rows."""
+    """Public branch catalogue shape used by `/api/branches` and intake rows.
+
+    Beyond the original four columns the view carries the lifecycle and
+    placement metadata Branch Management renders: `active` / `status` (the
+    Active\u2013Inactive toggle), `unit_label`, the `legacy_reason` that puts a
+    row in the Unassigned cleanup tool, and the edit provenance.
+    """
     if not row:
         return None
-    # district may be missing on pre-migration rows or older cursor shapes
-    try:
-        district = row['district'] if 'district' in row else None
-    except Exception:
-        district = row.get('district') if hasattr(row, 'get') else None
+    # district / active may be missing on pre-migration rows or older cursor shapes
+    district = branch_field(row, 'district', None)
+    unit_type = branch_field(row, 'unit_type', '')
     return {
-        'id': row['id'],
-        'name': row['name'],
-        'region': row['region'],
+        'id': branch_field(row, 'id'),
+        'name': branch_field(row, 'name', ''),
+        'region': branch_field(row, 'region', ''),
         'district': district,
-        'unit_type': row['unit_type'],
+        'unit_type': unit_type,
+        # Additive lifecycle / placement fields (existing keys are unchanged).
+        'active': bool(branch_is_active(row)),
+        'status': 'Active' if branch_is_active(row) else 'Inactive',
+        'unit_label': BRANCH_UNIT_LABELS.get(unit_type, unit_type),
+        'legacy_reason': branch_legacy_reason(row) or None,
+        'updated_at': branch_field(row, 'updated_at', None),
+        'updated_by': branch_field(row, 'updated_by', None),
+    }
+
+
+def resolve_branch_record(c, identifier):
+    """The `police_branches` row a Branch Management identifier names, or None.
+
+    Accepts the numeric primary key, the synthetic station spelling 'BR-<id>'
+    and (as a last resort, for a hand-typed API call) an exact branch name.
+    """
+    ident = str(identifier if identifier is not None else '').strip()
+    if not ident:
+        return None
+    if re.fullmatch(r'BR-\d+', ident, flags=re.I):
+        ident = ident[3:]
+    if ident.isdigit():
+        return c.execute('SELECT * FROM police_branches WHERE id=%s',
+                         (int(ident),)).fetchone()
+    return c.execute('SELECT * FROM police_branches WHERE LOWER(name)=LOWER(%s) '
+                     'ORDER BY id LIMIT 1', (ident,)).fetchone()
+
+
+def branch_duplicate(c, values, exclude_id=None):
+    """The branch that would collide with `values`, or None.
+
+    Mirrors the `uq_police_branches_name_region_unit` expression index
+    (case-insensitive name + region, same department) so an edit is refused
+    with 409 exactly like a duplicate create.
+    """
+    sql = ('SELECT id,name,region,district,unit_type FROM police_branches '
+           'WHERE LOWER(name)=LOWER(%s) AND LOWER(region)=LOWER(%s) AND unit_type=%s')
+    args = [values.get('name'), values.get('region'), values.get('unit_type')]
+    if exclude_id is not None:
+        sql += ' AND id<>%s'
+        args.append(int(exclude_id))
+    return c.execute(sql, args).fetchone()
+
+
+def relabel_branch_postings(c, before, after):
+    """Keep free-text officer postings pointing at an edited branch.
+
+    `users.branch` (and a checkpoint officer's named `location_scope`) is a
+    readable label, not a foreign key: 'Lasanod Branch', 'Lasanod Branch \u00b7
+    Sool' or the composed 'Lasanod Branch \u00b7 Laascaanood \u00b7 Sool'. A
+    rename or a Region/District move must rewrite that label too, otherwise an
+    ACTIVE officer's posting silently stops resolving and their intake form
+    unlocks. The officer row is updated in place (same id, same session) and
+    the number of rewrites is reported for the audit detail.
+    """
+    old_key = canonical_posting_key(before.get('name'))
+    if not old_key:
+        return 0
+    old_places = {canonical_posting_key(before.get('region')),
+                  canonical_posting_key(before.get('district'))}
+    old_places.discard('')
+    name = clean_branch_text(after.get('name'))
+    region = clean_branch_text(after.get('region'))
+    district = clean_branch_text(after.get('district'))
+    rows = c.execute('SELECT id, branch, location_scope FROM users '
+                     'WHERE branch ILIKE %s', ('%' + str(before.get('name') or '') + '%',)).fetchall()
+    updated = 0
+    for row in rows:
+        raw = str(row['branch'] or '')
+        parts = [p.strip() for p in raw.split('\u00b7') if p.strip()]
+        if not parts or canonical_posting_key(parts[0]) != old_key:
+            continue
+        if len(parts) > 1:
+            # The trailing part must describe the branch's OWN place, otherwise
+            # this is a different posting that merely shares a leading word.
+            if old_places and canonical_posting_key(parts[-1]) not in old_places:
+                continue
+        if len(parts) >= 3:
+            label = f'{name} \u00b7 {district} \u00b7 {region}'
+        elif len(parts) == 2:
+            label = f'{name} \u00b7 {region}'
+        else:
+            label = name
+        if label == raw:
+            continue
+        c.execute('UPDATE users SET branch=%s WHERE id=%s', (label, row['id']))
+        updated += 1
+    # Checkpoint officers keep a NAMED checkpoint in `location_scope`; a rename
+    # has to follow it for the same reason.
+    for row in c.execute("SELECT id, location_scope FROM users "
+                         "WHERE TRIM(COALESCE(location_scope,''))<>''").fetchall():
+        scope = str(row['location_scope'] or '').strip()
+        if canonical_posting_key(scope) != old_key:
+            continue
+        if scope in CHECKPOINT_LOCATIONS:
+            continue
+        c.execute('UPDATE users SET location_scope=%s WHERE id=%s', (name, row['id']))
+        updated += 1
+    return updated
+
+
+def sync_mirrored_station_for_branch(c, before, after):
+    """Keep the mirrored `police_stations` row in step with its branch.
+
+    A Police Stations branch is mirrored as a station so officer / vehicle
+    station dropdowns and their foreign keys resolve. Renaming or re-placing
+    the branch must move that mirrored row too; the station's numeric id is
+    untouched, so every officer / vehicle / crime FK stays valid. Best-effort:
+    a branch that was never mirrored is left alone.
+    """
+    if str(after.get('unit_type') or '') != 'police_station':
+        return False
+    try:
+        row = mirrored_station_row_for_branch(c, before)
+    except Exception:
+        return False
+    if row is None:
+        return False
+    updates, params = [], []
+    old_base = _branch_base_name(before.get('name'))
+    if after.get('name') != before.get('name'):
+        updates.append('name=%s'); params.append(after.get('name'))
+        if str(row['village'] or '').strip().lower() == str(old_base or '').strip().lower():
+            updates.append('village=%s'); params.append(_branch_base_name(after.get('name')))
+    if after.get('region') != before.get('region'):
+        updates.append('region=%s'); params.append(after.get('region'))
+    if after.get('district') != before.get('district'):
+        updates.append('district=%s'); params.append(after.get('district'))
+    if not updates:
+        return False
+    updates.append("updated_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC',"
+                   "'YYYY-MM-DD HH24:MI:SS')")
+    params.append(row['id'])
+    c.execute(f"UPDATE police_stations SET {', '.join(updates)} WHERE id=%s", params)
+    return True
+
+
+def branch_snapshot(row):
+    """The four placement columns + lifecycle flag of a row, as a plain dict."""
+    return {'id': branch_field(row, 'id'),
+            'name': clean_branch_text(branch_field(row, 'name', '')),
+            'region': clean_branch_text(branch_field(row, 'region', '')),
+            'district': clean_branch_text(branch_field(row, 'district', '')),
+            'unit_type': clean_branch_text(branch_field(row, 'unit_type', '')),
+            'active': 1 if branch_is_active(row) else 0}
+
+
+def update_branch(c, user, identifier, data):
+    """Apply a SystemAdmin Branch Management edit. Returns the result payload.
+
+    PATCH semantics: only the fields present in `data` are written; the row is
+    edited IN PLACE (never deleted / re-created) so every FK that already points
+    at it — records, officer postings, audit history — is preserved. Renaming
+    or re-placing the branch also relabels the free-text officer postings and
+    moves the mirrored Police Stations row.
+    """
+    row = resolve_branch_record(c, identifier)
+    if row is None:
+        raise LookupError(f'Branch "{identifier}" does not exist')
+    before = branch_snapshot(row)
+    plan = plan_branch_update(row, data)
+    if plan['unchanged']:
+        return {'branch': branch_view(row), 'changed_fields': [],
+                'previous': before, 'relabelled_postings': 0,
+                'unchanged': True}
+    after = dict(before, **plan['values'])
+    duplicate = branch_duplicate(c, after, exclude_id=before['id'])
+    if duplicate:
+        raise ValueError('This branch already exists for that unit, region and district')
+    columns = list(plan['changed'])
+    assignments = ', '.join(f'{col}=%s' for col in columns)
+    params = [plan['values'][col] for col in columns]
+    c.execute(f"UPDATE police_branches SET {assignments}, "
+              "updated_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'), "
+              "updated_by=%s WHERE id=%s", (*params, user['id'], before['id']))
+    relabelled = 0
+    if {'name', 'region', 'district'} & set(columns):
+        relabelled = relabel_branch_postings(c, before, after)
+        try:
+            sync_mirrored_station_for_branch(c, before, after)
+        except Exception:
+            pass
+    fresh = c.execute('SELECT * FROM police_branches WHERE id=%s',
+                      (before['id'],)).fetchone()
+    return {'branch': branch_view(fresh), 'changed_fields': columns,
+            'previous': before, 'relabelled_postings': relabelled,
+            'unchanged': False}
+
+
+def batch_assign_branch_placement(c, user, ids, region, district):
+    """Rewrite the Region \u2192 District placement of legacy branches at once.
+
+    The Branch Management cleanup tool submits the rows the sidebar groups
+    under 'Unassigned district'. Each row is updated in place (same id, same FK
+    targets); a row that would collide with an existing branch of the same unit
+    in the target placement is reported as skipped instead of aborting the
+    whole batch, and every applied row is audited individually.
+    """
+    if not isinstance(ids, (list, tuple)) or not ids:
+        raise ValueError('Select at least one branch to place')
+    if len(ids) > 500:
+        raise ValueError('At most 500 branches can be placed per batch')
+    region, district = validate_branch_placement(region, district)
+    updated, skipped, seen = [], [], set()
+    for raw in ids:
+        text = str(raw if raw is not None else '').strip()
+        if not text.isdigit() or int(text) < 1:
+            raise ValueError(f'Invalid branch id: {raw!r}')
+        bid = int(text)
+        if bid in seen:
+            continue
+        seen.add(bid)
+        row = c.execute('SELECT * FROM police_branches WHERE id=%s', (bid,)).fetchone()
+        if row is None:
+            skipped.append({'id': bid, 'reason': 'Branch not found'})
+            continue
+        before = branch_snapshot(row)
+        after = dict(before, region=region, district=district)
+        duplicate = branch_duplicate(c, after, exclude_id=bid)
+        if duplicate:
+            skipped.append({'id': bid, 'name': before['name'],
+                            'reason': 'The same branch name already exists in '
+                                      f'{region} \u00b7 {district} for this unit'})
+            continue
+        c.execute("UPDATE police_branches SET region=%s, district=%s, "
+                  "updated_at=to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'), "
+                  "updated_by=%s WHERE id=%s", (region, district, user['id'], bid))
+        relabelled = relabel_branch_postings(c, before, after)
+        try:
+            sync_mirrored_station_for_branch(c, before, after)
+        except Exception:
+            pass
+        fresh = c.execute('SELECT * FROM police_branches WHERE id=%s', (bid,)).fetchone()
+        updated.append(branch_view(fresh))
+        audit(c, user, 'UPDATE', 'police_branch', str(bid),
+              'legacy placement ' + (before['region'] or '\u2014') + ' \u00b7 '
+              + (before['district'] or '\u2014') + ' \u2192 ' + region + ' \u00b7 '
+              + district + (f' ({relabelled} posting(s) relabelled)' if relabelled else ''))
+    return {'updated': updated, 'skipped': skipped,
+            'region': region, 'district': district}
+
+
+def branch_admin_catalogue(c):
+    """The Branch Management payload: every branch + the legacy cleanup queue.
+
+    Unlike the public catalogue this deliberately includes INACTIVE branches
+    (the administrator has to be able to re-activate them) and carries the
+    gazetteer the cleanup tool offers, the unassigned queue the sidebar's
+    'Unassigned district' accordion is built from, and the counts the page
+    header prints.
+    """
+    rows = c.execute('SELECT * FROM police_branches '
+                     'ORDER BY region,district,name,id').fetchall()
+    items = [branch_view(r) for r in rows]
+    unassigned = [dict(item) for item in items if item.get('legacy_reason')]
+    unassigned.sort(key=lambda b: (str(b.get('region') or '').lower(),
+                                   str(b.get('name') or '').lower(),
+                                   str(b.get('unit_type') or '')))
+    regions = sorted({item['region'] for item in items if item['region']})
+    districts = sorted({item['district'] for item in items if item['district']})
+    return {
+        'items': items,
+        'unassigned': unassigned,
+        'regions': regions,
+        'districts': districts,
+        'gazetteer': {region: list(listing)
+                      for region, listing in STATION_DISTRICTS.items()},
+        'gazetteer_regions': list(STATION_REGIONS),
+        'unit_types': list(BRANCH_UNIT_TYPES),
+        'unit_labels': dict(BRANCH_UNIT_LABELS),
+        'counts': {
+            'total': len(items),
+            'active': sum(1 for item in items if item['active']),
+            'inactive': sum(1 for item in items if not item['active']),
+            'unassigned': len(unassigned),
+        },
     }
 
 
@@ -3388,12 +3891,19 @@ def resolve_branch(c, branch_id, expected_unit_type, required=False):
         return None
     if not raw.isdigit() or int(raw) < 1:
         raise ValueError('branch_id must be a positive integer')
-    branch = c.execute('''SELECT id,name,region,district,unit_type FROM police_branches WHERE id=%s''',
+    branch = c.execute('''SELECT id,name,region,district,unit_type,active
+                       FROM police_branches WHERE id=%s''',
                        (int(raw),)).fetchone()
     if not branch:
         raise ValueError('Selected branch does not exist; reload the branch list and try again')
     if branch['unit_type'] != expected_unit_type:
         raise ValueError(f'Selected branch is not registered for the {BRANCH_UNIT_LABELS[expected_unit_type]}')
+    # A deactivated branch is retired, not deleted: it stays the FK target of
+    # every record already filed under it, but it is no longer offered for NEW
+    # intake. Re-activating it in Branch Management restores the selection.
+    if not branch_is_active(branch):
+        raise ValueError(f"Branch {branch['name']} is Inactive — choose an active branch, "
+                         'or ask a System Administrator to re-activate it')
     return branch
 
 
@@ -7507,6 +8017,14 @@ class API(BaseHTTPRequestHandler):
                                             # including the read-only Commander).
                                             'station_edit_roles':['SystemAdmin','admin'],
                                             'station_write_verbs':['POST','PUT','PATCH'],
+                                            # Branch Management: Edit / Deactivate and the
+                                            # legacy batch placement are SystemAdmin writes;
+                                            # there is deliberately no DELETE (a branch is
+                                            # retired, never removed, so FKs survive).
+                                            'branch_edit_roles':['SystemAdmin','admin'],
+                                            'branch_write_verbs':['POST','PATCH'],
+                                            'branch_lifecycle':['Active','Inactive'],
+                                            'branch_deletion':'never (deactivate instead)',
                                             'crime_categories':list(CRIME_CATEGORIES),
                                             'conduct_action_types':list(CONDUCT_ACTION_TYPES),
                                             'conduct_classifications':{k: list(v) for k, v in CONDUCT_CLASSIFICATIONS.items()},
@@ -7522,6 +8040,12 @@ class API(BaseHTTPRequestHandler):
                 unit_type = normalize_branch_unit_type(raw_unit_type) if raw_unit_type else None
                 region = re.sub(r'\s+', ' ', str(query.get('region', [''])[0] or '')).strip()
                 district_q = re.sub(r'\s+', ' ', str(query.get('district', [''])[0] or '')).strip()
+                # Lifecycle filter (opt-in, so the default response keeps the
+                # exact shape every existing client already reads):
+                #   active=1  -> only Active branches (intake dropdowns)
+                #   active=0  -> only Inactive branches
+                #   omitted   -> every branch, each carrying `active`
+                raw_active = str(query.get('active', [''])[0] or '').strip().lower()
                 where, args = [], []
                 if unit_type:
                     where.append('unit_type=%s'); args.append(unit_type)
@@ -7529,7 +8053,14 @@ class API(BaseHTTPRequestHandler):
                     where.append('LOWER(region)=LOWER(%s)'); args.append(region)
                 if district_q:
                     where.append('LOWER(district)=LOWER(%s)'); args.append(district_q)
-                sql = 'SELECT id,name,region,district,unit_type FROM police_branches'
+                if raw_active in ('1', 'true', 'active', 'yes'):
+                    where.append('COALESCE(active,1)=1')
+                elif raw_active in ('0', 'false', 'inactive', 'no'):
+                    where.append('COALESCE(active,1)=0')
+                elif raw_active not in ('', 'all', 'any'):
+                    c.close()
+                    return self.send_json(400, {'error': 'active must be 1, 0 or all'})
+                sql = 'SELECT * FROM police_branches'
                 if where:
                     sql += ' WHERE ' + ' AND '.join(where)
                 sql += ' ORDER BY region,district,name,id'
@@ -7547,6 +8078,17 @@ class API(BaseHTTPRequestHandler):
                     'unit_labels': BRANCH_UNIT_LABELS,
                 }
                 c.close()
+                return self.send_json(200, result)
+            # Branch Management (SystemAdmin) catalogue: EVERY branch, including
+            # the inactive ones the public catalogue still lists, plus the
+            # legacy placement queue the batch cleanup tool works from.
+            if p.path.rstrip('/') == '/api/admin/branches':
+                require_module(user, 'admin')
+                c = get_db_connection()
+                try:
+                    result = branch_admin_catalogue(c)
+                finally:
+                    c.close()
                 return self.send_json(200, result)
             c = get_db_connection()
             # RBAC module-gating. Every authenticated user can see /api/me and
@@ -8219,6 +8761,28 @@ class API(BaseHTTPRequestHandler):
                 c.commit(); c.close()
                 self.send_json(200, {'ok': True, 'password_changed': True})
                 return
+            # ---- legacy placement cleanup (Branch Management) -------------
+            # POST /api/admin/branches/bulk-assign
+            #   {ids: [..], region: 'Sool', district: 'Laascaanood'}
+            # Rewrites the Region -> District placement of the legacy rows that
+            # land under the sidebar's 'Unassigned district' accordion. It is a
+            # batch edit, never a delete: every branch keeps its id, its FK
+            # targets, its records, its postings and its audit history.
+            if p.path.rstrip('/') == '/api/admin/branches/bulk-assign':
+                require_records_admin(user, 'Placing legacy branches')
+                require_module(user, 'admin')
+                c = get_db_connection()
+                data = body_json(self)
+                ids = data.get('ids', data.get('branch_ids', []))
+                if isinstance(ids, (str, int)):
+                    ids = [ids]
+                result = batch_assign_branch_placement(
+                    c, user, ids, data.get('region'), data.get('district'))
+                c.commit()
+                result['counts'] = branch_admin_catalogue(c)['counts']
+                c.close()
+                result['ok'] = True
+                return self.send_json(200, result)
             # Keep branch creation out of the generic route table: normalize
             # `/branches`, `/branches/`, and `/api/branches/` first, then
             # dispatch the canonical path here before any catch-all handling.
@@ -8928,6 +9492,11 @@ class API(BaseHTTPRequestHandler):
         c = None
         try:
             p = urlparse(self.path)
+            # `/branches/<id>` and `/api/branches/<id>` are the same member
+            # route; canonicalize before routing and RBAC exactly like do_GET
+            # and do_POST do for the collection path.
+            if canonical_api_path(p.path) != p.path:
+                p = p._replace(path=canonical_api_path(p.path))
             user = require_auth(self)
             # ---- GLOBAL READ-ONLY FIREWALL ----------------------------------
             # Identical gate to do_POST: the Commander / High Command can read
@@ -8984,6 +9553,12 @@ class API(BaseHTTPRequestHandler):
                 # caller could read the register), then the route module.
                 require_records_admin(user, 'Editing a station record')
                 require_module(user, 'stations')
+            if p.path.startswith('/api/admin/branches') or p.path.startswith('/api/branches'):
+                # Branch Management edit: Admin role first (403 admin_only for
+                # every other authenticated role, including one that may read
+                # the catalogue but not the Admin module), then the module.
+                require_records_admin(user, 'Editing a police branch')
+                require_module(user, 'admin')
             if p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 row = c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone()
@@ -9034,6 +9609,32 @@ class API(BaseHTTPRequestHandler):
                 audit(c, user, 'UPDATE', 'officer_discipline', action_id, action['status'])
                 c.commit()
                 result = {'action_id': action_id, 'discipline': action, 'updated': True}
+            elif p.path.startswith('/api/admin/branches/') or p.path.startswith('/api/branches/'):
+                # ---- Branch Management · Edit (the Actions → Edit modal) ----
+                # PATCH /api/admin/branches/<id>  (alias: /api/branches/<id>)
+                #   {name?, region?, district?, unit_type?, active?}
+                # The row is edited IN PLACE — never deleted / re-created — so
+                # the records filed under it, the officer postings and the
+                # audit history keep their foreign keys. Renaming or re-placing
+                # the branch also relabels the free-text officer postings
+                # (users.branch / a named checkpoint location_scope) and moves
+                # the mirrored Police Stations row.
+                identifier = p.path[len('/api/admin/branches/'):] if p.path.startswith('/api/admin/branches/') \
+                    else p.path[len('/api/branches/'):]
+                identifier = identifier.strip('/').split('/')[0]
+                if not identifier:
+                    raise ValueError('branch id is required')
+                result = update_branch(c, user, identifier, data)
+                changed = result.get('changed_fields') or []
+                audit(c, user, 'UPDATE', 'police_branch', str(result['branch']['id']),
+                      ('changed: ' + ', '.join(changed) if changed else 'no field changed')
+                      + (f" · {result['relabelled_postings']} posting(s) relabelled"
+                         if result.get('relabelled_postings') else ''))
+                c.commit()
+                result['updated'] = True
+                result['counts'] = branch_admin_catalogue(c)['counts']
+                result['catalogue'] = [branch_view(r) for r in c.execute(
+                    'SELECT * FROM police_branches ORDER BY region,district,name,id').fetchall()]
             elif p.path.startswith('/api/admin/users/'):
                 # Update an existing user — change role, branch, location, password, active.
                 # /api/admin/users/<id> -> split('/') -> ['', 'api', 'admin', 'users', '<id>']

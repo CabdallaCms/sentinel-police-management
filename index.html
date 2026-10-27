@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-sidebar-scope-1-b4d29a71" />
+<meta name="sentinel-ui-build" content="sentinel-branch-crud-1-e7c41b90" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -446,6 +446,10 @@ body:not(.is-admin):not(.can-manage-stations) .admin-write-note{display:block}
    independently answer 403 Forbidden, so hiding the button is never the only
    control. */
 body:not(.can-edit-records) .admin-edit{display:none !important}
+/* Branch Management: a retired (Inactive) branch stays visible to the
+   administrator, dimmed, so it can be re-activated without losing its
+   records, postings or audit history. */
+#branchTable tr.branch-inactive td{opacity:.72}
 .row-actions{display:flex;gap:4px;align-items:center;white-space:nowrap}
 .row-actions .btn{min-height:28px;padding:4px 8px;font-size:12px;line-height:1.2}
 .station-deploy-list{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:#33415c}
@@ -2365,12 +2369,74 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
     <div class="form-actions"><button class="btn" data-write="1" type="submit">+ Add New Branch</button></div>
   </form>
   <div class="notice" id="branchNotice" aria-live="polite"></div>
+  <!-- Legacy placement cleanup: the rows the sidebar still groups under
+       "Unassigned district" (bare East / South / West Checkpoint rows, and
+       entries created before the district column existed). Batch-assign them
+       into a gazetteer Region -> District in one call; the units move into the
+       correct sidebar accordion immediately, and the branch keeps its id so
+       every record / posting / audit row stays linked. -->
+  <div class="panel" id="branchLegacyPanel" style="display:none;margin-top:16px;background:#fff9ea;border:1px solid #efd9a4">
+    <div class="panel-head">
+      <div>
+        <h2 style="font-size:15px">Legacy placement cleanup</h2>
+        <div class="sub" id="branchLegacySub">Branches that still land under “Unassigned district” in the sidebar.</div>
+      </div>
+      <span class="badge amber" id="branchLegacyCount">0</span>
+    </div>
+    <div class="table-wrap">
+      <table class="table"><thead><tr>
+        <th style="width:36px"><input type="checkbox" id="branchLegacyAll" aria-label="Select every legacy branch" onchange="selectAllLegacyBranches(this.checked)"></th>
+        <th>Branch</th><th>Unit Department</th><th>Current region</th><th>Current district</th><th>Why it is unplaced</th>
+      </tr></thead>
+      <tbody id="branchLegacyTable"></tbody></table>
+    </div>
+    <div class="f-row f-3" style="margin-top:12px">
+      <div class="field"><label for="branchLegacyRegion">Assign region *</label>
+        <select id="branchLegacyRegion" onchange="populateBranchLegacyDistricts()"><option value="">— select region —</option></select></div>
+      <div class="field"><label for="branchLegacyDistrict">Assign district *</label>
+        <select id="branchLegacyDistrict"><option value="">Select region first</option></select></div>
+      <div class="field"><label>&nbsp;</label>
+        <button class="btn" type="button" id="branchLegacyAssign" data-write="1" data-branch-action="bulk-assign" onclick="assignLegacyBranches()">⇢ Assign selected branches</button></div>
+    </div>
+    <div class="notice" id="branchLegacyNotice" aria-live="polite"></div>
+  </div>
   <div class="table-wrap" style="margin-top:14px">
-    <table class="table"><thead><tr><th>Branch Name</th><th>Region</th><th>District</th><th>Unit Department</th></tr></thead>
-    <tbody id="branchTable"><tr><td class="empty" colspan="4">Loading branches…</td></tr></tbody></table>
+    <table class="table"><thead><tr><th>Branch Name</th><th>Region</th><th>District</th><th>Unit Department</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="branchTable"><tr><td class="empty" colspan="6">Loading branches…</td></tr></tbody></table>
   </div>
 </div>
 </section>
+
+<!-- Edit police branch (Branch Management -> Actions -> Edit). SystemAdmin /
+     Admin only: the write is re-authorised on the server (403 for every other
+     role) and the modal is inside the .admin-edit hide rule. Editing rewrites
+     the branch IN PLACE, so the record foreign keys, the active officer
+     postings and the audit history all keep pointing at the same branch id. -->
+<div class="admin-edit">
+<div class="cmodal-ov" id="branchEditOv" onclick="closeEntryModal('branchEditModal')"></div>
+<div class="cmodal" id="branchEditModal" role="dialog" aria-modal="true" aria-labelledby="branchEditTitle">
+<div class="cm-head"><div><h3 id="branchEditTitle">Edit branch</h3><div class="sub">System Administrator action — rename, re-place or retire a branch without losing its records</div></div><button class="iconbtn" onclick="closeEntryModal('branchEditModal')" aria-label="Close">✕</button></div>
+<div class="cm-body">
+<div id="branchEditNotice" class="notice"></div>
+<form novalidate class="form" id="branchEditForm" onsubmit="saveBranchEdit(event)">
+<input type="hidden" id="branchEditId">
+<div class="hint" id="branchEditIdentity" style="margin-bottom:14px"></div>
+<div class="f-row f-3">
+<div class="field"><label for="branchEditName">Branch name *</label><input id="branchEditName" maxlength="160" placeholder="e.g. East Lasanod Checkpoint"></div>
+<div class="field"><label for="branchEditRegion">Region *</label><select id="branchEditRegion" onchange="populateBranchEditDistrictSelect()"></select></div>
+<div class="field"><label for="branchEditDistrict">District *</label><select id="branchEditDistrict"><option value="">Select region first</option></select></div>
+<div class="field"><label for="branchEditUnitType">Unit Department *</label><select id="branchEditUnitType">
+  <option value="fingerprint">Fingerprint Unit</option><option value="crime">Crime Unit</option>
+  <option value="checkpoint">Checkpoint Unit</option><option value="airport">Airport Unit</option>
+  <option value="police_station">Police Stations</option>
+</select></div>
+<div class="field"><label for="branchEditActive">Status *</label><select id="branchEditActive"><option value="1">Active</option><option value="0">Inactive</option></select></div>
+</div>
+<div class="form-actions"><button class="btn ghost" type="button" onclick="closeEntryModal('branchEditModal')">Cancel</button><button class="btn" data-write="1" type="submit" id="branchEditSave">Save changes</button></div>
+</form>
+</div>
+</div>
+</div>
 
 <!-- CHIEF COMMANDER · GLOBAL EXECUTIVE DASHBOARD -->
 <section id="executive" class="page">
@@ -3187,6 +3253,9 @@ async function refreshBranchSelect(selectId,unitType){
   }catch(e){
     if(branchCatalog.loaded)items=branchCatalog.items.filter(b=>b.unit_type===unitType);
   }
+  // A deactivated branch is retired: it stays the FK target of the records
+  // already filed under it, but it is no longer offered for new intake.
+  items=items.filter(branchIsActive);
   if(!items.length){
     select.innerHTML='<option value="">No '+esc(BRANCH_UNIT_LABELS[unitType]||'unit')+' branches available</option>';
     select.disabled=true;
@@ -3690,9 +3759,12 @@ function unitNavCatalog(type){
       source:unit.source||'branch'
     });
   };
-  // 1) the authoritative branch catalogue
+  // 1) the authoritative branch catalogue. An INACTIVE branch is retired:
+  //    Branch Management keeps it (and every record / posting linked to it)
+  //    but the sidebar tree, the Unit Directory and the intake dropdowns stop
+  //    offering it. Re-activating it restores the entry in the same paint.
   ((branchCatalog&&Array.isArray(branchCatalog.items))?branchCatalog.items:[])
-    .filter(b=>b && unitTypeOf(b.unit_type)===type)
+    .filter(b=>b && unitTypeOf(b.unit_type)===type && branchIsActive(b))
     .forEach(b=>add({label:b.name,region:b.region,district:b.district,
                      code:cpCodeFromLabel(b.name),branch_id:b.id,source:'branch'}));
   // 2) register rows whose posting predates (or is missing from) the catalogue
@@ -3710,9 +3782,16 @@ function unitNavCatalog(type){
       add({label:checkpointLabelText(code),region:NAV_CHECKPOINT_AREAS,code,source:'roster'});
     });
   }
+  // A retired (Inactive) branch is out of the catalogue above, but a LEGACY
+  // register row can still re-introduce it by name (it is located through the
+  // branch index). Drop those rows too, so a deactivated posting leaves the
+  // tree / directory exactly like the branch entry itself.
+  const retiredIds=new Set(((branchCatalog&&Array.isArray(branchCatalog.items))?branchCatalog.items:[])
+    .filter(b=>b && !branchIsActive(b)).map(b=>String(b.id)));
   // Branch scoping is applied here — the ONE place every consumer reads from —
   // so the tree, the directory rows and the category badge can never disagree.
-  const rows=Array.from(seen.values());
+  const rows=Array.from(seen.values())
+    .filter(u=>!(u.branch_id&&retiredIds.has(String(u.branch_id))));
   const scope=navUnitScope(type);
   return scope?rows.filter(u=>unitInNavScope(u,scope)):rows;
 }
@@ -4404,8 +4483,13 @@ function stationOptions(selectedId){
       return sn===String(b.name||'').toLowerCase() || sn===base || sn.includes(base) || sv===base || sv===String(b.name||'').toLowerCase();
     });
   }
-  // Merge real stations with Police Stations branches that have not yet been mirrored (offline or pre-sync)
-  const branchStations=policeStationBranches().filter(b=>!branchIsMirrored(b)).map(syntheticStationFromBranch);
+  // Merge real stations with Police Stations branches that have not yet been mirrored (offline or pre-sync).
+  // A retired (Inactive) branch is not offered as a NEW station posting; the
+  // persisted station row (and every officer / vehicle already posted there)
+  // stays in `db.stations` untouched.
+  const branchStations=policeStationBranches()
+    .filter(b=>!branchIsMirrored(b)&&branchIsActive(b))
+    .map(syntheticStationFromBranch);
   const list=[...stations, ...branchStations];
   return '<option value="">— select station —</option>'+list.map(s=>
     `<option value="${esc(s.id)}"${s.id===selectedId?' selected':''}>${esc(s.name)} (${esc(s.code)}) — ${esc(locationLabel(s))}${s.isBranch?' · Police Stations branch':''}</option>`
@@ -7211,7 +7295,7 @@ function guardReadOnly(action){
 // them when a write-capable officer signs in on the same tab. A MutationObserver
 // re-runs it after every repaint, so a newly rendered button can never slip
 // through — on any department page.
-const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal"|'stViewModal'|"stViewModal")|openStationEdit|openPersonDrawer|startPersonEditMode|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
+const WRITE_CONTROL_RE=/openEntryModal\((?!'pvModal'|"pvModal"|'stViewModal'|"stViewModal")|openStationEdit|openPersonDrawer|startPersonEditMode|openAddSuspect|openCaseDrawer|openCheckpointDrawer|openNewUserDrawer|openEditUserDrawer|openConductModal|openConductReview|submit[A-Z]|save[A-Z]|approveFP|verifyPromotionNomination|setDisciplineStatus|toggleUserActive|openBranchEdit|toggleBranchActive|assignLegacyBranches|conductReviewDecision|addParticipant|uploadEvidence|quickAction|removeParticipant|deleteRecord/;
 // The visible label of a mutation action: "+ New case", "＋ Add suspect",
 // "Approve", "Edit", "Save", "Delete", "New", "Register …", "Nominate",
 // "Record …", "Upload", "Submit", "Verify", "Confirm", "Reject", "Enable" /
@@ -7953,7 +8037,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=b4d29a71&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=e7c41b90&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -8080,7 +8164,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=b4d29a71&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=e7c41b90&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -8366,7 +8450,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=b4d29a71&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=e7c41b90&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -10401,6 +10485,386 @@ function setBranchNotice(message,error=false){
   notice.style.display=message?'block':'none';
   notice.textContent=message||'';
 }
+function setBranchLegacyNotice(message,error=false){
+  const notice=document.getElementById('branchLegacyNotice');
+  if(!notice)return;
+  notice.className=error?'notice err show':'notice';
+  notice.style.display=message?'block':'none';
+  notice.textContent=message||'';
+}
+// ---- Branch Management · lifecycle + placement ------------------------------
+// A branch is NEVER deleted. "Deactivate" retires it (hidden from the intake
+// dropdowns and the sidebar tree) while every record, officer posting and audit
+// row keeps its foreign key; "Edit" rewrites the row in place. The table, the
+// legacy cleanup tool, the sidebar tree, the Unit Directory and every intake
+// dropdown read the SAME `branchCatalog`, so a saved Region -> District change
+// moves the unit into the correct accordion immediately — no reload.
+let branchAdminCatalog={loaded:false,items:[],unassigned:[],regions:[],districts:[],gazetteer:{},gazetteer_regions:[],counts:{}};
+function branchIsActive(b){
+  if(!b) return false;
+  const v=b.active;
+  if(v===undefined||v===null) return true;              // legacy rows are Active
+  if(typeof v==='boolean') return v;
+  return !['0','false','no','off','inactive','disabled','deactivated'].includes(String(v).toLowerCase());
+}
+function branchStatusLabel(b){ return branchIsActive(b)?'Active':'Inactive' }
+function activeBranchItems(){ return ((branchCatalog&&branchCatalog.items)||[]).filter(branchIsActive) }
+// Client-side mirror of the server's `branch_legacy_reason()`: a blank district
+// (or a blank / placeholder region) is exactly what the sidebar renders under
+// "Unassigned district" / "Unassigned region".
+function branchLegacyReason(b){
+  if(!b) return '';
+  const region=String(b.region||'').trim();
+  const district=String(b.district||'').trim();
+  const placeholders=['','unassigned','unassigned region','unassigned district','checkpoint areas','none','n/a','-','unknown'];
+  if(placeholders.includes(region.toLowerCase())) return 'No region assigned';
+  if(placeholders.includes(district.toLowerCase())) return 'No district assigned';
+  const gaz=(typeof LOCATIONS!=='undefined'?LOCATIONS:[]).find(l=>l.region===region);
+  if(gaz){
+    if(gaz.districts.indexOf(district)===-1) return 'District “'+district+'” is not part of '+region;
+    return '';
+  }
+  if(district.toLowerCase()===region.toLowerCase()) return 'No district assigned';
+  return 'Region “'+region+'” is outside the gazetteer';
+}
+function branchById(id){
+  const key=String(id);
+  return (branchAdminCatalog.items||[]).find(b=>String(b.id)===key)
+    || ((branchCatalog&&branchCatalog.items)||[]).find(b=>String(b.id)===key)
+    || null;
+}
+// Merge a saved branch row into the live catalogue and repaint every consumer.
+// This is what makes Region / District edits move a unit between sidebar
+// accordions in real time: `unitNavCatalog()` reads this one array.
+function applyBranchUpdate(updated){
+  if(!updated||updated.id===undefined||updated.id===null) return false;
+  const key=String(updated.id);
+  const items=((branchCatalog&&branchCatalog.items)||[]).slice();
+  const i=items.findIndex(b=>String(b.id)===key);
+  if(i>=0) items[i]={...items[i],...updated}; else items.push(updated);
+  branchCatalog={...(branchCatalog||{loaded:true}),loaded:true,items};
+  const admin=(branchAdminCatalog.items||[]).slice();
+  const j=admin.findIndex(b=>String(b.id)===key);
+  if(j>=0) admin[j]={...admin[j],...updated}; else admin.push(updated);
+  branchAdminCatalog={...branchAdminCatalog,items:admin};
+  repaintBranchConsumers();
+  return true;
+}
+function applyBranchCatalogue(rows){
+  let changed=false;
+  (Array.isArray(rows)?rows:[]).forEach(row=>{
+    if(!row||row.id===undefined||row.id===null) return;
+    const key=String(row.id);
+    const items=((branchCatalog&&branchCatalog.items)||[]).slice();
+    const i=items.findIndex(b=>String(b.id)===key);
+    if(i>=0) items[i]={...items[i],...row}; else items.push(row);
+    branchCatalog={...(branchCatalog||{loaded:true}),loaded:true,items};
+    const admin=(branchAdminCatalog.items||[]).slice();
+    const j=admin.findIndex(b=>String(b.id)===key);
+    if(j>=0) admin[j]={...admin[j],...row}; else admin.push(row);
+    branchAdminCatalog={...branchAdminCatalog,items:admin};
+    changed=true;
+  });
+  if(changed) repaintBranchConsumers();
+  return changed;
+}
+function refreshOpenBranchSelect(selectId){
+  const el=document.getElementById(selectId);
+  if(!el||!el.dataset||!el.dataset.branchUnit) return;
+  try{ refreshBranchSelect(selectId,el.dataset.branchUnit); }catch(_){ }
+}
+function repaintBranchConsumers(){
+  // Sidebar Region -> District -> unit trees + Unit Directory badge.
+  try{ renderUnitNavTrees(); }catch(_){ }
+  try{ populateUnitDirectoryFilters(); renderUnitDirectory(); }catch(_){ }
+  try{ if(typeof refreshUserBranchDatalist==='function') refreshUserBranchDatalist(); }catch(_){ }
+  try{ if(typeof refreshStationSelects==='function') refreshStationSelects(); }catch(_){ }
+  ['fpBranch','airBranch','cpBranch','caseBranch','crmBranch','stBranch']
+    .forEach(refreshOpenBranchSelect);
+}
+function branchTableSort(a,b){
+  return String(a.region||'').localeCompare(String(b.region||''))
+    ||String(a.district||'').localeCompare(String(b.district||''))
+    ||String(a.name||'').localeCompare(String(b.name||''))
+    ||String(a.unit_type||'').localeCompare(String(b.unit_type||''));
+}
+function renderBranchRows(rows){
+  const table=document.getElementById('branchTable');
+  if(!table) return;
+  const list=(rows||[]).slice().sort(branchTableSort);
+  table.innerHTML=list.map(branch=>{
+    const inactive=!branchIsActive(branch);
+    const legacy=branch.legacy_reason||branchLegacyReason(branch);
+    const district=String(branch.district||'').trim();
+    return `<tr data-branch-id="${esc(branch.id)}"${inactive?' class="branch-inactive"':''}>
+      <td><b>${esc(branch.name)}</b>${legacy?`<div class="sub" style="color:#a46a12">${esc(legacy)}</div>`:''}</td>
+      <td>${esc(branch.region||'—')}</td>
+      <td>${district?esc(district):'<span class="badge amber">Unassigned district</span>'}</td>
+      <td><span class="badge blue">${esc(BRANCH_UNIT_LABELS[branch.unit_type]||branch.unit_type)}</span></td>
+      <td><span class="badge ${inactive?'gray':'green'}">${branchStatusLabel(branch)}</span></td>
+      <td class="actions">
+        <button class="btn secondary small admin-edit" type="button" data-branch-action="edit" onclick="openBranchEdit('${esc(branch.id)}')">Edit</button>
+        <button class="btn ghost small admin-edit" type="button" data-branch-action="toggle" onclick="toggleBranchActive('${esc(branch.id)}',${inactive?'true':'false'})">${inactive?'Activate':'Deactivate'}</button>
+      </td></tr>`;
+  }).join('')||'<tr><td class="empty" colspan="6">No branches have been configured.</td></tr>';
+}
+// ---- legacy placement cleanup (batch Region -> District assignment) --------
+function legacyBranchRows(){
+  const provided=Array.isArray(branchAdminCatalog.unassigned)?branchAdminCatalog.unassigned:[];
+  const rows=provided.length?provided:((branchCatalog&&branchCatalog.items)||[]).filter(b=>branchLegacyReason(b));
+  return rows.slice().sort(branchTableSort);
+}
+function renderBranchLegacyPanel(){
+  const panel=document.getElementById('branchLegacyPanel');
+  if(!panel) return;
+  const list=legacyBranchRows();
+  panel.style.display=list.length?'':'none';
+  const count=document.getElementById('branchLegacyCount');
+  if(count) count.textContent=String(list.length);
+  const sub=document.getElementById('branchLegacySub');
+  if(sub) sub.textContent=list.length
+    ? list.length+' branch'+(list.length===1?'':'es')+' still land under “Unassigned district” in the sidebar. Choose a gazetteer Region → District and assign them in one batch — each unit moves into the correct accordion immediately.'
+    : 'Every branch is placed in a gazetteer Region → District.';
+  const body=document.getElementById('branchLegacyTable');
+  if(body) body.innerHTML=list.map(branch=>`<tr data-branch-legacy-id="${esc(branch.id)}">
+      <td><input type="checkbox" class="branch-legacy-check" value="${esc(branch.id)}" aria-label="Select ${esc(branch.name)}"></td>
+      <td><b>${esc(branch.name)}</b><div class="sub">#${esc(branch.id)}</div></td>
+      <td>${esc(BRANCH_UNIT_LABELS[branch.unit_type]||branch.unit_type)}</td>
+      <td>${esc(branch.region||'—')}</td>
+      <td>${esc(branch.district||'—')}</td>
+      <td class="muted">${esc(branch.legacy_reason||branchLegacyReason(branch))}</td></tr>`).join('')
+    ||'<tr><td colspan="6" class="empty">Every branch is placed.</td></tr>';
+  const all=document.getElementById('branchLegacyAll');
+  if(all) all.checked=false;
+  if(list.length) populateBranchLegacyRegions();
+  else setBranchLegacyNotice('');
+}
+function branchGazetteerRegions(){
+  const out=[];
+  const push=v=>{v=String(v||'').trim();if(v&&out.indexOf(v)===-1)out.push(v)};
+  (typeof LOCATIONS!=='undefined'?LOCATIONS:[]).forEach(l=>push(l.region));
+  (branchAdminCatalog.gazetteer_regions||[]).forEach(push);
+  if(typeof BRANCH_DISTRICTS!=='undefined')Object.keys(BRANCH_DISTRICTS).forEach(push);
+  return out.sort((a,b)=>branchTableSort({region:a},{region:b}));
+}
+function branchGazetteerDistricts(region){
+  const out=[];
+  const push=v=>{v=String(v||'').trim();if(v&&out.indexOf(v)===-1)out.push(v)};
+  const gaz=(typeof LOCATIONS!=='undefined'?LOCATIONS:[]).find(l=>l.region===region);
+  if(gaz) gaz.districts.forEach(push);
+  const server=(branchAdminCatalog.gazetteer||{})[region];
+  if(Array.isArray(server)) server.forEach(push);
+  if(typeof BRANCH_DISTRICTS!=='undefined'&&BRANCH_DISTRICTS[region]) BRANCH_DISTRICTS[region].forEach(push);
+  return out;
+}
+function populateBranchLegacyRegions(){
+  const el=document.getElementById('branchLegacyRegion');
+  if(!el) return;
+  const previous=el.value;
+  const regions=branchGazetteerRegions();
+  el.innerHTML='<option value="">— select region —</option>'+regions.map(r=>
+    `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  if(regions.indexOf(previous)!==-1) el.value=previous;
+  populateBranchLegacyDistricts();
+}
+function populateBranchLegacyDistricts(){
+  const regionEl=document.getElementById('branchLegacyRegion');
+  const districtEl=document.getElementById('branchLegacyDistrict');
+  if(!districtEl) return;
+  const region=regionEl?regionEl.value:'';
+  const districts=region?branchGazetteerDistricts(region):[];
+  districtEl.innerHTML='<option value="">'+(region?'— select district —':'Select region first')+'</option>'
+    +districts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  districtEl.disabled=!region;
+}
+function selectAllLegacyBranches(checked){
+  document.querySelectorAll('#branchLegacyTable .branch-legacy-check')
+    .forEach(cb=>{cb.checked=!!checked});
+}
+function selectedLegacyBranchIds(){
+  return Array.from(document.querySelectorAll('#branchLegacyTable .branch-legacy-check'))
+    .filter(cb=>cb.checked)
+    .map(cb=>Number(cb.value))
+    .filter(n=>Number.isFinite(n)&&n>0);
+}
+async function assignLegacyBranches(){
+  if(guardReadOnly('Placing legacy branches')) return;
+  const ids=selectedLegacyBranchIds();
+  const region=(document.getElementById('branchLegacyRegion')||{}).value||'';
+  const district=(document.getElementById('branchLegacyDistrict')||{}).value||'';
+  if(!ids.length){
+    setBranchLegacyNotice('Select at least one legacy branch to place.',true);
+    return;
+  }
+  if(!region||!district){
+    setBranchLegacyNotice('Choose the gazetteer Region and District those branches belong to.',true);
+    return;
+  }
+  const button=document.getElementById('branchLegacyAssign');
+  if(button)button.disabled=true;
+  setBranchLegacyNotice('Assigning '+ids.length+' branch'+(ids.length===1?'':'es')+' to '+region+' · '+district+'…');
+  try{
+    const result=await api('/api/admin/branches/bulk-assign',{method:'POST',
+      body:JSON.stringify({ids,region,district})});
+    const updated=Array.isArray(result.updated)?result.updated:[];
+    applyBranchCatalogue(updated);
+    await refreshBranchManagement(true);
+    const skipped=Array.isArray(result.skipped)?result.skipped:[];
+    const message=updated.length+' branch'+(updated.length===1?'':'es')+' placed in '+region+' · '+district+'.'
+      +(skipped.length?' '+skipped.length+' skipped — '+skipped.map(s=>s.reason).join('; '):'');
+    setBranchNotice(message,skipped.length>0);
+    setBranchLegacyNotice(skipped.length?'Some legacy branches could not be placed. '+message:message,skipped.length>0);
+    refreshLiveMetrics();
+    toast(updated.length?'Branches re-placed':'Nothing changed',region+' · '+district);
+  }catch(err){
+    setBranchLegacyNotice(err.message||'The selected branches could not be placed.',true);
+  }finally{
+    if(button)button.disabled=false;
+  }
+}
+// ---- Edit Branch modal (Branch Management -> Actions -> Edit) ---------------
+function branchEditRegions(){
+  const out=[];
+  const push=v=>{v=String(v||'').trim();if(v&&out.indexOf(v)===-1)out.push(v)};
+  (typeof LOCATIONS!=='undefined'?LOCATIONS:[]).forEach(l=>push(l.region));
+  (branchAdminCatalog.gazetteer_regions||[]).forEach(push);
+  (branchAdminCatalog.regions||[]).forEach(push);
+  ((branchCatalog&&branchCatalog.items)||[]).forEach(b=>push(b.region));
+  return out;
+}
+function branchEditDistricts(region,current){
+  const out=branchGazetteerDistricts(region);
+  ((branchCatalog&&branchCatalog.items)||[]).concat(branchAdminCatalog.items||[])
+    .filter(b=>b.region===region).forEach(b=>{
+      const d=String(b.district||'').trim();
+      if(d&&out.indexOf(d)===-1) out.push(d);
+    });
+  if(current&&out.indexOf(current)===-1) out.push(current);
+  return out;
+}
+function populateBranchEditDistrictSelect(){
+  const regionEl=document.getElementById('branchEditRegion');
+  const districtEl=document.getElementById('branchEditDistrict');
+  if(!regionEl||!districtEl) return;
+  const region=regionEl.value||'';
+  const previous=districtEl.value;
+  const districts=region?branchEditDistricts(region,previous):[];
+  districtEl.innerHTML='<option value="">'+(region?'— select district —':'Select region first')+'</option>'
+    +districts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  if(previous&&districts.indexOf(previous)!==-1) districtEl.value=previous;
+  districtEl.disabled=!region;
+}
+function resetBranchEditForm(){
+  ['branchEditId','branchEditName'].forEach(fieldId=>{
+    const el=document.getElementById(fieldId);
+    if(el) el.value='';
+  });
+  const region=document.getElementById('branchEditRegion');
+  if(region) region.innerHTML='<option value="">— select region —</option>';
+  const district=document.getElementById('branchEditDistrict');
+  if(district){district.innerHTML='<option value="">Select region first</option>';district.disabled=true;}
+  const unit=document.getElementById('branchEditUnitType');
+  if(unit) unit.value='fingerprint';
+  const active=document.getElementById('branchEditActive');
+  if(active) active.value='1';
+  const notice=document.getElementById('branchEditNotice');
+  if(notice){notice.className='notice';notice.style.display='none';notice.textContent='';}
+}
+function openBranchEdit(id){
+  if(guardReadOnly('Editing a police branch')) return;
+  if(!canEditRecords()){
+    toast('Administrator only','Editing a branch is restricted to the System Administrator (Admin) role.');
+    return;
+  }
+  const branch=branchById(id);
+  if(!branch){toast('Branch not found','No catalogue row matches '+id);return}
+  window._editingBranch=branch;
+  const set=(fieldId,value)=>{const el=document.getElementById(fieldId);if(el)el.value=value};
+  set('branchEditId',String(branch.id));
+  set('branchEditName',branch.name||'');
+  const regionEl=document.getElementById('branchEditRegion');
+  const regions=branchEditRegions();
+  if(regionEl){
+    regionEl.innerHTML='<option value="">— select region —</option>'+regions.map(r=>
+      `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+    regionEl.value=regions.indexOf(branch.region)!==-1?branch.region:'';
+  }
+  populateBranchEditDistrictSelect();
+  const districtEl=document.getElementById('branchEditDistrict');
+  if(districtEl&&branch.district) districtEl.value=branch.district;
+  const unitEl=document.getElementById('branchEditUnitType');
+  if(unitEl) unitEl.value=branch.unit_type||'fingerprint';
+  const activeEl=document.getElementById('branchEditActive');
+  if(activeEl) activeEl.value=branchIsActive(branch)?'1':'0';
+  const identity=document.getElementById('branchEditIdentity');
+  if(identity) identity.innerHTML=`<b>#${esc(branch.id)}</b> · ${esc(branch.region||'Unassigned region')} → ${esc(branch.district||'Unassigned district')} <span class="muted">— the branch id never changes, so every record, officer posting and audit row stays linked.</span>`;
+  const notice=document.getElementById('branchEditNotice');
+  if(notice){notice.className='notice';notice.style.display='none';notice.textContent='';}
+  openEntryModal('branchEditModal');
+}
+async function saveBranchEdit(e){
+  if(e&&e.preventDefault)e.preventDefault();
+  clearInvalid();
+  if(guardReadOnly('Saving a police branch')) return;
+  if(!canEditRecords()){
+    showFormError('Editing a branch is restricted to the System Administrator (Admin) role.',
+      {notice:'branchEditNotice',title:'Administrator only'});
+    return;
+  }
+  const id=val('branchEditId');
+  const name=val('branchEditName');
+  const region=(document.getElementById('branchEditRegion')||{}).value||'';
+  const district=(document.getElementById('branchEditDistrict')||{}).value||'';
+  const unitType=(document.getElementById('branchEditUnitType')||{}).value||'';
+  const active=(document.getElementById('branchEditActive')||{}).value==='1';
+  if(!id){
+    showFormError('Reopen the branch from the table and try again.',
+      {notice:'branchEditNotice',title:'Unable to Save'});
+    return;
+  }
+  if(!name||!region||!district||!BRANCH_UNIT_LABELS[unitType]){
+    showFormError('Branch name, region, district and unit department are all required.',
+      {names:['branchEditName','branchEditRegion','branchEditDistrict','branchEditUnitType']
+        .filter(field=>!document.getElementById(field)||!String(document.getElementById(field).value||'').trim()),
+       notice:'branchEditNotice'});
+    return;
+  }
+  const button=document.getElementById('branchEditSave');
+  if(button)button.disabled=true;
+  const notice=document.getElementById('branchEditNotice');
+  if(notice){notice.className='notice';notice.style.display='block';notice.textContent='Saving branch…';}
+  try{
+    const result=await api('/api/admin/branches/'+encodeURIComponent(id),{method:'PATCH',
+      body:JSON.stringify({name,region,district,unit_type:unitType,active})});
+    const saved=result.branch||{id,name,region,district,unit_type:unitType,active};
+    applyBranchUpdate(saved);
+    resetBranchEditForm();
+    closeEntryModal('branchEditModal');
+    await refreshBranchManagement(true);
+    refreshLiveMetrics();
+    toast('Branch updated',saved.name+' · '+region+' · '+district+(active?'':' · Inactive'));
+  }catch(err){
+    const message=err.message||'The branch could not be updated.';
+    if(notice){notice.className='notice err show';notice.style.display='block';notice.textContent=message;}
+    else showFormError(message,{title:'Unable to Save'});
+  }finally{
+    if(button)button.disabled=false;
+  }
+}
+async function toggleBranchActive(id,next){
+  if(guardReadOnly('Changing a branch status')) return;
+  try{
+    const result=await api('/api/admin/branches/'+encodeURIComponent(id),{method:'PATCH',
+      body:JSON.stringify({active:!!next})});
+    applyBranchUpdate(result.branch);
+    await refreshBranchManagement(true);
+    refreshLiveMetrics();
+    const label=(result.branch&&result.branch.name)||('#'+id);
+    toast(next?'Branch activated':'Branch deactivated',label+' — records and officer postings keep their link; the branch is '+(next?'offered again':'no longer offered')+' for new intake.');
+  }catch(err){
+    setBranchNotice(err.message||'The branch status could not be changed.',true);
+  }
+}
 async function refreshBranchManagement(force=false){
   const table=document.getElementById('branchTable');
   const regionSelect=document.getElementById('branchRegion');
@@ -10409,7 +10873,36 @@ async function refreshBranchManagement(force=false){
   const previousRegion=regionSelect.value;
   const previousDistrict=districtSelect?districtSelect.value:'';
   try{
-    const catalog=await loadBranchCatalog(force);
+    let catalog;
+    const isAdmin=!!(sessionVisibility&&sessionVisibility.is_admin);
+    if(serverOn&&isAdmin){
+      // The administration catalogue carries INACTIVE branches (so they can be
+      // re-activated) and the legacy placement queue the cleanup tool works on.
+      const admin=await api('/api/admin/branches');
+      branchAdminCatalog={loaded:true,items:admin.items||[],unassigned:admin.unassigned||[],
+        regions:admin.regions||[],districts:admin.districts||[],
+        gazetteer:admin.gazetteer||{},gazetteer_regions:admin.gazetteer_regions||[],
+        counts:admin.counts||{}};
+      // Merge into the shared live catalogue: the sidebar tree, the Unit
+      // Directory and the intake dropdowns read it, so a renamed / re-placed /
+      // deactivated branch is reflected everywhere in the same paint.
+      const byId=new Map(((branchCatalog&&branchCatalog.items)||[]).map(b=>[String(b.id),b]));
+      (admin.items||[]).forEach(b=>byId.set(String(b.id),b));
+      branchCatalog={loaded:true,items:Array.from(byId.values()),
+        regions:Array.from(new Set([...((branchCatalog&&branchCatalog.regions)||[]),...(admin.regions||[])])),
+        districts:Array.from(new Set([...((branchCatalog&&branchCatalog.districts)||[]),...(admin.districts||[])])),
+        unit_types:(branchCatalog&&branchCatalog.unit_types)||[]};
+      catalog={items:admin.items||[],regions:admin.regions||[],districts:admin.districts||[]};
+      try{ renderUnitNavTrees(); }catch(_){ }
+    }else{
+      catalog=await loadBranchCatalog(force);
+      // No admin catalogue for this session: keep the cleanup queue derived
+      // from the public catalogue instead of a previous administrator's rows.
+      branchAdminCatalog={loaded:true,items:catalog.items||[],
+        unassigned:(catalog.items||[]).filter(b=>branchLegacyReason(b)),
+        regions:catalog.regions||[],districts:catalog.districts||[],
+        gazetteer:{},gazetteer_regions:[],counts:{}};
+    }
     const regions=Array.from(new Set([...(catalog.regions||[]),...(catalog.items||[]).map(b=>b.region)]))
       .filter(Boolean).sort((a,b)=>a.localeCompare(b));
     regionSelect.innerHTML='<option value="">— select region —</option>'+regions.map(region=>
@@ -10424,17 +10917,12 @@ async function refreshBranchManagement(force=false){
         districtSelect.value=previousDistrict;
       }
     }
-    const rows=(catalog.items||[]).slice().sort((a,b)=>
-      String(a.region).localeCompare(String(b.region))||String(a.district||'').localeCompare(String(b.district||''))||
-      String(a.name).localeCompare(String(b.name))||
-      String(a.unit_type).localeCompare(String(b.unit_type)));
-    table.innerHTML=rows.map(branch=>`<tr><td><b>${esc(branch.name)}</b></td>
-      <td>${esc(branch.region)}</td><td>${esc(branch.district||'—')}</td><td><span class="badge blue">${esc(BRANCH_UNIT_LABELS[branch.unit_type]||branch.unit_type)}</span></td></tr>`).join('')
-      ||'<tr><td class="empty" colspan="4">No branches have been configured.</td></tr>';
+    renderBranchRows(catalog.items||[]);
+    renderBranchLegacyPanel();
     if(!force)setBranchNotice('');
     return true;
   }catch(e){
-    table.innerHTML='<tr><td class="empty" colspan="4">Branch catalogue unavailable. Check the server connection and refresh.</td></tr>';
+    table.innerHTML='<tr><td class="empty" colspan="6">Branch catalogue unavailable. Check the server connection and refresh.</td></tr>';
     regionSelect.innerHTML='<option value="">Regions unavailable</option>';
     if(districtSelect) districtSelect.innerHTML='<option value="">District unavailable</option>';
     setBranchNotice(e.message||'Could not load the branch catalogue.',true);
