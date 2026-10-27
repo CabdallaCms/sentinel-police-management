@@ -13,6 +13,7 @@ npm install --no-save --package-lock=false jsdom@26
 
 node backend/test_form_improvements.mjs
 node backend/test_shell_workflow_integration.mjs
+node backend/test_sidebar_navigation.mjs
 node backend/test_record_audit_ui.mjs
 .venv/bin/python backend/test_checkpoint_roles_audit.py
 PYTHON="$PWD/.venv/bin/python" node backend/test_frontend_session.mjs
@@ -37,6 +38,37 @@ suites at operational data. `test_form_improvements.mjs` uses jsdom with mocked
 network writes; approval-flow tests execute all three actual page scripts
 against the real API. The older `test_server.py` still assumes retired SQLite
 storage and is not part of this PostgreSQL test set.
+
+## Sidebar navigation UAT checklist
+
+The sidebar is four collapsible categories (Command Center · Operational Units · Agency &
+Personnel · Administration). For every role you test:
+
+1. **Category + accordion state** — collapse each category and each accordion, reload; the state
+   persists (`sentinelNavSections` / `sentinelNavGroups`). Navigating to a page (including from a
+   dashboard quick action) expands the category + accordion that own it.
+2. **RBAC gates** — sign in as Fingerprint, Airport Control, CID, HR Directorate and a Checkpoint
+   officer. A category with no permitted entry never renders (no empty headings), Central Police
+   Search is absent for Fingerprint / Airport / CID, and Administration appears only for a
+   SystemAdmin. Nothing that *is* shown may lead to a forbidden page (`go()` still redirects).
+3. **Scalable unit labels** — register a long checkpoint branch name under Branch Management
+   (e.g. `Buuhoodle Border Crossing Checkpoint · East Togdheer · Buuhoodle`), then open the
+   sidebar: the rail shows a short, single-line label, the tooltip shows the full name, and no
+   label wraps or clips the chevron/count.
+4. **Checkpoint sub-menu** — expand *Operational Units → Checkpoint Units*: postings are grouped
+   by region, each region expands to its units (district shown at the end of the row), and the
+   region toggle survives a reload.
+5. **Unit Directory** — open *Unit Directory* from the checkpoint accordion. Filter by Unit type,
+   Region, District and free text; the empty state must explain a dead end. A Checkpoint officer
+   only sees unit types their modules allow. Clicking a row opens that unit's register; a
+   station-scoped officer stays locked to their own posting (toast explains it).
+6. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
+   control appears in it.
+7. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
+   (`sentinel-sidebar-nav-1-c41f9d2b`); a mismatch means a cached tab.
+
+`python backend/server.py --ui-check` must exit 0 — it now also asserts the four category
+markers, the checkpoint sub-menu mount, the short-label helper and the Unit Directory modal.
 
 ## Officer UAT checklist
 

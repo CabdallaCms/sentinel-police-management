@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-checkpoint-audit-6-9a4c7f31" />
+<meta name="sentinel-ui-build" content="sentinel-sidebar-nav-1-c41f9d2b" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -565,7 +565,6 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 }
 .nav-group-toggle:hover{background:#17283f!important;color:#e5edf8!important}
 .nav-group-toggle i{width:21px!important;height:21px!important;background:#ffffff08!important;color:#8199b9!important;font-size:14px!important}
-.nav-group-toggle>span:first-of-type{display:none}
 .nav-group-modern-title{display:block;overflow:hidden;color:inherit;font-size:11.75px;font-weight:800;letter-spacing:.1px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}
 .nav-chev{display:block;margin-left:auto;color:#647a98;font-size:10px;transition:transform .18s ease}
 .nav-group.open .nav-chev{transform:rotate(180deg)}
@@ -576,6 +575,70 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .nav-group-body button.active{background:#1d3654;color:#f8fafc;box-shadow:inset 3px 0 #60a5fa}
 .nav-group-body button.active i{color:#bfdbfe}
 .nav-subgroup-label{padding:8px 10px 2px 11px;color:#7186a3;font-size:8.5px;font-weight:850;letter-spacing:1px;line-height:1.25;text-transform:uppercase}
+/* ---- hierarchical navigation: category sections -------------------------
+   The sidebar is grouped into four operational categories (Command Center ·
+   Operational Units · Agency & Personnel · Administration). Each category is
+   a collapsible <section> and each department inside it an accordion
+   (.nav-group). Both levels persist their open/closed state. */
+.nav-section{display:block;margin:0 0 2px;padding:0}
+.nav .nav-section-toggle{
+  display:flex;align-items:center;gap:9px;width:100%;min-height:34px;
+  padding:9px 10px 7px;border-radius:8px;background:transparent;
+  color:#7d93b3;font-size:9.5px;font-weight:850;letter-spacing:1.15px;
+  text-transform:uppercase;transition:background .16s ease,color .16s ease;
+}
+.nav .nav-section-toggle:hover{background:#14243a;color:#dbe7f7}
+.nav .nav-section-toggle i{display:grid;place-items:center;width:19px;height:19px;flex:none;
+  border-radius:5px;background:rgba(255,255,255,.05);color:#8fa8c8;font-size:11px;font-style:normal}
+.nav-section-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav .nav-section-toggle .nav-chev{color:#5f7794}
+.nav .nav-section.open .nav-section-toggle .nav-chev{transform:rotate(180deg)}
+.nav-section-body{display:none;gap:3px;margin:0;padding:0 0 4px}
+.nav-section.open .nav-section-body{display:grid}
+.nav-section-body>.nav-group:first-of-type{margin-top:0}
+.nav .nav-group{margin-top:1px}
+.nav .nav-group-body{margin:2px 0 6px 12px}
+/* Long unit names never break the rail: every nav label is a single,
+   ellipsised line and the full name stays available as a tooltip. */
+.nav button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Unit Directory launcher (high-volume unit categories such as Checkpoints) */
+.nav-unit-dir{color:#9fb6d8!important;font-size:11.5px!important;font-weight:700!important;
+  min-height:36px!important;padding:7px 10px!important;gap:9px!important}
+.nav-unit-dir:hover{background:#1a2c46!important;color:#e8f0fb!important}
+.nav .nav-unit-dir i{background:transparent!important;color:#7d95b5!important;font-size:12.5px!important}
+.nav-unit-count{margin-left:auto;flex:none;padding:1px 7px;border-radius:99px;
+  background:#22374f;color:#9db7d8;font-size:10px;font-weight:800;overflow:visible!important}
+.nav-unit-count[hidden]{display:none}
+.nav .nav-region-toggle i{width:16px!important;height:16px!important;background:transparent!important;color:#6f88a8!important;font-size:10px!important}
+/* Region → District sub-menu inside a unit category */
+.nav-region-list{display:grid;gap:1px;margin:2px 0 2px}
+.nav-region-list:empty{display:none}
+.nav-region{display:block}
+.nav-region-toggle{min-height:32px!important;padding:6px 10px!important;gap:8px!important;
+  color:#8ea6c4!important;font-size:11px!important;font-weight:750!important;
+  letter-spacing:.15px!important;border-radius:8px!important}
+.nav-region-toggle:hover{background:#182a43!important;color:#e2ecf9!important}
+.nav-region-toggle .nav-region-count{margin-left:auto;flex:none;padding:0 6px;border-radius:99px;
+  background:#1f334d;font-size:9.5px;font-weight:800;color:#8fa8c8}
+.nav-region-toggle .nav-chev{font-size:9px}
+.nav-region.open .nav-region-toggle .nav-chev{transform:rotate(180deg)}
+.nav-region-body{display:none;gap:1px;margin:1px 0 3px 10px;padding-left:8px;border-left:1px solid #24374f}
+.nav-region.open .nav-region-body{display:grid}
+.nav-unit{min-height:30px!important;padding:5px 9px!important;gap:8px!important;
+  color:#93a9c6!important;font-size:11.25px!important;font-weight:600!important;border-radius:7px!important}
+.nav-unit:hover{background:#182a43!important;color:#e6eefb!important}
+.nav .nav-unit i{width:6px!important;height:6px!important;border-radius:99px!important;
+  background:#3f5877!important;font-size:0!important}
+.nav-unit.is-current{background:#1d3654!important;color:#f1f6ff!important}
+.nav .nav-unit.is-current i{background:#60a5fa!important}
+.nav-unit-short{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-unit-meta{flex:none;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#6d87a7;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.35px}
+.cmodal.unit-dir{width:min(860px,calc(100vw - 44px))}
+.ud-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:11px 14px;margin-bottom:11px}
+#udTable tr.clickable{cursor:pointer}
+#udTable tr.clickable:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+#udTable .sub{margin-top:2px;color:var(--muted);font-size:11px}
 .side-footer{flex:none;margin:0;padding:12px 3px 0;border-top:1px solid rgba(255,255,255,.09);color:#92a5bf;font-size:11px;line-height:1.45}
 .side-footer-meta{display:grid;gap:5px;padding:0 6px}
 .side-footer-label{color:#7186a3;font-size:8.5px;font-weight:850;letter-spacing:1.15px;text-transform:uppercase}
@@ -1260,68 +1323,121 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
   </div>
   <div class="side-divider"></div>
   <nav class="nav" id="nav">
-    <div class="nav-section-title">Command center</div>
-    <button class="active" data-page="dashboard" data-modules="dashboard"><i>▦</i><span>Dashboard</span></button>
+    <!-- ==================== COMMAND CENTER ==================== -->
+    <section class="nav-section open" data-section="command-center" aria-label="Command Center">
+    <button type="button" class="nav-section-toggle" data-section-toggle="command-center" aria-expanded="true" aria-controls="nav-section-command-center">
+      <i aria-hidden="true">⌘</i><span class="nav-section-name">Command Center</span><span class="nav-chev" aria-hidden="true">▾</span>
+    </button>
+    <div class="nav-section-body" data-section-body="command-center" id="nav-section-command-center">
+    <button class="active" data-page="dashboard" data-modules="dashboard"><i aria-hidden="true">▦</i><span>Dashboard</span></button>
 
-    <div class="nav-section-title nav-section-title-spaced">Agency systems</div>
     <div class="nav-group open" data-group="search">
-    <button type="button" class="nav-group-toggle" data-group-toggle="search"><i>⌕</i><span>Central Search</span><span class="nav-group-modern-title">Search &amp; Intelligence</span><span class="nav-chev">▾</span></button>
+    <button type="button" class="nav-group-toggle" data-group-toggle="search"><i aria-hidden="true">⌕</i><span class="nav-group-modern-title">Search &amp; Intelligence</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="search">
-    <button data-page="people" data-modules="people"><i>◉</i><span>Central Person Search</span></button>
-    <button data-page="policesearch" data-modules="policesearch"><i>⌕</i><span>Central Police Search</span></button>
-</div>
-    </div>
-
-    <div class="nav-group open" data-group="cid">
-    <button type="button" class="nav-group-toggle" data-group-toggle="cid"><i>⌘</i><span>Dep. Of CID</span><span class="nav-group-modern-title">CID</span><span class="nav-chev">▾</span></button>
-    <div class="nav-group-body" data-group-body="cid">
-    <button data-page="fingerprint" data-modules="fingerprint"><i>⌁</i><span>Fingerprint Unit</span></button>
-    <button data-page="cid" data-modules="cid"><i>⚖</i><span>Crime Unit</span></button>
-    <div class="nav-subgroup-label" data-module-label="checkpoints">Checkpoint operations</div>
-    <button data-page="checkpoints" data-modules="checkpoints"><i>⊙</i><span>Checkpoint Unit</span></button>
-    <button data-page="airport" data-modules="airport"><i>✈</i><span>Airport Unit</span></button>
-</div>
-    </div>
-
-    <div class="nav-group open" data-group="personnel">
-    <button type="button" class="nav-group-toggle" data-group-toggle="personnel"><i>♙</i><span>Dep. of Police Personnel (Registration Police Office)</span><span class="nav-group-modern-title">Police Personnel</span><span class="nav-chev">▾</span></button>
-    <div class="nav-group-body" data-group-body="personnel">
-    <button data-page="officers" data-modules="officers"><i>▤</i><span>Registration Office</span></button>
-    <button data-page="conduct" data-modules="conduct"><i>★</i><span>Conduct, Promotions &amp; Disciplinary Management</span></button>
-</div>
-    </div>
-
-    <div class="nav-group open" data-group="transport">
-    <button type="button" class="nav-group-toggle" data-group-toggle="transport"><i>▰</i><span>Dep. Of Transport</span><span class="nav-group-modern-title">Transport</span><span class="nav-chev">▾</span></button>
-    <div class="nav-group-body" data-group-body="transport">
-    <button data-page="cars" data-modules="cars"><i>▣</i><span>Vehicle Registry</span></button>
-    <button data-page="vehiclestatus" data-modules="cars"><i>◎</i><span>Vehicle Status &amp; Tracking</span></button>
+    <button data-page="people" data-modules="people"><i aria-hidden="true">◉</i><span>Central Person Search</span></button>
+    <button data-page="policesearch" data-modules="policesearch"><i aria-hidden="true">⌕</i><span>Central Police Search</span></button>
 </div>
     </div>
 
     <div class="nav-group open" data-group="command">
-    <button type="button" class="nav-group-toggle" data-group-toggle="command"><i>★</i><span>Chief Commander of Police Office (HQ / Command)</span><span class="nav-group-modern-title">HQ Command</span><span class="nav-chev">▾</span></button>
+    <button type="button" class="nav-group-toggle" data-group-toggle="command"><i aria-hidden="true">★</i><span class="nav-group-modern-title">HQ Command</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="command">
-    <button data-page="executive" data-modules="executive"><i>▦</i><span>Global Executive Dashboard</span></button>
-    <button data-page="oversight" data-modules="oversight"><i>⌖</i><span>Stations Oversight &amp; Regional Data</span></button>
+    <button data-page="executive" data-modules="executive"><i aria-hidden="true">▦</i><span>Global Executive Dashboard</span></button>
+    <button data-page="oversight" data-modules="oversight"><i aria-hidden="true">⌖</i><span>Stations Oversight &amp; Regional Data</span></button>
+</div>
+    </div>
+    </div>
+    </section>
+
+    <!-- ==================== OPERATIONAL UNITS ==================== -->
+    <section class="nav-section open" data-section="operational-units" aria-label="Operational Units">
+    <button type="button" class="nav-section-toggle" data-section-toggle="operational-units" aria-expanded="true" aria-controls="nav-section-operational-units">
+      <i aria-hidden="true">⛨</i><span class="nav-section-name">Operational Units</span><span class="nav-chev" aria-hidden="true">▾</span>
+    </button>
+    <div class="nav-section-body" data-section-body="operational-units" id="nav-section-operational-units">
+    <div class="nav-group open" data-group="fingerprint">
+    <button type="button" class="nav-group-toggle" data-group-toggle="fingerprint"><i aria-hidden="true">⌁</i><span class="nav-group-modern-title">Fingerprint Units</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+    <div class="nav-group-body" data-group-body="fingerprint">
+    <button data-page="fingerprint" data-modules="fingerprint"><i aria-hidden="true">⌁</i><span>Fingerprint Unit</span></button>
 </div>
     </div>
 
-    <div class="nav-group" data-group="registrations">
-    <button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i>▤</i><span>Registers</span><span class="nav-group-modern-title">Registers</span><span class="nav-chev">▾</span></button>
+    <div class="nav-group open" data-group="cid">
+    <button type="button" class="nav-group-toggle" data-group-toggle="cid"><i aria-hidden="true">⌘</i><span class="nav-group-modern-title">Crime Units</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+    <div class="nav-group-body" data-group-body="cid">
+    <button data-page="cid" data-modules="cid"><i aria-hidden="true">⚖</i><span>Crime Unit</span></button>
+</div>
+    </div>
+
+    <div class="nav-group open" data-group="airport">
+    <button type="button" class="nav-group-toggle" data-group-toggle="airport"><i aria-hidden="true">✈</i><span class="nav-group-modern-title">Airport Control</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+    <div class="nav-group-body" data-group-body="airport">
+    <button data-page="airport" data-modules="airport"><i aria-hidden="true">✈</i><span>Airport Unit</span></button>
+</div>
+    </div>
+
+    <div class="nav-group open" data-group="checkpoints">
+    <button type="button" class="nav-group-toggle" data-group-toggle="checkpoints"><i aria-hidden="true">⊙</i><span class="nav-group-modern-title">Checkpoint Units</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+    <div class="nav-group-body" data-group-body="checkpoints">
+    <button type="button" class="nav-unit-dir" data-unit-directory="checkpoint" onclick="openUnitDirectory('checkpoint')"><i aria-hidden="true">⌕</i><span>Unit Directory</span><span class="nav-unit-count" id="cpNavCount" hidden></span></button>
+    <div class="nav-subgroup-label" data-module-label="checkpoints">Checkpoint operations</div>
+    <button data-page="checkpoints" data-modules="checkpoints"><i aria-hidden="true">⊙</i><span>Checkpoint Unit</span></button>
+    <!-- Region → District unit sub-menu: rendered from the branch catalogue by
+         renderCheckpointNav(). Unit names are shortened for the sidebar (the
+         full name stays in the tooltip and in the Unit Directory). -->
+    <div class="nav-region-list" id="cpNavRegions" data-nav-regions="checkpoint"></div>
+</div>
+    </div>
+
+    <div class="nav-group open" data-group="registrations">
+    <button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i aria-hidden="true">▤</i><span class="nav-group-modern-title">Stations &amp; Registers</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="registrations">
-    <button data-page="stations" data-modules="stations"><i>▦</i><span>Police Stations</span></button>
-    <button data-page="crimes" data-modules="crimes"><i>⚖</i><span>Register Crime</span></button>
+    <button data-page="stations" data-modules="stations"><i aria-hidden="true">▦</i><span>Police Stations</span></button>
+    <button data-page="crimes" data-modules="crimes"><i aria-hidden="true">⚖</i><span>Register Crime</span></button>
+</div>
+    </div>
+    </div>
+    </section>
+
+    <!-- ==================== AGENCY & PERSONNEL ==================== -->
+    <section class="nav-section open" data-section="agency-personnel" aria-label="Agency &amp; Personnel">
+    <button type="button" class="nav-section-toggle" data-section-toggle="agency-personnel" aria-expanded="true" aria-controls="nav-section-agency-personnel">
+      <i aria-hidden="true">♙</i><span class="nav-section-name">Agency &amp; Personnel</span><span class="nav-chev" aria-hidden="true">▾</span>
+    </button>
+    <div class="nav-section-body" data-section-body="agency-personnel" id="nav-section-agency-personnel">
+    <div class="nav-group open" data-group="personnel">
+    <button type="button" class="nav-group-toggle" data-group-toggle="personnel"><i aria-hidden="true">♙</i><span class="nav-group-modern-title">Police Personnel</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+    <div class="nav-group-body" data-group-body="personnel">
+    <button data-page="officers" data-modules="officers"><i aria-hidden="true">▤</i><span>Registration Office</span></button>
+    <button data-page="conduct" data-modules="conduct"><i aria-hidden="true">★</i><span title="Conduct, Promotions &amp; Disciplinary Management">Conduct &amp; Discipline</span></button>
 </div>
     </div>
 
-    <div class="nav-group" data-group="admin" style="display:none">
-    <button type="button" class="nav-group-toggle" data-group-toggle="admin"><i>⚙</i><span>Administration</span><span class="nav-group-modern-title">System Administration</span><span class="nav-chev">▾</span></button>
-    <div class="nav-group-body" data-group-body="admin">
-    <button data-page="admin" data-modules="admin"><i>⚙</i><span>User Management</span></button>
-    <button data-page="branches" data-modules="admin"><i>⌂</i><span>Branch Management</span></button>
+    <div class="nav-group open" data-group="transport">
+    <button type="button" class="nav-group-toggle" data-group-toggle="transport"><i aria-hidden="true">▰</i><span class="nav-group-modern-title">Transport / Fleet</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+    <div class="nav-group-body" data-group-body="transport">
+    <button data-page="cars" data-modules="cars"><i aria-hidden="true">▣</i><span>Vehicle Registry</span></button>
+    <button data-page="vehiclestatus" data-modules="cars"><i aria-hidden="true">◎</i><span>Vehicle Status &amp; Tracking</span></button>
 </div>
     </div>
+    </div>
+    </section>
+
+    <!-- ==================== ADMINISTRATION (SystemAdmin only) ==================== -->
+    <section class="nav-section open" data-section="administration" data-admin-only="1" style="display:none" aria-label="Administration">
+    <button type="button" class="nav-section-toggle" data-section-toggle="administration" aria-expanded="true" aria-controls="nav-section-administration">
+      <i aria-hidden="true">⚙</i><span class="nav-section-name">Administration</span><span class="nav-chev" aria-hidden="true">▾</span>
+    </button>
+    <div class="nav-section-body" data-section-body="administration" id="nav-section-administration">
+    <div class="nav-group open" data-group="admin" style="display:none">
+    <button type="button" class="nav-group-toggle" data-group-toggle="admin"><i aria-hidden="true">⚙</i><span class="nav-group-modern-title">System Administration</span><span class="nav-chev" aria-hidden="true">▾</span></button>
+    <div class="nav-group-body" data-group-body="admin">
+    <button data-page="admin" data-modules="admin"><i aria-hidden="true">⚙</i><span>User Management</span></button>
+    <button data-page="branches" data-modules="admin"><i aria-hidden="true">⌂</i><span>Branch Management</span></button>
+</div>
+    </div>
+    </div>
+    </section>
     <!-- Analytics is not a standalone page: the only full analytics surface is
          the Chief Commander's Global Executive Dashboard (HQ / Command). Operational
          registers stay clean — compact unit overviews and full-width data tables. -->
@@ -2346,6 +2462,31 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
   <div class="fp-review-footer" id="fpReviewActions"><button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button></div>
 </div>
 
+<!-- UNIT DIRECTORY — the scalable counterweight to a flat unit list.
+     High-volume categories (every checkpoint posting, every branch) are
+     browsed here with Region + District filters instead of flooding the rail.
+     Read-only: it lists only the unit types this session may read. -->
+<div class="cmodal-ov" id="unitDirOv" onclick="closeEntryModal('unitDir')"></div>
+<div class="cmodal unit-dir" id="unitDir" role="dialog" aria-modal="true" aria-labelledby="unitDirTitle">
+  <div class="cm-head">
+    <div><h3 id="unitDirTitle">Unit Directory</h3><div class="sub">Every registered unit — filter by region and district, or search a name</div></div>
+    <button class="iconbtn" type="button" onclick="closeEntryModal('unitDir')" aria-label="Close">✕</button>
+  </div>
+  <div class="cm-body">
+    <div class="form">
+      <div class="ud-filters">
+        <div class="field"><label for="udUnitType">Unit type</label><select id="udUnitType" onchange="populateUnitDirectoryFilters(true);renderUnitDirectory()"><option value="checkpoint">Checkpoint Units</option></select></div>
+        <div class="field"><label for="udRegion">Region</label><select id="udRegion" onchange="populateUnitDirectoryDistricts();renderUnitDirectory()"><option value="">All regions</option></select></div>
+        <div class="field"><label for="udDistrict">District</label><select id="udDistrict" onchange="renderUnitDirectory()"><option value="">All districts</option></select></div>
+      </div>
+      <div class="search"><span>⌕</span><input id="udSearch" placeholder="Search unit name, region or district…" oninput="renderUnitDirectory()"></div>
+    </div>
+    <div class="sub" id="udCount" style="margin:10px 0 8px">0 units</div>
+    <div class="table-wrap"><table class="table"><thead><tr><th scope="col">Unit</th><th scope="col">Region</th><th scope="col">District</th><th scope="col">Category</th></tr></thead><tbody id="udTable"></tbody></table></div>
+    <div class="empty" id="udEmpty" style="display:none">No units match these filters. Widen the region / district selection, or register the unit under Branch Management.</div>
+  </div>
+</div>
+
 <script>
 // ============================ state ============================
 const seed={people:[
@@ -2914,6 +3055,11 @@ function go(page){
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===navPage));
   const g = PAGE_GROUP[navPage];
   if(g) setNavGroupOpen(g, true);
+  // The category section that owns the page opens too, so a navigation from
+  // a search result / quick action never lands in a collapsed category.
+  const sec = PAGE_SECTION[navPage];
+  if(sec) setNavSectionOpen(sec, true);
+  markCheckpointNavCurrent();
   closeSidebar();
   document.getElementById('pageTitle').textContent=TITLES[page]||'';
   if(page==='cid') renderCases();
@@ -2952,24 +3098,55 @@ const ALLOWED_PAGES_WITHOUT_AUTH = new Set();
 // collapsible group toggles are wired separately below.
 document.querySelectorAll('#nav button[data-page]').forEach(b=>b.onclick=()=>go(b.dataset.page));
 
-// ---- collapsible sidebar groups ---------------------------------------------
-// The flat module list is organised into collapsible departmental groups:
-//   * search        — Central Search (person + police registers)
-//   * cid           — Dep. of CID (Fingerprint · Crime · Checkpoint · Airport)
-//   * personnel     — Dep. of Police Personnel (Registration Police Office)
-//   * transport     — Dep. of Transport (Vehicle Registry · Status & Tracking)
-//   * command       — Chief Commander of Police Office (HQ / Command)
-//   * registrations — shared registers (Police Stations · Register Crime)
-//   * admin         — Administration (SystemAdmin only)
-// Open/closed state persists across reloads (sentinelNavGroups); opening a
-// page always expands the group that contains it (see go()).
-const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'cid',cid:'cid',checkpoints:'cid',airport:'cid',caseworkspace:'cid',officers:'personnel',conduct:'personnel',cars:'transport',vehiclestatus:'transport',executive:'command',oversight:'command',stations:'registrations',crimes:'registrations',admin:'admin',branches:'admin'};
+// ---- hierarchical sidebar: category sections + unit accordions --------------
+// The navigation is organised the way the service actually works, not the way
+// the database happens to be shaped:
+//
+//   COMMAND CENTER      dashboard · Search & Intelligence · HQ Command
+//   OPERATIONAL UNITS   Fingerprint · Crime · Airport Control · Checkpoint ·
+//                       Stations & Registers
+//   AGENCY & PERSONNEL  Police Personnel · Transport / Fleet
+//   ADMINISTRATION      System Administration (SystemAdmin only)
+//
+// Every category is a collapsible <section class="nav-section"> and every
+// department inside it an accordion (<div class="nav-group">). Open/closed
+// state persists across reloads (sentinelNavSections / sentinelNavGroups) and
+// opening a page always expands the section + group that contain it (see go()).
+//
+// RBAC is unchanged: the same `data-modules` gate on every <button data-page>,
+// the same snapshot/restore + hard denylist (see applyNavForRole /
+// enforceSidebarDenylist further down). A category with no permitted entry is
+// hidden entirely — an Airport Control officer never sees an empty
+// "Fingerprint Units" heading.
+const PAGE_GROUP={people:'search',policesearch:'search',fingerprint:'fingerprint',cid:'cid',checkpoints:'checkpoints',airport:'airport',caseworkspace:'cid',officers:'personnel',conduct:'personnel',cars:'transport',vehiclestatus:'transport',executive:'command',oversight:'command',stations:'registrations',crimes:'registrations',admin:'admin',branches:'admin'};
+const PAGE_SECTION={
+  dashboard:'command-center',people:'command-center',policesearch:'command-center',
+  executive:'command-center',oversight:'command-center',
+  fingerprint:'operational-units',cid:'operational-units',caseworkspace:'operational-units',
+  checkpoints:'operational-units',airport:'operational-units',
+  stations:'operational-units',crimes:'operational-units',
+  officers:'agency-personnel',conduct:'agency-personnel',
+  cars:'agency-personnel',vehiclestatus:'agency-personnel',
+  admin:'administration',branches:'administration'
+};
 const NAV_GROUPS_KEY='sentinelNavGroups';
+const NAV_SECTIONS_KEY='sentinelNavSections';
+const NAV_REGIONS_KEY='sentinelNavRegions';
 function navGroupsState(){try{const s=JSON.parse(localStorage.getItem(NAV_GROUPS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
 function saveNavGroupsState(s){try{localStorage.setItem(NAV_GROUPS_KEY,JSON.stringify(s))}catch(_){}}
+function navSectionsState(){try{const s=JSON.parse(localStorage.getItem(NAV_SECTIONS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
+function saveNavSectionsState(s){try{localStorage.setItem(NAV_SECTIONS_KEY,JSON.stringify(s))}catch(_){}}
+function navRegionsState(){try{const s=JSON.parse(localStorage.getItem(NAV_REGIONS_KEY)||'{}');return (s&&typeof s==='object')?s:{}}catch(_){return{}}}
+function saveNavRegionsState(s){try{localStorage.setItem(NAV_REGIONS_KEY,JSON.stringify(s))}catch(_){}}
 const NAV_GROUP_LABELS={
-  search:'Search and intelligence',cid:'CID',personnel:'Police personnel',
-  transport:'Transport',command:'Headquarters command',registrations:'Registers',admin:'System administration'
+  search:'Search & Intelligence',fingerprint:'Fingerprint Units',cid:'Crime Units',
+  airport:'Airport Control',checkpoints:'Checkpoint Units',
+  registrations:'Stations & Registers',personnel:'Police Personnel',
+  transport:'Transport / Fleet',command:'HQ Command',admin:'System Administration'
+};
+const NAV_SECTION_LABELS={
+  'command-center':'Command Center','operational-units':'Operational Units',
+  'agency-personnel':'Agency & Personnel','administration':'Administration'
 };
 function setNavGroupOpen(name,open){
   const el=document.querySelector('.nav-group[data-group="'+name+'"]');
@@ -2983,6 +3160,26 @@ function setNavGroupOpen(name,open){
     if(body&&body.id) toggle.setAttribute('aria-controls',body.id);
     toggle.setAttribute('aria-label',NAV_GROUP_LABELS[name]||name);
   }
+}
+function setNavSectionOpen(name,open){
+  const el=document.querySelector('.nav-section[data-section="'+name+'"]');
+  if(!el) return;
+  el.classList.toggle('open',!!open);
+  const toggle=el.querySelector('.nav-section-toggle');
+  const body=el.querySelector('.nav-section-body');
+  if(body){ if(!body.id) body.id='nav-section-'+name; }
+  if(toggle){
+    toggle.setAttribute('aria-expanded',String(!!open));
+    if(body&&body.id) toggle.setAttribute('aria-controls',body.id);
+    toggle.setAttribute('aria-label',NAV_SECTION_LABELS[name]||name);
+  }
+}
+function toggleNavSection(name){
+  const s=navSectionsState();
+  const el=document.querySelector('.nav-section[data-section="'+name+'"]');
+  s[name]=el ? !el.classList.contains('open') : !s[name];
+  saveNavSectionsState(s);
+  setNavSectionOpen(name,s[name]);
 }
 const SIDEBAR_COLLAPSED_KEY='sentinelSidebarCollapsed';
 function sidebarIsMobile(){
@@ -3054,7 +3251,8 @@ if(typeof document.addEventListener==='function') document.addEventListener('key
 if(typeof window.addEventListener==='function') window.addEventListener('resize',applySidebarViewport);
 function toggleNavGroup(name){
   const s=navGroupsState();
-  s[name]=(s[name]===undefined)?false:!s[name];
+  const el=document.querySelector('.nav-group[data-group="'+name+'"]');
+  s[name]=el ? !el.classList.contains('open') : !s[name];
   saveNavGroupsState(s);
   setNavGroupOpen(name,s[name]);
 }
@@ -3067,6 +3265,372 @@ function toggleNavGroup(name){
     if(t) t.onclick=()=>toggleNavGroup(name);
   });
 })();
+(function initNavSections(){
+  const s=navSectionsState();
+  document.querySelectorAll('.nav-section').forEach(sec=>{
+    const name=sec.dataset.section;
+    setNavSectionOpen(name, s[name]===undefined ? true : !!s[name]);
+    const t=sec.querySelector('.nav-section-toggle');
+    if(t) t.onclick=()=>toggleNavSection(name);
+  });
+})();
+
+// ---- scalable unit labels ---------------------------------------------------
+// A unit name is data — an operator can register "Buuhoodle Border Crossing
+// Checkpoint (District HQ)" and the sidebar must still read cleanly at 210px.
+// `shortUnitLabel` is the ONE place that decides what the rail shows: the
+// administrative suffix is dropped, the remainder is ellipsised at a fixed
+// width, and the full name always survives in the tooltip / Unit Directory.
+const NAV_UNIT_SHORT_MAX=19;
+function shortUnitLabel(name,max){
+  const raw=String(name==null?'':name).replace(/\s+/g,' ').trim();
+  if(!raw) return 'Unit';
+  let s=raw.replace(/\s*[·—–-]\s*(?:regional|district|area)?\s*(?:hq|headquarters)\s*$/i,'');
+  s=s.replace(/\s+(?:branch|checkpoint|police\s+station|sub-?station|outpost|unit|office)$/i,'');
+  s=s.trim()||raw;
+  const limit=Math.max(8,(max||NAV_UNIT_SHORT_MAX));
+  if(s.length>limit) s=s.slice(0,limit-1).replace(/[\s·,;:/\\-]+$/,'')+'…';
+  return s;
+}
+// `unitMetaLabel` is the short supporting line (district for checkpoints,
+// region otherwise) shown at the end of a unit row.
+function unitMetaLabel(unit){
+  if(!unit) return '';
+  const district=String(unit.district||'').trim();
+  const region=String(unit.region||'').trim();
+  if(district && district.toLowerCase()!==region.toLowerCase()) return district;
+  return region||'';
+}
+// The checkpoint unit catalogue is built ONCE from the sources that already
+// exist — the branch catalogue (/api/branches, authority) plus the location
+// codes actually present in the register — and is the single input for both
+// the sidebar regional sub-menu and the Unit Directory filters.
+function checkpointUnitCatalog(){
+  const seen=new Map();
+  const add=(unit)=>{
+    if(!unit) return;
+    const label=String(unit.label||'').replace(/\s+/g,' ').trim();
+    if(!label) return;
+    const key=label.toLowerCase();
+    if(seen.has(key)){
+      const prev=seen.get(key);
+      if(!prev.region && unit.region) prev.region=unit.region;
+      if(!prev.district && unit.district) prev.district=unit.district;
+      if(!prev.code && unit.code) prev.code=unit.code;
+      return;
+    }
+    seen.set(key,{
+      label,
+      region:String(unit.region||'').trim()||'Assigned locations',
+      district:String(unit.district||'').trim(),
+      code:unit.code||'',
+      unit_type:'checkpoint'
+    });
+  };
+  const branches=(branchCatalog && Array.isArray(branchCatalog.items)) ? branchCatalog.items : [];
+  branches.filter(b=>b && b.unit_type==='checkpoint').forEach(b=>{
+    add({label:b.name, region:b.region, district:b.district,
+         code:cpCodeFromLabel(b.name+' '+(b.region||''))});
+  });
+  (db && Array.isArray(db.checkpoints) ? db.checkpoints : []).forEach(row=>{
+    const raw=row.checkpoint_location||row.location_code||row.location||'';
+    const label=checkpointLabelText(raw);
+    add({label, region:row.checkpoint_region||'', district:row.checkpoint_district||'',
+         code:cpCodeFromLabel(raw)});
+  });
+  const roster=(sessionRoster && Array.isArray(sessionRoster.checkpoint_locations)) ? sessionRoster.checkpoint_locations : [];
+  roster.forEach(code=>add({label:checkpointLabelText(code), code}));
+  return Array.from(seen.values());
+}
+// A canonical South/East/West code, when the label carries one. Returns '' for
+// every other unit (those are filtered by label through the register search).
+function cpCodeFromLabel(text){
+  const t=String(text||'').toLowerCase();
+  for(const c of CP_LOCATIONS){ if(new RegExp('\\b'+c.toLowerCase()+'\\b').test(t)) return c; }
+  return '';
+}
+// Region → District unit sub-menu inside the Checkpoint Units accordion.
+// Only rendered for a session that may read the checkpoint module, so a
+// Fingerprint / Airport officer never sees checkpoint postings at all.
+function renderCheckpointNav(){
+  const wrap=document.getElementById('cpNavRegions');
+  const countEl=document.getElementById('cpNavCount');
+  if(!wrap) return;
+  const allowed=!!sessionUser && hasModule('checkpoints');
+  if(!allowed){
+    wrap.innerHTML=''; wrap.dataset.navSig='';
+    if(countEl){countEl.hidden=true;countEl.textContent=''}
+    return;
+  }
+  const units=checkpointUnitCatalog();
+  if(countEl){
+    countEl.textContent=units.length?String(units.length):'';
+    countEl.hidden=!units.length;
+    countEl.title=units.length+' checkpoint unit'+(units.length===1?'':'s')+' in the register';
+  }
+  if(!units.length){ wrap.innerHTML=''; wrap.dataset.navSig=''; return; }
+  // Repaint only when the catalogue changed; a plain navigation just refreshes
+  // which unit is highlighted (keeps the sub-menu from losing its scroll).
+  const sig=JSON.stringify(units.map(u=>[u.label,u.region,u.district,u.code]));
+  if(wrap.dataset.navSig===sig){ markCheckpointNavCurrent(); return; }
+  wrap.dataset.navSig=sig;
+  const regions=new Map();
+  units.forEach(u=>{
+    const region=u.region||'Assigned locations';
+    if(!regions.has(region)) regions.set(region,[]);
+    regions.get(region).push(u);
+  });
+  const state=navRegionsState();
+  const order=Array.from(regions.keys()).sort((a,b)=>{
+    const ia=LOCATIONS.findIndex(l=>l.region===a), ib=LOCATIONS.findIndex(l=>l.region===b);
+    if(ia!==-1&&ib!==-1) return ia-ib;
+    if(ia!==-1) return -1;
+    if(ib!==-1) return 1;
+    return a.localeCompare(b);
+  });
+  wrap.innerHTML=order.map(region=>{
+    const list=regions.get(region).sort((a,b)=>a.label.localeCompare(b.label));
+    const open=state[region]===undefined ? false : !!state[region];
+    const id='cpNavRegion-'+String(region).toLowerCase().replace(/[^a-z0-9]+/g,'-');
+    return `<div class="nav-region${open?' open':''}" data-nav-region="${esc(region)}">
+      <button type="button" class="nav-region-toggle" data-region-toggle="${esc(region)}" aria-expanded="${open?'true':'false'}" aria-controls="${id}" title="${esc(region)} — ${list.length} unit${list.length===1?'':'s'}">
+        <i aria-hidden="true">⌖</i><span>${esc(shortUnitLabel(region,16))}</span><span class="nav-region-count">${list.length}</span><span class="nav-chev" aria-hidden="true">▾</span>
+      </button>
+      <div class="nav-region-body" id="${id}">
+      ${list.map(u=>`<button type="button" class="nav-unit" data-unit-label="${esc(u.label)}" data-unit-code="${esc(u.code)}" title="${esc(u.label)}${u.district?' · '+esc(u.district):''}${u.region?' · '+esc(u.region):''}"><i aria-hidden="true"></i><span class="nav-unit-short">${esc(shortUnitLabel(u.label))}</span>${unitMetaLabel(u)?`<span class="nav-unit-meta">${esc(shortUnitLabel(unitMetaLabel(u),11))}</span>`:''}</button>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('.nav-region-toggle').forEach(btn=>{
+    btn.onclick=()=>toggleNavRegion(btn.dataset.regionToggle);
+  });
+  wrap.querySelectorAll('.nav-unit').forEach(btn=>{
+    btn.onclick=()=>openCheckpointUnit(btn.dataset.unitLabel||'', btn.dataset.unitCode||'');
+  });
+  markCheckpointNavCurrent();
+}
+function toggleNavRegion(region){
+  const el=document.querySelector('.nav-region[data-nav-region="'+region.replace(/"/g,'\\"')+'"]');
+  if(!el) return;
+  const open=!el.classList.contains('open');
+  el.classList.toggle('open',open);
+  const s=navRegionsState(); s[region]=open; saveNavRegionsState(s);
+  const btn=el.querySelector('.nav-region-toggle');
+  if(btn) btn.setAttribute('aria-expanded',String(open));
+  if(open) el.scrollIntoView&&el.scrollIntoView({block:'nearest'});
+}
+function markCheckpointNavCurrent(){
+  const wrap=document.getElementById('cpNavRegions');
+  if(!wrap) return;
+  const active=String(cpLocationFilter||'');
+  wrap.querySelectorAll('.nav-unit').forEach(b=>{
+    const label=b.dataset.unitLabel||'';
+    const code=b.dataset.unitCode||'';
+    const on=active && (code===active || label.toLowerCase()===active.toLowerCase());
+    b.classList.toggle('is-current',!!on);
+    b.setAttribute('aria-current',on?'true':'false');
+  });
+  // Reveal (but never collapse) the region that owns the active unit.
+  const current=wrap.querySelector('.nav-unit.is-current');
+  if(current){
+    const region=current.closest('.nav-region');
+    if(region && !region.classList.contains('open')){
+      region.classList.add('open');
+      const name=region.dataset.navRegion||'';
+      const s=navRegionsState(); s[name]=true; saveNavRegionsState(s);
+      const btn=region.querySelector('.nav-region-toggle');
+      if(btn) btn.setAttribute('aria-expanded','true');
+    }
+  }
+}
+// Open the checkpoint register for one unit. Canonical South / East / West
+// units drive the existing location chips; a named checkpoint (a branch that
+// is not one of the three codes) scopes the register through its search box,
+// so the officer lands on exactly the records they asked for.
+function openCheckpointUnit(label,code){
+  const target=code||cpCodeFromLabel(label)||'';
+  const role=(sessionUser && sessionUser.role)||'';
+  const locked=isCheckpointRole(role);
+  const ownScope=locked ? (sessionUser.location_scope||scopeFromRole(role)||'') : '';
+  const search=document.getElementById('cpSearch');
+  go('checkpoints');   // autoBindCpLocationFilter() re-applies the officer's scope
+  if(target && CP_LOCATIONS.indexOf(target)!==-1){
+    // A canonical South / East / West unit drives the existing location chips.
+    // A station-scoped officer stays on their own posting — the scope is RBAC,
+    // not a preference — so only a matching code is applied.
+    if(!locked || !ownScope || ownScope===target){
+      cpLocationFilter=target;
+      if(search) search.value='';
+    }else{
+      cpLocationFilter=ownScope;
+      if(search) search.value='';
+      toast('Outside your posting', 'The register stays scoped to '+checkpointLabelText(ownScope)+'.');
+    }
+  }else if(label){
+    // A named checkpoint (not one of the three canonical codes) is located
+    // through the register's own search box.
+    cpLocationFilter=locked ? ownScope : '';
+    if(search) search.value=label;
+    if(locked) toast('Filtered within your posting', 'Showing records at '+checkpointLabelText(ownScope)+' that match this unit.');
+  }
+  renderCheckpointPage();
+  markCheckpointNavCurrent();
+  closeSidebar();
+}
+
+// ---- Unit Directory (high-volume categories) --------------------------------
+// The Checkpoint Units category can hold dozens of postings. Rather than
+// letting long unit names flood the rail, its accordion opens a regional
+// sub-menu AND a "Unit Directory" surface with Region + District filters.
+// The directory is a read-only view: it lists only the unit types this
+// session may read (the same `data-modules` contract as the sidebar).
+const UNIT_DIRECTORY_TYPES=[
+  {type:'checkpoint',label:'Checkpoint Units',page:'checkpoints',module:'checkpoints',icon:'⊙'},
+  {type:'fingerprint',label:'Fingerprint Units',page:'fingerprint',module:'fingerprint',icon:'⌁'},
+  {type:'crime',label:'Crime Units',page:'cid',module:'cid',icon:'⚖'},
+  {type:'airport',label:'Airport Control',page:'airport',module:'airport',icon:'✈'},
+  {type:'police_station',label:'Police Stations',page:'stations',module:'stations',icon:'▦'}
+];
+function unitDirectoryTypes(){
+  return UNIT_DIRECTORY_TYPES.filter(t=>{
+    if(!sessionUser) return true;
+    if(t.module==='admin') return !!(sessionVisibility && sessionVisibility.is_admin);
+    return hasModule(t.module);
+  });
+}
+function unitDirectoryRows(){
+  const typeEl=document.getElementById('udUnitType');
+  const type=typeEl?typeEl.value:'';
+  const permitted=unitDirectoryTypes().map(t=>t.type);
+  const rows=[];
+  const seen=new Set();
+  const push=(row)=>{
+    if(!row || !row.label || !row.unit_type) return;
+    if(type && row.unit_type!==type) return;
+    if(permitted.indexOf(row.unit_type)===-1) return;
+    const key=row.unit_type+'|'+row.label.toLowerCase();
+    if(seen.has(key)) return;
+    seen.add(key);
+    rows.push(row);
+  };
+  // 1) the authoritative catalogue (/api/branches) — names, region, district
+  const branches=(branchCatalog && Array.isArray(branchCatalog.items)) ? branchCatalog.items : [];
+  branches.forEach(b=>{
+    if(!b || !b.unit_type) return;
+    push({id:b.id,label:b.name,region:b.region||'',district:b.district||'',
+          unit_type:b.unit_type,code:cpCodeFromLabel(b.name+' '+(b.region||''))});
+  });
+  // 2) checkpoint postings that exist only in the register (location codes)
+  checkpointUnitCatalog().forEach(u=>push({
+    id:u.label,label:u.label,region:u.region==='Assigned locations'?'':u.region,
+    district:u.district,unit_type:'checkpoint',code:u.code
+  }));
+  // 3) the station register, so the directory is useful before /api/branches
+  //    answers (and for roles that only hold the stations module)
+  ((db && Array.isArray(db.stations)) ? db.stations : []).forEach(st=>push({
+    id:st.id,label:st.name,region:st.region||'',district:st.district||'',
+    unit_type:'police_station',code:''
+  }));
+  return rows;
+}
+function unitDirectoryPageFor(type){
+  const spec=UNIT_DIRECTORY_TYPES.find(t=>t.type===type);
+  return (spec && spec.page)||'dashboard';
+}
+function openUnitDirectory(unitType){
+  const dir=document.getElementById('unitDir');
+  if(!dir) return;
+  const types=unitDirectoryTypes();
+  const typeEl=document.getElementById('udUnitType');
+  const wanted=unitType||'checkpoint';
+  if(types.length && !types.some(t=>t.type===wanted)){
+    // Requested category is outside this session's modules: fall back to the
+    // first permitted one instead of exposing another unit's postings.
+    unitType=types[0].type;
+  }
+  if(typeEl){
+    typeEl.innerHTML=types.map(t=>`<option value="${esc(t.type)}">${esc(t.label)}</option>`).join('')
+      + (types.length?'':'<option value="">No unit directories for your role</option>');
+    const select=types.some(t=>t.type===(unitType||wanted))?(unitType||wanted):(types[0]&&types[0].type);
+    if(select) typeEl.value=select;
+  }
+  populateUnitDirectoryFilters(true);
+  renderUnitDirectory();
+  openEntryModal('unitDir');
+}
+function populateUnitDirectoryFilters(reset){
+  const regionEl=document.getElementById('udRegion');
+  const districtEl=document.getElementById('udDistrict');
+  if(!regionEl||!districtEl) return;
+  const previousRegion=reset?'':regionEl.value;
+  const previousDistrict=reset?'':districtEl.value;
+  const rows=unitDirectoryRows();
+  const regions=Array.from(new Set(rows.map(r=>r.region).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+  if(!regions.length){
+    // Fall back to the gazetteer so the filters stay usable before the branch
+    // catalogue has loaded (or when the API is unreachable).
+    LOCATIONS.forEach(l=>regions.push(l.region));
+  }
+  regionEl.innerHTML='<option value="">All regions</option>'+regions.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  if(previousRegion && regions.indexOf(previousRegion)!==-1) regionEl.value=previousRegion;
+  populateUnitDirectoryDistricts(previousDistrict);
+}
+function populateUnitDirectoryDistricts(keep){
+  const regionEl=document.getElementById('udRegion');
+  const districtEl=document.getElementById('udDistrict');
+  if(!regionEl||!districtEl) return;
+  const region=regionEl.value;
+  const previous=(typeof keep==='string')?keep:districtEl.value;
+  const rows=unitDirectoryRows().filter(r=>!region||r.region===region);
+  let districts=Array.from(new Set(rows.map(r=>r.district).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+  if(!districts.length){
+    const known=(LOCATIONS.find(l=>l.region===region)||{}).districts||[];
+    districts=known.slice();
+  }
+  districtEl.innerHTML='<option value="">All districts</option>'+districts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  districtEl.disabled=false;
+  if(previous && districts.indexOf(previous)!==-1) districtEl.value=previous;
+}
+function renderUnitDirectory(){
+  const body=document.getElementById('udTable');
+  if(!body) return;
+  const regionEl=document.getElementById('udRegion');
+  const districtEl=document.getElementById('udDistrict');
+  const searchEl=document.getElementById('udSearch');
+  const region=regionEl?regionEl.value:'';
+  const district=districtEl?districtEl.value:'';
+  const q=(searchEl?searchEl.value:'').trim().toLowerCase();
+  const rows=unitDirectoryRows().filter(r=>{
+    if(region && r.region!==region) return false;
+    if(district && r.district!==district) return false;
+    if(q){
+      const hay=[r.label,r.region,r.district,r.unit_type].join(' ').toLowerCase();
+      if(hay.indexOf(q)===-1) return false;
+    }
+    return true;
+  }).sort((a,b)=>(a.region||'').localeCompare(b.region||'')
+    ||(a.district||'').localeCompare(b.district||'')
+    ||a.label.localeCompare(b.label));
+  const countEl=document.getElementById('udCount');
+  if(countEl) countEl.textContent=rows.length+' unit'+(rows.length===1?'':'s')
+    +(region?' in '+region:'')+(district?' · '+district:'');
+  const empty=document.getElementById('udEmpty');
+  if(empty) empty.style.display=rows.length?'none':'';
+  body.innerHTML=rows.map(r=>`<tr class="clickable" data-ud-open="${esc(r.unit_type)}" data-ud-label="${esc(r.label)}">
+      <td><b>${esc(r.label)}</b><div class="sub">${esc(shortUnitLabel(r.label))}</div></td>
+      <td>${esc(r.region||'—')}</td>
+      <td>${esc(r.district||'—')}</td>
+      <td><span class="badge gray">${esc((UNIT_DIRECTORY_TYPES.find(t=>t.type===r.unit_type)||{}).label||r.unit_type)}</span></td>
+    </tr>`).join('');
+  body.querySelectorAll('tr[data-ud-open]').forEach(tr=>{
+    tr.onclick=()=>{
+      const type=tr.dataset.udOpen, label=tr.dataset.udLabel||'';
+      closeEntryModal('unitDir');
+      if(type==='checkpoint'){ openCheckpointUnit(label,''); return; }
+      go(unitDirectoryPageFor(type));
+    };
+  });
+}
 
 // ============================ locations: Region → District → Village/Town ============================
 // Shared location schema for the registration modules (Police Stations /
@@ -4968,7 +5532,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!imageLightboxOpen(
 // exactly as it did when the form was inline on the page.
 // Modals that stay available to a read-only (Commander / High Command)
 // session: the identity profile popup is a pure VIEW surface.
-const READ_ONLY_VIEW_MODALS=new Set(['pvModal', 'stViewModal', 'officerProfileModal']);
+const READ_ONLY_VIEW_MODALS=new Set(['pvModal', 'stViewModal', 'officerProfileModal', 'unitDir']);
 function openEntryModal(id){
   // Read-only role: entry/registration modals are refused; identity and
   // station-view surfaces remain available. `pvModal` is retained as a
@@ -6804,7 +7368,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=9a4c7f31&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=c41f9d2b&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -6931,7 +7495,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=9a4c7f31&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=c41f9d2b&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -7187,6 +7751,9 @@ function renderAll(){
   if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
     paintActivity();
   }
+  // The checkpoint unit sub-menu is built from the register's location codes,
+  // so a newly recorded stop at a new checkpoint appears in the sidebar too.
+  try{ renderCheckpointNav(); }catch(_){ }
   // Re-assert view-only mode after a full repaint (rows, drawers, tables).
   hardenReadOnlyDom(document);
 }
@@ -7210,7 +7777,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=9a4c7f31&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=c41f9d2b&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -7737,6 +8304,12 @@ async function syncServer(){
     if(dash) db.dashboard = dash;
     if(branches&&Array.isArray(branches.items)){
       branchCatalog={loaded:true,items:branches.items,regions:branches.regions||[],unit_types:branches.unit_types||[]};
+      // The sidebar unit sub-menu + Unit Directory read this catalogue: repaint
+      // them as soon as the authoritative branch list arrives.
+      try{ renderCheckpointNav(); }catch(_){ }
+      if(document.getElementById('unitDir') && document.getElementById('unitDir').classList.contains('open')){
+        try{ populateUnitDirectoryFilters(true); renderUnitDirectory(); }catch(_){ }
+      }
     }
     if(ps.ok) db.people=ps.items.map(mapPerson);
     // Rebuild the per-person unit pills only from collections that actually
@@ -8114,16 +8687,23 @@ async function initApp(){
 const NAV_ITEM_ORDER=[];
 function snapshotNavItems(){
   if(NAV_ITEM_ORDER.length) return;
-  const add=(node,group)=>{
-    if(!node||!node.dataset||!node.dataset.page) return;
-    NAV_ITEM_ORDER.push({page:node.dataset.page,group:group||null,
-                         modules:node.dataset.modules||'',html:node.outerHTML});
-  };
   const nav=document.getElementById('nav');
   if(!nav) return;
-  nav.querySelectorAll(':scope > button[data-page]').forEach(b=>add(b,null));
-  nav.querySelectorAll('.nav-group-body').forEach(body=>{
-    body.querySelectorAll('button[data-page]').forEach(b=>add(b,body.dataset.groupBody||null));
+  // Authoring order is the DOM order of the authored page buttons: a category
+  // may hold plain entries (Dashboard) and accordions (Search & Intelligence,
+  // HQ Command …), so each snapshot records BOTH the accordion it belongs to
+  // and the category section it must be restored into.
+  nav.querySelectorAll('button[data-page]').forEach(node=>{
+    const group=node.closest('.nav-group');
+    const section=node.closest('.nav-section');
+    NAV_ITEM_ORDER.push({
+      page:node.dataset.page,
+      group:(group && group.dataset.group)||null,
+      section:(section && section.dataset.section)||null,
+      index:node.parentNode?Array.prototype.indexOf.call(node.parentNode.children,node):-1,
+      modules:node.dataset.modules||'',
+      html:node.outerHTML
+    });
   });
 }
 function navItemFor(page){return document.querySelector('#nav button[data-page="'+page+'"]')}
@@ -8136,22 +8716,24 @@ function ensureNavItem(page){
   holder.innerHTML=spec.html;
   const node=holder.firstElementChild;
   if(!node) return;
-  let container, later=null;
+  let container=null, later=null;
   if(spec.group){
     container=document.querySelector('#nav .nav-group-body[data-group-body="'+spec.group+'"]');
-    if(container){
-      const idx=NAV_ITEM_ORDER.indexOf(spec);
-      for(const spec2 of NAV_ITEM_ORDER.slice(idx+1)){
-        if(spec2.group!==spec.group) continue;
-        const sib=navItemFor(spec2.page);
-        if(sib && sib.parentNode===container){later=sib;break}
-      }
-    }
   } else {
-    container=document.getElementById('nav');
+    container=document.querySelector('#nav .nav-section-body[data-section-body="'+(spec.section||'')+'"]')
+      || document.getElementById('nav');
+    // A plain category entry always sits above the accordions of its section.
     if(container) later=container.querySelector('.nav-group')||null;
   }
   if(!container) return;
+  if(spec.group && spec.index>=0){
+    // Restore into the authored slot. Runtime-rendered siblings (the region →
+    // district unit sub-menu) are appended after the authored children, so this
+    // keeps "Checkpoint Unit" above them and the subgroup label next to its
+    // link — never at the bottom of the accordion.
+    later=container.children[spec.index]||null;
+    if(later===node) later=null;
+  }
   container.insertBefore(node,later);
   node.onclick=()=>go(node.dataset.page);
 }
@@ -8208,8 +8790,9 @@ function applyNavForRole(){
   // The small Checkpoint subgroup label follows the same module gate as its
   // link so roles without that unit do not see an empty navigation heading.
   document.querySelectorAll('#nav .nav-subgroup-label[data-module-label]').forEach(label => {
-    const item = label.nextElementSibling;
-    label.style.display = item && item.dataset.modules === label.dataset.moduleLabel && item.style.display !== 'none' ? '' : 'none';
+    const scope = label.closest('.nav-group-body') || label.parentNode;
+    const item = scope && scope.querySelector('button[data-page][data-modules="'+label.dataset.moduleLabel+'"]');
+    label.style.display = item && item.style.display !== 'none' ? '' : 'none';
   });
   // Global read-only (Commander / High Command): apply view-only mode and
   // refresh the "View-only" pill in the same pass that paints the menu.
@@ -8223,6 +8806,22 @@ function applyNavForRole(){
     items.forEach(b => { if (b.style.display !== 'none') visible++; });
     g.style.display = visible ? '' : 'none';
     const toggle = g.querySelector('.nav-group-toggle');
+    if(toggle) toggle.style.display = visible ? '' : 'none';
+  });
+  // The Checkpoint Units accordion carries a scalable region → district
+  // sub-menu and a Unit Directory launcher instead of one entry per posting.
+  // It is (re)painted from the branch catalogue + register after the module
+  // pass, and emptied for a session that may not read the checkpoint module.
+  try{ renderCheckpointNav(); }catch(_){ }
+  // A whole CATEGORY disappears when every entry inside it is hidden — e.g.
+  // Administration for any non-admin, Operational Units for a pure HQ role.
+  // The heading is removed with the body, never left standing empty.
+  document.querySelectorAll('#nav .nav-section').forEach(sec => {
+    const items = sec.querySelectorAll('button[data-page]');
+    let visible = 0;
+    items.forEach(b => { if (b.style.display !== 'none') visible++; });
+    sec.style.display = visible ? '' : 'none';
+    const toggle = sec.querySelector('.nav-section-toggle');
     if(toggle) toggle.style.display = visible ? '' : 'none';
   });
   const topbar = document.getElementById('topbar');

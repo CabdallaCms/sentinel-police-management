@@ -295,26 +295,53 @@ function loadApp(sandbox) {
 // modals, no per-unit analytics strips) · compact unit overview strips ·
 // search box on every register table · HR tabs.
 // --------------------------------------------------------------------------
-const NAV_SECTIONS = [
-  { group: 'search', label: 'Central Search',
-    pages: [['people', 'people', 'Central Person Search'], ['policesearch', 'policesearch', 'Central Police Search']] },
-  { group: 'cid', label: 'Dep. Of CID',
-    pages: [['fingerprint', 'fingerprint', 'Fingerprint Unit'], ['cid', 'cid', 'Crime Unit'],
-            ['checkpoints', 'checkpoints', 'Checkpoint Unit'], ['airport', 'airport', 'Airport Unit']] },
-  { group: 'personnel', label: 'Dep. of Police Personnel (Registration Police Office)',
-    pages: [['officers', 'officers', 'Registration Office'],
-            ['conduct', 'conduct', 'Conduct, Promotions & Disciplinary Management']] },
-  { group: 'transport', label: 'Dep. Of Transport',
-    pages: [['cars', 'cars', 'Vehicle Registry'], ['vehiclestatus', 'cars', 'Vehicle Status & Tracking']] },
-  { group: 'command', label: 'Chief Commander of Police Office (HQ / Command)',
-    pages: [['executive', 'executive', 'Global Executive Dashboard'],
-            ['oversight', 'oversight', 'Stations Oversight & Regional Data']] },
-  { group: 'registrations', label: 'Registers',
-    pages: [['stations', 'stations', 'Police Stations'], ['crimes', 'crimes', 'Register Crime']] },
-  { group: 'admin', label: 'Administration',
-    pages: [['admin', 'admin', 'User Management'], ['branches', 'admin', 'Branch Management']] },
-];
-// Operational pages are clean: no per-unit analytics strips anywhere (the
+const NAV_CATEGORIES = [
+  // Command Center — the dashboard plus the two intelligence/command accordions.
+  { section: 'command-center', label: 'Command Center',
+    pages: [['dashboard', 'dashboard', 'Dashboard']],
+    groups: [
+      { group: 'search', label: 'Search & Intelligence',
+        pages: [['people', 'people', 'Central Person Search'],
+                ['policesearch', 'policesearch', 'Central Police Search']] },
+      { group: 'command', label: 'HQ Command',
+        pages: [['executive', 'executive', 'Global Executive Dashboard'],
+                ['oversight', 'oversight', 'Stations Oversight & Regional Data']] },
+    ] },
+  // Operational Units — one collapsible accordion per unit family. Checkpoint
+  // Units additionally renders a region → district sub-menu and the Unit
+  // Directory launcher (asserted separately below).
+  { section: 'operational-units', label: 'Operational Units', pages: [],
+    groups: [
+      { group: 'fingerprint', label: 'Fingerprint Units',
+        pages: [['fingerprint', 'fingerprint', 'Fingerprint Unit']] },
+      { group: 'cid', label: 'Crime Units',
+        pages: [['cid', 'cid', 'Crime Unit']] },
+      { group: 'airport', label: 'Airport Control',
+        pages: [['airport', 'airport', 'Airport Unit']] },
+      { group: 'checkpoints', label: 'Checkpoint Units',
+        pages: [['checkpoints', 'checkpoints', 'Checkpoint Unit']] },
+      { group: 'registrations', label: 'Stations & Registers',
+        pages: [['stations', 'stations', 'Police Stations'],
+                ['crimes', 'crimes', 'Register Crime']] },
+    ] },
+  // Agency & Personnel — HR/registration and fleet.
+  { section: 'agency-personnel', label: 'Agency & Personnel', pages: [],
+    groups: [
+      { group: 'personnel', label: 'Police Personnel',
+        pages: [['officers', 'officers', 'Registration Office'],
+                ['conduct', 'conduct', 'Conduct & Discipline']] },
+      { group: 'transport', label: 'Transport / Fleet',
+        pages: [['cars', 'cars', 'Vehicle Registry'],
+                ['vehiclestatus', 'cars', 'Vehicle Status & Tracking']] },
+    ] },
+  // Administration — SystemAdmin only; shortlabel's own gate does the hiding.
+  { section: 'administration', label: 'Administration', pages: [],
+    groups: [
+      { group: 'admin', label: 'System Administration',
+        pages: [['admin', 'admin', 'User Management'],
+                ['branches', 'admin', 'Branch Management']] },
+    ] },
+];// Operational pages are clean: no per-unit analytics strips anywhere (the
 // only full analytics surface is the Global Executive Dashboard), and every
 // registration form lives in a centered entry modal (dark blurred backdrop,
 // fade/scale-in) opened by the page's primary action button — never rendered
@@ -366,22 +393,65 @@ function assertShellContract() {
   if (/data-page="analytics"/.test(html)) throw new Error('the standalone Analytics nav entry came back');
   if (/<section id="analytics"/.test(html)) throw new Error('the standalone analytics section came back');
 
-  // (a) the four sections, in order, with their exact labels and items
-  const groupBlocks = [...navHtml.matchAll(/<div class="nav-group[^"]*" data-group="([^"]+)"[^>]*>([\s\S]*?)\n<\/div>/g)]
-    .map((m) => ({ group: m[1], body: m[2] }));
-  const found = groupBlocks.map((g) => g.group);
-  const want = NAV_SECTIONS.map((s) => s.group);
-  if (found.join(',') !== want.join(','))
-    throw new Error(`sidebar sections are ${found.join(' | ')} — expected ${want.join(' | ')}`);
-  NAV_SECTIONS.forEach((spec, i) => {
-    const block = groupBlocks[i];
-    const label = decodeEntities((block.body.match(/data-group-toggle="[^"]+"><i>[^<]*<\/i><span>([^<]+)<\/span>/) || [])[1]);
-    if (label !== spec.label) throw new Error(`section ${spec.group} is labelled "${label}" — expected "${spec.label}"`);
-    const items = [...block.body.matchAll(/<button data-page="([^"]+)" data-modules="([^"]+)"><i>[^<]*<\/i><span>([^<]+)<\/span>/g)]
-      .map((m) => [m[1], m[2], decodeEntities(m[3])]);
-    if (JSON.stringify(items) !== JSON.stringify(spec.pages))
-      throw new Error(`section ${spec.group} holds ${JSON.stringify(items)} — expected ${JSON.stringify(spec.pages)}`);
+  // (a) the four operational categories, in order, with their exact labels,
+  //     accordions and entries. Every category is a collapsible <section>, each
+  //     department inside it an accordion — the flat list is gone.
+  const sectionBlocks = [...navHtml.matchAll(/<section class="nav-section[^"]*" data-section="([^"]+)"[\s\S]*?<\/section>/g)]
+    .map((m) => ({ section: m[1], body: m[0] }));
+  const foundSections = sectionBlocks.map((b) => b.section);
+  const wantSections = NAV_CATEGORIES.map((c) => c.section);
+  if (foundSections.join(',') !== wantSections.join(','))
+    throw new Error(`sidebar categories are ${foundSections.join(' | ')} — expected ${wantSections.join(' | ')}`);
+  const itemRe = /<button[^>]*data-page="([^"]+)"[^>]*data-modules="([^"]+)"[^>]*><i[^>]*>[^<]*<\/i><span[^>]*>([^<]+)<\/span>/g;
+  NAV_CATEGORIES.forEach((cat, i) => {
+    const block = sectionBlocks[i];
+    const label = decodeEntities((block.body.match(/data-section-toggle="[^"]+"[^>]*>\s*<i[^>]*>[^<]*<\/i><span class="nav-section-name">([^<]+)<\/span>/) || [])[1]);
+    if (label !== cat.label)
+      throw new Error(`category ${cat.section} is labelled "${label}" — expected "${cat.label}"`);
+    // plain category entries (Dashboard) sit above the accordions
+    const head = block.body.split('<div class="nav-group')[0];
+    const plain = [...head.matchAll(itemRe)].map((m) => [m[1], m[2], decodeEntities(m[3])]);
+    if (JSON.stringify(plain) !== JSON.stringify(cat.pages))
+      throw new Error(`category ${cat.section} holds plain entries ${JSON.stringify(plain)} — expected ${JSON.stringify(cat.pages)}`);
+    const groups = [...block.body.matchAll(/<div class="nav-group[^"]*" data-group="([^"]+)"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g)]
+      .map((m) => ({ group: m[1], body: m[2] }));
+    const foundGroups = groups.map((g) => g.group);
+    const wantGroups = cat.groups.map((g) => g.group);
+    if (foundGroups.join(',') !== wantGroups.join(','))
+      throw new Error(`category ${cat.section} holds accordions ${foundGroups.join(' | ')} — expected ${wantGroups.join(' | ')}`);
+    cat.groups.forEach((spec, j) => {
+      const gBlock = groups[j];
+      const gLabel = decodeEntities((gBlock.body.match(/data-group-toggle="[^"]+"[^>]*><i[^>]*>[^<]*<\/i><span[^>]*>([^<]+)<\/span>/) || [])[1]);
+      if (gLabel !== spec.label)
+        throw new Error(`accordion ${spec.group} is labelled "${gLabel}" — expected "${spec.label}"`);
+      const items = [...gBlock.body.matchAll(itemRe)].map((m) => [m[1], m[2], decodeEntities(m[3])]);
+      if (JSON.stringify(items) !== JSON.stringify(spec.pages))
+        throw new Error(`accordion ${spec.group} holds ${JSON.stringify(items)} — expected ${JSON.stringify(spec.pages)}`);
+    });
   });
+  // (a2) scalable unit lists: the Checkpoint Units accordion carries a
+  //      region → district sub-menu mount and a Unit Directory launcher, and
+  //      the directory modal exposes Region + District filters.
+  ['data-nav-regions="checkpoint"', 'id="cpNavRegions"', 'function shortUnitLabel(',
+   'function renderCheckpointNav(', 'function checkpointUnitCatalog(',
+   'function openCheckpointUnit(', "openUnitDirectory('checkpoint')"].forEach((needle) => {
+    if (!navHtml.includes(needle) && !html.includes(needle))
+      throw new Error('index.html is missing ' + needle);
+  });
+  if (!/id="unitDir" role="dialog"/.test(html))
+    throw new Error('the Unit Directory modal (#unitDir) is missing');
+  ['id="udRegion"', 'id="udDistrict"', 'id="udUnitType"', 'id="udSearch"',
+   'id="udTable"'].forEach((needle) => {
+    if (!html.includes(needle)) throw new Error('the Unit Directory is missing ' + needle);
+  });
+  if (!/function openUnitDirectory\(unitType\)/.test(html)
+      || !/function renderUnitDirectory\(\)/.test(html)
+      || !/function populateUnitDirectoryDistricts\(/.test(html))
+    throw new Error('the Unit Directory filters are not wired');
+  // Long unit names are shortened for the rail (never a raw, wrapping name),
+  // and the full name survives in the tooltip.
+  if (!/const NAV_UNIT_SHORT_MAX=\d+/.test(html))
+    throw new Error('the sidebar unit-label width budget is missing');
 
   // (b) operational pages are clean: no per-unit analytics strips, and the
   //     registration forms live in centered entry modals (not inline).
@@ -494,7 +564,7 @@ function assertShellContract() {
    // officerProfileModal joined the allowlist in the officer-profile release:
    // a read-only Commander may still open their own profile (the API refuses
    // every write), just like the person detail and station view surfaces.
-   'const READ_ONLY_VIEW_MODALS=new Set([\'pvModal\', \'stViewModal\', \'officerProfileModal\']);'].forEach((needle) => {
+   'const READ_ONLY_VIEW_MODALS=new Set([\'pvModal\', \'stViewModal\', \'officerProfileModal\', \'unitDir\']);'].forEach((needle) => {
     if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
   });
   if (!/id="roBadge"/.test(html) || !/id="roBanner"/.test(html))
@@ -899,8 +969,9 @@ async function main() {
     console.log('ok 10: correct /api/health build restores normal (lock-aware) rendering');
 
     // ---- 11) Sidebar structure + clean registers + HR tabs ----------------
-    // Static contract over the real index.html markup: the four fixed sidebar
-    // sections, NO per-unit `dept-analytics` strip on any operational page
+    // Static contract over the real index.html markup: the four operational
+    // sidebar categories (each a collapsible section of unit accordions), NO
+    // per-unit `dept-analytics` strip on any operational page
     // (the only full analytics surface is the Global Executive Dashboard),
     // every registration form parked in a centered entry modal behind a
     // primary action button, a compact unit overview strip on top of every
@@ -909,7 +980,7 @@ async function main() {
     // discipline). Guards the reorganisation against regressions without
     // needing a browser.
     assertShellContract();
-    console.log('ok 11: sidebar sections, centered entry modals, unit overview strips, table searches and HR tabs contract');
+    console.log('ok 11: sidebar categories + unit directory, centered entry modals, unit overview strips, table searches and HR tabs contract');
 
     // ---- 12) UNIT MODULE DENYLIST — no Central Police Search for Airport/CID
     // The server already strips the module in ROLE_MODULES; the client mirrors

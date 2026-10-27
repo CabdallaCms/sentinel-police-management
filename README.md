@@ -196,25 +196,62 @@ Central Police Search). Now:
 
 **Checkpoint table freshness.** `submitCheckpoint()` prepends the new stop into `db.checkpoints` immediately so the table and the location badge update instantly (`South Checkpoint 0 → 1`), and `syncServer()` never overwrites `db.checkpoints` with `[]` from a transient/failed response — only a successful response with rows replaces the local cache.
 
-### Grouped sidebar navigation
+### Hierarchical sidebar navigation
 
-The flat module list is organised into **departmental collapsible sidebar sections**, in this fixed order (open/closed state persists in `localStorage.sentinelNavGroups`; navigating into a section auto-expands it, and the narrow icon-only mobile rail always shows items flat):
+The sidebar is organised the way the service actually works: **four collapsible operational
+categories**, each holding departmental accordions (or, in Command Center, the dashboard plus
+its accordions). Both levels remember their open/closed state (`localStorage.sentinelNavSections`
+and `sentinelNavGroups`), navigating into a page auto-expands the category + accordion that own
+it, and the narrow mobile rail keeps the same hierarchy.
 
-| Section | Items (`data-page` · module) |
-|---------|------------------------------|
-| *(top level)* | **Dashboard** (`dashboard`) |
-| **CENTRAL SEARCH** | *Central Person Search* (`people`), *Central Police Search* (`policesearch` — one cascading Region → District → Village/Town filter across the officers, stations and cars registers plus free-text search; not granted to the Airport Control or CID Criminal Unit roles) |
-| **DEP. OF CID** | *Fingerprint Unit* (`fingerprint`), *Crime Unit* (`cid`), *Checkpoint Unit* (`checkpoints`), *Airport Unit* (`airport`) |
-| **DEP. OF POLICE PERSONNEL (REGISTRATION POLICE OFFICE)** | *Registration Office* (`officers`), *Conduct, Promotions & Disciplinary Management* (`conduct`) |
-| **DEP. OF TRANSPORT** | *Vehicle Registry* (`cars`), *Vehicle Status & Tracking* (`vehiclestatus`, module `cars`) |
-| **CHIEF COMMANDER OF POLICE OFFICE (HQ / COMMAND)** | *Global Executive Dashboard* (`executive`), *Stations Oversight & Regional Data* (`oversight`) |
-| **REGISTERS** | *Police Stations* (`stations`), *Register Crime* (`crimes`) |
-| **ADMINISTRATION** | *User Management* (`admin`, System Admin only) |
+| Category | Accordion | Items (`data-page` · module) |
+|----------|-----------|------------------------------|
+| **COMMAND CENTER** | *(plain entry)* | **Dashboard** (`dashboard`) |
+| | **Search & Intelligence** | *Central Person Search* (`people`), *Central Police Search* (`policesearch` — one cascading Region → District → Village/Town filter across the officers, stations and cars registers plus free-text search; not granted to the Airport Control or CID Criminal Unit roles) |
+| | **HQ Command** | *Global Executive Dashboard* (`executive`), *Stations Oversight & Regional Data* (`oversight`) |
+| **OPERATIONAL UNITS** | **Fingerprint Units** | *Fingerprint Unit* (`fingerprint`) |
+| | **Crime Units** | *Crime Unit* (`cid`) |
+| | **Airport Control** | *Airport Unit* (`airport`) |
+| | **Checkpoint Units** | *Unit Directory* launcher + *Checkpoint Unit* (`checkpoints`) + the region → district unit sub-menu (see below) |
+| | **Stations & Registers** | *Police Stations* (`stations`), *Register Crime* (`crimes`) |
+| **AGENCY & PERSONNEL** | **Police Personnel** | *Registration Office* (`officers`), *Conduct & Discipline* (`conduct`) |
+| | **Transport / Fleet** | *Vehicle Registry* (`cars`), *Vehicle Status & Tracking* (`vehiclestatus`, module `cars`) |
+| **ADMINISTRATION** | **System Administration** | *User Management* (`admin`, System Admin only), *Branch Management* (`branches`, module `admin`) |
 
-The departmental regrouping is labelling only for the existing pages — every page id, `data-page`/`data-modules` value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Unit entry. The standalone **Analytics** entry is gone: the only full analytics surface is the Chief Commander's **Global Executive Dashboard** (see **Departmental analytics (executive dashboard only)** below); each operational page keeps only a compact overview strip of live counters on top of its register.
+The regrouping is labelling only for the existing pages — every page id, `data-page`/`data-modules`
+value and RBAC gate is unchanged, and the case workspace still highlights its parent Crime Unit
+entry. The standalone **Analytics** entry is gone: the only full analytics surface is the Chief
+Commander's **Global Executive Dashboard** (see **Departmental analytics (executive dashboard
+only)** below); each operational page keeps only a compact overview strip of live counters on top
+of its register.
 
-Visibility is driven by the `modules` array from `GET /api/me` in `applyNavForRole()`: each button is gated on its own module, the Administration section on the `is_admin` flag, and a whole section disappears when every item inside it is hidden for the signed-in role (e.g. a Checkpoint officer sees only *CID → Checkpoint Unit*, the HR Directorate sees *Central Search* + *Police Stations*/*Police Officers*).
+Visibility is driven by the `modules` array from `GET /api/me` in `applyNavForRole()`: each button
+is gated on its own module, the Administration category on the `is_admin` flag, and a whole
+category (or accordion) disappears when every entry inside it is hidden for the signed-in role —
+e.g. a Checkpoint officer sees only *Command Center → Search & Intelligence* plus *Operational
+Units → Checkpoint Units*, and never an empty heading.
 
+#### Scalable unit lists (short labels + Unit Directory)
+
+Checkpoint postings are unbounded data (an admin can register any number of branches), so the
+sidebar never renders raw names:
+
+- **Short labels** — `shortUnitLabel()` is the single place that decides what the rail shows: the
+  administrative suffix (*Branch* / *Checkpoint* / *Police Station* / *Outpost* …) is dropped and
+  the remainder is ellipsised to a fixed width (`NAV_UNIT_SHORT_MAX`), so a name such as
+  `Buuhoodle Border Crossing Checkpoint` reads `Buuhoodle Border C…` at 210 px. Every nav label is
+  a single non-wrapping line, and the **full name always survives in the tooltip** and in the
+  Unit Directory.
+- **Region → district sub-menu** — the *Checkpoint Units* accordion lists the postings from the
+  branch catalogue (`/api/branches`) plus any location code that exists only in the register,
+  grouped by region (gazetteer order) and collapsed per region; the region toggle persists its
+  state in `localStorage.sentinelNavRegions`.
+- **Unit Directory** — the accordion's *Unit Directory* button opens a read-only modal
+  (`#unitDir`) listing every unit of the categories the session may read, with **Region**,
+  **District**, **unit type** and free-text filters. Clicking a row opens that unit: a canonical
+  `South` / `East` / `West` posting drives the existing location chips, a named checkpoint scopes
+  the register through its search box. A station-scoped checkpoint officer keeps their RBAC posting
+  — a click can never widen the register beyond the unit they are assigned to (a toast explains it).
 ### Regional location schema (Sool · Sanaag · East Togdheer)
 
 Registration modules share one location hierarchy — **Region → District → Village/Town** — defined once in the `LOCATIONS` constant in `index.html`. It is the single source of truth for every location control, so extending the gazetteer there is all that is needed to make a new district selectable everywhere.

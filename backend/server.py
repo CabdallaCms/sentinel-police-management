@@ -664,11 +664,11 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '9a4c7f31'
+ASSET_VERSION = 'c41f9d2b'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-checkpoint-audit-6-' + ASSET_VERSION
+UI_BUILD = 'sentinel-sidebar-nav-1-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -712,6 +712,18 @@ UI_REQUIRED_MARKERS = (
     ('Record audit history panel', 'data-person-detail-panel="audit"'),
     ('Record audit history timeline', 'function renderAuditHistory('),
     ('Station record audit history', 'function loadStationAuditHistory('),
+    # ---- this release: hierarchical navigation + scalable unit directory ----
+    ('Command Center category', 'data-section="command-center"'),
+    ('Operational Units category', 'data-section="operational-units"'),
+    ('Agency & Personnel category', 'data-section="agency-personnel"'),
+    ('Administration category', 'data-section="administration"'),
+    ('Checkpoint unit sub-menu mount', 'data-nav-regions="checkpoint"'),
+    ('Scalable short unit labels', 'function shortUnitLabel('),
+    ('Regional unit sub-menu renderer', 'function renderCheckpointNav('),
+    ('Unit Directory modal', 'id="unitDir"'),
+    ('Unit Directory region filter', 'id="udRegion"'),
+    ('Unit Directory district filter', 'id="udDistrict"'),
+    ('Unit Directory launcher', "openUnitDirectory('checkpoint')"),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
