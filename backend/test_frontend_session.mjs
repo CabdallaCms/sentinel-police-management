@@ -28,6 +28,10 @@ import vm from 'node:vm';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.dirname(ROOT);
+// Interpreter used for the throwaway cluster and the API process. Point PYTHON
+// at a virtualenv that has pgserver + psycopg2 installed; without it the
+// bundled engine is never found and the suite skips (a silent false green).
+const PYTHON = process.env.PYTHON || 'python3';
 
 // ---------------------------------------------------------------------------
 // PostgreSQL test database.
@@ -79,9 +83,9 @@ function provisionDatabase(tmp, databaseEnv) {
       label: 'configured PostgreSQL (' + (databaseEnv.SENTINEL_DB_NAME || 'sentinel_police') + ')',
     };
   }
-  const probe = spawnSync('python3', ['-c', 'import pgserver'], { stdio: 'ignore' });
+  const probe = spawnSync(PYTHON, ['-c', 'import pgserver'], { stdio: 'ignore' });
   if (probe.status !== 0) return null;
-  const child = spawn('python3', ['-c', PG_SERVE, path.join(tmp, 'pgdata')],
+  const child = spawn(PYTHON, ['-c', PG_SERVE, path.join(tmp, 'pgdata')],
                       { stdio: ['pipe', 'pipe', 'inherit'] });
   let socketDir = '';
   const deadline = Date.now() + 90000;
@@ -487,7 +491,10 @@ function assertShellContract() {
   //     banner explain it, and the api() firewall refuses non-GET calls.
   ['function isReadOnlyRole(', 'function isReadOnlyUser(){', 'function canWrite(){',
    'function guardReadOnly(action){', 'function applyReadOnlyMode(){',
-   'const READ_ONLY_VIEW_MODALS=new Set([\'pvModal\', \'stViewModal\']);'].forEach((needle) => {
+   // officerProfileModal joined the allowlist in the officer-profile release:
+   // a read-only Commander may still open their own profile (the API refuses
+   // every write), just like the person detail and station view surfaces.
+   'const READ_ONLY_VIEW_MODALS=new Set([\'pvModal\', \'stViewModal\', \'officerProfileModal\']);'].forEach((needle) => {
     if (!html.includes(needle)) throw new Error('index.html is missing ' + needle);
   });
   if (!/id="roBadge"/.test(html) || !/id="roBanner"/.test(html))
@@ -546,7 +553,9 @@ function assertShellContract() {
   // value as every `?v=` cache-busting parameter); comparing the sidebar footer
   // with /api/health 'ui_build' is what proves a page is stale.
   const uiBuild = (html.match(/<meta name="sentinel-ui-build" content="([^"]+)" \/>/) || [])[1] || '';
-  if (!/^sentinel-rbac-readonly-\d+-[0-9a-f]{7,}$/.test(uiBuild))
+  // <release-name>-<n>-<short commit>: the release name changes every build,
+  // the numeric pass and the 7+ hex asset version are what must always hold.
+  if (!/^sentinel-[a-z0-9-]+-\d+-[0-9a-f]{7,}$/.test(uiBuild))
     throw new Error('the sentinel-ui-build meta stamp is missing its asset version: ' + uiBuild);
   if (!/window\.SENTINEL_UI_BUILD=/.test(html))
     throw new Error('window.SENTINEL_UI_BUILD must expose the frontend build');
@@ -574,7 +583,7 @@ async function main() {
     return 0;
   }
   console.log('using ' + pg.label);
-  const proc = spawn('python3', [path.join(ROOT, 'server.py')], {
+  const proc = spawn(PYTHON, [path.join(ROOT, 'server.py')], {
     env: {
       ...process.env,
       ...pg.env,

@@ -1,6 +1,6 @@
 # Testing the form, clearance and identity-profile improvements
 
-Branch: `arena/c1f51a82-sentinel-police-management`. Do not merge until UAT is approved.
+Branch: `arena/1c5d5979-sentinel-police-management`. Do not merge until UAT is approved.
 Restart the backend and hard-refresh the browser when testing this branch.
 Use a test database and synthetic identities/documents only.
 
@@ -13,6 +13,10 @@ npm install --no-save --package-lock=false jsdom@26
 
 node backend/test_form_improvements.mjs
 node backend/test_shell_workflow_integration.mjs
+PYTHON="$PWD/.venv/bin/python" node backend/test_frontend_session.mjs
+PYTHON="$PWD/.venv/bin/python" node backend/test_station_integration.mjs
+node backend/test_station_frontend.mjs
+.venv/bin/python backend/test_officer_profile_locations.py
 .venv/bin/python backend/test_linked_records.py
 .venv/bin/python backend/test_review_gate.py
 PYTHON="$PWD/.venv/bin/python" node backend/test_approval_flow.mjs
@@ -223,11 +227,11 @@ tests instead of silently leaving a stale page on screen.
 
 ### What changed
 - **Versioned static references.** Every static reference the app ships carries `?v=<ASSET_VERSION>`:
-  `index.html` → `certificate.html?v=0f8552e&id=…` and `application.html?v=0f8552e&id=…`,
-  `application.html` / `certificate.html` → `index.html?v=0f8552e`, the brand emblem →
-  `images/police_logo.png?v=0f8552e`, and `certificate.html` → `application.html?v=0f8552e&id=…`.
+  `index.html` → `certificate.html?v=3c8f1a76&id=…` and `application.html?v=3c8f1a76&id=…`,
+  `application.html` / `certificate.html` → `index.html?v=3c8f1a76`, the brand emblem →
+  `images/police_logo.png?v=3c8f1a76`, and `certificate.html` → `application.html?v=3c8f1a76&id=…`.
   `ASSET_VERSION` lives at the top of `backend/server.py` (currently the short commit the feature
-  shipped from, `0f8552e`).
+  shipped from, `3c8f1a76`).
 - **`Cache-Control: no-store` on the documents themselves.** The UI ships as self-contained
   documents (inline `<script>`/`<style>`, no external bundle), so the HTML *is* the asset that must
   never be replayed. `send_file()` now answers documents, uploads and un-versioned assets with
@@ -235,16 +239,16 @@ tests instead of silently leaving a stale page on screen.
   `Pragma: no-cache`; a `?v=`-stamped asset alone gets
   `Cache-Control: public, max-age=31536000, immutable`.
 - **A stamp that tells you *which* page you have.** `<meta name="sentinel-ui-build">` is now
-  `sentinel-rbac-readonly-4-0f8552e` (revision **and** the short commit) and is shown as *UI build …*
+  `sentinel-officer-profile-5-3c8f1a76` (revision **and** the short commit) and is shown as *UI build …*
   in the sidebar footer (`window.SENTINEL_UI_BUILD`). `GET /api/health` reports `ui_build` — read
   from the `index.html` on disk on every call, not from a constant — plus `asset_version` and
   `static_cache`, so the footer can be compared with what the server is handing out: *footer ≠
   health ⇒ the tab is stale*.
 
 ### Bumping the version (do all of it)
-1. `ASSET_VERSION = '<short commit>'` and `UI_BUILD = 'sentinel-rbac-readonly-<n>-<short commit>'` in
+1. `ASSET_VERSION = '<short commit>'` and `UI_BUILD = 'sentinel-officer-profile-<n>-<short commit>'` in
    `backend/server.py`.
-2. `<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-<n>-<short commit>" />` in `index.html`.
+2. `<meta name="sentinel-ui-build" content="sentinel-officer-profile-<n>-<short commit>" />` in `index.html`.
 3. Every `?v=…` in `index.html`, `application.html`, `certificate.html`.
 4. Run the suite — `static_asset_version_consistent()` + the served-header checks fail on any
    parameter or stamp left behind.
@@ -259,14 +263,14 @@ node backend/test_frontend_session.mjs             # pins the stamp shape + that
 ### Officer UAT checklist
 1. Sign in as `admin`, open **Police Stations → Registered stations**: the **Actions** column with
    **View**/**Edit** is present immediately on a normal reload (`Ctrl+R`) — no hard refresh needed.
-2. Sidebar footer shows *UI build sentinel-rbac-readonly-4-0f8552e*; `curl -s localhost:8001/api/health`
-   reports the same `ui_build` and `asset_version: "0f8552e"`.
+2. Sidebar footer shows *UI build sentinel-officer-profile-5-3c8f1a76*; `curl -s localhost:8001/api/health`
+   reports the same `ui_build` and `asset_version: "3c8f1a76"`.
 3. `curl -sI localhost:8001/ | grep -i cache-control` → `no-store, no-cache, must-revalidate, max-age=0`;
-   `curl -sI "localhost:8001/images/police_logo.png?v=0f8552e" | grep -i cache-control` →
+   `curl -sI "localhost:8001/images/police_logo.png?v=3c8f1a76" | grep -i cache-control` →
    `public, max-age=31536000, immutable`.
 4. Open **View → Certificate / Print** (devtools → Network): the created document URL carries
-   `?v=0f8552e`.
-5. Open the app with a stale tab (`/?v=0f8552e`) and confirm the Actions column still renders.
+   `?v=3c8f1a76`.
+5. Open the app with a stale tab (`/?v=3c8f1a76`) and confirm the Actions column still renders.
 
 ## Served-template identity: no stale page can reach UAT (2026-10-17)
 
@@ -315,7 +319,7 @@ that names the missing Actions column.
 2. `curl -s <preview-url>/api/health` → `ui_actions_published: true`, `ui_ok: true`, and
    `ui_sha256` equal to `sha256sum index.html`.
 3. Open the preview in a private window → sidebar footer *UI build
-   sentinel-rbac-readonly-4-0f8552e*; Police Stations → Registered stations → **Actions** column
+   sentinel-officer-profile-5-3c8f1a76*; Police Stations → Registered stations → **Actions** column
    with **View** / **Edit** (admin).
 4. If any of 1–3 fails, the preview is attached to a process serving a different template: restart
    from this checkout (`bash scripts/restart-8001.sh`) or use the preview URL reported for the
@@ -358,12 +362,12 @@ cache, restart or file watcher exists to go stale. The resolved path is used for
 cd sentinel-police-management
 python backend/server.py --ui-check        # exit 0, "Actions column: yes"
 python backend/server.py                   # prints: ui template / ui source / ui checkout
-curl -s http://localhost:8001/ | grep -E 'sentinel-rbac-readonly-4-0f8552e|<th>Actions</th>'
+curl -s http://localhost:8001/ | grep -E 'sentinel-officer-profile-5-3c8f1a76|<th>Actions</th>'
 ```
 Verified on a fresh clone: on `main` the server refuses to start and prints *“this checkout predates
 the station View/Edit feature — switch to the feature branch or merge it first”*; after
 `git checkout arena/70d3d88b-sentinel-police-management`, `GET /` returns both
-`sentinel-rbac-readonly-4-0f8552e` and `<th>Actions</th>` (and `openStationView` / `openStationEdit`).
+`sentinel-officer-profile-5-3c8f1a76` and `<th>Actions</th>` (and `openStationView` / `openStationEdit`).
 
 ### Automated
 ```sh
@@ -482,3 +486,53 @@ so a stale page missing the column now fails startup and `python backend/server.
    **Police Officers**, **Vehicles**, **Crime intake** and **Central Police
    Search** (officers / stations / vehicles): each starts with `#`, the Actions
    column is still last, and nothing overflows on a narrow window.
+
+## Officer profiles, badge attribution and role-driven location pickers (testing branch)
+
+### Automated
+```sh
+node backend/test_officer_profile_ui.mjs                # jsdom: identity block → profile
+                                                        # modal, cascade, badges, refresh
+.venv/bin/python backend/test_officer_profile_locations.py   # real API + throwaway PostgreSQL
+```
+
+`test_officer_profile_ui.mjs` proves, in the real page script: the header identity
+block is one keyboard-accessible button that opens the Officer Profile modal; the
+modal saves a display name (`PATCH /api/me`), applies an avatar preset
+(`POST /api/me/avatar`) and changes the password (`POST /api/me/password`, with
+the confirmation mismatch caught before any request); a Checkpoint role offers
+only the **active** checkpoints of the chosen Region → District and hides the
+station/branch field, a Station / Unit role does the reverse; the roster paints
+`Badge #FP-102` (and `#Not recorded` when a row genuinely has none); the audit
+trail attributes each entry to the acting badge; `refreshLiveMetrics()` re-reads
+`/api/dashboard` and (with `{audit:true}`) the audit trail.
+
+`test_officer_profile_locations.py` drives the same behaviours through the API:
+the drawer's exact create payload, the canonical South / East / West scope kept
+for legacy aliases, a station / unit role clearing a stale checkpoint scope, the
+badge backfill and duplicate-badge refusal, `GET /api/admin/audit` attribution
+plus the `#Not recorded` fallback for a row with no badge, the three profile
+endpoints, and the Commander's `403 read_only_role` firewall on all of them.
+
+### Officer UAT checklist
+1. Sign in as `fp.officer` (`ChangeMe123!`): the header avatar shows `OH`, and
+   clicking anywhere on the name / avatar block opens **Officer profile** with
+   `Badge #FP-102`. Change the display name — the header updates at once; pick a
+   gold avatar preset — the header initials change; upload a JPG/PNG — the
+   picture replaces the initials. Change the password with a wrong current
+   password (refused), then correctly (accepted); a second tab is signed out.
+2. Sign in as `admin` → **User management** → **New officer**: pick
+   *Checkpoint Officer (South)* — the **Checkpoint** field appears and
+   *Station / Branch / Unit* disappears; choose **Sool → Laascaanood** and the
+   checkpoint list holds only active Laascaanood checkpoints (e.g. *Adhi Cadeeye
+   Outpost*); switch the role to *Fingerprint Unit* — the station/branch list
+   appears instead. Change the region and confirm the district and posting reset.
+3. Still in **User management**: every officer row shows a badge chip
+   (`Badge #FP-102`); **Audit trail** lists the latest events with the acting
+   officer's badge, and the filter narrows by record type.
+4. As `fp.officer`, approve a clearance application with a signed scan, then open
+   **Dashboard** without reloading: the KPI cards and the activity feed already
+   show the new approval.
+5. Sign in as `chief` (`ChangeMe123!`): the identity block still opens the
+   profile, but it is marked view-only and all three endpoints answer
+   `403 read_only_role`.

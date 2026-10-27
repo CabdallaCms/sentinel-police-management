@@ -452,6 +452,18 @@ CREATE TABLE IF NOT EXISTS audit_events(
 ADDED_COLUMNS = {
     'users': [
         ('location_scope', "ALTER TABLE users ADD COLUMN location_scope TEXT"),
+        # Officer badge number (e.g. 'FP-102'). Written by the User Management
+        # register and read back by every user query so audit entries can be
+        # attributed to a badge ('Badge #FP-102') instead of falling back to
+        # '#Not recorded'. Additive and nullable — existing rows are backfilled
+        # by migrate() and every existing API contract is unchanged.
+        ('badge_number', "ALTER TABLE users ADD COLUMN badge_number TEXT"),
+        # Officer profile picture (the Officer Profile modal uploads it here).
+        # Additive: a session without an avatar simply renders its initials.
+        ('avatar_path', "ALTER TABLE users ADD COLUMN avatar_path TEXT"),
+        # Optional appearance preset for the initials avatar ('navy', 'gold',
+        # ...). Additive; the initials renderer falls back to the role tone.
+        ('avatar_preset', "ALTER TABLE users ADD COLUMN avatar_preset TEXT"),
     ],
     'persons': [
         ('first_name', "ALTER TABLE persons ADD COLUMN first_name TEXT"),
@@ -652,11 +664,11 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '69e17fff'
+ASSET_VERSION = '3c8f1a76'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-rbac-readonly-4-' + ASSET_VERSION
+UI_BUILD = 'sentinel-officer-profile-5-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -683,6 +695,17 @@ UI_REQUIRED_MARKERS = (
     ('Reverse sequence # column', 'function sequenceCell('),
     ('Desktop sidebar collapse', 'body.sidebar-collapsed .main{width:100%;margin-left:0}'),
     ('Five applicant document fields', "buildFileSlots('appDocs','appDoc',5"),
+    # ---- this release: officer identity + role-driven location selectors ----
+    ('Clickable officer identity block', 'id="officerIdentity"'),
+    ('Officer profile modal', 'id="officerProfileModal"'),
+    ('Profile display-name update', 'function saveOfficerDisplayName('),
+    ('Profile avatar upload', 'function uploadOfficerAvatar('),
+    ('Profile password change', 'function submitOfficerPassword('),
+    ('Role-driven location cascade', 'function paintUserLocationFields('),
+    ('Checkpoint posting selector', 'function userCheckpointOptions('),
+    ('Station / branch posting selector', 'function userUnitOptions('),
+    ('Audit trail with badge attribution', 'id="auditTrailTable"'),
+    ('Instant metrics refresh after writes', 'async function refreshLiveMetrics('),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
@@ -2127,6 +2150,186 @@ def normalize_incoming_role(role):
     return r, None
 
 
+# ---------------------------------------------------------------------------
+# Officer badge attribution
+# ---------------------------------------------------------------------------
+# Every user row carries a badge number (users.badge_number). It is the value
+# audit entries, the audit trail and the dashboard activity feed print next to
+# an officer ('Badge #FP-102'). The prefix follows the officer's unit so the
+# badge is self-describing:
+#
+#   ADM-*  System Administrator      FP-*   Fingerprint Unit
+#   AP-*   Airport Control           CID-*  CID Criminal Unit
+#   HR-*   HR Directorate            CP-*   Checkpoint Officer
+#   CMD-*  Chief Commander (HQ / Command)
+#
+# The column is additive (ADDED_COLUMNS['users']); existing deployments are
+# backfilled once by migrate() and every new user is assigned the next free
+# number in its unit sequence when the administrator does not type one.
+BADGE_PREFIX_BY_ROLE = {
+    ROLE_ADMIN: 'ADM',
+    ROLE_FINGERPRINT: 'FP',
+    ROLE_AIRPORT: 'AP',
+    ROLE_CID: 'CID',
+    ROLE_HR: 'HR',
+    ROLE_CHIEF: 'CMD',
+}
+# First number handed out per unit (so the demo fingerprint officer is FP-101
+# and the second one FP-102 — the shape the spec prints: 'Badge #FP-102').
+BADGE_SEQUENCE_START = {'ADM': 100, 'FP': 100, 'AP': 200, 'CID': 300,
+                        'HR': 400, 'CP': 500, 'CMD': 900}
+# The documented fallback printed whenever a row genuinely has no badge.
+BADGE_NOT_RECORDED = '#Not recorded'
+# Built-in avatar presets offered by the Officer Profile modal (the "select a
+# profile picture" half of select-or-upload). The initials avatar is painted in
+# the chosen tone; an uploaded picture always wins over the preset.
+AVATAR_PRESETS = ('navy', 'gold', 'green', 'crimson', 'violet', 'slate')
+# save_upload_validated() compares the extension WITH its leading dot.
+AVATAR_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+
+
+def badge_prefix_for(role):
+    """Unit badge prefix for a role ('FP', 'CP', 'ADM', …)."""
+    canonical = canonical_unit_role(role)
+    if is_checkpoint_role(role) or canonical == ROLE_CHECKPOINT_OFFICER:
+        return 'CP'
+    return BADGE_PREFIX_BY_ROLE.get(canonical, 'OFC')
+
+
+def badge_label(value):
+    """Ready-to-print badge attribution ('Badge #FP-102' / '#Not recorded')."""
+    badge = str(value or '').strip()
+    return f'Badge #{badge}' if badge else BADGE_NOT_RECORDED
+
+
+def initials_for(name):
+    """Two-letter initials for the header avatar / profile modal."""
+    parts = [p for p in str(name or '').split() if p]
+    if not parts:
+        return '?'
+    return ''.join(p[0] for p in parts[:2]).upper()
+
+
+def normalise_badge_number(value):
+    """Validate and canonicalise an officer badge number.
+
+    Empty input returns None (the caller then auto-assigns). Anything with
+    characters other than letters / digits / '-' / '/' is rejected so a badge
+    can never smuggle markup into the audit trail.
+    """
+    badge = re.sub(r'\s+', '', str(value or '')).upper()
+    if not badge:
+        return None
+    if not re.fullmatch(r'[A-Z0-9][A-Z0-9/-]{0,23}', badge):
+        raise ValueError('badge_number must be 1-24 characters: letters, digits, "-" or "/"')
+    return badge
+
+
+def next_badge_number(c, role, taken=None):
+    """Next free badge number for `role` (e.g. 'FP-103').
+
+    Scans the numbers already stored for the unit prefix and continues the
+    sequence, so a badge is never reused even after a user is deleted.
+    `taken` may carry numbers claimed earlier in the same request.
+    """
+    prefix = badge_prefix_for(role)
+    highest = BADGE_SEQUENCE_START.get(prefix, 100)
+    pattern = f'{prefix}-%'
+    for row in c.execute('SELECT badge_number FROM users WHERE UPPER(badge_number) LIKE %s',
+                         (pattern,)).fetchall():
+        token = str(row['badge_number'] or '').rsplit('-', 1)
+        if len(token) == 2 and token[1].isdigit():
+            highest = max(highest, int(token[1]))
+    for value in (taken or ()):
+        strv = str(value or '')
+        if strv.upper().startswith(prefix + '-') and strv.rsplit('-', 1)[-1].isdigit():
+            highest = max(highest, int(strv.rsplit('-', 1)[-1]))
+    return f'{prefix}-{highest + 1:03d}'
+
+
+def ensure_badge_number(c, role, requested=None, taken=None):
+    """Resolve the badge for a new user: explicit value wins, else auto."""
+    explicit = normalise_badge_number(requested)
+    if explicit:
+        return explicit
+    return next_badge_number(c, role, taken)
+
+
+def backfill_badge_numbers(c):
+    """Assign a badge to every existing user that has none (idempotent).
+
+    Runs from migrate() so an upgraded database immediately attributes audit
+    rows to a badge instead of '#Not recorded'.
+    """
+    rows = c.execute("SELECT id, username, role FROM users "
+                     "WHERE badge_number IS NULL OR TRIM(badge_number)='' "
+                     "ORDER BY id").fetchall()
+    for row in rows:
+        badge = next_badge_number(c, row['role'])
+        c.execute('UPDATE users SET badge_number=%s WHERE id=%s', (badge, row['id']))
+    return len(rows)
+
+
+# ---------------------------------------------------------------------------
+# Role-driven location assignment (User Management modal)
+# ---------------------------------------------------------------------------
+# The New / Edit officer modal collects a cascading Region → District → posting:
+#   * a Checkpoint role posts the officer to one active checkpoint of the
+#     chosen district (the Station/Branch field hides), or
+#   * a Station / Unit role posts the officer to a station, branch or unit of
+#     the district (the Checkpoint field hides).
+# The selection is stored in the existing `users.branch` TEXT column as a
+# readable 'Name · District · Region' label — the exact shape the branch
+# datalist already produced — so the database schema and every existing API
+# consumer keep working. A Checkpoint officer's `location_scope` carries the
+# posting (the canonical South / East / West code when the checkpoint resolves
+# to one, otherwise the checkpoint's own label), which is what the checkpoint
+# read paths scope on.
+def compose_user_branch(name, district, region):
+    """'(Checkpoint|Station) · District · Region' label stored in users.branch."""
+    parts = [str(x or '').strip() for x in (name, district, region)]
+    return ' · '.join([p for p in parts if p])
+
+
+def user_location_assignment(data, role):
+    """Resolve the posting supplied by the User Management modal.
+
+    Returns `(branch_label, scope_hint)`. `scope_hint` is the checkpoint
+    posting (canonical code when derivable, else the checkpoint label) and is
+    only meaningful for Checkpoint roles. Legacy callers that only send
+    `branch` keep the previous behaviour exactly.
+    """
+    checkpoint = re.sub(r'\s+', ' ', str(data.get('checkpoint') or '')).strip()
+    unit = re.sub(r'\s+', ' ', str(data.get('unit') or data.get('station')
+                                  or data.get('unit_name') or '')).strip()
+    region = re.sub(r'\s+', ' ', str(data.get('region') or '')).strip()
+    district = re.sub(r'\s+', ' ', str(data.get('district') or '')).strip()
+    # The posting name the modal selected; checkpoint wins for checkpoint
+    # roles, the station / branch / unit otherwise.
+    name = checkpoint if is_checkpoint_role(role) and checkpoint else unit or checkpoint
+    if name:
+        return compose_user_branch(name, district, region), (checkpoint or name)
+    # Legacy free-text branch (datalist / demo accounts): keep it verbatim.
+    branch = re.sub(r'\s+', ' ', str(data.get('branch') or '')).strip()
+    return branch, (checkpoint or None)
+
+
+def resolve_checkpoint_scope(value):
+    """Canonical checkpoint scope for a posting.
+
+    A canonical area ('south' / 'South Checkpoint') resolves to 'South';
+    a named checkpoint such as 'Adhi Cadeeye Outpost' is kept verbatim so the
+    officer stays scoped to that post instead of seeing every location.
+    """
+    text = re.sub(r'\s+', ' ', str(value or '')).strip()
+    if not text:
+        return None
+    canonical = canonical_location_scope(text)
+    if canonical in CHECKPOINT_LOCATIONS:
+        return canonical
+    return text
+
+
 def user_view(user):
     """Return the public-facing user payload (no password hash) with RBAC info.
 
@@ -2136,6 +2339,12 @@ def user_view(user):
     (existing checks use role === 'CheckpointSouth' etc.); the
     canonical normalized form is in 'role_alias' for the spec-mandated
     unified checks.
+
+    The officer's `badge_number` is returned alongside a ready-to-print
+    `badge_label` ('Badge #FP-102'). When a legacy row carries no badge the
+    label is the documented '#Not recorded' fallback, so the UI never invents
+    an attribution. `display_name` stays the canonical display field; the
+    Officer Profile modal writes it back through PATCH /api/me.
     """
     raw_role = user.get('role') or ''
     # Spec step 1: normalise the role string. The session payload now
@@ -2163,10 +2372,21 @@ def user_view(user):
     # Hard denylist: Airport Control and the CID Criminal Unit never receive
     # Central Police Search, whatever the three lookups above returned.
     modules = strip_denied_modules(raw_role, modules)
+    badge = str(user.get('badge_number') or '').strip()
+    avatar_path = str(user.get('avatar_path') or '').strip()
+    avatar_preset = str(user.get('avatar_preset') or '').strip()
+    display_name = user.get('display_name') or ''
     return {
         'id': user['id'],
         'username': user['username'],
-        'display_name': user['display_name'],
+        'display_name': display_name,
+        # Officer identity attribution -------------------------------------------------
+        'badge_number': badge,
+        'badge_label': badge_label(badge),
+        'avatar_path': avatar_path,
+        'avatar_url': avatar_path,
+        'avatar_preset': avatar_preset,
+        'initials': initials_for(display_name),
         'role': raw_role,
         'role_alias': role_alias,
         # Spec-facing snake_case name ('fingerprint_officer', 'admin', ...).
@@ -2193,6 +2413,10 @@ def user_view(user):
         # renders every module in strict view-only mode when this is true.
         'read_only': is_read_only_role(raw_role),
         'can_write': not is_read_only_role(raw_role),
+        # Self-service profile authority: every role may maintain its own
+        # display name / avatar / password EXCEPT the global read-only role,
+        # which keeps the documented zero-write contract.
+        'can_edit_profile': not is_read_only_role(raw_role),
         'active': bool(user.get('active', 1)),
     }
 
@@ -2270,8 +2494,12 @@ def checkpoint_scope(user):
     # 'CheckpointSouth' to 'checkpoint_officer' must NOT wipe the
     # officer's location. The location_scope column is the
     # authoritative source for any Checkpoint officer.
-    stored_scope = user.get('location_scope')
-    if stored_scope and stored_scope in CHECKPOINT_LOCATIONS:
+    # A posting may be a canonical area ('South') or a named checkpoint
+    # ('Adhi Cadeeye Outpost'); both are authoritative. Returning the stored
+    # value keeps a district-checkpoint officer scoped instead of falling
+    # through to an empty scope (which the read paths treat as 'see all').
+    stored_scope = str(user.get('location_scope') or '').strip()
+    if stored_scope:
         return stored_scope
     # Otherwise, derive the scope from the role (legacy code path).
     aliases_to_try = [role, role.lower(), normalize_role(role)]
@@ -2390,6 +2618,18 @@ def migrate(c):
         for col, sql in cols:
             if col not in existing:
                 c.execute(sql)
+    # Officer badge attribution: every account (including rows created before
+    # the badge column existed) gets a unit-scoped badge so audit entries can
+    # print 'Badge #FP-102' instead of the '#Not recorded' fallback. Runs after
+    # the ADDED_COLUMNS pass above guarantees users.badge_number exists, and is
+    # a no-op once every row carries a badge.
+    if 'users' in tables:
+        try:
+            backfill_badge_numbers(c)
+        except Exception:
+            # Never block startup on the attribution backfill; the audit trail
+            # keeps rendering its documented '#Not recorded' fallback.
+            pass
     # Branch catalogue evolution: Police Stations department was added
     # after the initial four-unit schema. Existing databases carry a CHECK
     # constraint limited to ('fingerprint','crime','checkpoint','airport');
@@ -2562,20 +2802,20 @@ def init_db():
     # password (idempotent — we only re-tag it on first run).
     if c.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
         seeds = [
-            ('admin',       'Officer A. Hassan',     ROLE_ADMIN,           'Central HQ',      None,                 'ChangeMe123!'),
-            ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,                'ChangeMe123!'),
-            ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!'),
-            ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!'),
-            ('hr.officer',  'Officer S. Warsame',    ROLE_HR,              'HR Directorate',   None,                'ChangeMe123!'),
-            ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_SOUTH,'Checkpoint South', 'South',             'ChangeMe123!'),
-            ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_EAST, 'Checkpoint East',  'East',              'ChangeMe123!'),
-            ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_WEST, 'Checkpoint West',  'West',              'ChangeMe123!'),
-            ('chief',       'Gen. C. Warsame',       ROLE_CHIEF,           'Police HQ / Command', None,             'ChangeMe123!'),
+            ('admin',       'Officer A. Hassan',     ROLE_ADMIN,           'Central HQ',      None,                 'ChangeMe123!', 'ADM-101'),
+            ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,                'ChangeMe123!', 'FP-102'),
+            ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!', 'AP-201'),
+            ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!', 'CID-301'),
+            ('hr.officer',  'Officer S. Warsame',    ROLE_HR,              'HR Directorate',   None,                'ChangeMe123!', 'HR-401'),
+            ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_SOUTH,'Checkpoint South', 'South',             'ChangeMe123!', 'CP-501'),
+            ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_EAST, 'Checkpoint East',  'East',              'ChangeMe123!', 'CP-502'),
+            ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_WEST, 'Checkpoint West',  'West',              'ChangeMe123!', 'CP-503'),
+            ('chief',       'Gen. C. Warsame',       ROLE_CHIEF,           'Police HQ / Command', None,             'ChangeMe123!', 'CMD-901'),
         ]
-        for u, dn, role, branch, scope, pw in seeds:
-            c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,password_hash) '
-                      'VALUES(%s,%s,%s,%s,%s,%s)',
-                      (u, dn, role, branch, scope, password_hash(pw)))
+        for u, dn, role, branch, scope, pw, badge in seeds:
+            c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,'
+                      'badge_number,password_hash) VALUES(%s,%s,%s,%s,%s,%s,%s)',
+                      (u, dn, role, branch, scope, badge, password_hash(pw)))
     if c.execute('SELECT COUNT(*) FROM persons').fetchone()[0] == 0:
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation,passport_id)
@@ -2795,8 +3035,12 @@ def require_auth(handler):
         if user_id: TOKENS[token] = user_id
     if not user_id: raise PermissionError('Authentication required')
     c = get_db_connection()
+    # The badge / avatar columns are part of the identity payload: without them
+    # here the signed-in session (and therefore every audit row the UI paints)
+    # fell back to '#Not recorded'.
     user = rowdict(c.execute(
-        'SELECT id,username,display_name,role,branch,location_scope,active '
+        'SELECT id,username,display_name,role,branch,location_scope,badge_number,'
+        'avatar_path,avatar_preset,active '
         'FROM users WHERE id=%s AND active=1',(user_id,)).fetchone())
     c.close()
     if not user: raise PermissionError('Authentication required')
@@ -2805,6 +3049,63 @@ def require_auth(handler):
 def audit(c, user, action, entity, entity_id, details=''):
     c.execute('INSERT INTO audit_events(user_id,action,entity,entity_id,details) VALUES(%s,%s,%s,%s,%s)',
               (user['id'], action, entity, entity_id, details))
+
+
+def audit_trail(c, limit=60, entity='', action=''):
+    """Audit register with badge attribution for every entry.
+
+    Each row carries the actor's stored `badge_number` and the ready-to-print
+    `badge_label` ('Badge #FP-102'). The LEFT JOIN is deliberate: an audit row
+    whose user has been removed still renders, and its badge falls back to the
+    documented '#Not recorded' instead of hiding the event.
+    """
+    where, args = [], []
+    if entity:
+        where.append('LOWER(e.entity)=LOWER(%s)'); args.append(entity)
+    if action:
+        where.append('UPPER(e.action)=UPPER(%s)'); args.append(action)
+    clause = (' WHERE ' + ' AND '.join(where)) if where else ''
+    try:
+        limit = max(1, min(200, int(limit)))
+    except (TypeError, ValueError):
+        limit = 60
+    rows = c.execute(f'''SELECT e.id, e.action, e.entity, e.entity_id, e.details, e.created_at,
+            u.id AS actor_id, u.username AS actor_username,
+            u.display_name AS actor_display_name, u.role AS actor_role,
+            u.badge_number AS actor_badge
+        FROM audit_events e LEFT JOIN users u ON u.id = e.user_id
+        {clause} ORDER BY e.id DESC LIMIT %s''', (*args, limit)).fetchall()
+    items = []
+    for r in rows:
+        badge = str(_val(r, 'actor_badge', '') or '').strip()
+        role = _val(r, 'actor_role', '') or ''
+        items.append({
+            'id': _val(r, 'id'),
+            'action': _val(r, 'action') or '',
+            'entity': _val(r, 'entity') or '',
+            'entity_id': _val(r, 'entity_id') or '',
+            'details': _val(r, 'details') or '',
+            'created_at': _val(r, 'created_at') or '',
+            'actor': {
+                'id': _val(r, 'actor_id'),
+                'username': _val(r, 'actor_username') or '',
+                'display_name': _val(r, 'actor_display_name') or '',
+                'role': role,
+                'role_label': ROLE_LABELS.get(canonical_unit_role(role), role) if role else '',
+                'badge_number': badge,
+                'badge_label': badge_label(badge),
+            },
+            # Flat copies so a template can print the attribution without
+            # walking into the nested object.
+            'badge_number': badge,
+            'badge_label': badge_label(badge),
+            'badge_recorded': bool(badge),
+        })
+    return {'items': items,
+            'total': len(items),
+            'badge_fallback': BADGE_NOT_RECORDED,
+            'generated_at': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}
+
 
 def new_person_id(c):
     while True:
@@ -4542,6 +4843,17 @@ def checkpoint_scope_sql(scope, alias='ce'):
     return (sql, (s, s, f'{s} checkpoint', s, f'%{s}%', f'%{s}%'))
 
 
+def checkpoint_label(scope):
+    """Human label for a checkpoint scope without doubling the suffix.
+
+    'South' -> 'South Checkpoint' · 'Adhi Cadeeye Outpost' -> unchanged.
+    """
+    text = re.sub(r'\s+', ' ', str(scope or '')).strip()
+    if not text:
+        return 'Checkpoint'
+    return text if 'checkpoint' in text.lower() else f'{text} Checkpoint'
+
+
 def checkpoint_code_of(row):
     """Canonical checkpoint code (South / East / West) for an event row."""
     for key in ('location_code', 'checkpoint_location', 'location'):
@@ -4686,10 +4998,13 @@ def cid_checkpoint_analytics(c, user):
     today = _today()
     today_count = sum(1 for r in rows
                       if str(_val(r, 'created_at', '') or '').strip()[:10] == today)
-    locations = (scope,) if scope in CHECKPOINT_LOCATIONS else CHECKPOINT_LOCATIONS
+    # A named checkpoint posting scopes the rows already; count them under the
+    # posting label instead of bucketing them into 'Other'.
+    named_posting = bool(scope) and scope not in CHECKPOINT_LOCATIONS
+    locations = (scope,) if named_posting else ((scope,) if scope else CHECKPOINT_LOCATIONS)
     per_location = []
     for code in locations:
-        at = [r for r in rows if checkpoint_code_of(r) == code]
+        at = rows if named_posting else [r for r in rows if checkpoint_code_of(r) == code]
         hits = sum(1 for r in at
                    if str(_val(r, 'screening_result', '') or '').strip().lower() == 'flagged match')
         per_location.append({'label': code, 'checkpoint': f'{code} Checkpoint',
@@ -4716,7 +5031,7 @@ def cid_checkpoint_analytics(c, user):
         'distinct_travelers': travelers,
         'kpis': [
             kpi('Travelers screened', total, 'blue', '⊙',
-                f'{scope} Checkpoint only' if scope else 'All checkpoints'),
+                f'{checkpoint_label(scope)} only' if scope else 'All checkpoints'),
             kpi('Flagged suspect hits', flagged, 'red', '!', 'Screenings matching an active alert'),
             kpi('Flag rate', f'{pct(flagged, total)}%', 'amber', '%', 'Flagged ÷ screened'),
             kpi('Distinct travelers', travelers, 'purple', '◉', 'Unique Central Persons stopped'),
@@ -5836,7 +6151,7 @@ def build_dashboard(c, user):
         'subhead': (
             'System overview · all units' if is_admin else
             'HQ / Command · global overview · view-only' if is_chief else
-            (f'{scope} Checkpoint operations · live' if is_checkpoint else
+            (f'{checkpoint_label(scope)} operations · live' if is_checkpoint else
              f'{ROLE_LABELS.get(role, role)} · live operations feed')
         ),
     }
@@ -5946,7 +6261,7 @@ def _checkpoint_dashboard_cards(c, scope, today, cp_scope_sql):
         'label': f'{scope} · screenings today',
         'icon': '⊙',
         'value': screenings_today,
-        'trend': f'Stops recorded at {scope} Checkpoint · {today}',
+        'trend': f'Stops recorded at {checkpoint_label(scope)} · {today}',
         'module': 'checkpoints',
         'location_scope': scope,
         'kind': 'cp_screenings_today',
@@ -5956,7 +6271,7 @@ def _checkpoint_dashboard_cards(c, scope, today, cp_scope_sql):
         'label': f'{scope} · travelers flagged',
         'icon': '!',
         'value': flagged_today,
-        'trend': f'Flagged matches at {scope} Checkpoint today',
+        'trend': f'Flagged matches at {checkpoint_label(scope)} today',
         'trend_kind': 'alert',
         'module': 'checkpoints',
         'location_scope': scope,
@@ -6063,6 +6378,22 @@ def _time_ago(iso_ts, now_ts):
     return f'{delta // 86400} d ago'
 
 
+def _activity_actor(row):
+    """Actor attribution for one activity-feed row (badge-aware).
+
+    Every event answers with the acting officer's badge ('Badge #FP-102') and
+    the documented '#Not recorded' fallback, so the dashboard feed and the
+    audit trail attribute work the same way.
+    """
+    badge = str(_val(row, 'actor_badge', '') or '').strip()
+    return {
+        'display_name': _val(row, 'actor_name', '') or '',
+        'username': _val(row, 'actor_username', '') or '',
+        'badge_number': badge,
+        'badge_label': badge_label(badge),
+    }
+
+
 def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_scope_sql):
     """Build the real-time activity stream for the dashboard.
 
@@ -6082,9 +6413,12 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
     if is_admin or role == ROLE_FINGERPRINT:
         for r in c.execute('''SELECT a.application_id AS id, a.purpose AS title,
             a.status AS subtitle, a.created_at AS at,
-            p.full_name AS person_name
+            p.full_name AS person_name,
+            u.display_name AS actor_name, u.username AS actor_username,
+            u.badge_number AS actor_badge
             FROM clearance_applications a
             JOIN persons p ON p.id=a.person_id
+            LEFT JOIN users u ON u.id=a.created_by
             ORDER BY a.id DESC LIMIT 8''').fetchall():
             name = r['person_name'] or 'applicant'
             events.append({
@@ -6096,14 +6430,18 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
                 'at': r['at'],
                 'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'blue',
+                'actor': _activity_actor(r),
             })
 
     if is_admin or role == ROLE_AIRPORT:
         for r in c.execute('''SELECT a.record_id AS id, a.route AS route,
             a.movement AS movement, a.travel_date AS at,
-            p.full_name AS person_name
+            p.full_name AS person_name,
+            u.display_name AS actor_name, u.username AS actor_username,
+            u.badge_number AS actor_badge
             FROM airport_passengers a
             JOIN persons p ON p.id=a.person_id
+            LEFT JOIN users u ON u.id=a.created_by
             ORDER BY a.id DESC LIMIT 8''').fetchall():
             name = r['person_name'] or 'traveller'
             events.append({
@@ -6115,12 +6453,17 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
                 'at': r['at'] or '',
                 'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'cyan',
+                'actor': _activity_actor(r),
             })
 
     if is_admin or role == ROLE_CID:
         for r in c.execute('''SELECT cc.case_id AS id, cc.category AS title,
-            cc.status AS subtitle, cc.created_at AS at
-            FROM crime_cases cc ORDER BY cc.id DESC LIMIT 8''').fetchall():
+            cc.status AS subtitle, cc.created_at AS at,
+            u.display_name AS actor_name, u.username AS actor_username,
+            u.badge_number AS actor_badge
+            FROM crime_cases cc
+            LEFT JOIN users u ON u.id=cc.created_by
+            ORDER BY cc.id DESC LIMIT 8''').fetchall():
             events.append({
                 'module': 'cid',
                 'kind': 'case',
@@ -6130,6 +6473,7 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
                 'at': r['at'],
                 'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'amber',
+                'actor': _activity_actor(r),
             })
 
     if is_admin or is_checkpoint:
@@ -6138,8 +6482,11 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
             f"SELECT ce.event_id AS id, ce.checkpoint_location AS location_label, "
             f"ce.location_code, ce.screening_result AS subtitle, ce.created_at AS at, "
             f"ce.action_taken, "
-            f"p.full_name AS person_name, p.person_id AS person_code "
+            f"p.full_name AS person_name, p.person_id AS person_code, "
+            f"u.display_name AS actor_name, u.username AS actor_username, "
+            f"u.badge_number AS actor_badge "
             f"FROM checkpoint_events ce JOIN persons p ON p.id=ce.person_id "
+            f"LEFT JOIN users u ON u.id=ce.created_by "
             f"{cp_filter} ORDER BY ce.id DESC LIMIT 10",
             cp_args).fetchall():
             loc_label = r['location_label'] or (f"{(r['location_code'] or '')} Checkpoint" if r['location_code'] else 'Checkpoint')
@@ -6155,13 +6502,17 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
                 'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'red' if r['subtitle'] == 'Flagged match' else 'green',
                 'location_code': r['location_code'],
+                'actor': _activity_actor(r),
             })
 
     if is_admin or role == ROLE_REGISTRATION:
         for r in c.execute('''SELECT a.action_id AS id, a.action_type AS action_type,
             a.classification AS subtitle, a.status AS status, a.created_at AS at,
-            o.full_name AS officer_name, o.service_id AS officer_code
+            o.full_name AS officer_name, o.service_id AS officer_code,
+            u.display_name AS actor_name, u.username AS actor_username,
+            u.badge_number AS actor_badge
             FROM officer_conduct_actions a JOIN officers o ON o.id=a.officer_id
+            LEFT JOIN users u ON u.id=a.created_by
             ORDER BY a.id DESC LIMIT 8''').fetchall():
             name = r['officer_name'] or r['officer_code'] or 'officer'
             events.append({
@@ -6173,6 +6524,7 @@ def _build_activity_feed(c, role, is_admin, scope, is_checkpoint, now_ts, cp_sco
                 'at': r['at'],
                 'time_ago': _time_ago(r['at'], now_ts),
                 'dot_color': 'red' if r['action_type'] == 'Disciplinary / Penalty' else 'green',
+                'actor': _activity_actor(r),
             })
 
     events.sort(key=lambda e: e.get('at') or '', reverse=True)
@@ -6212,6 +6564,10 @@ class API(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type','application/json; charset=utf-8')
         self.send_header('Content-Length',str(len(out)))
+        # Live dashboards / audit trails must never be served from a cache: a
+        # clearance approval or unit update is visible on the very next poll.
+        self.send_header('Cache-Control','no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma','no-cache')
         self.send_header('Access-Control-Allow-Origin','*')
         self.send_header('Access-Control-Allow-Headers','Content-Type, Authorization')
         self.send_header('Access-Control-Allow-Methods','GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD')
@@ -6501,6 +6857,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/suspect-alerts': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
+                '/api/admin/audit': 'admin',
                 '/api/admin/analytics': 'analytics',
                 '/api/stations': 'stations',
                 '/api/officers': 'officers',
@@ -6639,7 +6996,8 @@ class API(BaseHTTPRequestHandler):
                 result = case
             elif p.path == '/api/admin/users' or p.path.startswith('/api/admin/users/'):
                 if p.path == '/api/admin/users':
-                    rows = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active
+                    rows = c.execute('''SELECT id,username,display_name,role,branch,location_scope,
+                        badge_number,avatar_path,avatar_preset,active
                         FROM users ORDER BY id ASC''').fetchall()
                     result = {'items':[user_view(rowdict(r)) for r in rows],
                               'roles': list(ALL_ROLES),
@@ -6649,13 +7007,26 @@ class API(BaseHTTPRequestHandler):
                     uid = p.path.split('/')[4]
                     if not uid or not uid.isdigit():
                         self.send_json(400, {'error': 'user id required'}); c.close(); return
-                    row = c.execute('''SELECT id,username,display_name,role,branch,location_scope,active
+                    row = c.execute('''SELECT id,username,display_name,role,branch,location_scope,
+                        badge_number,avatar_path,avatar_preset,active
                         FROM users WHERE id=%s''', (int(uid),)).fetchone()
                     if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
                     result = {'user': user_view(rowdict(row)),
                               'roles': list(ALL_ROLES),
                               'role_labels': ROLE_LABELS,
                               'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
+            elif p.path == '/api/admin/audit':
+                # Append-only audit register. Admin only (the module gate
+                # above answers 403 for every other role, including the
+                # global read-only Commander). Every entry is attributed to
+                # the acting officer's badge — 'Badge #FP-102' — with the
+                # documented '#Not recorded' fallback for legacy rows.
+                query = parse_qs(p.query)
+                result = audit_trail(
+                    c,
+                    limit=query.get('limit', ['60'])[0],
+                    entity=re.sub(r'\s+', ' ', query.get('entity', [''])[0] or '').strip(),
+                    action=re.sub(r'\s+', ' ', query.get('action', [''])[0] or '').strip())
             elif p.path == '/api/admin/analytics':
                 # Aggregate analytics — admin only (module gate above).
                 result = build_analytics(c, user)
@@ -6993,6 +7364,72 @@ class API(BaseHTTPRequestHandler):
             # route-specific logic (login / logout above stay exempt so the
             # role can still open and close a session).
             enforce_read_only(user, 'POST', p.path)
+            # ---- Self-service officer profile (Officer Profile modal) --------
+            if p.path == '/api/me/avatar':
+                c = get_db_connection()
+                ctype = (self.headers.get('Content-Type', '') or '').lower()
+                avatar_path, preset = None, None
+                if 'multipart/form-data' in ctype:
+                    _fields, files = parse_multipart(self)
+                    upload = (files.get('avatar') or files.get('photo')
+                              or files.get('file'))
+                    saved = save_upload_validated(
+                        upload, AVATAR_IMAGE_EXTS, 'Profile picture', required=True)
+                    avatar_path = saved['path']
+                else:
+                    data = body_json(self)
+                    if 'avatar_preset' in data:
+                        preset = str(data.get('avatar_preset') or '').strip().lower()
+                        if preset and preset not in AVATAR_PRESETS:
+                            raise ValueError('avatar_preset must be one of: '
+                                             + ', '.join(AVATAR_PRESETS))
+                    if 'avatar_path' in data and not str(data.get('avatar_path') or '').strip():
+                        avatar_path = ''          # explicit reset to the initials avatar
+                    if not preset and avatar_path is None:
+                        raise ValueError('Send an image file (avatar) or an avatar_preset')
+                sets, params = [], []
+                if avatar_path is not None:
+                    sets.append('avatar_path=%s'); params.append(avatar_path or None)
+                if preset is not None:
+                    sets.append('avatar_preset=%s'); params.append(preset or None)
+                    if avatar_path is None:
+                        # Selecting a preset replaces a previously uploaded picture.
+                        sets.append('avatar_path=%s'); params.append(None)
+                params.append(int(user['id']))
+                c.execute(f"UPDATE users SET {', '.join(sets)} WHERE id=%s", params)
+                audit(c, user, 'UPDATE', 'user_avatar', str(user['id']),
+                      'self-service avatar change')
+                c.commit()
+                fresh = rowdict(c.execute('SELECT * FROM users WHERE id=%s',
+                                          (int(user['id']),)).fetchone())
+                c.close()
+                self.send_json(200, {'user': user_view(fresh), 'updated': True})
+                return
+            if p.path == '/api/me/password':
+                data = body_json(self); c = get_db_connection()
+                current = str(data.get('current_password') or '')
+                new_password = str(data.get('new_password') or '')
+                row = c.execute('SELECT id,password_hash FROM users WHERE id=%s',
+                                (int(user['id']),)).fetchone()
+                if not row or row['password_hash'] != password_hash(current):
+                    raise ValueError('Current password is incorrect')
+                if len(new_password) < 6:
+                    raise ValueError('New password must be at least 6 characters')
+                if new_password == current:
+                    raise ValueError('New password must differ from the current password')
+                c.execute('UPDATE users SET password_hash=%s WHERE id=%s',
+                          (password_hash(new_password), int(user['id'])))
+                audit(c, user, 'UPDATE', 'user_password', str(user['id']),
+                      'self-service password change')
+                # Sign out every OTHER browser for this account; the session
+                # that changed the password stays signed in.
+                token = (self.headers.get('Authorization', '') or '').replace('Bearer ', '') \
+                    or session_token_from_cookie(self)
+                c.execute('DELETE FROM sessions WHERE user_id=%s AND token<>%s',
+                          (int(user['id']), token or ''))
+                c.commit(); c.close()
+                self.send_json(200, {'ok': True, 'password_changed': True})
+                return
             # Keep branch creation out of the generic route table: normalize
             # `/branches`, `/branches/`, and `/api/branches/` first, then
             # dispatch the canonical path here before any catch-all handling.
@@ -7333,17 +7770,42 @@ class API(BaseHTTPRequestHandler):
                 if role not in accepted_roles:
                     raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))} '
                                      '(Checkpoint aliases such as CheckpointSouth / cp_south are also accepted)')
-                scope = canonical_location_scope(
-                    data.get('location_scope') or derived_scope or ROLE_LOCATION_SCOPE.get(role))
-                if is_checkpoint_role(role) and not scope:
-                    raise ValueError('location_scope is required for Checkpoint roles')
-                if scope and scope not in CHECKPOINT_LOCATIONS:
+                # ---- role-driven location assignment -------------------------
+                # The modal sends Region → District → (Checkpoint | Station /
+                # Branch / Unit). `branch` keeps its existing free-text
+                # contract; when the cascading selection is present it wins and
+                # is composed into the same 'Name · District · Region' label.
+                checkpoint = re.sub(r'\s+', ' ', str(data.get('checkpoint') or '')).strip()
+                unit = re.sub(r'\s+', ' ', str(data.get('unit') or data.get('station') or '')).strip()
+                selected_branch, scope_hint = user_location_assignment(data, role)
+                if selected_branch:
+                    branch = selected_branch
+                if str(data.get('location_scope') or '').strip():
+                    # An explicit scope always wins (legacy contract).
+                    scope = canonical_location_scope(data.get('location_scope'))
+                elif is_checkpoint_role(role) and scope_hint:
+                    # The posting selected in the cascade is authoritative: a
+                    # checkpoint officer belongs to that checkpoint, not to an
+                    # area implied by the role alias.
+                    scope = resolve_checkpoint_scope(scope_hint)
+                else:
+                    # Legacy path: derive the scope from the role alias
+                    # ('CheckpointEast' -> 'East').
+                    scope = canonical_location_scope(
+                        derived_scope or ROLE_LOCATION_SCOPE.get(role))
+                if is_checkpoint_role(role) and not scope and not (checkpoint or unit):
+                    raise ValueError('location_scope is required for Checkpoint roles '
+                                     '(select the posting checkpoint)')
+                if scope and scope not in CHECKPOINT_LOCATIONS and not (checkpoint or unit):
                     raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
+                badge = ensure_badge_number(c, role, data.get('badge_number'))
                 if c.execute('SELECT 1 FROM users WHERE username=%s', (username,)).fetchone():
                     self.send_json(409, {'error': f'Username "{username}" already exists'}); c.close(); return
-                c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,password_hash,active)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s)''',
-                    (username, display_name, role, branch, scope, password_hash(password),
+                if c.execute('SELECT 1 FROM users WHERE UPPER(badge_number)=%s', (badge.upper(),)).fetchone():
+                    raise ValueError(f'badge_number "{badge}" is already assigned to another officer')
+                c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,
+                        badge_number,password_hash,active) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (username, display_name, role, branch, scope, badge, password_hash(password),
                      1 if data.get('active', True) else 0))
                 new = rowdict(c.execute('SELECT * FROM users WHERE username=%s', (username,)).fetchone())
                 audit(c, user, 'CREATE', 'user', str(new['id']), username)
@@ -7682,6 +8144,38 @@ class API(BaseHTTPRequestHandler):
                 # HR Directorate writes (promotion verification, …) belong to
                 # the Police Officers Registration Office module.
                 require_module(user, 'officers')
+            # ---- Self-service officer profile (Officer Profile modal) --------
+            # PATCH /api/me edits the CALLER'S OWN display name / avatar
+            # preset. It is a self-service identity action, not a register
+            # mutation, so no module gate applies — but the global read-only
+            # firewall above still refuses it for the Commander role, exactly
+            # like every other write.
+            if p.path in ('/api/me', '/api/me/profile'):
+                fields, params = [], []
+                if 'display_name' in data:
+                    name = re.sub(r'\s+', ' ', str(data.get('display_name') or '')).strip()
+                    if len(name) < 2:
+                        raise ValueError('display_name must be at least 2 characters')
+                    if len(name) > 80:
+                        raise ValueError('display_name must be 80 characters or fewer')
+                    fields.append('display_name=%s'); params.append(name)
+                if 'avatar_preset' in data:
+                    preset = str(data.get('avatar_preset') or '').strip().lower()
+                    if preset and preset not in AVATAR_PRESETS:
+                        raise ValueError('avatar_preset must be one of: ' + ', '.join(AVATAR_PRESETS))
+                    fields.append('avatar_preset=%s'); params.append(preset or None)
+                if not fields:
+                    raise ValueError('Nothing to update — send display_name or avatar_preset')
+                params.append(int(user['id']))
+                c.execute(f"UPDATE users SET {', '.join(fields)} WHERE id=%s", params)
+                audit(c, user, 'UPDATE', 'user_profile', str(user['id']),
+                      'self-service profile update: ' + ', '.join(f.split('=')[0] for f in fields))
+                c.commit()
+                fresh = rowdict(c.execute('SELECT * FROM users WHERE id=%s',
+                                          (int(user['id']),)).fetchone())
+                c.close()
+                self.send_json(200, {'user': user_view(fresh), 'updated': True})
+                return
             # Management-table edits (Police Stations registry): the Admin
             # role only. Checked here, ahead of the route body, so no branch
             # of the station update can run for a non-admin session.
@@ -7749,10 +8243,14 @@ class API(BaseHTTPRequestHandler):
                     self.send_json(400, {'error': 'user id required'}); c.close(); return
                 row = c.execute('SELECT * FROM users WHERE id=%s', (int(uid),)).fetchone()
                 if not row: self.send_json(404, {'error': 'User not found'}); c.close(); return
-                updates, params = [], []
-                for f in ('display_name', 'branch'):
-                    if f in data and str(data[f]).strip():
-                        updates.append(f'{f}=%s'); params.append(str(data[f]).strip())
+                # Column -> value map. A dict (not a list) so a field can never
+                # be assigned twice in one UPDATE — PostgreSQL rejects
+                # `SET location_scope=%s, location_scope=%s`.
+                sets = {}
+                if 'display_name' in data and str(data['display_name']).strip():
+                    sets['display_name'] = str(data['display_name']).strip()
+                if 'branch' in data and str(data['branch']).strip():
+                    sets['branch'] = str(data['branch']).strip()
                 if 'role' in data:
                     # Spec step 1: accept both the legacy compound forms
                     # and the canonical 'checkpoint_officer' alias — and
@@ -7765,7 +8263,7 @@ class API(BaseHTTPRequestHandler):
                     if role not in accepted_roles:
                         raise ValueError(f'role must be one of {", ".join(sorted(accepted_roles))} '
                                          '(Checkpoint aliases such as CheckpointSouth / cp_south are also accepted)')
-                    updates.append('role=%s'); params.append(role)
+                    sets['role'] = role
                     # If the new role dictates a location_scope, refresh
                     # it. For 'checkpoint_officer' (the canonical alias)
                     # the table-lookup default is empty; in that case
@@ -7777,23 +8275,52 @@ class API(BaseHTTPRequestHandler):
                     if 'location_scope' not in data:
                         default_scope = derived_scope or ROLE_LOCATION_SCOPE.get(role)
                         if default_scope:
-                            updates.append('location_scope=%s'); params.append(default_scope)
+                            sets['location_scope'] = default_scope
                         # else: keep the existing scope (no-op).
+                # ---- role-driven location assignment (Edit officer modal) ----
+                # Region → District → (Checkpoint | Station / Branch / Unit).
+                # The composed label replaces the free-text branch exactly like
+                # the create flow; the legacy `branch` body field still works.
+                checkpoint = re.sub(r'\s+', ' ', str(data.get('checkpoint') or '')).strip()
+                unit = re.sub(r'\s+', ' ', str(data.get('unit') or data.get('station') or '')).strip()
+                if checkpoint or unit or data.get('region') or data.get('district'):
+                    effective_role = normalize_incoming_role(
+                        str(data.get('role') or row['role']).strip())[0]
+                    selected_branch, scope_hint = user_location_assignment(data, effective_role)
+                    if selected_branch and not str(data.get('branch') or '').strip():
+                        sets['branch'] = selected_branch
+                    if is_checkpoint_role(effective_role) and 'location_scope' not in data:
+                        hinted = resolve_checkpoint_scope(scope_hint)
+                        if hinted:
+                            sets['location_scope'] = hinted
                 if 'location_scope' in data:
                     scope = canonical_location_scope(data['location_scope'])
-                    if scope and scope not in CHECKPOINT_LOCATIONS:
+                    if scope and scope not in CHECKPOINT_LOCATIONS and not (checkpoint or unit):
                         raise ValueError(f'location_scope must be one of {", ".join(CHECKPOINT_LOCATIONS)}')
-                    updates.append('location_scope=%s'); params.append(scope)
+                    sets['location_scope'] = scope
+                if 'badge_number' in data:
+                    badge = normalise_badge_number(data.get('badge_number'))
+                    if not badge:
+                        raise ValueError('badge_number cannot be blank')
+                    clash = c.execute('SELECT 1 FROM users WHERE UPPER(badge_number)=%s AND id<>%s',
+                                      (badge.upper(), int(uid))).fetchone()
+                    if clash:
+                        raise ValueError(f'badge_number "{badge}" is already assigned to another officer')
+                    sets['badge_number'] = badge
                 if 'active' in data:
-                    updates.append('active=%s'); params.append(1 if data['active'] else 0)
+                    updates_active = 1 if data['active'] else 0
+                    sets['active'] = updates_active
                 if data.get('password'):
                     if len(str(data['password'])) < 6:
                         raise ValueError('password must be at least 6 characters')
-                    updates.append('password_hash=%s'); params.append(password_hash(str(data['password'])))
-                if updates:
-                    params.append(int(uid))
-                    c.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=%s", params)
-                    audit(c, user, 'UPDATE', 'user', uid)
+                    sets['password_hash'] = password_hash(str(data['password']))
+                if sets:
+                    columns = list(sets.keys())
+                    values = [sets[col] for col in columns]
+                    c.execute(f"UPDATE users SET {', '.join(c + '=%s' for c in columns)} WHERE id=%s",
+                              (*values, int(uid)))
+                    audit(c, user, 'UPDATE', 'user', uid,
+                          'changed fields: ' + ', '.join(columns))
                 c.commit()
                 updated = rowdict(c.execute('SELECT * FROM users WHERE id=%s', (int(uid),)).fetchone())
                 result = {'user': user_view(updated)}

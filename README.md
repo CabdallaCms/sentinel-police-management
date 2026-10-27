@@ -130,10 +130,10 @@ UI and the API can never disagree:
   (`application.html`) carries the same rule: a read-only session gets no *Approve Application*
   button, a view-only note instead, and `approve()` never issues the request.
 - **Confirming which build is live (and never running a cached one).** `index.html` stamps
-  `<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-0f8552e">` and shows *UI build …*
+  `<meta name="sentinel-ui-build" content="sentinel-officer-profile-5-3c8f1a76">` and shows *UI build …*
   in the sidebar footer (`window.SENTINEL_UI_BUILD`). The stamp ends with the short commit the page
   was published from, which is also the `?v=` parameter on every static reference in the app
-  (`certificate.html?v=0f8552e&id=…`, `images/police_logo.png?v=0f8552e`) — bump `ASSET_VERSION`
+  (`certificate.html?v=3c8f1a76&id=…`, `images/police_logo.png?v=3c8f1a76`) — bump `ASSET_VERSION`
   *and* `UI_BUILD` in `backend/server.py` together with the `?v=` parameters in `index.html`,
   `application.html` and `certificate.html` (the station action suite asserts all of them agree).
   Served documents answer `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` +
@@ -430,13 +430,22 @@ Open `http://localhost:8000`.
 
 ## Testing
 
-Backend API suite (standard library only; boots the server against a temporary database):
+Officer profile, badge-attribution and role-driven location suite (boots the real server
+against a throwaway PostgreSQL cluster; needs `psycopg2-binary` + `pgserver`):
 
 ```bash
-python3 backend/test_server.py
+python3 backend/test_officer_profile_locations.py
 ```
 
-Covers the identity-resolution tiers, unit-record routes, RBAC module gating, location-scoped checkpoint reads/writes, role-alias normalization (`cp_south` / `CheckpointEast` → `checkpoint_officer` with the scope preserved), the `/api/dashboard` contract for every role and the analytics aggregation.
+Covers the cascading **Region → District → (Checkpoint | Station / Branch / Unit)** assignment for
+both drawer flows, the badge number every user payload now carries (`FP-102` →
+`Badge #FP-102`, `#Not recorded` only when a row genuinely has none), `GET /api/admin/audit`
+attribution, the self-service profile endpoints (`PATCH /api/me`, `POST /api/me/avatar`,
+`POST /api/me/password`) and the Commander's unchanged `403 read_only_role` firewall.
+
+The original standard-library `backend/test_server.py` predates the PostgreSQL-only backend and is
+kept for reference only; it cannot boot against the current storage layer. Use the suites in
+[TESTING.md](TESTING.md) instead.
 
 Read-only / unit-module regression suite (boots the real server against PostgreSQL; skipped when no
 database is configured):
@@ -781,3 +790,62 @@ list.map((row, index) => `<tr>${sequenceCell(index, list.length)} … </tr>`)
 - **Markup** — `<th class="seq" scope="col">#</th>` and
   `<td class="seq" data-seq="6">6</td>` (the `data-seq` attribute is what the UI
   suite asserts against). Highlighted biometric-match rows tint the number too.
+
+## Officer badges, audit attribution, profile modal & role-driven site assignment (testing branch)
+
+### Role-driven cascading location pickers (User Management → New / Edit Officer)
+
+The New Officer drawer and the Edit Officer modal now share one **Region → District → site**
+cascade. The third selector changes shape with the role family:
+
+| Role family | Region | District | Third selector | Hidden field |
+|---|---|---|---|---|
+| Checkpoint (`CheckpointSouth/East/West`, `checkpoint_officer`, `cp_south`, …) | required | required | **Checkpoint** — only the *active* checkpoints of that district | Station / Branch / Unit |
+| Station / Unit (Fingerprint, Airport, CID, HR, Police Station / Branch units) | required | required | **Station / Branch / Unit** — the stations and branches registered in that district | Checkpoint |
+
+- Changing **Region** re-populates (and clears) **District**; changing **District** re-populates
+  (and clears) the checkpoint / unit list. No stale option from another district can be submitted.
+- The catalogues are the live registries the app already loads — `police_stations`
+  (`station_tier = 'Checkpoint'` rows are the checkpoints, every other tier plus every
+  `police_branches` row is a station/branch/unit) and `police_branches`, filtered by
+  region + district and, for checkpoints, `operational_status = 'Active'`.
+- The composed posting is stored in the existing `users.branch` column
+  (`Name · District · Region`) and a Checkpoint role also stores the checkpoint as its
+  `location_scope`, so downstream scope filters are unchanged. A legacy free-text branch (an old
+  client or a demo account) still works exactly as before.
+
+### Badge numbers and audit attribution
+
+- Every account carries a `badge_number` (`FP-102`, `AP-201`, `CP-501`, `ADM-101`, `CMD-901`, …).
+  It is returned by `/api/login`, `/api/me`, `GET /api/admin/users` and
+  `GET /api/admin/users/{id}` together with a printable `badge_label` (**`Badge #FP-102`**).
+- Migration backfills a deterministic badge for every existing row, so a legacy account is never
+  left blank; `#Not recorded` is reserved for a genuinely empty value and is never invented.
+- **User Management → Audit trail** (`GET /api/admin/audit`) lists the append-only `audit_events`
+  with the acting officer, role and badge chip. Badge attribution therefore reads
+  *Badge #FP-102* (or *#Not recorded* when a row truly has none) instead of always falling back.
+- `PATCH /api/admin/users/{id}` audits *which fields changed*, and every JSON response is sent with
+  `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` so a reload never replays a stale
+  roster or audit page.
+
+### Officer Profile (clickable header identity block)
+
+Clicking the officer's name / avatar in the top-right header opens **Officer Profile**
+(`#officerIdentity` → `#officerProfileModal`):
+
+- **Display name** — 2–80 characters, saved with `PATCH /api/me`; the header, sidebar footer and
+  user table update immediately.
+- **Avatar** — pick one of the built-in colour presets (initials avatar) or upload a
+  JPG / PNG / WebP / GIF up to 5 MB (`POST /api/me/avatar`).
+- **Password** — current password + new password twice (`POST /api/me/password`); the current
+  password is re-checked, every *other* browser session for the account is signed out, and the
+  session that made the change stays signed in.
+- The global read-only Commander may open the profile but keeps the existing zero-write contract:
+  the three endpoints answer `403 read_only_role` exactly like every other mutation.
+
+### Instant dashboard refresh
+
+Clearance approvals, signed-scan uploads, checkpoint screenings, officer / station / branch /
+vehicle registrations and unit updates now call `refreshLiveMetrics()` right after the successful
+write: the executive KPIs and the activity feed repaint from `/api/dashboard` — no reload, no cache
+clear, no manual sync.

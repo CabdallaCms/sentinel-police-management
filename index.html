@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-rbac-readonly-4-69e17fff" />
+<meta name="sentinel-ui-build" content="sentinel-officer-profile-5-3c8f1a76" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -575,6 +575,59 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .header-user .logout-signout{gap:6px;padding:0 10px}
 .header-user .logout:hover{border-color:#cbd8e8;background:#edf3fb;color:#1e4b86}
 .header-user .logout-signout:hover{border-color:#cbd8e8;background:#edf3fb;color:#1e4b86}
+/* ---- clickable officer identity block (opens the Officer Profile modal) ---- */
+.header-identity{display:flex;align-items:center;gap:8px;min-width:0;padding:2px 6px 2px 2px;
+  border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer;
+  font:inherit;color:inherit;text-align:left;transition:background .15s ease,border-color .15s ease}
+.header-identity:hover{background:#f1f6fd;border-color:#dbe6f4}
+.header-identity:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.header-identity .avatar{overflow:hidden;padding:0}
+.header-identity .avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
+.header-identity .header-user-copy{display:block}
+body.dark-mode .header-identity:hover,body[data-theme="dark"] .header-identity:hover{background:#25324a;border-color:#3b4a63}
+/* avatar tones (built-in presets offered by the profile modal) */
+.avatar.tone-navy{background:linear-gradient(140deg,#1e3a8a,#2563eb)}
+.avatar.tone-gold{background:linear-gradient(140deg,#b45309,#f59e0b)}
+.avatar.tone-green{background:linear-gradient(140deg,#065f46,#10b981)}
+.avatar.tone-crimson{background:linear-gradient(140deg,#7f1d1d,#ef4444)}
+.avatar.tone-violet{background:linear-gradient(140deg,#4c1d95,#8b5cf6)}
+.avatar.tone-slate{background:linear-gradient(140deg,#334155,#64748b)}
+/* ---- Officer Profile modal ---- */
+.op-hero{display:flex;align-items:center;gap:16px;padding:14px 16px;margin-bottom:14px;
+  border:1px solid var(--line);border-radius:14px;background:linear-gradient(140deg,#f7faff,#fff)}
+.op-avatar{width:82px;height:82px;flex:none;border-radius:18px;display:grid;place-items:center;
+  color:#fff;font-size:26px;font-weight:800;letter-spacing:.02em;overflow:hidden;
+  box-shadow:0 6px 18px rgba(15,42,85,.16);background:linear-gradient(140deg,#1e3a8a,#2563eb)}
+.op-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.op-copy{min-width:0;display:grid;gap:5px}
+.op-copy h4{margin:0;font-size:17px;letter-spacing:-.2px;color:#12233d;overflow:hidden;text-overflow:ellipsis}
+.op-copy small{color:var(--muted);font-size:12px}
+.op-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.op-section{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:#fff}
+.op-section>header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
+.op-section h5{margin:0;font-size:13px;letter-spacing:-.1px;color:#1d2b42}
+.op-section p.hint{margin:0 0 10px}
+.op-avatar-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.op-avatar-choice{width:42px;height:42px;border-radius:12px;border:2px solid transparent;cursor:pointer;
+  display:grid;place-items:center;color:#fff;font-weight:800;font-size:12px;position:relative;padding:0}
+.op-avatar-choice.is-active{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.op-avatar-choice.is-none{background:#eef2f8;color:#5b6779;font-size:16px}
+.op-avatar-choice:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.op-upload{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.op-upload input[type=file]{max-width:100%;font-size:11.5px}
+.op-readonly{border-left:3px solid var(--amber);background:#fff9ec;padding:9px 12px;border-radius:8px;
+  font-size:12px;color:#7a5b17;margin-bottom:12px}
+body.dark-mode .op-hero,body[data-theme="dark"] .op-hero{background:#1b2637;border-color:#334155}
+body.dark-mode .op-section,body[data-theme="dark"] .op-section{background:#162032;border-color:#334155}
+body.dark-mode .op-copy h4,body[data-theme="dark"] .op-copy h4,
+body.dark-mode .op-section h5,body[data-theme="dark"] .op-section h5{color:#e2e8f0}
+/* ---- audit trail badge attribution ---- */
+.audit-badge{display:inline-flex;align-items:center;gap:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:10.5px;font-weight:700;letter-spacing:-.1px}
+.um-badge{display:inline-flex;align-items:center;margin-left:6px;padding:1px 7px;border-radius:99px;
+  background:#eef2f8;color:#42526b;font-size:10px;font-weight:800;letter-spacing:.02em}
+.um-badge.missing{background:#fff3d9;color:#7a5b17}
+.audit-detail{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .top h1{margin:3px 0 0;color:#122039;font-size:27px;font-weight:760;letter-spacing:-.85px;line-height:1.2}
 .eyebrow{color:#3566a4;font-size:10px;font-weight:850;letter-spacing:1.2px}
 .sidebar-toggle{display:grid;place-items:center;width:40px;height:40px;flex:none;border:1px solid #dce4ee;border-radius:10px;background:#fff;color:#263b59;font-size:17px;box-shadow:0 2px 5px rgba(15,23,42,.04);transition:background-color .16s ease,border-color .16s ease,color .16s ease,transform .16s ease}
@@ -1269,8 +1322,15 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
       <span class="theme-label" id="themeToggleLabel">Light</span>
     </button>
     <div class="user-pill header-user" id="userPill" style="display:none">
-      <div class="avatar" id="userInitials">?</div>
-      <div class="header-user-copy"><div class="uname" id="userName">Officer</div><div class="urole" id="userRole">Role</div></div>
+      <!-- Officer identity block — the whole block is the click target that
+           opens the Officer Profile modal (display name / avatar / password).
+           data-view + data-ro-keep keep it alive for read-only sessions. -->
+      <button class="header-identity" id="officerIdentity" type="button" data-view="1" data-ro-keep="1"
+              onclick="openOfficerProfile()" title="Officer profile — display name, photo and password"
+              aria-haspopup="dialog" aria-controls="officerProfileModal">
+        <span class="avatar tone-navy" id="userInitials">?</span>
+        <span class="header-user-copy"><span class="uname" id="userName">Officer</span><span class="urole" id="userRole">Role</span></span>
+      </button>
       <button class="logout admin-only" id="gotoAdmin" type="button" onclick="go('admin')" title="User management" aria-label="User management">⚙</button>
       <button class="logout logout-signout" id="logoutBtn" type="button" onclick="doLogout()" title="Sign out" aria-label="Sign out"><span aria-hidden="true">↪</span><span>Sign out</span></button>
     </div>
@@ -2051,6 +2111,39 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
     </table>
   </div>
 </div>
+<!-- AUDIT TRAIL · append-only attribution. Every entry prints the acting
+     officer's badge ('Badge #FP-102') and falls back to '#Not recorded' only
+     when the row genuinely carries no badge / actor. -->
+<div class="panel" style="margin-top:14px">
+  <div class="panel-head">
+    <div>
+      <h2>Audit trail</h2>
+      <div class="sub">Append-only activity log · each entry is attributed to the acting officer's badge</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="auditEntityFilter" onchange="loadAuditTrail(true)" aria-label="Filter the audit trail by record type">
+        <option value="">All record types</option>
+        <option value="user">Users</option>
+        <option value="user_profile">Officer profiles</option>
+        <option value="user_avatar">Profile pictures</option>
+        <option value="user_password">Passwords</option>
+        <option value="clearance_application">Clearance applications</option>
+        <option value="police_station">Police stations</option>
+        <option value="police_branch">Branches</option>
+        <option value="checkpoint_event">Checkpoint stops</option>
+        <option value="vehicle">Vehicles</option>
+        <option value="officer">Officers</option>
+      </select>
+      <button class="btn ghost small" type="button" onclick="loadAuditTrail(true)">↻ Refresh</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>When (UTC)</th><th>Officer</th><th>Action</th><th>Record</th><th>Detail</th></tr></thead>
+      <tbody id="auditTrailTable"><tr><td colspan="5" class="empty">Loading audit trail…</td></tr></tbody>
+    </table>
+  </div>
+</div>
 </section>
 
 <!-- BRANCH MANAGEMENT (System Administrator only) -->
@@ -2187,6 +2280,19 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay" onclick="closeDrawer()"></div>
 <div class="modal" id="drawer" role="dialog" aria-modal="true"><div class="modal-head"><h3 id="drawerTitle">Panel</h3><button class="iconbtn" onclick="closeDrawer()" aria-label="Close">✕</button></div><div class="alert error" id="modalError" role="alert" aria-live="assertive" tabindex="-1"></div><div class="modal-body" id="drawerBody"></div><div class="modal-foot" id="drawerFoot"></div></div>
+<!-- OFFICER PROFILE · the signed-in officer's own identity (display name,
+     avatar select/upload and password). Opened from the header identity block.
+     Read-only roles (Commander / High Command) keep the documented zero-write
+     contract and see the same profile with the write controls disabled. -->
+<div class="cmodal-ov" id="officerProfileModalOv" onclick="closeEntryModal('officerProfileModal')"></div>
+<div class="cmodal profile" id="officerProfileModal" data-view="1" role="dialog" aria-modal="true"
+     aria-labelledby="officerProfileTitle">
+  <div class="cm-head">
+    <div><h3 id="officerProfileTitle">Officer profile</h3><div class="sub">Your signed-in identity · display name, photo and password</div></div>
+    <button class="iconbtn" onclick="closeEntryModal('officerProfileModal')" aria-label="Close">✕</button>
+  </div>
+  <div class="cm-body" id="officerProfileBody"><div class="empty">Loading profile…</div></div>
+</div>
 <!-- Shared person detail modal · Central Search, Fingerprint, Airport, Checkpoint + Police Registration -->
 <div class="cmodal-ov" id="personDetailModalOv" onclick="closeEntryModal('personDetailModal')"></div>
 <div class="cmodal person-detail" id="personDetailModal" data-view="1" role="dialog" aria-modal="true" aria-labelledby="pvModalTitle">
@@ -4836,7 +4942,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!imageLightboxOpen(
 // exactly as it did when the form was inline on the page.
 // Modals that stay available to a read-only (Commander / High Command)
 // session: the identity profile popup is a pure VIEW surface.
-const READ_ONLY_VIEW_MODALS=new Set(['pvModal', 'stViewModal']);
+const READ_ONLY_VIEW_MODALS=new Set(['pvModal', 'stViewModal', 'officerProfileModal']);
 function openEntryModal(id){
   // Read-only role: entry/registration modals are refused; identity and
   // station-view surfaces remain available. `pvModal` is retained as a
@@ -5704,7 +5810,7 @@ function paintDashboard(d){
   if(!d) return;
   const sub = document.getElementById('dashSub');
   const subhead = document.getElementById('dashSubhead');
-  if(sub) sub.textContent = d.subhead || ('Updated '+ (d.generated_at||'') +' · '+ (d.role||'') + (d.location_scope ? ' · '+d.location_scope+' Checkpoint' : ''));
+  if(sub) sub.textContent = d.subhead || ('Updated '+ (d.generated_at||'') +' · '+ (d.role||'') + (d.location_scope ? ' · '+checkpointLabelText(d.location_scope) : ''));
   if(subhead) subhead.textContent = (d.is_admin ? 'Cross-unit Operations' : (d.location_scope ? (d.location_scope+' Checkpoint Operations') : ((d.role||'Module')+' Operations')));
 
   // Live status pill — the dashboard is refreshed automatically on every
@@ -5756,7 +5862,7 @@ function paintDashboard(d){
   const quickSub = document.getElementById('quickSub');
   if(quickSub){
     if(d.is_admin) quickSub.textContent = 'Create a unit record with a central person link';
-    else if(d.location_scope) quickSub.textContent = 'Create a unit record at '+d.location_scope+' Checkpoint';
+    else if(d.location_scope) quickSub.textContent = 'Create a unit record at '+checkpointLabelText(d.location_scope);
     else quickSub.textContent = 'Create a unit record linked to the central person registry';
   }
   const quickHint = document.getElementById('quickHint');
@@ -6084,7 +6190,7 @@ function paintCheckpointScopeHint(){
   const role = (sessionUser && sessionUser.role) || '';
   const scope = (sessionUser && sessionUser.location_scope) || '';
   if(isCheckpointRole(role) && scope){
-    el.innerHTML = `<b>${esc(scope)} Checkpoint</b> officer view`;
+    el.innerHTML = `<b>${esc(checkpointLabelText(scope))}</b> officer view`;
   } else if(isAdminRole(role)){
     el.innerHTML = `<b>System Admin</b> view — choose a location above to scope the table`;
   } else if(role){
@@ -6115,7 +6221,7 @@ function paintCheckpointChips(){
     if(scope){
       // Station-scoped officer: render ONLY the assigned location chip.
       const count = db.checkpoints.filter(x => cpMatchesLocation(x, scope)).length;
-      chips.push({value: scope, label: scope + ' Checkpoint', count, locked: true});
+      chips.push({value: scope, label: checkpointLabelText(scope), count, locked: true});
       cpLocationFilter = scope;
     } else {
       // No derivable scope (defensive): still lock the officers to the
@@ -6667,7 +6773,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=69e17fff&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=3c8f1a76&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -6794,7 +6900,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=69e17fff&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=3c8f1a76&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -6867,6 +6973,7 @@ async function uploadSignedApplicationDocument(){
     input.value='';
     await syncServer();
     await refreshClearanceReview(id);
+    await refreshLiveMetrics();
     toast('Signed application scanned',id+' · '+file.name);
   }catch(e){setFpReviewNotice(e.message||'The signed scan could not be uploaded.',true)}
   finally{if(submit){submit.disabled=false;submit.textContent='Upload signed scan'}}
@@ -7072,7 +7179,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=69e17fff&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=3c8f1a76&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -7188,6 +7295,9 @@ async function approveFP(id){
       // 12-hour review period (HTTP 400); a System Administrator bypasses it.
       await api('/api/fingerprint/applications/'+id+'/approve',{method:'POST',body:'{}'});
       await syncServer();
+      // Dashboard cards + live activity feed refresh from the approval itself —
+      // no manual cache reload, no page refresh.
+      await refreshLiveMetrics();
       // The certificate itself is only printable once the signed scan exists
       // (administrators bypass). Say which state the officer is in.
       const approvedRow=(db.fingerprint||[]).find(a=>String(a.id)===String(id));
@@ -7471,6 +7581,7 @@ async function submitCheckpoint(){
         autoBindCpLocationFilter();
         renderCheckpointPage();
       }
+      await refreshLiveMetrics();
       toast(r.alerted?`⚠ ${r.location}: potential suspect match — supervisor notified`:'Person screened — no active alert');
       return;
     }
@@ -8156,6 +8267,36 @@ function applyReadOnlyMode(){
   return ro;
 }
 
+// ---------------------------------------------------------------------------
+// Officer identity: avatar tones, header block and the Officer Profile modal
+// ---------------------------------------------------------------------------
+// The header identity block (avatar + name + role) is a single click target
+// that opens the Officer Profile modal. Everything the modal writes is a
+// SELF-SERVICE identity change (PATCH /api/me, POST /api/me/avatar,
+// POST /api/me/password): it never touches register data, and the global
+// read-only Commander role keeps its documented zero-write contract — the
+// modal opens in view mode for it.
+const AVATAR_PRESETS = ['navy','gold','green','crimson','violet','slate'];
+function avatarTonePreset(preset){
+  const p = String(preset||'').toLowerCase();
+  return AVATAR_PRESETS.includes(p) ? p : 'navy';
+}
+function initialsOf(name){
+  return String(name||'').split(' ').filter(Boolean).map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?';
+}
+function officerAvatarUrl(u){
+  return (u && (u.avatar_path || u.avatar_url)) || '';
+}
+// Paint the header avatar (uploaded picture wins over the initials preset).
+function paintHeaderAvatar(){
+  const el = document.getElementById('userInitials');
+  if(!el || !sessionUser) return;
+  const img = officerAvatarUrl(sessionUser);
+  el.className = 'avatar ' + (img ? '' : 'tone-' + avatarTonePreset(sessionUser.avatar_preset));
+  el.innerHTML = img
+    ? `<img src="${esc(img)}" alt="${esc(sessionUser.display_name||'Officer')} portrait">`
+    : esc(initialsOf(sessionUser.display_name));
+}
 function updateUserPill(){
   const pill = document.getElementById('userPill');
   if(!sessionUser){ pill.style.display='none'; return; }
@@ -8163,20 +8304,251 @@ function updateUserPill(){
   document.getElementById('userName').textContent = sessionUser.display_name;
   let label = sessionUser.role_label || sessionUser.role;
   const uScope = sessionUser.location_scope || (isCheckpointRole(sessionUser.role) ? scopeFromRole(sessionUser.role) : '');
-  if(uScope && isCheckpointRole(sessionUser.role)) label += ' · ' + uScope + ' Checkpoint';
+  if(uScope && isCheckpointRole(sessionUser.role)) label += ' · ' + checkpointLabelText(uScope);
   else if(isAdminRole(sessionUser.role)) label += ' · ' + (sessionUser.branch || 'Central HQ');
   else if(isChiefRole(sessionUser.role)) label += ' · ' + (sessionUser.branch || 'Police HQ / Command');
   else label += ' · ' + (sessionUser.branch || '');
   document.getElementById('userRole').textContent = label;
-  const ini = (sessionUser.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?';
-  document.getElementById('userInitials').textContent = ini;
+  paintHeaderAvatar();
+  const identity = document.getElementById('officerIdentity');
+  if(identity){
+    identity.title = 'Officer profile — ' + (sessionUser.display_name||'Officer')
+      + ' · ' + (sessionUser.badge_label || '#Not recorded');
+    identity.setAttribute('aria-label','Open officer profile for ' + (sessionUser.display_name||'Officer'));
+  }
   // Update the eyebrow with the user's role + scope (per spec: "Officer H. Xasan · South Checkpoint")
   const eb = document.getElementById('pageEyebrow');
   if(eb){
     let txt = 'Signed in as ' + sessionUser.display_name;
-    if(uScope && isCheckpointRole(sessionUser.role)) txt += ' · ' + uScope + ' Checkpoint';
+    if(uScope && isCheckpointRole(sessionUser.role)) txt += ' · ' + checkpointLabelText(uScope);
     eb.textContent = txt;
   }
+}
+// 'South' -> 'South Checkpoint'; a named checkpoint keeps its own name.
+function checkpointLabelText(scope){
+  const text = String(scope||'').trim();
+  if(!text) return 'Checkpoint';
+  return /checkpoint/i.test(text) ? text : text + ' Checkpoint';
+}
+// Adopt the server's refreshed profile without a reload: the header, nav and
+// every role-scoped render keep working from the same session object.
+function adoptSessionUser(user){
+  if(!user || typeof user!=='object') return;
+  sessionUser = user; currentUser = user;
+  if(user.visibility) sessionVisibility = user.visibility;
+  if(typeof saveSession==='function' && authToken()) saveSession(authToken(), user);
+  if(typeof sanitizeModules==='function' && user.role) user.modules = sanitizeModules(user.role, user.modules||[]);
+  updateUserPill();
+}
+function opNotice(id, kind, msg){
+  const el = document.getElementById(id); if(!el) return;
+  el.className = 'notice';
+  el.style.display = 'block';
+  el.style.background = kind==='error' ? '#ffeaec' : '#e3f7f1';
+  el.style.color = kind==='error' ? '#a62431' : '#116a4c';
+  el.style.borderColor = kind==='error' ? '#f6c7cc' : '#bfe6d7';
+  el.textContent = msg;
+}
+function openOfficerProfile(){
+  if(!sessionUser){ toast('Not signed in','Sign in to open your officer profile.'); return; }
+  renderOfficerProfile();
+  openEntryModal('officerProfileModal');
+}
+function renderOfficerProfile(){
+  const body = document.getElementById('officerProfileBody');
+  if(!body) return;
+  const u = sessionUser || {};
+  const canEdit = u.can_edit_profile !== false && canWrite();
+  const img = officerAvatarUrl(u);
+  const tone = avatarTonePreset(u.avatar_preset);
+  const scopeChip = (u.location_scope && isCheckpointRole(u.role))
+    ? `<span class="badge purple">${esc(checkpointLabelText(u.location_scope))}</span>` : '';
+  const branchChip = u.branch ? `<span class="badge gray">${esc(u.branch)}</span>` : '';
+  const badgeText = u.badge_label || '#Not recorded';
+  const presetButtons = AVATAR_PRESETS.map(p =>
+    `<button class="op-avatar-choice tone-${p} ${!img && tone===p ? 'is-active' : ''}" type="button"
+       onclick="chooseOfficerAvatar('${p}')" title="${esc(p)} avatar" aria-label="${esc(p)} avatar"
+       ${canEdit?'':'disabled'}>${esc(initialsOf(u.display_name))}</button>`).join('');
+  body.innerHTML = `
+    ${canEdit ? '' : '<div class="op-readonly"><b>View-only profile.</b> The Commander (HQ / Command) role holds global read-only access — the profile is visible but display name, picture and password cannot be changed from this session.</div>'}
+    <div class="op-hero">
+      <div class="op-avatar ${img?'':'tone-'+tone}">${img
+        ? `<img src="${esc(img)}" alt="${esc((u.display_name||'Officer')+' portrait')}">`
+        : esc(initialsOf(u.display_name))}</div>
+      <div class="op-copy">
+        <h4>${esc(u.display_name||'Officer')}</h4>
+        <small>${esc(u.username||'')} · ${esc(u.role_label||u.role||'')}</small>
+        <div class="op-chips">
+          <span class="badge blue audit-badge" id="opBadgeChip" title="Officer badge number">${esc(badgeText)}</span>
+          ${scopeChip}${branchChip}
+        </div>
+      </div>
+    </div>
+    <section class="op-section">
+      <header><h5>Display name</h5><small class="muted">Shown in the header, every register and the audit trail</small></header>
+      <div class="f-row">
+        <div class="field"><label for="opDisplayName">Display name</label>
+          <input id="opDisplayName" maxlength="80" autocomplete="name" value="${esc(u.display_name||'')}" ${canEdit?'':'disabled'}></div>
+        <div class="field" style="align-self:end">
+          <button class="btn" type="button" onclick="saveOfficerDisplayName()" ${canEdit?'':'disabled'}>Save display name</button></div>
+      </div>
+      <div class="notice" id="opNameNotice" role="status" aria-live="polite" style="display:none"></div>
+    </section>
+    <section class="op-section">
+      <header><h5>Profile picture</h5><small class="muted">Pick a preset or upload a photo · JPG / PNG / WebP / GIF, max 5 MB</small></header>
+      <div class="op-avatar-grid" role="group" aria-label="Avatar presets">
+        <button class="op-avatar-choice is-none ${!img && !u.avatar_preset ? 'is-active':''}" type="button"
+          onclick="chooseOfficerAvatar('')" title="Reset to initials" aria-label="Reset to initials" ${canEdit?'':'disabled'}>A</button>
+        ${presetButtons}
+      </div>
+      <div class="op-upload">
+        <input type="file" id="opAvatarFile" accept="image/png,image/jpeg,image/webp,image/gif"
+               onchange="uploadOfficerAvatar(this)" ${canEdit?'':'disabled'} aria-label="Upload a profile picture">
+        <button class="btn ghost small" type="button" onclick="chooseOfficerAvatar('')" ${canEdit?'':'disabled'}>Reset to initials</button>
+        <span class="muted" id="opAvatarStatus"></span>
+      </div>
+    </section>
+    <section class="op-section">
+      <header><h5>Password</h5><small class="muted">At least 6 characters · other browsers are signed out</small></header>
+      <div class="f-row f-3">
+        <div class="field"><label for="opCurrentPassword">Current password</label>
+          <input id="opCurrentPassword" type="password" autocomplete="current-password" ${canEdit?'':'disabled'}></div>
+        <div class="field"><label for="opNewPassword">New password</label>
+          <input id="opNewPassword" type="password" autocomplete="new-password" ${canEdit?'':'disabled'}></div>
+        <div class="field"><label for="opConfirmPassword">Confirm new password</label>
+          <input id="opConfirmPassword" type="password" autocomplete="new-password" ${canEdit?'':'disabled'}></div>
+      </div>
+      <div class="form-actions" style="margin-top:10px">
+        <button class="btn" type="button" onclick="submitOfficerPassword()" ${canEdit?'':'disabled'}>Change password</button>
+      </div>
+      <div class="notice" id="opPasswordNotice" role="status" aria-live="polite" style="display:none"></div>
+    </section>`;
+}
+async function saveOfficerDisplayName(){
+  if(guardReadOnly('Updating your display name')) return;
+  const input = document.getElementById('opDisplayName');
+  const name = (input && input.value || '').trim();
+  if(name.length < 2){ opNotice('opNameNotice','error','Display name must be at least 2 characters.'); return; }
+  try{
+    const r = await api('/api/me', {method:'PATCH', body: JSON.stringify({display_name:name})});
+    adoptSessionUser(r.user);
+    renderOfficerProfile();
+    opNotice('opNameNotice','ok','Display name updated — the header, registers and audit trail now show “'+name+'”.');
+    toast('Profile updated','Display name saved');
+  }catch(e){ opNotice('opNameNotice','error', e.message||'Could not update the display name.'); }
+}
+async function chooseOfficerAvatar(preset){
+  if(guardReadOnly('Changing your profile picture')) return;
+  try{
+    const payload = preset ? {avatar_preset: preset} : {avatar_path: ''};
+    const r = await api('/api/me/avatar', {method:'POST', body: JSON.stringify(payload)});
+    adoptSessionUser(r.user);
+    renderOfficerProfile();
+    document.getElementById('opAvatarStatus').textContent = preset
+      ? 'Preset applied — the initials avatar is now ' + preset + '.'
+      : 'Reset to initials.';
+    toast('Profile picture updated', preset ? ('Preset: ' + preset) : 'Initials avatar restored');
+  }catch(e){ const st = document.getElementById('opAvatarStatus'); if(st) st.textContent = e.message||'Could not update the picture.'; }
+}
+async function uploadOfficerAvatar(input){
+  if(guardReadOnly('Uploading a profile picture')) return;
+  const file = input && input.files && input.files[0];
+  if(!file) return;
+  const status = document.getElementById('opAvatarStatus');
+  if(status) status.textContent = 'Uploading…';
+  try{
+    const fd = new FormData();
+    fd.append('avatar', file);
+    const r = await api('/api/me/avatar', {method:'POST', body: fd});
+    adoptSessionUser(r.user);
+    renderOfficerProfile();
+    document.getElementById('opAvatarStatus').textContent = 'Picture uploaded and linked to your profile.';
+    toast('Profile picture uploaded', file.name);
+  }catch(e){
+    const st = document.getElementById('opAvatarStatus');
+    if(st) st.textContent = e.message||'Upload failed.';
+  }
+}
+async function submitOfficerPassword(){
+  if(guardReadOnly('Changing your password')) return;
+  const current = (document.getElementById('opCurrentPassword')||{}).value||'';
+  const next = (document.getElementById('opNewPassword')||{}).value||'';
+  const confirm = (document.getElementById('opConfirmPassword')||{}).value||'';
+  if(!current){ opNotice('opPasswordNotice','error','Enter your current password.'); return; }
+  if(next.length < 6){ opNotice('opPasswordNotice','error','The new password must be at least 6 characters.'); return; }
+  if(next !== confirm){ opNotice('opPasswordNotice','error','The new password and confirmation do not match.'); return; }
+  try{
+    await api('/api/me/password', {method:'POST',
+      body: JSON.stringify({current_password: current, new_password: next})});
+    ['opCurrentPassword','opNewPassword','opConfirmPassword'].forEach(id=>{
+      const el = document.getElementById(id); if(el) el.value='';
+    });
+    opNotice('opPasswordNotice','ok','Password changed. Every other signed-in browser for this account was signed out.');
+    toast('Password changed','Your new password is active immediately');
+  }catch(e){ opNotice('opPasswordNotice','error', e.message||'Could not change the password.'); }
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail (System Administrator): append-only log with badge attribution
+// ---------------------------------------------------------------------------
+async function loadAuditTrail(force){
+  const tb = document.getElementById('auditTrailTable');
+  if(!tb) return;
+  if(!(sessionVisibility && sessionVisibility.can_manage_users)){
+    tb.innerHTML = '<tr><td colspan="5" class="empty">The audit trail is restricted to the System Administrator role.</td></tr>';
+    return;
+  }
+  const filter = (document.getElementById('auditEntityFilter')||{}).value || '';
+  tb.innerHTML = '<tr><td colspan="5" class="empty">Loading audit trail…</td></tr>';
+  try{
+    const data = await api('/api/admin/audit?limit=60' + (filter ? '&entity='+encodeURIComponent(filter) : ''));
+    const items = (data && data.items) || [];
+    if(!items.length){
+      tb.innerHTML = '<tr><td colspan="5" class="empty">No audit entries yet for this filter.</td></tr>';
+      return;
+    }
+    tb.innerHTML = items.map(e => {
+      const a = e.actor || {};
+      const badge = e.badge_number || a.badge_number || '';
+      const badgeText = badge ? (e.badge_label || a.badge_label || ('Badge #'+badge)) : (data.badge_fallback || '#Not recorded');
+      return `<tr>
+        <td class="muted">${esc(e.created_at||'—')}</td>
+        <td><b>${esc(a.display_name||'—')}</b>${badge?` <span class="audit-badge badge blue">${esc(badgeText)}</span>`:` <span class="audit-badge badge gray">${esc(badgeText)}</span>`}
+          <br><small class="muted">${esc(a.username||'')}${a.role_label?' · '+esc(a.role_label):''}</small></td>
+        <td><span class="badge ${e.action==='CREATE'?'green':e.action==='UPDATE'?'blue':'gray'}">${esc(e.action||'')}</span></td>
+        <td><b>${esc(e.entity||'')}</b><br><small class="muted">${esc(e.entity_id||'')}</small></td>
+        <td><span class="audit-detail" title="${esc(e.details||'')}">${esc(e.details||'—')}</span></td>
+      </tr>`;
+    }).join('');
+  }catch(e){
+    tb.innerHTML = '<tr><td colspan="5" class="empty">'+esc(e.message||'Could not load the audit trail.')+'</td></tr>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Instant metrics refresh after a mutation
+// ---------------------------------------------------------------------------
+// Clearance approvals and unit updates must move the dashboard cards and the
+// live activity feed immediately — no manual cache reload. Every write path
+// that changes a counted register calls this after its API call succeeds.
+async function refreshLiveMetrics(opts={}){
+  if(!serverOn || !authToken()) return;
+  try{
+    const dash = await api('/api/dashboard');
+    if(dash && dash.role) db.dashboard = dash;
+    const dashPage = document.getElementById('dashboard');
+    if(db.dashboard){
+      if(dashPage && dashPage.classList.contains('active')) paintDashboard(db.dashboard);
+      else paintActivityFromData(db.dashboard.activity || []);
+    }
+  }catch(_){}
+  // Executive / oversight analytics cache: drop it so the next paint is live.
+  try{ if(typeof _execCache!=='undefined') _execCache = null; }catch(_){}
+  try{
+    if(typeof loadExecutive==='function' && (hasModule('executive') || hasModule('oversight'))) await loadExecutive(true);
+  }catch(_){}
+  try{ renderUnitStats(); }catch(_){}
+  if(opts.audit && typeof loadAuditTrail==='function') loadAuditTrail(true);
 }
 
 // ============================ chart primitives =============================
@@ -8668,6 +9040,7 @@ async function saveBranch(e){
     document.getElementById('branchDistrict').value=district;
     document.getElementById('branchUnitType').value=unitType;
     setBranchNotice((result.branch&&result.branch.name||name)+' added to '+BRANCH_UNIT_LABELS[unitType]+' for '+region+' · '+district+'.');
+    refreshLiveMetrics();
     toast('Branch added',name+' \u00b7 '+region+' \u00b7 '+district);
   }catch(err){
     showFormError(err.message||'Could not add the branch.',{notice:'branchNotice'});
@@ -8685,9 +9058,17 @@ async function renderUserTable(){
     if(!data.items.length){ tb.innerHTML = '<tr><td colspan="7" class="um-empty">No users yet</td></tr>'; return; }
     tb.innerHTML = data.items.map(u => {
       const chip = u.role === 'SystemAdmin' ? 'admin' : (isCheckpointRole(u.role) ? 'checkpoint' : 'unit');
-      const loc = u.location_scope ? `${esc(u.location_scope)} Checkpoint` : (esc(u.branch) || '—');
+      // Location column: the checkpoint POSTING for checkpoint officers
+      // (canonical area or named checkpoint), the stored branch otherwise.
+      const loc = (u.location_scope && isCheckpointRole(u.role))
+        ? esc(checkpointLabelText(u.location_scope))
+        : (esc(u.branch) || '—');
+      const badge = u.badge_number || '';
+      const badgeChip = badge
+        ? `<span class="um-badge" title="Officer badge number">${esc(u.badge_label || ('Badge #'+badge))}</span>`
+        : '<span class="um-badge missing" title="No badge number on record">#Not recorded</span>';
       return `<tr>
-        <td><div class="person"><div class="mini">${esc((u.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?')}</div><b>${esc(u.display_name)}</b></div></td>
+        <td><div class="person"><div class="mini">${esc(u.initials || (u.display_name||'').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase() || '?')}</div><div><b>${esc(u.display_name)}</b>${badgeChip}</div></div></td>
         <td>${esc(u.username)}</td>
         <td><span class="role-chip ${chip}">${esc(u.role_label || u.role)}</span></td>
         <td>${loc}</td>
@@ -8699,6 +9080,8 @@ async function renderUserTable(){
         </td>
       </tr>`;
     }).join('');
+    // Keep the audit trail (badge attribution) in step with the roster.
+    loadAuditTrail();
   }catch(e){
     showFormError(e.message || 'Could not load users');
   }
@@ -8710,51 +9093,264 @@ async function toggleUserActive(uid, active){
     await api('/api/admin/users/'+uid, {method:'PATCH', body: JSON.stringify({active})});
     toast(active ? 'User enabled' : 'User disabled');
     renderUserTable();
+    refreshLiveMetrics({audit:true});
   }catch(e){ showFormError(e.message || 'Update failed'); }
 }
 
-function openNewUserDrawer(){
-  if(guardReadOnly('Registering a user')) return;
-  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
+// ---- User Management · role-driven cascading location selectors -------------
+// The New / Edit officer drawer adapts to the selected Role:
+//   * Checkpoint roles     → Region + District + Checkpoint (the ACTIVE
+//                            checkpoints of that district). The Station /
+//                            Branch / Unit field is hidden.
+//   * Station / Unit roles → Region + District + Station / Branch / Unit (the
+//                            stations and units created for that district).
+//                            The Checkpoint field is hidden.
+// Changing the Region rebuilds the Districts and clears every child selection;
+// changing the District rebuilds the posting list. All options come from the
+// live catalogue (/api/stations + /api/branches), never a hard-coded list, and
+// the legacy free-text branch input (datalist-backed) stays available for
+// postings the catalogue does not carry yet.
+const userLocationCatalog = {loaded:false, stations:[], branches:[], regions:[]};
+
+async function loadUserLocationCatalog(force){
+  if(userLocationCatalog.loaded && !force) return userLocationCatalog;
+  let branches = (branchCatalog && branchCatalog.items) || [];
+  try{
+    const bc = await loadBranchCatalog(force);
+    if(bc && Array.isArray(bc.items)) branches = bc.items;
+  }catch(_){}
+  let stations = [];
+  if(serverOn){
+    try{
+      const r = await api('/api/stations');
+      if(r && Array.isArray(r.items)) stations = r.items;
+    }catch(_){}
+  }
+  if(!stations.length){
+    stations = (db.stations||[]).map(s=>({
+      station_id:s.id||s.station_id, name:s.name, code:s.code,
+      region:s.region, district:s.district,
+      station_tier:s.station_tier||s.tier||'',
+      operational_status:s.operational_status||'Active',
+    }));
+  }
+  const regions = [];
+  const pushRegion = value => {
+    const v = String(value||'').trim();
+    if(v && !regions.includes(v)) regions.push(v);
+  };
+  (typeof LOCATIONS!=='undefined'?LOCATIONS:[]).forEach(r=>pushRegion(r.region));
+  stations.forEach(s=>pushRegion(s.region));
+  branches.forEach(b=>pushRegion(b.region));
+  userLocationCatalog.loaded = true;
+  userLocationCatalog.stations = stations;
+  userLocationCatalog.branches = branches;
+  userLocationCatalog.regions = regions;
+  return userLocationCatalog;
+}
+function isCheckpointPosting(entry){
+  return /checkpoint/i.test(String(entry.station_tier||entry.tier||'')) || /checkpoint/i.test(String(entry.name||''));
+}
+function isActivePosting(entry){
+  const status = String(entry.operational_status||'Active');
+  return !/inactive|maintenance|decommissioned|closed|suspended/i.test(status);
+}
+function userDistrictsFor(region){
+  const out = [];
+  const push = value => {
+    const v = String(value||'').trim();
+    if(v && !out.includes(v)) out.push(v);
+  };
+  const gaz = (typeof LOCATIONS!=='undefined'?LOCATIONS:[]).find(r=>r.region===region);
+  if(gaz) gaz.districts.forEach(push);
+  if(typeof BRANCH_DISTRICTS!=='undefined' && BRANCH_DISTRICTS[region]) BRANCH_DISTRICTS[region].forEach(push);
+  userLocationCatalog.stations.filter(s=>s.region===region).forEach(s=>push(s.district));
+  userLocationCatalog.branches.filter(b=>b.region===region).forEach(b=>push(b.district));
+  return out;
+}
+function userCheckpointOptions(region, district){
+  const seen = new Set(), out = [];
+  const add = (value,label,meta) => {
+    const v = String(value||'').trim();
+    if(!v || seen.has(v.toLowerCase())) return;
+    seen.add(v.toLowerCase());
+    out.push({value:v, label, meta:meta||''});
+  };
+  userLocationCatalog.stations
+    .filter(s=>s.region===region && (!district || String(s.district||'')===district)
+            && isCheckpointPosting(s) && isActivePosting(s))
+    .forEach(s=>add(s.name, s.name + (s.code?' · '+s.code:'') + ' · Checkpoint', s.station_tier||'Checkpoint'));
+  userLocationCatalog.branches
+    .filter(b=>b.unit_type==='checkpoint' && b.region===region
+            && (!district || String(b.district||'')===district))
+    .forEach(b=>add(b.name, b.name + ' · Checkpoint Unit', 'Checkpoint Unit'));
+  return out;
+}
+function userUnitOptions(region, district){
+  const seen = new Set(), out = [];
+  const add = (value,label,meta) => {
+    const v = String(value||'').trim();
+    if(!v || seen.has(v.toLowerCase())) return;
+    seen.add(v.toLowerCase());
+    out.push({value:v, label, meta:meta||''});
+  };
+  userLocationCatalog.stations
+    .filter(s=>s.region===region && (!district || String(s.district||'')===district)
+            && !isCheckpointPosting(s) && isActivePosting(s))
+    .forEach(s=>add(s.name, s.name + (s.code?' · '+s.code:'') + (s.station_tier?' · '+s.station_tier:''),
+                    s.station_tier||'Station'));
+  userLocationCatalog.branches
+    .filter(b=>b.unit_type!=='checkpoint' && b.region===region
+            && (!district || String(b.district||'')===district))
+    .forEach(b=>add(b.name, b.name + ' · ' + (BRANCH_UNIT_LABELS[b.unit_type]||b.unit_type),
+                    BRANCH_UNIT_LABELS[b.unit_type]||b.unit_type));
+  return out;
+}
+function userPostingFromBranch(branch){
+  const parts = String(branch||'').split('·').map(x=>x.trim()).filter(Boolean);
+  if(parts.length>=3){
+    return {name:parts.slice(0,parts.length-2).join(' · '),
+            district:parts[parts.length-2], region:parts[parts.length-1]};
+  }
+  const name = parts[0]||'';
+  const hit = (userLocationCatalog.stations||[]).find(s=>String(s.name||'').toLowerCase()===name.toLowerCase())
+           || (userLocationCatalog.branches||[]).find(b=>String(b.name||'').toLowerCase()===name.toLowerCase());
+  return {name, district:(hit&&hit.district)||'', region:(hit&&hit.region)||''};
+}
+function fillUserSelect(select, placeholder, options, selected){
+  if(!select) return;
+  const keep = selected!==undefined ? selected : select.value;
+  select.innerHTML = `<option value="">${esc(placeholder)}</option>` +
+    options.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+  select.value = options.some(o=>o.value===keep) ? keep : '';
+}
+function paintUserLocationFields(prefix){
+  const roleEl = document.getElementById(prefix+'-role');
+  if(!roleEl) return;
+  const checkpointRole = isCheckpointRole(roleEl.value || '');
+  const regionEl = document.getElementById(prefix+'-region');
+  const districtEl = document.getElementById(prefix+'-district');
+  const cpField = document.getElementById(prefix+'-checkpoint-field');
+  const unitField = document.getElementById(prefix+'-unit-field');
+  const cpSel = document.getElementById(prefix+'-checkpoint');
+  const unitSel = document.getElementById(prefix+'-unit');
+  const hint = document.getElementById(prefix+'-loc-hint');
+  // Level 1 — Region
+  const regions = (userLocationCatalog.regions||[]).map(r=>({value:r,label:r}));
+  fillUserSelect(regionEl, userLocationCatalog.loaded?'Select region':'Loading regions…', regions);
+  // Level 2 — District (filtered by the selected region, reset when it changes)
+  const region = regionEl ? regionEl.value : '';
+  const districts = userDistrictsFor(region).map(d=>({value:d,label:d}));
+  fillUserSelect(districtEl, region?'Select district':'Select region first', districts);
+  if(districtEl) districtEl.disabled = !region;
+  // Level 3 — exactly one posting selector is live for the role family.
+  if(cpField) cpField.style.display = checkpointRole ? '' : 'none';
+  if(unitField) unitField.style.display = checkpointRole ? 'none' : '';
+  const branchField = document.getElementById(prefix+'-branch-field');
+  if(branchField) branchField.style.display = checkpointRole ? 'none' : '';
+  const district = districtEl ? districtEl.value : '';
+  if(cpSel){
+    cpSel.disabled = !checkpointRole;
+    if(checkpointRole){
+      const opts = userCheckpointOptions(region, district);
+      fillUserSelect(cpSel, opts.length?'Select checkpoint':'No active checkpoint in this district', opts);
+    }else{ cpSel.innerHTML=''; }
+  }
+  if(unitSel){
+    unitSel.disabled = checkpointRole;
+    if(!checkpointRole){
+      const opts = userUnitOptions(region, district);
+      fillUserSelect(unitSel, opts.length?'Select station / branch / unit':'No station or unit in this district', opts);
+    }else{ unitSel.innerHTML=''; }
+  }
+  if(hint){
+    if(!userLocationCatalog.loaded) hint.textContent = 'Loading the station and branch catalogue…';
+    else if(checkpointRole) hint.innerHTML = '<b>Checkpoint role:</b> Region → District → active checkpoint. The Station / Branch field is hidden for checkpoint officers.';
+    else hint.innerHTML = '<b>Station / unit role:</b> Region → District → station, branch or unit. The Checkpoint field is hidden for station and unit officers.';
+  }
+}
+function onUserLocationChange(prefix, level){
+  const districtEl = document.getElementById(prefix+'-district');
+  const cpSel = document.getElementById(prefix+'-checkpoint');
+  const unitSel = document.getElementById(prefix+'-unit');
+  if(level==='region' && districtEl) districtEl.value='';
+  if(cpSel) cpSel.value='';
+  if(unitSel) unitSel.value='';
+  paintUserLocationFields(prefix);
+}
+function selectedUserPosting(prefix){
+  const role = (document.getElementById(prefix+'-role')||{}).value||'';
+  const checkpointRole = isCheckpointRole(role);
+  const region = (document.getElementById(prefix+'-region')||{}).value||'';
+  const district = (document.getElementById(prefix+'-district')||{}).value||'';
+  const checkpoint = checkpointRole ? ((document.getElementById(prefix+'-checkpoint')||{}).value||'') : '';
+  const unit = checkpointRole ? '' : ((document.getElementById(prefix+'-unit')||{}).value||'');
+  const manual = ((document.getElementById(prefix+'-branch')||{}).value||'').trim();
+  const posting = checkpoint || unit || manual;
+  return {role, checkpointRole, region, district, checkpoint, unit, manual, posting};
+}
+function checkpointScopeFor(name){
+  const text = String(name||'').trim();
+  const m = text.match(/\b(south|east|west)\b/i);
+  if(m) return m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+  return text || null;
+}
+function userRoleOptions(selected){
+  const roles = ((sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','hr_officer','CheckpointSouth','CheckpointEast','CheckpointWest','chief_commander']).slice();
+  if(selected && !roles.includes(selected)) roles.unshift(selected);
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
-  const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
+  return roles.map(r=>`<option value="${esc(r)}" ${r===selected?'selected':''}>${esc(labels[r] || r)}</option>`).join('');
+}
+function userDrawerLocationFields(prefix){
+  return `
+    <div class="grid2">
+      <div class="field"><label for="${prefix}-region">Region *</label>
+        <select id="${prefix}-region" onchange="onUserLocationChange('${prefix}','region')"><option value="">Loading regions…</option></select></div>
+      <div class="field"><label for="${prefix}-district">District *</label>
+        <select id="${prefix}-district" onchange="onUserLocationChange('${prefix}','district')"><option value="">Select region first</option></select></div>
+    </div>
+    <div class="grid2">
+      <div class="field" id="${prefix}-checkpoint-field"><label for="${prefix}-checkpoint">Checkpoint *</label>
+        <select id="${prefix}-checkpoint"></select></div>
+      <div class="field" id="${prefix}-unit-field"><label for="${prefix}-unit">Station / Branch / Unit *</label>
+        <select id="${prefix}-unit"></select></div>
+      <div class="field" id="${prefix}-branch-field"><label for="${prefix}-branch">Other branch / unit <small class="muted">(optional — only when the list above has no match)</small></label>
+        <input id="${prefix}-branch" list="branchDatalist" placeholder="e.g. Buuhoodle Branch · Sool"></div>
+    </div>
+    <div class="hint" id="${prefix}-loc-hint">Loading the station and branch catalogue…</div>`;
+}
+async function openNewUserDrawer(){
+  if(guardReadOnly('Registering a user')) return;
   const body = `
     <form novalidate id="newUserForm" class="form">
       <div class="grid2">
-        <div class="field"><label>Username *</label><input id="nu-username" required></div>
-        <div class="field"><label>Display name *</label><input id="nu-display" required placeholder="e.g. Officer H. Xasan"></div>
+        <div class="field"><label for="nu-username">Username *</label><input id="nu-username" required autocomplete="off"></div>
+        <div class="field"><label for="nu-display">Display name *</label><input id="nu-display" required placeholder="e.g. Officer H. Xasan"></div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Role *</label>
-          <select id="nu-role" onchange="refreshUserLocationOptions()">
-            ${roles.map(r => `<option value="${r}">${esc(labels[r] || r)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field"><label>Location scope (Checkpoint roles only)</label>
-          <select id="nu-scope">
-            <option value="">(none)</option>
-            ${locs.map(l => `<option value="${l}">${l} Checkpoint</option>`).join('')}
-          </select>
-        </div>
+        <div class="field"><label for="nu-role">Role *</label>
+          <select id="nu-role" onchange="onUserLocationChange('nu','role')">${userRoleOptions('')}</select></div>
+        <div class="field"><label for="nu-badge">Badge number <small class="muted">(auto-assigned when blank)</small></label>
+          <input id="nu-badge" maxlength="24" placeholder="e.g. FP-103"></div>
       </div>
+      ${userDrawerLocationFields('nu')}
       <div class="grid2">
-        <div class="field"><label>Branch <small class="muted">(dynamic — Police Stations included)</small></label><input id="nu-branch" list="branchDatalist" placeholder="e.g. Buuhoodle Branch · Sool or Central HQ"></div>
-        <div class="field"><label>Password *</label><input id="nu-password" type="password" required minlength="6" placeholder="At least 6 characters"></div>
+        <div class="field"><label for="nu-password">Password *</label>
+          <input id="nu-password" type="password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters"></div>
       </div>
-    </form>
-  `;
+    </form>`;
   const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
                 <button class="btn" onclick="submitNewUser()">Create officer</button>`;
   openDrawer('New officer', body, foot);
-  refreshUserLocationOptions();
   refreshUserBranchDatalist();
+  await loadUserLocationCatalog();
+  paintUserLocationFields('nu');
 }
 function refreshUserLocationOptions(){
-  const role = document.getElementById('nu-role').value;
-  const scopeEl = document.getElementById('nu-scope');
-  if(!scopeEl) return;
-  scopeEl.disabled = !isCheckpointRole(role);
-  if(!isCheckpointRole(role)) scopeEl.value = '';
+  // Backwards-compatible entry point (role <select> used to call this alone).
+  ['nu','eu'].forEach(prefix=>{
+    if(document.getElementById(prefix+'-role')) paintUserLocationFields(prefix);
+  });
 }
 function refreshUserBranchDatalist(){
   const dl=document.getElementById('branchDatalist');
@@ -8779,72 +9375,117 @@ function refreshUserBranchDatalist(){
 }
 async function submitNewUser(){
   if(guardReadOnly('Registering a user')) return;
-  const data = {
-    username: document.getElementById('nu-username').value.trim(),
-    display_name: document.getElementById('nu-display').value.trim(),
-    role: document.getElementById('nu-role').value,
-    branch: document.getElementById('nu-branch').value.trim(),
-    location_scope: document.getElementById('nu-scope').value || null,
-    password: document.getElementById('nu-password').value,
-    active: true,
-  };
-  if(!data.username || !data.display_name || !data.role || !data.password){
-    showFormError('Please fill username, display name, role and password.',{names:['nu-username','nu-display','nu-role','nu-password'].filter(id=>!val(id))}); return;
+  const username = (document.getElementById('nu-username')||{}).value||'';
+  const display_name = (document.getElementById('nu-display')||{}).value||'';
+  const password = (document.getElementById('nu-password')||{}).value||'';
+  const badge = ((document.getElementById('nu-badge')||{}).value||'').trim();
+  const pick = selectedUserPosting('nu');
+  if(!username.trim() || !display_name.trim() || !pick.role || !password){
+    showFormError('Please fill username, display name, role and password.',
+      {names:['nu-username','nu-display','nu-role','nu-password'].filter(id=>!(document.getElementById(id)||{}).value)});
+    return;
   }
+  if(!pick.posting){
+    showFormError(pick.checkpointRole
+      ? 'Select the active checkpoint this checkpoint officer is posted to (or type it under “Other branch / unit”).'
+      : 'Select the station / branch / unit this officer is posted to (or type it under “Other branch / unit”).',
+      {names:[pick.checkpointRole?'nu-checkpoint':'nu-unit']});
+    return;
+  }
+  if(!pick.manual && (!pick.region || !pick.district)){
+    showFormError('Select the Region and District of the posting.', {names:['nu-region','nu-district']});
+    return;
+  }
+  const data = {
+    username: username.trim(),
+    display_name: display_name.trim(),
+    role: pick.role,
+    password,
+    active: true,
+    region: pick.region,
+    district: pick.district,
+    checkpoint: pick.checkpoint || null,
+    unit: pick.unit || null,
+    branch: pick.manual || '',
+    location_scope: pick.checkpointRole ? checkpointScopeFor(pick.checkpoint || pick.manual) : null,
+  };
+  if(badge) data.badge_number = badge;
   try{
     await api('/api/admin/users', {method:'POST', body: JSON.stringify(data)});
-    closeDrawer(); toast('Officer created'); renderUserTable();
+    closeDrawer();
+    toast('Officer created', data.display_name + ' · ' + pick.posting);
+    renderUserTable();
+    refreshLiveMetrics({audit:true});
   }catch(e){ showFormError(e.message || 'Create failed'); }
 }
 
-function openEditUserDrawer(u){
+async function openEditUserDrawer(u){
   if(guardReadOnly('Editing a user record')) return;
-  const roles = (sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','CheckpointSouth','CheckpointEast','CheckpointWest'];
-  const labels = (sessionRoster && sessionRoster.role_labels) || {};
-  const locs = (sessionRoster && sessionRoster.checkpoint_locations) || ['South','East','West'];
+  const parsed = userPostingFromBranch(u.branch);
   const body = `
     <form novalidate id="editUserForm" class="form">
       <div class="grid2">
         <div class="field"><label>Username</label><input value="${esc(u.username)}" disabled></div>
-        <div class="field"><label>Display name</label><input id="eu-display" value="${esc(u.display_name)}"></div>
+        <div class="field"><label for="eu-display">Display name</label><input id="eu-display" value="${esc(u.display_name)}"></div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Role</label>
-          <select id="eu-role" onchange="document.getElementById('eu-scope').disabled=!isCheckpointRole(this.value)">
-            ${roles.map(r => `<option value="${r}" ${r===u.role?'selected':''}>${esc(labels[r] || r)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field"><label>Location scope</label>
-          <select id="eu-scope" ${isCheckpointRole(u.role)?'':'disabled'}>
-            <option value="">(none)</option>
-            ${locs.map(l => `<option value="${l}" ${l===u.location_scope?'selected':''}>${l} Checkpoint</option>`).join('')}
-          </select>
-        </div>
+        <div class="field"><label for="eu-role">Role</label>
+          <select id="eu-role" onchange="onUserLocationChange('eu','role')">${userRoleOptions(u.role)}</select></div>
+        <div class="field"><label for="eu-badge">Badge number</label>
+          <input id="eu-badge" maxlength="24" value="${esc(u.badge_number||'')}" placeholder="e.g. FP-103"></div>
       </div>
+      ${userDrawerLocationFields('eu')}
       <div class="grid2">
-        <div class="field"><label>Branch <small class="muted">(dynamic — Police Stations included)</small></label><input id="eu-branch" list="branchDatalist" value="${esc(u.branch||'')}"></div>
-        <div class="field"><label>New password (optional)</label><input id="eu-password" type="password" minlength="6" placeholder="Leave blank to keep"></div>
+        <div class="field"><label for="eu-password">New password (optional)</label>
+          <input id="eu-password" type="password" minlength="6" autocomplete="new-password" placeholder="Leave blank to keep"></div>
       </div>
-    </form>
-  `;
+    </form>`;
   const foot = `<button class="btn ghost" onclick="closeDrawer()">Cancel</button>
                 <button class="btn" onclick="submitEditUser(${u.id})">Save changes</button>`;
   openDrawer('Edit officer · ' + u.username, body, foot);
   refreshUserBranchDatalist();
+  await loadUserLocationCatalog();
+  // Restore the stored posting into the cascade: role → region → district →
+  // checkpoint / station. The stored label is 'Name · District · Region'.
+  const regionEl = document.getElementById('eu-region');
+  const districtEl = document.getElementById('eu-district');
+  if(regionEl && parsed.region){ regionEl.value = parsed.region; }
+  paintUserLocationFields('eu');
+  if(districtEl && parsed.district){ districtEl.value = parsed.district; paintUserLocationFields('eu'); }
+  const postingSelect = document.getElementById(isCheckpointRole(u.role) ? 'eu-checkpoint' : 'eu-unit');
+  if(postingSelect && parsed.name) postingSelect.value = parsed.name;
+  const manual = document.getElementById('eu-branch');
+  if(manual && !postingSelect?.value) manual.value = '';
 }
 async function submitEditUser(uid){
   if(guardReadOnly('Updating a user record')) return;
+  const display_name = ((document.getElementById('eu-display')||{}).value||'').trim();
+  const badge = ((document.getElementById('eu-badge')||{}).value||'').trim();
+  const pick = selectedUserPosting('eu');
+  if(!display_name){ showFormError('Display name is required.', {names:['eu-display']}); return; }
+  if(pick.region && !pick.district && !pick.manual){
+    showFormError('Select the District of the posting.', {names:['eu-district']});
+    return;
+  }
   const data = {
-    display_name: document.getElementById('eu-display').value.trim(),
-    role: document.getElementById('eu-role').value,
-    branch: document.getElementById('eu-branch').value.trim(),
-    location_scope: document.getElementById('eu-scope').value || null,
+    display_name,
+    role: pick.role,
+    region: pick.region,
+    district: pick.district,
+    checkpoint: pick.checkpoint || null,
+    unit: pick.unit || null,
+    branch: pick.manual || '',
+    location_scope: pick.checkpointRole ? checkpointScopeFor(pick.checkpoint || pick.manual) : null,
   };
-  const pw = document.getElementById('eu-password').value;
+  if(badge) data.badge_number = badge;
+  const pw = (document.getElementById('eu-password')||{}).value||'';
   if(pw) data.password = pw;
   try{
     await api('/api/admin/users/'+uid, {method:'PATCH', body: JSON.stringify(data)});
-    closeDrawer(); toast('Officer updated'); renderUserTable();
+    closeDrawer();
+    toast('Officer updated');
+    renderUserTable();
+    refreshLiveMetrics({audit:true});
   }catch(e){ showFormError(e.message || 'Update failed'); }
 }
 
@@ -9578,6 +10219,8 @@ async function saveStationEdit(e){
     resetStationEditForm();
     closeEntryModal('stEditModal');
     renderStationsTable(); renderPoliceSearch(); renderUnitStats(); refreshStationSelects();
+    // Unit update → dashboard / deployment metrics + activity feed refresh now.
+    refreshLiveMetrics();
     toast(serverOn?'Station updated':'Saved offline',
           name+' · '+rl.loc.region+' → '+rl.loc.district+' — '+(serverOn?'the register, postings and deployment matrix are refreshed.':'it is filed with the registry once the server is reachable.'));
     if(window._viewingStation&&String(window._viewingStation.id)===id) openStationView(id);
@@ -9737,7 +10380,9 @@ async function saveStation(e){
     }
     persist();resetStationForm();refreshStationSelects();
     renderStationsTable();renderPoliceSearch();
-    closeEntryModal('stDrawer');toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
+    closeEntryModal('stDrawer');
+    refreshLiveMetrics();
+    toast('Station registered',name+' · '+code+' — '+locationLabel(rl.loc));
   }catch(err){showFormError(err.message||'The station could not be registered.',{notice:'stNotice',title:'Unable to Save'})}
 }
 
@@ -9793,7 +10438,9 @@ async function saveCrime(e){
     db.crimes=(db.crimes||[]).concat(r.crime);
     crmNotice.className='notice'; crmNotice.style.display='block';
     crmNotice.textContent='Filed '+r.file_number+'.';
-    renderCrimesTable(); closeEntryModal('crmDrawer');toast('Crime file created', r.file_number);
+    renderCrimesTable(); closeEntryModal('crmDrawer');
+    refreshLiveMetrics();
+    toast('Crime file created', r.file_number);
   }catch(err){showFormError(err.message||'Could not file the incident.',{notice:'crmNotice',title:'Unable to Save'})}
 }
 
@@ -9935,7 +10582,9 @@ async function saveOfficer(e){
     }
     persist();resetOfficerForm();refreshStationSelects();
     renderOfficersTable();renderPoliceSearch();
-    closeEntryModal('offDrawer');toast('Officer registered',d.full_name+' · '+d.rank+' — assigned to '+(st?st.name:d.station_id));
+    closeEntryModal('offDrawer');
+    refreshLiveMetrics();
+    toast('Officer registered',d.full_name+' · '+d.rank+' — assigned to '+(st?st.name:d.station_id));
   }catch(err){showFormError(err.message||'The officer could not be registered.',{notice:'offNotice',title:'Unable to Save'})}
 }
 function resetOfficerForm(){
@@ -10488,7 +11137,9 @@ async function saveCar(e){
       db.cars=(db.cars||[]).concat({id:'local',plate,type:document.getElementById('carType').value,make,station:carStation.value,category,security_alert:alertSt,vin});
     }
     persist();resetCarForm();renderCarsTable();renderPoliceSearch();
-    closeEntryModal('carDrawer');toast('Vehicle registered',plate);
+    closeEntryModal('carDrawer');
+    refreshLiveMetrics();
+    toast('Vehicle registered',plate);
   }catch(err){
     showFormError(err.message||String(err),{notice:'carNotice'});
   }
