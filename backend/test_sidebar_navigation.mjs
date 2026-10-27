@@ -90,6 +90,8 @@ const BRANCHES = [
   { id: 'b7', name: 'Burao Airport Desk', region: 'East Togdheer', district: 'Burao', unit_type: 'airport' },
   { id: 'b8', name: 'Laascaanood CID Office', region: 'Sool', district: 'Laascaanood', unit_type: 'crime' },
   { id: 'b10', name: 'Lasanod Branch', region: 'Sool', district: 'Laascaanood', unit_type: 'fingerprint' },
+  { id: 'b11', name: 'Lasanod Station', region: 'Sool', district: 'Laascaanood', unit_type: 'police_station' },
+  { id: 'b12', name: 'Laascaanood Airport Desk', region: 'Sool', district: 'Laascaanood', unit_type: 'airport' },
 ];
 
 try {
@@ -519,6 +521,94 @@ try {
   assert.ok(run(`shortUnitLabel('A very long unit name that would wrap the rail').length`) <= 20);
   assert.ok(run(`shortUnitLabel('X')`).length >= 1);
   console.log('ok: short unit labels strip administrative suffixes and never wrap the rail');
+
+  // ---- 14) branch-scoped sidebar: isolated trees + hidden Unit Directory --
+  // The drawer's close animation keeps `.open` for ~220ms; settle it first.
+  await tick(260);
+  const scopedPosting = 'Lasanod Branch · Laascaanood · Sool';
+  const expectedUnit = {
+    fingerprint: 'Lasanod Branch',
+    crime: 'Laascaanood CID Office',
+    airport: 'Laascaanood Airport Desk',
+    checkpoint: 'Lasanod Central Checkpoint',
+    police_station: 'Lasanod Station',
+  };
+  setCatalogue(BRANCHES);
+  signIn('FingerprintUnit', ALL_MODULES, false, { branch: scopedPosting });
+  Object.entries(expectedUnit).forEach(([type, label]) => {
+    assert.deepEqual(treeRegions(type).map((r) => r.dataset.navRegion), ['Sool'],
+      `the ${type} tree shows only the officer's own region`);
+    const districts = [...treeRegions(type)[0].querySelectorAll('.nav-district')];
+    assert.deepEqual(districts.map((d) => d.dataset.navDistrict), ['Laascaanood'],
+      `the ${type} tree shows only the officer's own district`);
+    assert.deepEqual(districts[0].querySelectorAll('.nav-unit').length === 1
+      ? [...districts[0].querySelectorAll('.nav-unit')].map((u) => u.dataset.unitLabel) : [],
+      [label], `the ${type} tree shows only the officer's own branch`);
+    assert.equal(treeUnits(type).length, 1,
+      `no external ${type} branch leaks into a scoped rail`);
+    assert.deepEqual(treeRegions(type).filter((r) => ['Unassigned region', 'Checkpoint areas']
+      .includes(r.dataset.navRegion)), [],
+      `the ${type} tree never shows an unassigned / cross-area group`);
+    assert.ok(treeUnits(type).every((u) => (u.getAttribute('title') || '').includes('Sool')),
+      'every remaining unit really belongs to the officer region');
+  });
+  assert.equal(queryAll('#nav [data-unit-directory]').length, 1);
+  assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
+    'the Unit Directory launcher is hidden for a branch-scoped officer');
+  assert.equal(query('#nav [data-unit-directory]').getAttribute('aria-hidden'), 'true');
+  assert.equal($('navUnitCount').hidden, true, 'the directory badge is cleared too');
+  $('toast').textContent = '';
+  run(`openUnitDirectory('')`);
+  assert.equal($('unitDir').classList.contains('open'), false,
+    'the Unit Directory drawer refuses to open for a branch-scoped officer');
+  assert.match($('toast').textContent, /Unit Directory is restricted/,
+    'the officer is told the directory is a cross-branch surface');
+  // The scoped trees still open the officer's own register.
+  run(`openUnitNavUnit('fingerprint','Lasanod Branch','')`);
+  assert.equal($('fingerprint').classList.contains('active'), true);
+  assert.equal($('fpSearch').value, 'Lasanod Branch');
+  console.log('ok: a branch-scoped officer gets an isolated tree and no Unit Directory');
+
+  // A posted checkpoint officer is scoped the same way, in every category.
+  signIn('checkpoint_officer', ALL_MODULES, false,
+    { branch: 'Lasanod Central Checkpoint · Laascaanood · Sool', location_scope: 'South' });
+  ['fingerprint', 'crime', 'airport', 'checkpoint', 'police_station'].forEach((type) => {
+    assert.deepEqual(treeRegions(type).map((r) => r.dataset.navRegion), ['Sool'],
+      `the checkpoint officer's ${type} tree stays inside Sool`);
+  });
+  assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
+    'a posted checkpoint officer has no Unit Directory launcher');
+  console.log('ok: the scoping rule is identical for every unit category');
+
+  // The override roles keep full national visibility and the directory.
+  signIn('SystemAdmin', ALL_MODULES, true, { branch: scopedPosting });
+  const adminFpRegions = treeRegions('fingerprint').map((r) => r.dataset.navRegion);
+  assert.ok(adminFpRegions.length > 1 && adminFpRegions.includes('Sanaag'),
+    'the System Administrator sees every region in the tree');
+  assert.equal(query('#nav [data-unit-directory]').style.display, '',
+    'the System Administrator keeps the Unit Directory launcher');
+  run(`openUnitDirectory('')`);
+  assert.equal($('unitDir').classList.contains('open'), true);
+  run(`closeEntryModal('unitDir')`);
+
+  signIn('chief_commander', ALL_MODULES, false, { branch: scopedPosting });
+  assert.ok(treeRegions('fingerprint').map((r) => r.dataset.navRegion).includes('Sanaag'),
+    'the multi-branch Commander keeps national visibility');
+  assert.equal(query('#nav [data-unit-directory]').style.display, '',
+    'the cross-branch command role keeps the Unit Directory');
+  signIn('chief_commander', ALL_MODULES, false, { branch: '' });
+  assert.equal(query('#nav [data-unit-directory]').style.display, '',
+    'the Commander keeps the directory even without a posting');
+  console.log('ok: administrators and commanders retain the national tree and directory');
+
+  // A standard officer with no resolvable posting is not "scoped", but the
+  // directory is still restricted to the command authority.
+  signIn('FingerprintUnit', ALL_MODULES, false, { branch: 'Fingerprint Unit' });
+  assert.ok(treeRegions('fingerprint').length > 1,
+    'an unresolved unit-level posting keeps the legacy national view');
+  assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
+    'the Unit Directory is reserved for the admin / command authority');
+  console.log('ok: the directory is restricted to the admin / cross-branch command roles');
 
   console.log('PASS: hierarchical sidebar, dynamic unit tree, RBAC gates and locked branch selectors');
 } finally {

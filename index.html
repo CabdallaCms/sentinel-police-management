@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-branch-scope-1-e83c5d16" />
+<meta name="sentinel-ui-build" content="sentinel-sidebar-scope-1-b4d29a71" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -3710,7 +3710,54 @@ function unitNavCatalog(type){
       add({label:checkpointLabelText(code),region:NAV_CHECKPOINT_AREAS,code,source:'roster'});
     });
   }
-  return Array.from(seen.values());
+  // Branch scoping is applied here — the ONE place every consumer reads from —
+  // so the tree, the directory rows and the category badge can never disagree.
+  const rows=Array.from(seen.values());
+  const scope=navUnitScope(type);
+  return scope?rows.filter(u=>unitInNavScope(u,scope)):rows;
+}
+// ---- branch-scoped sidebar ------------------------------------------------
+// A branch-scoped officer (a standard officer whose posting resolves to a
+// registered branch) gets a CLEAN, ISOLATED rail: every operational tree shows
+// only their own Region → District → branch, and no unassigned / cross-area
+// group leaks through. System Administrators, HQ and multi-branch commanders
+// (branchSelectUnlockedForUser() → true) keep the full national tree.
+function navUnitScope(type){
+  if(!sessionUser) return null;
+  if(branchSelectUnlockedForUser()) return null;      // admin / HQ / Commander
+  const branch=resolvePostingBranch(type);
+  if(branch){
+    return {branch_id:branch.id?String(branch.id):'',
+      branch_name:branch.name||'',
+      region:String(branch.region||'').trim(),
+      district:String(branch.district||'').trim()};
+  }
+  // The API may already have resolved the posting for this unit type.
+  const status=(sessionUser&&sessionUser.branch_scope_status)||null;
+  if(status&&status.resolved&&status.branch&&unitTypeOf(status.branch.unit_type)===type){
+    return {branch_id:status.branch.branch_id?String(status.branch.branch_id):'',
+      branch_name:status.branch.branch_name||'',
+      region:String(status.branch.region||'').trim(),
+      district:String(status.branch.district||'').trim()};
+  }
+  return null;                                        // no reliable posting
+}
+// Is a catalogued unit inside the officer's scope? Rows that the register
+// recorded without a branch id are matched on their canonical name plus their
+// region/district, so a legacy row can still appear — but only their own.
+function unitInNavScope(unit,scope){
+  if(!scope) return true;
+  const region=String(unit.region||'').trim();
+  const district=String(unit.district||'').trim();
+  if(!region||!district) return false;                 // unassigned / areas
+  if(region===NAV_NO_REGION||region===NAV_CHECKPOINT_AREAS) return false;
+  if(district===NAV_NO_DISTRICT) return false;
+  if(scope.region&&region!==scope.region) return false;
+  if(scope.district&&district!==scope.district) return false;
+  if(scope.branch_id&&unit.branch_id){
+    return String(unit.branch_id)===String(scope.branch_id);
+  }
+  return canonicalPostingKey(unit.label)===canonicalPostingKey(scope.branch_name);
 }
 // The nested Region → District → unit structure the sidebar paints.
 function unitNavTree(type){
@@ -4013,6 +4060,10 @@ function unitDirectoryPageFor(type){
 function updateUnitDirectoryBadge(){
   const el=document.getElementById('navUnitCount');
   if(!el) return;
+  if(!unitDirectoryAllowed()){
+    el.textContent=''; el.hidden=true;
+    return;
+  }
   let total=0;
   try{
     unitDirectoryTypes().forEach(spec=>{ total+=unitNavCatalog(spec.type).length; });
@@ -4021,9 +4072,48 @@ function updateUnitDirectoryBadge(){
   el.hidden=!total;
   el.title=total+' unit'+(total===1?'':'s')+' in the directory';
 }
+// The Unit Directory is a CROSS-BRANCH tool: it lists every unit of every
+// region. A branch-scoped officer's rail is isolated to their own posting, so
+// the directory is reserved for the System Administrator and the cross-branch
+// command roles (HQ / Commander). Everyone else gets the scoped trees only.
+function unitDirectoryAllowed(){
+  if(!sessionUser) return false;
+  const vis=sessionVisibility||{};
+  if(vis.is_admin||vis.can_manage_records||vis.is_chief_commander) return true;
+  if(isAdminRole(sessionUser.role)||isChiefRole(sessionUser.role)) return true;
+  const status=sessionUser.branch_scope_status;
+  // The API's own override flag (SystemAdmin / records management / HQ).
+  return !!(status&&status.override);
+}
+// Hide (or restore) the sidebar utility + its badge in the same pass that
+// paints the rest of the rail.
+function applyUnitDirectoryVisibility(){
+  const allowed=unitDirectoryAllowed();
+  document.querySelectorAll('#nav [data-unit-directory]').forEach(btn=>{
+    btn.style.display=allowed?'':'none';
+    if(!allowed) btn.setAttribute('aria-hidden','true');
+    else btn.removeAttribute('aria-hidden');
+  });
+  if(!allowed){
+    const badge=document.getElementById('navUnitCount');
+    if(badge){ badge.textContent=''; badge.hidden=true; }
+    // A drawer that is already open (session changed under it) is closed.
+    const dir=document.getElementById('unitDir');
+    if(dir&&dir.classList.contains('open')){
+      try{ closeEntryModal('unitDir'); }catch(_){ }
+    }
+  }
+  return allowed;
+}
 function openUnitDirectory(unitType){
   const dir=document.getElementById('unitDir');
   if(!dir) return;
+  if(!unitDirectoryAllowed()){
+    // Defence in depth: the rail hides the launcher, and the drawer itself
+    // refuses to open for a branch-scoped officer.
+    try{ toast('Unit Directory is restricted','It lists every national branch. Your rail is scoped to your own posting.'); }catch(_){ }
+    return;
+  }
   const types=unitDirectoryTypes();
   const typeEl=document.getElementById('udUnitType');
   const wanted=(unitType===undefined||unitType===null)?'':String(unitType);
@@ -7863,7 +7953,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=e83c5d16&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=b4d29a71&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -7990,7 +8080,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=e83c5d16&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=b4d29a71&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -8276,7 +8366,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=e83c5d16&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=b4d29a71&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -9312,6 +9402,9 @@ function applyNavForRole(){
   // the branch catalogue + live registers after the module pass, and each one
   // stays empty for a session that may not read that unit's module.
   try{ renderUnitNavTrees(); }catch(_){ }
+  // The Unit Directory is a cross-branch surface: a branch-scoped officer never
+  // sees the launcher (and the drawer itself refuses to open for them).
+  try{ applyUnitDirectoryVisibility(); }catch(_){ }
   // A whole CATEGORY disappears when every entry inside it is hidden — e.g.
   // Administration for any non-admin, Operational Units for a pure HQ role.
   // The heading is removed with the body, never left standing empty.

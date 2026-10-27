@@ -101,15 +101,34 @@ Personnel · Administration). For every role you test:
 10. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
     control appears in it.
 11. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
-    (`sentinel-branch-scope-1-e83c5d16`); a mismatch means a cached tab.
+    (`sentinel-sidebar-scope-1-b4d29a71`); a mismatch means a cached tab.
+
+12. **Branch-scoped sidebar tree** — sign in as a Fingerprint officer posted to
+    `Lasanod Branch · Laascaanood · Sool`. Every dynamic tree (Fingerprint Units, Crime Units,
+    Airport Control, Checkpoint Units, Stations & Registers) must show **only** `Sool →
+    Laascaanood → Lasanod …`: no other region, no other district, no external branch, and no
+    *Unassigned region* / *Unassigned district* / *Checkpoint areas* group. Repeat with a
+    checkpoint officer posted to `Lasanod Central Checkpoint · Laascaanood · Sool` — the rule is
+    identical for all five unit categories, so each tree is the same isolated Sool slice.
+13. **Unit Directory is command-authority only** — that officer has **no** *Unit Directory*
+    launcher in the rail and **no** unit-count badge on it; forcing the opening (dev-tools /
+    console `openUnitDirectory('')`) shows the *Unit Directory is restricted* toast and no drawer
+    opens. Sign in as `admin` and as the Commander: the launcher, the badge and the full national
+    directory are back (an unresolvable posting never removes them from a command role).
 
 `python backend/server.py --ui-check` must exit 0 — it now also asserts the four category
 markers, all five dynamic tree mounts, the tree/district/catalogue renderers, the posting
 canonicaliser/resolver, the locked-branch indicator, the contextual unit headers, the branch-lock
-helpers, the short-label helper and the Unit Directory modal.
+helpers, the short-label helper, the Unit Directory modal, and (this release) the navigation-scope
+resolver `navUnitScope(`, its filter `unitInNavScope(`, the directory authority gate
+`unitDirectoryAllowed(` and the visibility switch `applyUnitDirectoryVisibility(`.
 
 `python backend/test_branch_scope.py` is the API-level proof for items 6–7 (posting resolution,
 read scoping, 403 on another branch's record and audit history, write scoping, override roles).
+`node backend/test_sidebar_navigation.mjs` is the jsdom proof for items 12–13: a scoped officer's
+five trees each keep exactly one region, one district and one branch; the Unit Directory launcher
+is hidden and the drawer refuses to open with the restriction toast, while `admin` and the
+Commander keep national visibility and the directory.
 
 ## Officer UAT checklist
 

@@ -358,6 +358,30 @@ instead of a generic unit title:
 `paintModuleHeaders()` repaints on every navigation, save and session change from the same
 resolver the lock uses, and `GET /api/dashboard` adds `branch_scope` / `branch_context`.
 
+#### Branch-scoped navigation tree
+
+The sidebar follows the same resolved posting, so a branch-scoped officer cannot browse into a
+register the API would refuse anyway:
+
+- **One choke point** — `unitNavCatalog(type)` filters its rows through `navUnitScope(type)` /
+  `unitInNavScope(unit, scope)` before anything renders, so the Region → District → unit trees,
+  the Unit Directory rows and the `#navUnitCount` badge can never disagree.
+- **Scoped view** — a posted officer sees only their own region → district → branch in *every*
+  tree (Fingerprint, Crime, Checkpoint, Airport, Stations). Rows are matched on region + district
+  and then on `branch_id`, falling back to the canonical branch name for legacy rows that carry no
+  `branch_id`; a row that cannot be placed is dropped rather than shown in an *Unassigned* group.
+- **Full national tree** — a System Administrator, the Commander (`can_manage_records`) and any
+  unresolvable posting keep every region, district and unit, exactly as before.
+
+#### Unit Directory (command authority only)
+
+The category-level *Unit Directory* lists every national branch, so it is reserved for the
+cross-branch command: `System Administrator`, the `can_manage_records` role, the Commander
+(`branch_scope_status.override`) and HQ. For a branch-scoped officer the launcher is hidden, the
+count badge is blank and `openUnitDirectory()` refuses with the *Unit Directory is restricted*
+toast — defence in depth, not just a hidden button. The officer's own registers stay reachable
+through their scoped tree, so nothing they are entitled to disappears.
+
 ### Regional location schema (Sool · Sanaag · East Togdheer)
 
 Registration modules share one location hierarchy — **Region → District → Village/Town** — defined once in the `LOCATIONS` constant in `index.html`. It is the single source of truth for every location control, so extending the gazetteer there is all that is needed to make a new district selectable everywhere.
