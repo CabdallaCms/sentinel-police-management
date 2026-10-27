@@ -432,12 +432,28 @@ function assertShellContract() {
   // (a2) scalable unit lists: the Checkpoint Units accordion carries a
   //      region → district sub-menu mount and a Unit Directory launcher, and
   //      the directory modal exposes Region + District filters.
-  ['data-nav-regions="checkpoint"', 'id="cpNavRegions"', 'function shortUnitLabel(',
+  ['data-nav-regions="checkpoint"', 'id="cpNavRegions"', 'id="stNavRegions"', 'function shortUnitLabel(',
    'function renderCheckpointNav(', 'function checkpointUnitCatalog(',
-   'function openCheckpointUnit(', "openUnitDirectory('checkpoint')"].forEach((needle) => {
+   'function openCheckpointUnit(', 'function unitNavCatalog(',
+   'function unitNavTree(', 'function renderUnitNavTree(', 'function renderUnitNavTrees(',
+   'function toggleNavDistrict(', 'function openUnitNavUnit(',
+   'function applyBranchLock(', 'function branchLockFor('].forEach((needle) => {
     if (!navHtml.includes(needle) && !html.includes(needle))
       throw new Error('index.html is missing ' + needle);
   });
+  // Every operational unit accordion carries its own Region → District → unit
+  // tree, painted live from /api/branches + the register.
+  ['fingerprint', 'crime', 'airport', 'checkpoint', 'police_station'].forEach((type) => {
+    if (!navHtml.includes('data-nav-regions="' + type + '"'))
+      throw new Error('the ' + type + ' accordion has no dynamic unit tree mount');
+  });
+  // The Unit Directory is a CATEGORY-LEVEL utility under Operational Units —
+  // no longer nested inside the Checkpoint Units accordion.
+  if (!navHtml.includes('class="nav-utility" data-unit-directory="all"'))
+    throw new Error('the Unit Directory is not a top-level Operational Units utility');
+  const checkpointGroup = (navHtml.match(/<div class="nav-group[^"]*" data-group="checkpoints"[\s\S]*?<\/div>\s*<\/div>/) || [])[0] || '';
+  if (checkpointGroup.includes('data-unit-directory'))
+    throw new Error('the Unit Directory must not sit inside the Checkpoint Units accordion');
   if (!/id="unitDir" role="dialog"/.test(html))
     throw new Error('the Unit Directory modal (#unitDir) is missing');
   ['id="udRegion"', 'id="udDistrict"', 'id="udUnitType"', 'id="udSearch"',

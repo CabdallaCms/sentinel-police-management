@@ -1,21 +1,23 @@
 #!/usr/bin/env node
-// Hierarchical sidebar contract (jsdom).
+// Hierarchical sidebar + dynamic unit tree + locked branch selectors (jsdom).
 //
 //   npm install --no-save --package-lock=false jsdom@26
 //   node backend/test_sidebar_navigation.mjs
 //
 // What this pins:
 //   * the four operational categories (Command Center · Operational Units ·
-//     Agency & Personnel · Administration) and the accordions inside them —
-//     labels, order and the entries each one carries;
+//     Agency & Personnel · Administration) and the accordions inside them;
 //   * RBAC is untouched: the same module deny list / admin flag removes whole
 //     entries and collapses empty categories, and a denied module still never
-//     renders a link;
-//   * scalable unit lists: long checkpoint names render as short labels, the
-//     Checkpoint Units accordion paints a region → district sub-menu, and the
-//     Unit Directory browses the same catalogue with Region + District filters;
-//   * a restored nav entry lands back in its authored slot (next to its
-//     subgroup label and above the runtime-rendered sub-menu);
+//     renders a link — nor a unit tree;
+//   * the DYNAMIC unit tree: every operational accordion paints
+//     Region → District → unit from /api/branches + the live registers, and a
+//     new branch / checkpoint appears without a reload;
+//   * scalable labels: long unit names render short, the full name stays in the
+//     tooltip, and the Unit Directory is a CATEGORY-LEVEL utility (no longer
+//     nested under Checkpoint Units);
+//   * auto-locked branch selectors: a posted officer has the branch selector
+//     pre-selected and disabled; a System Administrator keeps a free choice;
 //   * every navigation link still opens its page under its RBAC gate.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -30,6 +32,7 @@ let mobile = false;
 w.matchMedia = () => ({ matches: mobile });
 w.fetch = async () => { throw new Error('Network must be mocked in this DOM test'); };
 const run = (source) => vm.runInContext(source, ctx);
+const tick = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 const $ = (id) => w.document.getElementById(id);
 const query = (sel) => w.document.querySelector(sel);
 const queryAll = (sel) => [...w.document.querySelectorAll(sel)];
@@ -46,13 +49,14 @@ function signIn(role, modules, isAdmin = false, extra = {}) {
   const user = { role, modules, display_name: 'Test Officer', role_label: role, ...extra };
   run(`sessionUser=${JSON.stringify(user)};
     currentUser=sessionUser;sessionVisibility={is_admin:${isAdmin},
-      can_manage_users:${isAdmin},can_manage_stations:${isAdmin}};
+      can_manage_users:${isAdmin},can_manage_records:${isAdmin},can_manage_stations:${isAdmin}};
     applyNavForRole();updateUserPill();`);
 }
-
-function sectionOf(name) {
-  return query(`#nav .nav-section[data-section="${name}"]`);
+function setCatalogue(items) {
+  run(`branchCatalog={loaded:true,items:${JSON.stringify(items)},regions:[],unit_types:[],districts:[]};
+    renderUnitNavTrees();`);
 }
+function sectionOf(name) { return query(`#nav .nav-section[data-section="${name}"]`); }
 function visibleSections() {
   return queryAll('#nav .nav-section').filter((s) => s.style.display !== 'none')
     .map((s) => s.dataset.section);
@@ -66,6 +70,26 @@ function visiblePages() {
     .filter((b) => b.style.display !== 'none' && !b.closest('.nav-group[style*="display: none"]'))
     .map((b) => b.dataset.page);
 }
+function tree(type) { return query(`#nav [data-nav-regions="${type}"]`); }
+function treeRegions(type) {
+  const mount = tree(type);
+  return mount ? [...mount.querySelectorAll('.nav-region')] : [];
+}
+function treeUnits(type) {
+  const mount = tree(type);
+  return mount ? [...mount.querySelectorAll('.nav-unit')] : [];
+}
+
+const BRANCHES = [
+  { id: 'b1', name: 'Buuhoodle Border Crossing Checkpoint', region: 'East Togdheer', district: 'Buuhoodle', unit_type: 'checkpoint' },
+  { id: 'b2', name: 'Lasanod Central Checkpoint', region: 'Sool', district: 'Laascaanood', unit_type: 'checkpoint' },
+  { id: 'b3', name: 'Yagoori Village Checkpoint', region: 'Sool', district: 'Xudun', unit_type: 'checkpoint' },
+  { id: 'b4', name: 'Erigavo Branch', region: 'Sanaag', district: 'Ceerigaabo', unit_type: 'fingerprint' },
+  { id: 'b5', name: 'Badhan Branch', region: 'Sanaag', district: 'Badhan', unit_type: 'fingerprint' },
+  { id: 'b6', name: 'Burao Branch', region: 'East Togdheer', district: 'Burao', unit_type: 'fingerprint' },
+  { id: 'b7', name: 'Burao Airport Desk', region: 'East Togdheer', district: 'Burao', unit_type: 'airport' },
+  { id: 'b8', name: 'Laascaanood CID Office', region: 'Sool', district: 'Laascaanood', unit_type: 'crime' },
+];
 
 try {
   // ---- 1) the authored hierarchy -----------------------------------------
@@ -75,47 +99,62 @@ try {
     'the sidebar must open with the four operational categories in order');
   assert.deepEqual(sections.map((s) => s.querySelector('.nav-section-name').textContent.trim()),
     ['Command Center', 'Operational Units', 'Agency & Personnel', 'Administration']);
-  // Every nav entry lives in a category — the flat list is gone.
   assert.equal(queryAll('#nav > button[data-page]').length, 0,
     'no page button may sit outside a category section');
-  // Each category is collapsible with ARIA state.
   sections.forEach((sec) => {
     const toggle = sec.querySelector('.nav-section-toggle');
     assert.ok(toggle, 'each category needs a collapse toggle');
     assert.equal(toggle.getAttribute('aria-expanded'), 'true');
     assert.equal(toggle.getAttribute('aria-controls'), sec.querySelector('.nav-section-body').id);
   });
-  // Accordions inside the categories, in authored order.
-  const groupNames = queryAll('#nav .nav-group').map((g) => g.dataset.group);
-  assert.deepEqual(groupNames, ['search', 'command', 'fingerprint', 'cid', 'airport',
-    'checkpoints', 'registrations', 'personnel', 'transport', 'admin']);
+  assert.deepEqual(queryAll('#nav .nav-group').map((g) => g.dataset.group),
+    ['search', 'command', 'fingerprint', 'cid', 'airport', 'checkpoints',
+      'registrations', 'personnel', 'transport', 'admin']);
   assert.deepEqual(queryAll('#nav .nav-group-toggle .nav-group-modern-title')
     .map((s) => s.textContent.trim().replace(/\s+/g, ' ')),
     ['Search & Intelligence', 'HQ Command', 'Fingerprint Units', 'Crime Units',
       'Airport Control', 'Checkpoint Units', 'Stations & Registers',
       'Police Personnel', 'Transport / Fleet', 'System Administration']);
-  // The checkpoint accordion owns the scalable unit surface.
-  const cpGroup = query('#nav .nav-group[data-group="checkpoints"]');
-  assert.ok(cpGroup.querySelector('[data-nav-regions="checkpoint"]'));
-  assert.ok(cpGroup.querySelector('[data-unit-directory="checkpoint"]'));
-  // Long administrative names are no longer the sidebar labels.
   assert.ok(!/Dep\. of Police Personnel \(Registration Police Office\)/
     .test(query('#nav').innerHTML), 'the long department strings belong in tooltips, not the rail');
   console.log('ok: four collapsible categories with the unit accordions inside them');
 
-  // ---- 2) RBAC: a SystemAdmin sees the whole hierarchy --------------------
+  // ---- 2) the Unit Directory is a CATEGORY-LEVEL utility ------------------
+  const utility = query('#nav .nav-section[data-section="operational-units"] .nav-utility[data-unit-directory="all"]');
+  assert.ok(utility, 'Unit Directory must be a top-level utility under Operational Units');
+  assert.equal(utility.parentNode.dataset.sectionBody, 'operational-units',
+    'the utility button lives directly in the Operational Units category body');
+  assert.ok(!utility.closest('.nav-group'),
+    'Unit Directory must NOT be nested inside the Checkpoint Units accordion');
+  assert.equal(query('#nav .nav-group[data-group="checkpoints"] [data-unit-directory]'), null,
+    'the checkpoint accordion no longer hosts a directory button');
+  assert.ok(utility.textContent.includes('Unit Directory'), 'the utility is labelled Unit Directory');
+  assert.equal(utility.querySelector('i').getAttribute('aria-hidden'), 'true');
+  // Every operational accordion owns a tree mount.
+  ['fingerprint', 'crime', 'airport', 'checkpoint', 'police_station'].forEach((type) => {
+    assert.ok(tree(type), `the ${type} accordion is missing its Region → District mount`);
+    assert.ok(tree(type).closest('.nav-group'),
+      `the ${type} tree must live inside its unit accordion`);
+  });
+  assert.deepEqual(tree('checkpoint').dataset.navRegions, 'checkpoint');
+  // Every unit type the directory knows also has a tree (no dangling type).
+  assert.equal(new Set(['fingerprint', 'crime', 'airport', 'checkpoint', 'police_station'])
+    .size, queryAll('#nav [data-nav-regions]').length,
+    'each unit type owns exactly one tree mount');
+  console.log('ok: Unit Directory is a top-level Operational Units utility; every unit owns a tree mount');
+
+  // ---- 3) RBAC: a SystemAdmin sees the whole hierarchy --------------------
   signIn('SystemAdmin', ALL_MODULES, true);
   assert.deepEqual(visibleSections(),
     ['command-center', 'operational-units', 'agency-personnel', 'administration']);
   assert.ok(query('#nav [data-page="branches"]'), 'an admin keeps Branch Management');
   assert.ok(query('#nav [data-page="policesearch"]'), 'an admin keeps Central Police Search');
-  // Every visible entry maps to a real page section.
   visiblePages().forEach((page) => {
     assert.ok($(page), `nav entry ${page} has no <section class="page" id="${page}">`);
   });
   console.log('ok: SystemAdmin sees all four categories and every entry resolves to a page');
 
-  // ---- 3) RBAC: an operational unit loses the modules it may not read -----
+  // ---- 4) RBAC: an operational unit loses the modules it may not read -----
   signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint']);
   assert.equal(query('#nav [data-page="policesearch"]'), null,
     'Central Police Search must be REMOVED for Fingerprint, not hidden');
@@ -123,138 +162,221 @@ try {
   assert.equal(visibleSections().includes('administration'), false,
     'the Administration category must disappear for a non-admin');
   assert.deepEqual(visibleGroups(), ['search', 'fingerprint'],
-    'a fingerprint officer keeps Central Person Search but no CID/checkpoint accordion');
+    'a fingerprint officer keeps Central Person Search but no checkpoint/CID accordion');
   assert.equal(query('#nav [data-module-label="checkpoints"]').style.display, 'none',
     'the checkpoint subgroup label follows its link');
-  assert.equal(query('#cpNavRegions').innerHTML, '',
-    'no checkpoint postings may render for a role without the module');
-  assert.equal($('cpNavCount').hidden, true);
   console.log('ok: unit roles keep their own accordion and lose every other category');
 
-  // ---- 4) Checkpoint officers get the regional sub-menu ------------------
-  run(`branchCatalog={loaded:true,items:[
-      {id:'b1',name:'Buuhoodle Border Crossing Checkpoint',region:'East Togdheer',district:'Buuhoodle',unit_type:'checkpoint'},
-      {id:'b2',name:'Lasanod Central Checkpoint',region:'Sool',district:'Laascaanood',unit_type:'checkpoint'},
-      {id:'b3',name:'Yagoori Village Checkpoint',region:'Sool',district:'Xudun',unit_type:'checkpoint'},
-      {id:'b4',name:'Erigavo Branch',region:'Sanaag',district:'Ceerigaabo',unit_type:'fingerprint'}
-    ],regions:['Sool','Sanaag','East Togdheer'],unit_types:['checkpoint','fingerprint'],districts:[]}`);
-  signIn('CheckpointSouth', ['dashboard', 'people', 'checkpoints'], false, { location_scope: 'South' });
-  assert.equal(query('#nav [data-module-label="checkpoints"]').style.display, '',
-    'the checkpoint heading is visible to a checkpoint officer');
-  assert.deepEqual(visibleSections(), ['command-center', 'operational-units']);
-  assert.ok(visibleGroups().includes('checkpoints'));
-  const regions = queryAll('#cpNavRegions .nav-region');
-  assert.ok(regions.length >= 2, 'the sub-menu groups postings by region');
-  assert.deepEqual(regions.map((r) => r.dataset.navRegion),
-    ['Sool', 'East Togdheer', 'Assigned locations'],
-    'regions follow the gazetteer order, not the branch insert order; register-only '
-    + 'location codes stay visible under their own heading');
-  // Long unit names are shortened, the full name survives in the tooltip.
-  const unitButtons = queryAll('#cpNavRegions .nav-unit');
-  assert.equal(unitButtons.length, 4,
-    'every checkpoint branch plus each register location code is listed exactly once');
-  unitButtons.forEach((b) => {
-    const short = b.querySelector('.nav-unit-short').textContent;
+  // ---- 5) DYNAMIC tree: Region → District → unit -------------------------
+  signIn('SystemAdmin', ALL_MODULES, true);
+  setCatalogue(BRANCHES);
+  const fpRegions = treeRegions('fingerprint');
+  assert.deepEqual(fpRegions.map((r) => r.dataset.navRegion), ['Sanaag', 'East Togdheer'],
+    'the fingerprint tree is grouped by region in gazetteer order');
+  const sanaag = fpRegions[0];
+  assert.deepEqual([...sanaag.querySelectorAll('.nav-district')].map((d) => d.dataset.navDistrict),
+    ['Ceerigaabo', 'Badhan'], 'the second level is the district');
+  const sanaagDistricts = [...sanaag.querySelectorAll('.nav-district')].map((d) => ({
+    district: d.dataset.navDistrict,
+    units: [...d.querySelectorAll('.nav-unit')].map((u) => u.dataset.unitLabel),
+  }));
+  assert.deepEqual(sanaagDistricts, [
+    { district: 'Ceerigaabo', units: ['Erigavo Branch'] },
+    { district: 'Badhan', units: ['Badhan Branch'] },
+  ], 'the third level lists only the branches of that district');
+  // Checkpoint tree: Sool → Laascaanood / Xudun → the postings.
+  const cpRegions = treeRegions('checkpoint');
+  assert.deepEqual(cpRegions.map((r) => r.dataset.navRegion),
+    ['Sool', 'East Togdheer', 'Unassigned region'],
+    'Sool first (gazetteer order), then East Togdheer, then the canonical codes');
+  const sool = cpRegions.find((r) => r.dataset.navRegion === 'Sool');
+  assert.deepEqual([...sool.querySelectorAll('.nav-district')].map((d) => d.dataset.navDistrict),
+    ['Laascaanood', 'Xudun']);
+  const lasanod = [...sool.querySelectorAll('.nav-district')]
+    .find((d) => d.dataset.navDistrict === 'Laascaanood');
+  assert.deepEqual([...lasanod.querySelectorAll('.nav-unit')].map((u) => u.dataset.unitLabel),
+    ['Lasanod Central Checkpoint']);
+  // Long names never wrap the rail: short label + full tooltip.
+  treeUnits('checkpoint').forEach((btn) => {
+    const short = btn.querySelector('.nav-unit-short').textContent;
     assert.ok(short.length <= 20, `sidebar unit label too long: ${short}`);
-    assert.ok(b.getAttribute('title').length > short.length, 'the full unit name must stay in the tooltip');
+    assert.ok(btn.getAttribute('title').length >= short.length);
   });
-  assert.ok(unitButtons.some((b) => b.textContent.includes('Buuhoodle')),
+  assert.ok(treeUnits('checkpoint').some((b) => b.textContent.includes('Buuhoodle')),
     'the short label keeps the distinguishing part of the name');
-  console.log('ok: checkpoint postings collapse into a region → district sub-menu of short labels');
+  console.log('ok: each operational unit paints a Region → District → unit tree of short labels');
 
-  // Region toggles persist their open state and drive ARIA.
-  const sool = query('#cpNavRegions .nav-region[data-nav-region="Sool"]');
-  const soolToggle = sool.querySelector('.nav-region-toggle');
-  run(`toggleNavRegion('Sool')`);
-  assert.equal(sool.classList.contains('open'), true);
+  // ---- 6) a new branch / checkpoint appears without a reload -------------
+  const beforeFp = treeUnits('fingerprint').length;
+  run(`branchCatalog.items.push({id:'b9',name:'Dhahar Branch',region:'Sanaag',district:'Dhahar',unit_type:'fingerprint'});
+    renderUnitNavTrees();`);
+  assert.equal(treeUnits('fingerprint').length, beforeFp + 1,
+    'a branch created in the system must appear in the tree immediately');
+  assert.ok(treeUnits('fingerprint').some((b) => b.dataset.unitLabel === 'Dhahar Branch'));
+  const dhahar = treeRegions('fingerprint')[0].querySelectorAll('.nav-district');
+  assert.deepEqual([...dhahar].map((d) => d.dataset.navDistrict), ['Ceerigaabo', 'Badhan', 'Dhahar'],
+    'the new district joins its region in gazetteer order');
+  // A checkpoint recorded at a location that exists only in the register.
+  const cpBefore = treeUnits('checkpoint').length;
+  run(`db.checkpoints.unshift({checkpoint_location:'Adhi Cadeeye Outpost',location_code:'Adhi Cadeeye',
+      branch:'Adhi Cadeeye Outpost · Laascaanood',screen:'No active alert'});
+    renderUnitNavTrees();`);
+  assert.equal(treeUnits('checkpoint').length, cpBefore + 1,
+    'a checkpoint used in the register must appear in the tree immediately');
+  const adhi = treeUnits('checkpoint').find((b) => b.dataset.unitLabel === 'Adhi Cadeeye Outpost');
+  assert.ok(adhi, 'the register-only checkpoint is listed');
+  assert.ok(adhi.closest('.nav-district').dataset.navDistrict === 'Laascaanood',
+    'its district is taken from the branch catalogue / composed branch label');
+  console.log('ok: new branches and checkpoint postings populate the tree immediately');
+
+  // ---- 7) region + district expand/collapse (persisted, ARIA) -----------
+  const soolNow = treeRegions('checkpoint').find((r) => r.dataset.navRegion === 'Sool');
+  const soolToggle = soolNow.querySelector('.nav-region-toggle');
+  run(`toggleNavRegion('Sool','checkpoint')`);
+  assert.equal(soolNow.classList.contains('open'), true);
   assert.equal(soolToggle.getAttribute('aria-expanded'), 'true');
-  assert.equal(JSON.parse(w.localStorage.getItem('sentinelNavRegions')).Sool, true);
-  run(`toggleNavRegion('Sool')`);
+  assert.equal(JSON.parse(w.localStorage.getItem('sentinelNavRegions'))['checkpoint|Sool'], true);
+  run(`toggleNavDistrict('Laascaanood','Sool','checkpoint')`);
+  const district = soolNow.querySelector('.nav-district[data-nav-district="Laascaanood"]');
+  assert.equal(district.classList.contains('open'), true);
+  assert.equal(district.querySelector('.nav-district-toggle').getAttribute('aria-expanded'), 'true');
+  assert.equal(JSON.parse(w.localStorage.getItem('sentinelNavRegions'))['checkpoint|Sool|Laascaanood'], true);
+  run(`toggleNavRegion('Sool','checkpoint')`);
   assert.equal(soolToggle.getAttribute('aria-expanded'), 'false');
-  console.log('ok: region sub-menus expand/collapse with persisted ARIA state');
+  console.log('ok: region and district levels expand/collapse with persisted ARIA state');
 
-  // A canonical South / East / West unit drives the location chips …
-  run(`openCheckpointUnit('South Checkpoint','South')`);
-  assert.equal(run('cpLocationFilter'), 'South');
+  // ---- 8) clicking a unit opens its register -----------------------------
+  run(`openUnitNavUnit('fingerprint','Erigavo Branch','')`);
+  assert.equal($('fingerprint').classList.contains('active'), true,
+    'a fingerprint unit opens the fingerprint register');
+  assert.equal($('fpSearch').value, 'Erigavo Branch',
+    'the register is filtered to that branch through its search box');
+  assert.equal(treeUnits('fingerprint').filter((b) => b.classList.contains('is-current')).length, 1,
+    'the active unit is highlighted in the tree');
+  run(`openUnitNavUnit('checkpoint','East Checkpoint','East')`);
+  assert.equal(run('cpLocationFilter'), 'East');
   assert.equal($('checkpoints').classList.contains('active'), true);
-  assert.equal(query('#cpNavRegions .nav-unit.is-current').dataset.unitCode, 'South');
-  // … and a named checkpoint scopes the register through its search box. A
-  // station-scoped officer keeps their RBAC posting: a click can never widen
-  // the register beyond the unit they are assigned to.
-  run(`openCheckpointUnit('Buuhoodle Border Crossing Checkpoint','')`);
+  console.log('ok: a unit link opens its register scoped to that unit');
+
+  // A station-scoped checkpoint officer keeps their RBAC posting.
+  signIn('checkpoint_officer', ['dashboard', 'people', 'checkpoints'], false,
+    { location_scope: 'South', branch: 'Lasanod Central Checkpoint · Laascaanood · Sool' });
+  run(`openCheckpointUnit('East Checkpoint','East')`);
   assert.equal(run('cpLocationFilter'), 'South',
     'a checkpoint officer stays locked to their assigned posting');
-  assert.equal($('cpSearch').value, 'Buuhoodle Border Crossing Checkpoint');
-  run(`openCheckpointUnit('East Checkpoint','East')`);
-  assert.equal(run('cpLocationFilter'), 'South',
-    'clicking another location code must not widen the scope');
-  console.log('ok: a unit link opens the register scoped to that unit without widening RBAC scope');
+  console.log('ok: unit links never widen a station-scoped officer beyond their posting');
 
-  // An administrator (unscoped) does switch the register to the clicked unit.
+  // ---- 9) Unit Directory (category utility) ------------------------------
   signIn('SystemAdmin', ALL_MODULES, true);
-  run(`openCheckpointUnit('Buuhoodle Border Crossing Checkpoint','')`);
-  assert.equal(run('cpLocationFilter'), '');
-  assert.equal($('cpSearch').value, 'Buuhoodle Border Crossing Checkpoint');
-  run(`openCheckpointUnit('East Checkpoint','East')`);
-  assert.equal(run('cpLocationFilter'), 'East');
-  signIn('CheckpointSouth', ['dashboard', 'people', 'checkpoints'], false, { location_scope: 'South' });
-  console.log('ok: an admin unit click switches the checkpoint register to that unit');
-
-  // ---- 5) Unit Directory ------------------------------------------------
-  run(`openUnitDirectory('checkpoint')`);
+  run(`openUnitDirectory('')`);
   assert.equal($('unitDir').classList.contains('open'), true, 'the directory opens in a modal');
-  assert.ok($('udUnitType').value === 'checkpoint');
-  // Unit types are limited to the modules this session holds.
-  assert.deepEqual(queryAll('#udUnitType option').map((o) => o.value), ['checkpoint'],
-    'a checkpoint officer must not browse units from modules they cannot read');
-  const regionOptions = queryAll('#udRegion option').map((o) => o.value);
-  assert.deepEqual(regionOptions, ['', 'East Togdheer', 'Sool']);
-  assert.equal(queryAll('#udTable tr').length, 4);
-  // Region filter → districts narrow to that region, rows follow.
+  assert.deepEqual(queryAll('#udUnitType option').map((o) => o.value),
+    ['', 'checkpoint', 'fingerprint', 'crime', 'airport', 'police_station'],
+    'the category-level directory lists every permitted unit type plus "All"');
+  const allRows = queryAll('#udTable tr').length;
+  assert.ok(allRows >= BRANCHES.length, 'the all-types view lists every unit');
+  // Unit type → region → district → free text.
+  $('udUnitType').value = 'checkpoint';
+  run(`populateUnitDirectoryFilters(true);renderUnitDirectory();`);
+  assert.deepEqual(queryAll('#udRegion option').map((o) => o.value),
+    ['', 'East Togdheer', 'Sool'],
+    'the directory filter lists the regions that actually carry units');
   $('udRegion').value = 'Sool';
   run(`populateUnitDirectoryDistricts();renderUnitDirectory();`);
   assert.deepEqual(queryAll('#udDistrict option').map((o) => o.value),
     ['', 'Laascaanood', 'Xudun']);
-  assert.equal(queryAll('#udTable tr').length, 2, 'the region filter must narrow the rows');
   $('udDistrict').value = 'Xudun';
   run(`renderUnitDirectory()`);
   assert.equal(queryAll('#udTable tr').length, 1);
   assert.ok($('udTable').textContent.includes('Yagoori'));
-  $('udSearch').value = 'buuhoodle';
+  $('udSearch').value = 'lasanod';
   run(`renderUnitDirectory()`);
   assert.equal(queryAll('#udTable tr').length, 0, 'district + search are ANDed');
   assert.equal($('udEmpty').style.display, '', 'the empty state explains the dead end');
+  // Clicking a row opens that unit (and closes the directory).
   $('udSearch').value = '';
   $('udDistrict').value = '';
   $('udRegion').value = '';
-  run(`renderUnitDirectory()`);
-  assert.equal(queryAll('#udTable tr').length, 4);
-  run(`closeEntryModal('unitDir')`);
-  console.log('ok: Unit Directory filters by region, district and free text');
+  $('udUnitType').value = '';
+  run(`populateUnitDirectoryFilters(true);renderUnitDirectory()`);
+  const fpRow = queryAll('#udTable tr').find((tr) => tr.dataset.udOpen === 'fingerprint');
+  assert.ok(fpRow, 'the directory lists fingerprint units too');
+  fpRow.click();
+  await tick();
+  assert.equal($('unitDir').classList.contains('open'), false,
+    'opening a unit closes the directory');
+  assert.equal($('fingerprint').classList.contains('active'), true);
+  console.log('ok: the Unit Directory browses every unit with type / region / district / search filters');
 
-  // A Commander (read-only) may browse the directory; it is a read surface.
+  // A Commander (read-only) may browse the directory: it is a read surface.
   signIn('chief_commander', ['dashboard', 'fingerprint', 'airport', 'cid', 'checkpoints',
     'executive', 'oversight'], false, {});
-  run(`openUnitDirectory('checkpoint')`);
+  run(`openUnitDirectory('')`);
   assert.equal($('unitDir').classList.contains('open'), true,
     'a read-only Commander must be able to browse the unit directory');
   run(`closeEntryModal('unitDir')`);
   console.log('ok: the directory stays a read-only surface for a Commander session');
 
-  // ---- 6) restore ordering ----------------------------------------------
+  // ---- 10) auto-locked branch selectors ---------------------------------
+  signIn('checkpoint_officer', ['dashboard', 'people', 'checkpoints'], false,
+    { location_scope: 'South', branch: 'Lasanod Central Checkpoint · Laascaanood · Sool' });
+  run(`openCheckpointDrawer()`);
+  await run(`refreshBranchSelect('cpBranch','checkpoint')`);
+  const cpBranch = $('cpBranch');
+  assert.equal(cpBranch.disabled, true, 'a posted checkpoint officer cannot change the branch');
+  assert.equal(cpBranch.value, 'b2', 'the selector is pre-selected to their own branch');
+  assert.equal(cpBranch.dataset.branchLocked, 'b2');
+  assert.ok($('cpBranch-lock').textContent.includes('Lasanod Central Checkpoint'),
+    'the lock explains why the field is fixed');
+  assert.equal($('cpLoc').disabled, true, 'the canonical checkpoint location stays locked too');
+  assert.equal($('cpLoc').value, 'South');
+  run(`closeDrawer()`);
+
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Erigavo Branch · Sanaag' });
+  run(`openEntryModal('fpDrawer')`);
+  await run(`refreshBranchSelect('fpBranch','fingerprint')`);
+  assert.equal($('fpBranch').disabled, true, 'a posted fingerprint officer is locked to their branch');
+  assert.equal($('fpBranch').value, 'b4');
+  assert.equal($('fpBranch-lock').textContent.includes('Erigavo Branch'), true);
+  run(`closeEntryModal('fpDrawer')`);
+
+  // A unit officer whose posting is not in the catalogue keeps the choice, and
+  // is told why (the branch has to be registered first).
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Nowhere Branch · Sanaag' });
+  run(`openEntryModal('fpDrawer')`);
+  await run(`refreshBranchSelect('fpBranch','fingerprint')`);
+  assert.equal($('fpBranch').disabled, false, 'an unknown posting cannot fabricate a branch id');
+  assert.equal($('fpBranch').dataset.branchLocked, undefined);
+  assert.ok($('fpBranch-lock').textContent.includes('not registered'),
+    'the officer is told the posting has to be registered first');
+  run(`closeEntryModal('fpDrawer')`);
+
+  // System Administrators stay free to pick any branch.
+  signIn('SystemAdmin', ALL_MODULES, true);
+  run(`openCheckpointDrawer()`);
+  await run(`refreshBranchSelect('cpBranch','checkpoint')`);
+  assert.equal($('cpBranch').disabled, false, 'a System Administrator can select any branch');
+  assert.equal($('cpBranch').dataset.branchLocked, undefined);
+  assert.equal($('cpLoc').disabled, false, 'an admin can record any checkpoint location');
+  run(`closeDrawer()`);
+  console.log('ok: posted officers are locked to their own branch; administrators keep a free choice');
+
+  // ---- 11) restore ordering --------------------------------------------
   signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint']);
-  signIn('CheckpointSouth', ['dashboard', 'people', 'checkpoints']);
+  signIn('checkpoint_officer', ['dashboard', 'people', 'checkpoints'], false,
+    { location_scope: 'South', branch: 'South Checkpoint' });
   const cpGroupBody = query('#nav .nav-group-body[data-group-body="checkpoints"]');
   const checkpointLink = query('#nav [data-page="checkpoints"]');
   const label = query('#nav [data-module-label="checkpoints"]');
   assert.equal(label.nextElementSibling, checkpointLink,
     'a restored checkpoint link sits directly under its subgroup label');
-  assert.ok(cpGroupBody.children.length >= 3);
-  assert.equal(cpGroupBody.lastElementChild.id, 'cpNavRegions',
-    'the runtime sub-menu stays at the bottom of the accordion');
+  assert.equal(cpGroupBody.lastElementChild, tree('checkpoint'),
+    'the runtime tree stays at the bottom of the accordion');
   console.log('ok: denied entries are removed and restored into their authored slot');
 
-  // ---- 7) category + accordion collapse and navigation ------------------
+  // ---- 12) category + accordion collapse and navigation -----------------
   run(`setNavSectionOpen('operational-units',false)`);
   assert.equal(sectionOf('operational-units').querySelector('.nav-section-toggle')
     .getAttribute('aria-expanded'), 'false');
@@ -262,13 +384,11 @@ try {
   assert.equal(sectionOf('operational-units').classList.contains('open'), true);
   assert.equal(JSON.parse(w.localStorage.getItem('sentinelNavSections'))['operational-units'], true);
   run(`setNavSectionOpen('operational-units',false)`);
-  // Opening a page expands the category and the accordion that own it.
   run(`go('checkpoints')`);
   assert.equal(sectionOf('operational-units').classList.contains('open'), true);
   assert.equal(query('#nav .nav-group[data-group="checkpoints"]').classList.contains('open'), true);
   console.log('ok: navigating expands the owning category and accordion');
 
-  // Every link navigates once the role is allowed to hold it.
   signIn('SystemAdmin', ALL_MODULES, true);
   const failures = [];
   queryAll('#nav button[data-page]').forEach((btn) => {
@@ -276,26 +396,25 @@ try {
     if (!$(page)) { failures.push(`${page}: no page section`); return; }
     try { run(`go(${JSON.stringify(page)})`); } catch (_) { /* renderers may need the API */ }
     if (!$(`${page}`).classList.contains('active')) failures.push(`${page}: did not open`);
-    const group = query('#nav .nav-group.open button[data-page="' + page + '"]');
-    if (btn.closest('.nav-group') && !group) failures.push(`${page}: owning accordion stayed collapsed`);
+    if (btn.closest('.nav-group') && !query('#nav .nav-group.open button[data-page="' + page + '"]'))
+      failures.push(`${page}: owning accordion stayed collapsed`);
     const sec = btn.closest('.nav-section');
     if (sec && !sec.classList.contains('open')) failures.push(`${page}: owning category stayed collapsed`);
   });
   assert.deepEqual(failures, [], 'every navigation link must remain functional');
   console.log('ok: every navigation link opens its page and reveals its category');
 
-  // ---- 8) short-label helper -------------------------------------------
-  assert.equal(run(`shortUnitLabel('Buuhoodle Border Crossing Checkpoint')`),
-    'Buuhoodle Border C…');
+  // ---- 13) short-label helper -------------------------------------------
+  assert.equal(run(`shortUnitLabel('Buuhoodle Border Crossing Checkpoint')`), 'Buuhoodle Border C…');
   assert.equal(run(`shortUnitLabel('Lasanod Branch')`), 'Lasanod');
   assert.ok(run(`shortUnitLabel('A very long unit name that would wrap the rail').length`) <= 20);
   assert.ok(run(`shortUnitLabel('X')`).length >= 1);
   console.log('ok: short unit labels strip administrative suffixes and never wrap the rail');
 
-  console.log('PASS: hierarchical sidebar, RBAC gates and scalable unit directory');
+  console.log('PASS: hierarchical sidebar, dynamic unit tree, RBAC gates and locked branch selectors');
 } finally {
   // Let pending render promises (page painters fired by go()) settle before the
   // window is torn down, so a late repaint cannot throw after the suite passes.
-  await new Promise((resolve) => setTimeout(resolve, 120));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   w.close();
 }

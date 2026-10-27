@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-sidebar-nav-1-c41f9d2b" />
+<meta name="sentinel-ui-build" content="sentinel-dynamic-nav-1-a4f7c913" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -610,6 +610,29 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
   background:#22374f;color:#9db7d8;font-size:10px;font-weight:800;overflow:visible!important}
 .nav-unit-count[hidden]{display:none}
 .nav .nav-region-toggle i{width:16px!important;height:16px!important;background:transparent!important;color:#6f88a8!important;font-size:10px!important}
+/* Category-level utility link (Unit Directory) — top level of Operational Units */
+.nav .nav-utility{display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:7px 10px;
+  border-radius:8px;background:transparent;color:#9fb6d8;font-size:11.75px;font-weight:750;
+  text-align:left;transition:background .16s ease,color .16s ease}
+.nav .nav-utility:hover{background:#1a2c46;color:#eaf1fb}
+.nav .nav-utility i{display:grid;place-items:center;width:20px;height:20px;flex:none;border-radius:6px;
+  background:rgba(255,255,255,.05);color:#8aa2c2;font-size:12px;font-style:normal}
+.nav .nav-utility span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-utility-meta{margin-left:auto;flex:none;padding:1px 7px;border-radius:99px;background:#22374f;
+  color:#9db7d8;font-size:10px;font-weight:800}
+.nav-utility-meta[hidden]{display:none}
+/* District level of the unit tree (Region → District → unit) */
+.nav-district{display:block}
+.nav-district-toggle{display:flex;align-items:center;gap:7px;width:100%;min-height:28px;padding:4px 8px;
+  border-radius:7px;background:transparent;color:#7f97b6;font-size:10.75px;font-weight:700;
+  letter-spacing:.15px;text-align:left;transition:background .15s ease,color .15s ease}
+.nav-district-toggle:hover{background:#162841;color:#dbe7f7}
+.nav-district-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-district-toggle .nav-region-count{margin-left:auto}
+.nav-district-toggle .nav-chev{font-size:8px}
+.nav-district.open .nav-district-toggle .nav-chev{transform:rotate(180deg)}
+.nav-district-body{display:none;gap:1px;margin:1px 0 2px 8px;padding-left:7px;border-left:1px dashed #223550}
+.nav-district.open .nav-district-body{display:grid}
 /* Region → District sub-menu inside a unit category */
 .nav-region-list{display:grid;gap:1px;margin:2px 0 2px}
 .nav-region-list:empty{display:none}
@@ -635,6 +658,10 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .nav-unit-meta{flex:none;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   color:#6d87a7;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.35px}
 .cmodal.unit-dir{width:min(860px,calc(100vw - 44px))}
+.branch-lock-hint{display:block;margin-top:5px;padding:6px 9px;border-radius:8px;
+  background:#fff7e6;border:1px solid #f0dcae;color:#7a5b17;font-size:11px;font-weight:600;line-height:1.45}
+.branch-lock-hint b{font-weight:800}
+.field select[data-branch-locked]{background:#f4f6f9;color:#5a6779;cursor:not-allowed;font-weight:700}
 .ud-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:11px 14px;margin-bottom:11px}
 #udTable tr.clickable{cursor:pointer}
 #udTable tr.clickable:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
@@ -1355,10 +1382,18 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
       <i aria-hidden="true">⛨</i><span class="nav-section-name">Operational Units</span><span class="nav-chev" aria-hidden="true">▾</span>
     </button>
     <div class="nav-section-body" data-section-body="operational-units" id="nav-section-operational-units">
+    <!-- Category-level utility (not a page and not gated by one unit module):
+         one searchable directory for every unit this session may read. -->
+    <button type="button" class="nav-utility" data-unit-directory="all" onclick="openUnitDirectory('')" title="Browse every unit — filter by unit type, region and district">
+      <i aria-hidden="true">⌕</i><span>Unit Directory</span><span class="nav-utility-meta" id="navUnitCount" hidden></span>
+    </button>
     <div class="nav-group open" data-group="fingerprint">
     <button type="button" class="nav-group-toggle" data-group-toggle="fingerprint"><i aria-hidden="true">⌁</i><span class="nav-group-modern-title">Fingerprint Units</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="fingerprint">
     <button data-page="fingerprint" data-modules="fingerprint"><i aria-hidden="true">⌁</i><span>Fingerprint Unit</span></button>
+    <!-- Region → District → unit tree, painted from /api/branches and the
+         live register by renderUnitNavTree('fingerprint'). -->
+    <div class="nav-region-list" id="fpNavRegions" data-nav-regions="fingerprint"></div>
 </div>
     </div>
 
@@ -1366,6 +1401,9 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
     <button type="button" class="nav-group-toggle" data-group-toggle="cid"><i aria-hidden="true">⌘</i><span class="nav-group-modern-title">Crime Units</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="cid">
     <button data-page="cid" data-modules="cid"><i aria-hidden="true">⚖</i><span>Crime Unit</span></button>
+    <!-- Region → District → unit tree, painted from /api/branches and the
+         live register by renderUnitNavTree('crime'). -->
+    <div class="nav-region-list" id="caseNavRegions" data-nav-regions="crime"></div>
 </div>
     </div>
 
@@ -1373,18 +1411,17 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
     <button type="button" class="nav-group-toggle" data-group-toggle="airport"><i aria-hidden="true">✈</i><span class="nav-group-modern-title">Airport Control</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="airport">
     <button data-page="airport" data-modules="airport"><i aria-hidden="true">✈</i><span>Airport Unit</span></button>
+    <!-- Region → District → unit tree, painted from /api/branches and the
+         live register by renderUnitNavTree('airport'). -->
+    <div class="nav-region-list" id="airNavRegions" data-nav-regions="airport"></div>
 </div>
     </div>
 
     <div class="nav-group open" data-group="checkpoints">
     <button type="button" class="nav-group-toggle" data-group-toggle="checkpoints"><i aria-hidden="true">⊙</i><span class="nav-group-modern-title">Checkpoint Units</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="checkpoints">
-    <button type="button" class="nav-unit-dir" data-unit-directory="checkpoint" onclick="openUnitDirectory('checkpoint')"><i aria-hidden="true">⌕</i><span>Unit Directory</span><span class="nav-unit-count" id="cpNavCount" hidden></span></button>
     <div class="nav-subgroup-label" data-module-label="checkpoints">Checkpoint operations</div>
     <button data-page="checkpoints" data-modules="checkpoints"><i aria-hidden="true">⊙</i><span>Checkpoint Unit</span></button>
-    <!-- Region → District unit sub-menu: rendered from the branch catalogue by
-         renderCheckpointNav(). Unit names are shortened for the sidebar (the
-         full name stays in the tooltip and in the Unit Directory). -->
     <div class="nav-region-list" id="cpNavRegions" data-nav-regions="checkpoint"></div>
 </div>
     </div>
@@ -1393,6 +1430,9 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
     <button type="button" class="nav-group-toggle" data-group-toggle="registrations"><i aria-hidden="true">▤</i><span class="nav-group-modern-title">Stations &amp; Registers</span><span class="nav-chev" aria-hidden="true">▾</span></button>
     <div class="nav-group-body" data-group-body="registrations">
     <button data-page="stations" data-modules="stations"><i aria-hidden="true">▦</i><span>Police Stations</span></button>
+    <!-- Region → District → station tree, painted from /api/branches and the
+         live register by renderUnitNavTree('police_station'). -->
+    <div class="nav-region-list" id="stNavRegions" data-nav-regions="police_station"></div>
     <button data-page="crimes" data-modules="crimes"><i aria-hidden="true">⚖</i><span>Register Crime</span></button>
 </div>
     </div>
@@ -2943,7 +2983,105 @@ async function loadBranchCatalog(force=false){
     unit_types:Array.isArray(data.unit_types)?data.unit_types:[]};
   try{ refreshUserBranchDatalist(); }catch(_){}
   try{ if(typeof refreshStationSelects==='function') refreshStationSelects(); }catch(_){}
+  // The sidebar unit trees and the Unit Directory read this catalogue: repaint
+  // them the moment a branch is created so a new posting is in the rail
+  // without a reload.
+  try{ renderUnitNavTrees(); }catch(_){ }
   return branchCatalog;
+}
+// ---- auto-locked branch selectors -------------------------------------------
+// A posted officer must not be able to file a record under another branch. The
+// posting lives on the session (users.branch, `users.location_scope` for
+// checkpoint postings); when it resolves to a branch of the unit being
+// recorded, the selector is pre-selected and DISABLED. System Administrators
+// (and the record-management admin flag) are never locked, so they can pick any
+// branch. Nothing here changes what the API accepts — the server gates are
+// untouched — it removes the accidental cross-branch filing from the form.
+function sessionPostingParts(){
+  const parts=String((sessionUser&&sessionUser.branch)||'').split('·').map(x=>x.trim()).filter(Boolean);
+  const name=parts[0]||'';
+  return {name, region:parts.length>1?parts[parts.length-1]:''};
+}
+function branchSelectUnlockedForUser(){
+  if(!sessionUser) return true;
+  if(sessionVisibility && (sessionVisibility.is_admin || sessionVisibility.can_manage_records)) return true;
+  if(isAdminRole(sessionUser.role) || isChiefRole(sessionUser.role)) return true;
+  return false;
+}
+// The branch this officer is assigned to, within `unitType`, or null.
+function branchLockFor(unitType){
+  if(branchSelectUnlockedForUser()) return null;
+  const items=((branchCatalog&&branchCatalog.items)||[]).filter(b=>b && unitTypeOf(b.unit_type)===unitType);
+  if(!items.length) return null;
+  const norm=v=>String(v||'').trim().toLowerCase();
+  const {name}=sessionPostingParts();
+  if(!name) return null;
+  const exact=items.find(b=>norm(b.name)===norm(name));
+  if(exact) return exact;
+  // The stored posting may carry the district/region suffix, or the branch may
+  // be the longer of the two ('Lasanod Branch' vs 'Lasanod').
+  const loose=items.find(b=>norm(name).indexOf(norm(b.name))===0||norm(b.name).indexOf(norm(name))===0);
+  if(loose) return loose;
+  // A checkpoint officer's canonical area ('South') matches the branch posted
+  // to that area when the catalogue names it.
+  if(isCheckpointRole(sessionUser.role)||unitType==='checkpoint'){
+    const scope=norm(sessionUser.location_scope||scopeFromRole(sessionUser.role)||'');
+    if(scope){
+      const byScope=items.find(b=>norm(cpCodeFromLabel(b.name))===scope)
+        || items.find(b=>norm(b.name).indexOf(scope)!==-1);
+      if(byScope) return byScope;
+    }
+  }
+  return null;
+}
+function branchLockHint(select,html,show){
+  if(!select||!select.parentNode) return null;
+  const id=select.id+'-lock';
+  let hint=document.getElementById(id);
+  if(!show){
+    if(hint) hint.style.display='none';
+    select.removeAttribute('aria-describedby');
+    return hint;
+  }
+  if(!hint){
+    hint=document.createElement('small');
+    hint.id=id;
+    hint.className='branch-lock-hint';
+    select.parentNode.appendChild(hint);
+  }
+  hint.innerHTML=html;
+  hint.style.display='';
+  select.setAttribute('aria-describedby',id);
+  return hint;
+}
+function applyBranchLock(select,unitType){
+  if(!select) return null;
+  const lock=branchLockFor(unitType);
+  if(lock){
+    select.value=String(lock.id);
+    select.disabled=true;
+    select.dataset.branchLocked=String(lock.id);
+    select.title='Locked to your posting — '+lock.name;
+    branchLockHint(select,'<span aria-hidden="true">🔒</span> Assigned to <b>'+esc(lock.name)+'</b>'
+      +(lock.district?' · '+esc(lock.district):'')
+      +(lock.region?' · '+esc(lock.region):'')
+      +' — locked so this record cannot be filed under another branch.',true);
+    return lock;
+  }
+  delete select.dataset.branchLocked;
+  select.removeAttribute('title');
+  // Not locked: an officer with a posting that the unit catalogue does not
+  // know about is told why they still have to choose (an administrator can
+  // register the branch, after which the field locks itself).
+  const posting=sessionPostingParts().name;
+  const orphan=!branchSelectUnlockedForUser() && posting && select.options.length>1;
+  if(orphan){
+    branchLockHint(select,'Your posting <b>'+esc(posting)+'</b> is not registered for this unit — '
+      +'pick the matching branch, or ask a System Administrator to add it under Branch Management.',true);
+  }else{
+    branchLockHint(select,'',false);
+  }
+  return null;
 }
 async function refreshBranchSelect(selectId,unitType){
   const select=document.getElementById(selectId);
@@ -2972,6 +3110,10 @@ async function refreshBranchSelect(selectId,unitType){
   }).join('');
   select.value=items.some(b=>String(b.id)===String(previous))?String(previous):'';
   select.disabled=false;
+  // A posted officer is pinned to their own branch (and the field is locked);
+  // an administrator keeps the free choice.
+  applyBranchLock(select,unitType);
+  try{ renderUnitNavTrees(); }catch(_){ }
   return true;
 }
 function mapPerson(p){
@@ -3059,7 +3201,7 @@ function go(page){
   // a search result / quick action never lands in a collapsed category.
   const sec = PAGE_SECTION[navPage];
   if(sec) setNavSectionOpen(sec, true);
-  markCheckpointNavCurrent();
+  try{ markUnitNavCurrent(); }catch(_){ }
   closeSidebar();
   document.getElementById('pageTitle').textContent=TITLES[page]||'';
   if(page==='cid') renderCases();
@@ -3301,11 +3443,127 @@ function unitMetaLabel(unit){
   if(district && district.toLowerCase()!==region.toLowerCase()) return district;
   return region||'';
 }
-// The checkpoint unit catalogue is built ONCE from the sources that already
-// exist — the branch catalogue (/api/branches, authority) plus the location
-// codes actually present in the register — and is the single input for both
-// the sidebar regional sub-menu and the Unit Directory filters.
-function checkpointUnitCatalog(){
+
+// ---- dynamic unit tree: Region → District → unit ----------------------------
+// Every operational unit accordion (Fingerprint · Crime · Airport · Checkpoint)
+// renders the SAME live tree, built from:
+//
+//   * /api/branches  — the authoritative catalogue (name · region · district ·
+//                      unit_type). A branch created in Branch Management is in
+//                      `branchCatalog` the moment it is saved, so the tree
+//                      grows without a reload.
+//   * the live register (db.checkpoints / db.fingerprint / db.airport /
+//                      db.cases) — legacy rows whose posting predates the
+//                      catalogue still appear, located by their branch name.
+//   * /api/me        — the canonical checkpoint codes (South / East / West) so
+//                      a station officer's own posting is always listed.
+//
+// The tree is rebuilt on: nav paint (applyNavForRole), every full render
+// (renderAll), every server sync, a branch save and a checkpoint save — a new
+// branch or checkpoint therefore shows up immediately.
+const NAV_UNIT_TREE_TYPES=[
+  {type:'fingerprint',group:'fingerprint',module:'fingerprint',page:'fingerprint',search:'fpSearch',icon:'⌁',label:'Fingerprint Units'},
+  {type:'crime',group:'cid',module:'cid',page:'cid',search:'caseSearch',icon:'⌖',label:'Crime Units'},
+  {type:'airport',group:'airport',module:'airport',page:'airport',search:'airSearch',icon:'✈',label:'Airport Control'},
+  {type:'checkpoint',group:'checkpoints',module:'checkpoints',page:'checkpoints',search:'cpSearch',icon:'⊙',label:'Checkpoint Units'},
+  {type:'police_station',group:'registrations',module:'stations',page:'stations',search:'stSearch',icon:'▦',label:'Police Stations'}
+];
+const NAV_NO_REGION='Unassigned region';
+const NAV_NO_DISTRICT='Unassigned district';
+function unitNavSpec(type){
+  return NAV_UNIT_TREE_TYPES.find(t=>t.type===type)||null;
+}
+function gazetteerIndex(list, value){
+  const i=list.findIndex(x=>x===value);
+  return i===-1?999:i;
+}
+function compareRegion(a,b){
+  return gazetteerIndex(LOCATIONS.map(l=>l.region),a)-gazetteerIndex(LOCATIONS.map(l=>l.region),b)
+    || String(a).localeCompare(String(b));
+}
+function compareDistrict(region,a,b){
+  const known=((LOCATIONS.find(l=>l.region===region)||{}).districts)||[];
+  const norm=v=>String(v||'').toLowerCase();
+  const ia=known.findIndex(d=>norm(d)===norm(a));
+  const ib=known.findIndex(d=>norm(d)===norm(b));
+  if(ia!==-1||ib!==-1) return (ia===-1?999:ia)-(ib===-1?999:ib)||String(a).localeCompare(String(b));
+  return String(a).localeCompare(String(b));
+}
+// A canonical South/East/West code, when the label carries one. Returns '' for
+// every other unit (those are filtered by label through the register search).
+function cpCodeFromLabel(text){
+  const t=String(text||'').toLowerCase();
+  for(const c of CP_LOCATIONS){ if(new RegExp('\\b'+c.toLowerCase()+'\\b').test(t)) return c; }
+  return '';
+}
+// Register rows carry the posting as one composed label — 'Name · Region' or the
+// full 'Name · District · Region' the User Management modal stores. Split it
+// back into its parts, and when only one trailing part is present work out
+// whether it is a region or a district from the gazetteer.
+function splitUnitBranchLabel(value){
+  const parts=String(value||'').split('·').map(x=>x.trim()).filter(Boolean);
+  if(!parts.length) return {name:'',region:'',district:''};
+  if(parts.length===1) return {name:parts[0],region:'',district:''};
+  if(parts.length>=3){
+    return {name:parts.slice(0,parts.length-2).join(' · '),
+            district:parts[parts.length-2], region:parts[parts.length-1]};
+  }
+  const last=parts[1];
+  if(LOCATIONS.some(l=>l.region===last)) return {name:parts[0],region:last,district:''};
+  const owner=LOCATIONS.find(l=>(l.districts||[]).indexOf(last)!==-1);
+  if(owner) return {name:parts[0],region:owner.region,district:last};
+  return {name:parts[0],region:last,district:''};
+}
+function branchIndexByName(){
+  const map=new Map();
+  ((branchCatalog&&branchCatalog.items)||[]).forEach(b=>{
+    if(b&&b.name) map.set(String(b.name).toLowerCase(), b);
+  });
+  return map;
+}
+function unitTypeOf(objectType){
+  return String(objectType||'').trim();
+}
+// Legacy register rows: locate the posting in the branch catalogue when it
+// exists (region + district), otherwise keep whatever the row recorded.
+function registerUnitRows(type){
+  const index=branchIndexByName();
+  const rows=[];
+  const push=(label, region, district, code)=>{
+    const name=String(label||'').trim();
+    if(!name) return;
+    const hit=index.get(name.toLowerCase());
+    rows.push({
+      label:name,
+      region:String((hit&&hit.region)||region||'').trim(),
+      district:String((hit&&hit.district)||district||'').trim(),
+      code:code||(hit?cpCodeFromLabel(hit.name):'')||cpCodeFromLabel(name),
+      branch_id:(hit&&hit.id)||null,
+      unit_type:type,
+      source:'register'
+    });
+  };
+  if(type==='checkpoint'){
+    (db&&Array.isArray(db.checkpoints)?db.checkpoints:[]).forEach(row=>{
+      const raw=String(row.checkpoint_location||row.location_code||row.location||'').trim();
+      const parsed=splitUnitBranchLabel(row.branch);
+      const label=CP_LOCATIONS.indexOf(raw)!==-1?checkpointLabelText(raw):raw;
+      push(label, parsed.region, parsed.district, cpCodeFromLabel(raw));
+    });
+  }else if(type==='fingerprint' && db&&Array.isArray(db.fingerprint)){
+    db.fingerprint.forEach(x=>{const p=splitUnitBranchLabel(x.branch);push(p.name,p.region,p.district,'');});
+  }else if(type==='airport' && db&&Array.isArray(db.airport)){
+    db.airport.forEach(x=>{const p=splitUnitBranchLabel(x.branch);push(p.name,p.region,p.district,'');});
+  }else if(type==='crime' && db&&Array.isArray(db.cases)){
+    db.cases.forEach(x=>{const p=splitUnitBranchLabel(x.branch);push(p.name,p.region,p.district,'');});
+  }else if(type==='police_station' && db&&Array.isArray(db.stations)){
+    db.stations.forEach(st=>push(st.name, st.region, st.district, ''));
+  }
+  return rows;
+}
+// One flat catalogue per unit type (branches + live register rows), deduped by
+// label. This is the single input for the sidebar tree AND the Unit Directory.
+function unitNavCatalog(type){
   const seen=new Map();
   const add=(unit)=>{
     if(!unit) return;
@@ -3317,131 +3575,252 @@ function checkpointUnitCatalog(){
       if(!prev.region && unit.region) prev.region=unit.region;
       if(!prev.district && unit.district) prev.district=unit.district;
       if(!prev.code && unit.code) prev.code=unit.code;
+      if(!prev.branch_id && unit.branch_id) prev.branch_id=unit.branch_id;
       return;
     }
     seen.set(key,{
       label,
-      region:String(unit.region||'').trim()||'Assigned locations',
+      region:String(unit.region||'').trim(),
       district:String(unit.district||'').trim(),
       code:unit.code||'',
-      unit_type:'checkpoint'
+      branch_id:unit.branch_id||null,
+      unit_type:type,
+      source:unit.source||'branch'
     });
   };
-  const branches=(branchCatalog && Array.isArray(branchCatalog.items)) ? branchCatalog.items : [];
-  branches.filter(b=>b && b.unit_type==='checkpoint').forEach(b=>{
-    add({label:b.name, region:b.region, district:b.district,
-         code:cpCodeFromLabel(b.name+' '+(b.region||''))});
-  });
-  (db && Array.isArray(db.checkpoints) ? db.checkpoints : []).forEach(row=>{
-    const raw=row.checkpoint_location||row.location_code||row.location||'';
-    const label=checkpointLabelText(raw);
-    add({label, region:row.checkpoint_region||'', district:row.checkpoint_district||'',
-         code:cpCodeFromLabel(raw)});
-  });
-  const roster=(sessionRoster && Array.isArray(sessionRoster.checkpoint_locations)) ? sessionRoster.checkpoint_locations : [];
-  roster.forEach(code=>add({label:checkpointLabelText(code), code}));
+  // 1) the authoritative branch catalogue
+  ((branchCatalog&&Array.isArray(branchCatalog.items))?branchCatalog.items:[])
+    .filter(b=>b && unitTypeOf(b.unit_type)===type)
+    .forEach(b=>add({label:b.name,region:b.region,district:b.district,
+                     code:cpCodeFromLabel(b.name),branch_id:b.id,source:'branch'}));
+  // 2) register rows whose posting predates (or is missing from) the catalogue
+  registerUnitRows(type).forEach(add);
+  // 3) the canonical checkpoint codes this session knows about — only when no
+  //    catalogue branch / register row already covers that area.
+  if(type==='checkpoint'){
+    const covered=new Set(Array.from(seen.values()).map(u=>u.code).filter(Boolean));
+    const roster=(sessionRoster&&Array.isArray(sessionRoster.checkpoint_locations))?sessionRoster.checkpoint_locations:[];
+    roster.forEach(code=>{
+      if(covered.has(code)) return;
+      add({label:checkpointLabelText(code),code,source:'roster'});
+    });
+  }
   return Array.from(seen.values());
 }
-// A canonical South/East/West code, when the label carries one. Returns '' for
-// every other unit (those are filtered by label through the register search).
-function cpCodeFromLabel(text){
-  const t=String(text||'').toLowerCase();
-  for(const c of CP_LOCATIONS){ if(new RegExp('\\b'+c.toLowerCase()+'\\b').test(t)) return c; }
-  return '';
-}
-// Region → District unit sub-menu inside the Checkpoint Units accordion.
-// Only rendered for a session that may read the checkpoint module, so a
-// Fingerprint / Airport officer never sees checkpoint postings at all.
-function renderCheckpointNav(){
-  const wrap=document.getElementById('cpNavRegions');
-  const countEl=document.getElementById('cpNavCount');
-  if(!wrap) return;
-  const allowed=!!sessionUser && hasModule('checkpoints');
-  if(!allowed){
-    wrap.innerHTML=''; wrap.dataset.navSig='';
-    if(countEl){countEl.hidden=true;countEl.textContent=''}
-    return;
-  }
-  const units=checkpointUnitCatalog();
-  if(countEl){
-    countEl.textContent=units.length?String(units.length):'';
-    countEl.hidden=!units.length;
-    countEl.title=units.length+' checkpoint unit'+(units.length===1?'':'s')+' in the register';
-  }
-  if(!units.length){ wrap.innerHTML=''; wrap.dataset.navSig=''; return; }
-  // Repaint only when the catalogue changed; a plain navigation just refreshes
-  // which unit is highlighted (keeps the sub-menu from losing its scroll).
-  const sig=JSON.stringify(units.map(u=>[u.label,u.region,u.district,u.code]));
-  if(wrap.dataset.navSig===sig){ markCheckpointNavCurrent(); return; }
-  wrap.dataset.navSig=sig;
+// The nested Region → District → unit structure the sidebar paints.
+function unitNavTree(type){
+  const units=unitNavCatalog(type);
   const regions=new Map();
   units.forEach(u=>{
-    const region=u.region||'Assigned locations';
-    if(!regions.has(region)) regions.set(region,[]);
-    regions.get(region).push(u);
+    const region=u.region||NAV_NO_REGION;
+    const district=u.district||NAV_NO_DISTRICT;
+    if(!regions.has(region)) regions.set(region,new Map());
+    const districts=regions.get(region);
+    if(!districts.has(district)) districts.set(district,[]);
+    districts.get(district).push(u);
   });
-  const state=navRegionsState();
-  const order=Array.from(regions.keys()).sort((a,b)=>{
-    const ia=LOCATIONS.findIndex(l=>l.region===a), ib=LOCATIONS.findIndex(l=>l.region===b);
-    if(ia!==-1&&ib!==-1) return ia-ib;
-    if(ia!==-1) return -1;
-    if(ib!==-1) return 1;
-    return a.localeCompare(b);
-  });
-  wrap.innerHTML=order.map(region=>{
-    const list=regions.get(region).sort((a,b)=>a.label.localeCompare(b.label));
-    const open=state[region]===undefined ? false : !!state[region];
-    const id='cpNavRegion-'+String(region).toLowerCase().replace(/[^a-z0-9]+/g,'-');
-    return `<div class="nav-region${open?' open':''}" data-nav-region="${esc(region)}">
-      <button type="button" class="nav-region-toggle" data-region-toggle="${esc(region)}" aria-expanded="${open?'true':'false'}" aria-controls="${id}" title="${esc(region)} — ${list.length} unit${list.length===1?'':'s'}">
-        <i aria-hidden="true">⌖</i><span>${esc(shortUnitLabel(region,16))}</span><span class="nav-region-count">${list.length}</span><span class="nav-chev" aria-hidden="true">▾</span>
+  return Array.from(regions.entries())
+    .sort((a,b)=>compareRegion(a[0],b[0]))
+    .map(([region,districts])=>({
+      region,
+      units:Array.from(districts.values()).reduce((n,list)=>n+list.length,0),
+      districts:Array.from(districts.entries())
+        .sort((a,b)=>compareDistrict(region,a[0],b[0]))
+        .map(([district,list])=>({
+          district,
+          units:list.slice().sort((x,y)=>x.label.localeCompare(y.label))
+        }))
+    }));
+}
+// Open/closed state for the tree. Region keys are `type|region`, district keys
+// `type|region|district`; the legacy plain-region key is still honoured so a
+// browser that stored state before the tree grew a district level keeps it.
+function navRegionOpen(type,region){
+  const s=navRegionsState();
+  const key=type+'|'+region;
+  if(s[key]!==undefined) return !!s[key];
+  if(type==='checkpoint' && s[region]!==undefined) return !!s[region];
+  return false;
+}
+function setNavRegionOpen(type,region,open){
+  const s=navRegionsState();
+  s[type+'|'+region]=!!open;
+  saveNavRegionsState(s);
+}
+function navDistrictOpen(type,region,district){
+  const s=navRegionsState();
+  return !!s[type+'|'+region+'|'+district];
+}
+function setNavDistrictOpen(type,region,district,open){
+  const s=navRegionsState();
+  s[type+'|'+region+'|'+district]=!!open;
+  saveNavRegionsState(s);
+}
+function unitTreeMount(type){
+  return document.querySelector('.nav-region-list[data-nav-regions="'+type+'"]');
+}
+function unitTreeAllowed(type){
+  const spec=unitNavSpec(type);
+  if(!spec) return false;
+  if(!sessionUser) return false;
+  return hasModule(spec.module);
+}
+function navTreeId(type,region,district){
+  const slug=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  return 'navTree-'+slug(type)+'-'+slug(region)+(district?'-'+slug(district):'');
+}
+// Paint ONE unit type's tree. Only rendered for a session that may read that
+// module, so a Fingerprint officer never sees checkpoint postings (and vice
+// versa). Repainting is signature-guarded: a plain navigation only refreshes
+// which unit is highlighted, so the tree never loses its scroll position.
+function renderUnitNavTree(type){
+  const mount=unitTreeMount(type);
+  if(!mount) return;
+  if(!unitTreeAllowed(type)){
+    if(mount.innerHTML!==''){mount.innerHTML=''}
+    mount.dataset.navSig='';
+    return;
+  }
+  const tree=unitNavTree(type);
+  if(!tree.length){
+    if(mount.innerHTML!==''){mount.innerHTML=''}
+    mount.dataset.navSig='';
+    return;
+  }
+  const sig=JSON.stringify(tree.map(r=>[r.region,r.districts.map(d=>[d.district,d.units.map(u=>[u.label,u.code])])]));
+  if(mount.dataset.navSig===sig){ markUnitNavCurrent(); return; }
+  mount.dataset.navSig=sig;
+  mount.innerHTML=tree.map(region=>{
+    const regionOpen=navRegionOpen(type,region.region);
+    const regionId=navTreeId(type,region.region,'');
+    return `<div class="nav-region${regionOpen?' open':''}" data-nav-region="${esc(region.region)}" data-nav-unit-type="${esc(type)}">
+      <button type="button" class="nav-region-toggle" data-region-toggle="${esc(region.region)}" data-region-type="${esc(type)}" aria-expanded="${regionOpen?'true':'false'}" aria-controls="${regionId}" title="${esc(region.region)} — ${region.units} unit${region.units===1?'':'s'}">
+        <i aria-hidden="true">⌖</i><span>${esc(shortUnitLabel(region.region,16))}</span><span class="nav-region-count">${region.units}</span><span class="nav-chev" aria-hidden="true">▾</span>
       </button>
-      <div class="nav-region-body" id="${id}">
-      ${list.map(u=>`<button type="button" class="nav-unit" data-unit-label="${esc(u.label)}" data-unit-code="${esc(u.code)}" title="${esc(u.label)}${u.district?' · '+esc(u.district):''}${u.region?' · '+esc(u.region):''}"><i aria-hidden="true"></i><span class="nav-unit-short">${esc(shortUnitLabel(u.label))}</span>${unitMetaLabel(u)?`<span class="nav-unit-meta">${esc(shortUnitLabel(unitMetaLabel(u),11))}</span>`:''}</button>`).join('')}
+      <div class="nav-region-body" id="${regionId}">
+      ${region.districts.map(district=>{
+        const districtOpen=navDistrictOpen(type,region.region,district.district);
+        const districtId=navTreeId(type,region.region,district.district);
+        return `<div class="nav-district${districtOpen?' open':''}" data-nav-district="${esc(district.district)}" data-nav-region-parent="${esc(region.region)}" data-nav-unit-type="${esc(type)}">
+          <button type="button" class="nav-district-toggle" data-district-toggle="${esc(district.district)}" data-district-region="${esc(region.region)}" data-district-type="${esc(type)}" aria-expanded="${districtOpen?'true':'false'}" aria-controls="${districtId}" title="${esc(district.district)} — ${district.units.length} unit${district.units.length===1?'':'s'}">
+            <span class="nav-district-name">${esc(shortUnitLabel(district.district,15))}</span><span class="nav-region-count">${district.units.length}</span><span class="nav-chev" aria-hidden="true">▾</span>
+          </button>
+          <div class="nav-district-body" id="${districtId}">
+          ${district.units.map(u=>`<button type="button" class="nav-unit" data-unit-label="${esc(u.label)}" data-unit-code="${esc(u.code)}" data-unit-type="${esc(type)}" title="${esc(u.label)}${u.district?' · '+esc(u.district):''}${u.region?' · '+esc(u.region):''}"><i aria-hidden="true"></i><span class="nav-unit-short">${esc(shortUnitLabel(u.label))}</span>${unitMetaLabel(u)?`<span class="nav-unit-meta">${esc(shortUnitLabel(unitMetaLabel(u),11))}</span>`:''}</button>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
       </div>
     </div>`;
   }).join('');
-  wrap.querySelectorAll('.nav-region-toggle').forEach(btn=>{
-    btn.onclick=()=>toggleNavRegion(btn.dataset.regionToggle);
+  mount.querySelectorAll('.nav-region-toggle').forEach(btn=>{
+    btn.onclick=()=>toggleNavRegion(btn.dataset.regionToggle,btn.dataset.regionType);
   });
-  wrap.querySelectorAll('.nav-unit').forEach(btn=>{
-    btn.onclick=()=>openCheckpointUnit(btn.dataset.unitLabel||'', btn.dataset.unitCode||'');
+  mount.querySelectorAll('.nav-district-toggle').forEach(btn=>{
+    btn.onclick=()=>toggleNavDistrict(btn.dataset.districtToggle,btn.dataset.districtRegion,btn.dataset.districtType);
   });
-  markCheckpointNavCurrent();
+  mount.querySelectorAll('.nav-unit').forEach(btn=>{
+    btn.onclick=()=>openUnitNavUnit(btn.dataset.unitType,btn.dataset.unitLabel||'',btn.dataset.unitCode||'');
+  });
+  markUnitNavCurrent();
 }
-function toggleNavRegion(region){
-  const el=document.querySelector('.nav-region[data-nav-region="'+region.replace(/"/g,'\\"')+'"]');
+// Every unit type at once — called after a branch / checkpoint is created so a
+// new posting is in the rail before the operator's next click.
+function renderUnitNavTrees(){
+  NAV_UNIT_TREE_TYPES.forEach(spec=>{
+    try{ renderUnitNavTree(spec.type); }catch(_){ }
+  });
+  updateUnitDirectoryBadge();
+}
+// Back-compat alias: the checkpoint tree predates the generic renderer.
+function checkpointUnitCatalog(){ return unitNavCatalog('checkpoint'); }
+function renderCheckpointNav(){ renderUnitNavTree('checkpoint'); updateUnitDirectoryBadge(); }
+function toggleNavRegion(region,type){
+  const t=type||'checkpoint';
+  const el=Array.prototype.find.call(document.querySelectorAll('.nav-region'),
+    n=>n.dataset.navRegion===region && n.dataset.navUnitType===t);
   if(!el) return;
   const open=!el.classList.contains('open');
   el.classList.toggle('open',open);
-  const s=navRegionsState(); s[region]=open; saveNavRegionsState(s);
+  setNavRegionOpen(t,region,open);
   const btn=el.querySelector('.nav-region-toggle');
   if(btn) btn.setAttribute('aria-expanded',String(open));
-  if(open) el.scrollIntoView&&el.scrollIntoView({block:'nearest'});
+  if(open && el.scrollIntoView) el.scrollIntoView({block:'nearest'});
 }
-function markCheckpointNavCurrent(){
-  const wrap=document.getElementById('cpNavRegions');
-  if(!wrap) return;
-  const active=String(cpLocationFilter||'');
-  wrap.querySelectorAll('.nav-unit').forEach(b=>{
-    const label=b.dataset.unitLabel||'';
-    const code=b.dataset.unitCode||'';
-    const on=active && (code===active || label.toLowerCase()===active.toLowerCase());
-    b.classList.toggle('is-current',!!on);
-    b.setAttribute('aria-current',on?'true':'false');
+function toggleNavDistrict(district,region,type){
+  const t=type||'checkpoint';
+  const el=Array.prototype.find.call(document.querySelectorAll('.nav-district'),
+    n=>n.dataset.navDistrict===district && n.dataset.navRegionParent===region && n.dataset.navUnitType===t);
+  if(!el) return;
+  const open=!el.classList.contains('open');
+  el.classList.toggle('open',open);
+  setNavDistrictOpen(t,region,district,open);
+  const btn=el.querySelector('.nav-district-toggle');
+  if(btn) btn.setAttribute('aria-expanded',String(open));
+}
+// The unit a register is currently filtered to, per unit type.
+function activeUnitLabel(type){
+  if(type==='checkpoint'){
+    const scope=String(cpLocationFilter||'')||((sessionUser&&isCheckpointRole(sessionUser.role))?(sessionUser.location_scope||''):'');
+    return scope;
+  }
+  const spec=unitNavSpec(type);
+  const input=spec?document.getElementById(spec.search):null;
+  return input?String(input.value||'').trim():'';
+}
+function markUnitNavCurrent(){
+  const active={};
+  NAV_UNIT_TREE_TYPES.forEach(spec=>{ active[spec.type]=activeUnitLabel(spec.type).toLowerCase(); });
+  document.querySelectorAll('.nav-region-list .nav-unit').forEach(btn=>{
+    const type=btn.dataset.unitType||'';
+    const want=active[type]||'';
+    const label=String(btn.dataset.unitLabel||'').toLowerCase();
+    const code=String(btn.dataset.unitCode||'').toLowerCase();
+    const on=!!want && (label===want || (code && code===want));
+    btn.classList.toggle('is-current',on);
+    btn.setAttribute('aria-current',on?'true':'false');
   });
-  // Reveal (but never collapse) the region that owns the active unit.
-  const current=wrap.querySelector('.nav-unit.is-current');
-  if(current){
+  // Reveal (but never collapse) the region + district that own the active unit.
+  document.querySelectorAll('.nav-unit.is-current').forEach(current=>{
+    const type=current.dataset.unitType||'';
+    const district=current.closest('.nav-district');
     const region=current.closest('.nav-region');
+    if(district && !district.classList.contains('open')){
+      district.classList.add('open');
+      setNavDistrictOpen(type,district.dataset.navRegionParent||'',district.dataset.navDistrict||'',true);
+      const dbtn=district.querySelector('.nav-district-toggle');
+      if(dbtn) dbtn.setAttribute('aria-expanded','true');
+    }
     if(region && !region.classList.contains('open')){
       region.classList.add('open');
-      const name=region.dataset.navRegion||'';
-      const s=navRegionsState(); s[name]=true; saveNavRegionsState(s);
-      const btn=region.querySelector('.nav-region-toggle');
-      if(btn) btn.setAttribute('aria-expanded','true');
+      setNavRegionOpen(type,region.dataset.navRegion||'',true);
+      const rbtn=region.querySelector('.nav-region-toggle');
+      if(rbtn) rbtn.setAttribute('aria-expanded','true');
     }
-  }
+  });
+}
+// Open one unit from the tree. Checkpoints keep their dedicated behaviour
+// (location chips / register search, RBAC-scoped); every other unit focuses its
+// register on that posting through the page search box.
+function openUnitNavUnit(type,label,code){
+  if(type==='checkpoint'){ openCheckpointUnit(label,code); return; }
+  const spec=unitNavSpec(type);
+  if(!spec){ closeSidebar(); return; }
+  go(spec.page);
+  const input=document.getElementById(spec.search);
+  if(input) input.value=label;
+  renderUnitRegister(type);
+  markUnitNavCurrent();
+  closeSidebar();
+}
+function renderUnitRegister(type){
+  try{
+    if(type==='fingerprint') return renderFingerprintTable();
+    if(type==='airport') return renderAirportTable();
+    if(type==='crime') return renderCases();
+    if(type==='police_station') return renderStationsTable();
+    if(type==='checkpoint') return renderCheckpointPage();
+  }catch(_){ }
 }
 // Open the checkpoint register for one unit. Canonical South / East / West
 // units drive the existing location chips; a named checkpoint (a branch that
@@ -3474,16 +3853,16 @@ function openCheckpointUnit(label,code){
     if(locked) toast('Filtered within your posting', 'Showing records at '+checkpointLabelText(ownScope)+' that match this unit.');
   }
   renderCheckpointPage();
-  markCheckpointNavCurrent();
+  markUnitNavCurrent();
   closeSidebar();
 }
 
-// ---- Unit Directory (high-volume categories) --------------------------------
-// The Checkpoint Units category can hold dozens of postings. Rather than
-// letting long unit names flood the rail, its accordion opens a regional
-// sub-menu AND a "Unit Directory" surface with Region + District filters.
-// The directory is a read-only view: it lists only the unit types this
-// session may read (the same `data-modules` contract as the sidebar).
+// ---- Unit Directory (category-level utility) --------------------------------
+// High-volume unit categories can hold dozens of postings, so long unit names
+// never flood the rail. The Unit Directory is a single searchable surface for
+// EVERY unit the session may read, launched from the Operational Units category
+// (top level — no longer nested inside Checkpoint Units). It is read-only: it
+// lists only the unit types this session's modules allow.
 const UNIT_DIRECTORY_TYPES=[
   {type:'checkpoint',label:'Checkpoint Units',page:'checkpoints',module:'checkpoints',icon:'⊙'},
   {type:'fingerprint',label:'Fingerprint Units',page:'fingerprint',module:'fingerprint',icon:'⌁'},
@@ -3498,61 +3877,63 @@ function unitDirectoryTypes(){
     return hasModule(t.module);
   });
 }
+// `''` (All unit types) lists every permitted category; a specific value scopes
+// to one. Rows come from the same live catalogue the sidebar tree paints, so
+// the directory and the tree can never disagree.
 function unitDirectoryRows(){
   const typeEl=document.getElementById('udUnitType');
   const type=typeEl?typeEl.value:'';
-  const permitted=unitDirectoryTypes().map(t=>t.type);
+  const permitted=unitDirectoryTypes();
   const rows=[];
-  const seen=new Set();
-  const push=(row)=>{
-    if(!row || !row.label || !row.unit_type) return;
-    if(type && row.unit_type!==type) return;
-    if(permitted.indexOf(row.unit_type)===-1) return;
-    const key=row.unit_type+'|'+row.label.toLowerCase();
-    if(seen.has(key)) return;
-    seen.add(key);
-    rows.push(row);
-  };
-  // 1) the authoritative catalogue (/api/branches) — names, region, district
-  const branches=(branchCatalog && Array.isArray(branchCatalog.items)) ? branchCatalog.items : [];
-  branches.forEach(b=>{
-    if(!b || !b.unit_type) return;
-    push({id:b.id,label:b.name,region:b.region||'',district:b.district||'',
-          unit_type:b.unit_type,code:cpCodeFromLabel(b.name+' '+(b.region||''))});
+  permitted.forEach(spec=>{
+    if(type && spec.type!==type) return;
+    unitNavCatalog(spec.type).forEach(u=>{
+      rows.push({
+        id:u.branch_id||u.label,
+        label:u.label,
+        region:u.region===''?'':u.region,
+        district:u.district||'',
+        unit_type:spec.type,
+        code:u.code||''
+      });
+    });
   });
-  // 2) checkpoint postings that exist only in the register (location codes)
-  checkpointUnitCatalog().forEach(u=>push({
-    id:u.label,label:u.label,region:u.region==='Assigned locations'?'':u.region,
-    district:u.district,unit_type:'checkpoint',code:u.code
-  }));
-  // 3) the station register, so the directory is useful before /api/branches
-  //    answers (and for roles that only hold the stations module)
-  ((db && Array.isArray(db.stations)) ? db.stations : []).forEach(st=>push({
-    id:st.id,label:st.name,region:st.region||'',district:st.district||'',
-    unit_type:'police_station',code:''
-  }));
   return rows;
 }
 function unitDirectoryPageFor(type){
   const spec=UNIT_DIRECTORY_TYPES.find(t=>t.type===type);
   return (spec && spec.page)||'dashboard';
 }
+// Category-level badge: how many units this session can browse.
+function updateUnitDirectoryBadge(){
+  const el=document.getElementById('navUnitCount');
+  if(!el) return;
+  let total=0;
+  try{
+    unitDirectoryTypes().forEach(spec=>{ total+=unitNavCatalog(spec.type).length; });
+  }catch(_){ }
+  el.textContent=total?String(total):'';
+  el.hidden=!total;
+  el.title=total+' unit'+(total===1?'':'s')+' in the directory';
+}
 function openUnitDirectory(unitType){
   const dir=document.getElementById('unitDir');
   if(!dir) return;
   const types=unitDirectoryTypes();
   const typeEl=document.getElementById('udUnitType');
-  const wanted=unitType||'checkpoint';
-  if(types.length && !types.some(t=>t.type===wanted)){
+  const wanted=(unitType===undefined||unitType===null)?'':String(unitType);
+  let selected=wanted;
+  if(selected && types.length && !types.some(t=>t.type===selected)){
     // Requested category is outside this session's modules: fall back to the
-    // first permitted one instead of exposing another unit's postings.
-    unitType=types[0].type;
+    // all-types view instead of exposing another unit's postings.
+    selected='';
   }
   if(typeEl){
-    typeEl.innerHTML=types.map(t=>`<option value="${esc(t.type)}">${esc(t.label)}</option>`).join('')
-      + (types.length?'':'<option value="">No unit directories for your role</option>');
-    const select=types.some(t=>t.type===(unitType||wanted))?(unitType||wanted):(types[0]&&types[0].type);
-    if(select) typeEl.value=select;
+    typeEl.innerHTML=(types.length?'<option value="">All unit types</option>':'')
+      +types.map(t=>`<option value="${esc(t.type)}">${esc(t.label)}</option>`).join('')
+      +(types.length?'':'<option value="">No unit directories for your role</option>');
+    typeEl.value=selected;
+    if(typeEl.value!==selected) typeEl.value='';
   }
   populateUnitDirectoryFilters(true);
   renderUnitDirectory();
@@ -3626,8 +4007,7 @@ function renderUnitDirectory(){
     tr.onclick=()=>{
       const type=tr.dataset.udOpen, label=tr.dataset.udLabel||'';
       closeEntryModal('unitDir');
-      if(type==='checkpoint'){ openCheckpointUnit(label,''); return; }
-      go(unitDirectoryPageFor(type));
+      openUnitNavUnit(type,label,'');
     };
   });
 }
@@ -7368,7 +7748,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=c41f9d2b&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=a4f7c913&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -7495,7 +7875,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=c41f9d2b&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=a4f7c913&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -7751,9 +8131,10 @@ function renderAll(){
   if(document.getElementById('dashboard') && document.getElementById('dashboard').classList.contains('active')){
     paintActivity();
   }
-  // The checkpoint unit sub-menu is built from the register's location codes,
-  // so a newly recorded stop at a new checkpoint appears in the sidebar too.
-  try{ renderCheckpointNav(); }catch(_){ }
+  // The unit trees are built from the branch catalogue + the live registers,
+  // so a newly recorded stop / application at a new posting appears in the
+  // sidebar on the same paint.
+  try{ renderUnitNavTrees(); }catch(_){ }
   // Re-assert view-only mode after a full repaint (rows, drawers, tables).
   hardenReadOnlyDom(document);
 }
@@ -7777,7 +8158,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=c41f9d2b&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=a4f7c913&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -8304,9 +8685,9 @@ async function syncServer(){
     if(dash) db.dashboard = dash;
     if(branches&&Array.isArray(branches.items)){
       branchCatalog={loaded:true,items:branches.items,regions:branches.regions||[],unit_types:branches.unit_types||[]};
-      // The sidebar unit sub-menu + Unit Directory read this catalogue: repaint
+      // The sidebar unit trees + Unit Directory read this catalogue: repaint
       // them as soon as the authoritative branch list arrives.
-      try{ renderCheckpointNav(); }catch(_){ }
+      try{ renderUnitNavTrees(); }catch(_){ }
       if(document.getElementById('unitDir') && document.getElementById('unitDir').classList.contains('open')){
         try{ populateUnitDirectoryFilters(true); renderUnitDirectory(); }catch(_){ }
       }
@@ -8808,11 +9189,11 @@ function applyNavForRole(){
     const toggle = g.querySelector('.nav-group-toggle');
     if(toggle) toggle.style.display = visible ? '' : 'none';
   });
-  // The Checkpoint Units accordion carries a scalable region → district
-  // sub-menu and a Unit Directory launcher instead of one entry per posting.
-  // It is (re)painted from the branch catalogue + register after the module
-  // pass, and emptied for a session that may not read the checkpoint module.
-  try{ renderCheckpointNav(); }catch(_){ }
+  // Every operational unit accordion carries a live Region → District → unit
+  // tree instead of one flat entry per posting. The trees are (re)painted from
+  // the branch catalogue + live registers after the module pass, and each one
+  // stays empty for a session that may not read that unit's module.
+  try{ renderUnitNavTrees(); }catch(_){ }
   // A whole CATEGORY disappears when every entry inside it is hidden — e.g.
   // Administration for any non-admin, Operational Units for a pure HQ role.
   // The heading is removed with the body, never left standing empty.

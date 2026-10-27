@@ -95,8 +95,12 @@ try {
     'the View drawer is not inside the SystemAdmin-only write block');
   // officerProfileModal joined the read-only allowlist in the officer-profile
   // release (the Commander may open their own profile; the API refuses writes).
-  assert.ok(/READ_ONLY_VIEW_MODALS=new Set\(\['pvModal', 'stViewModal', 'officerProfileModal'\]\)/.test(html),
+  assert.ok(/READ_ONLY_VIEW_MODALS=new Set\(\['pvModal', 'stViewModal', 'officerProfileModal'/.test(html),
     'the read-only Commander can open the View drawer (READ_ONLY_VIEW_MODALS)');
+  // The Unit Directory is a read surface too: a Commander may browse it, while
+  // every write entry point stays behind the RBAC gate.
+  assert.ok(/READ_ONLY_VIEW_MODALS=new Set\(\[[^\]]*'unitDir'[^\]]*\]\)/.test(html),
+    'the read-only Commander can open the Unit Directory (READ_ONLY_VIEW_MODALS)');
   console.log('ok: Actions column + View drawer + Edit modal markup and the non-admin hide rule');
 } catch (err) { console.error(err); process.exit(1); }
 

@@ -1,6 +1,6 @@
 # Testing the form, clearance and identity-profile improvements
 
-Branch: `arena/1c5d5979-sentinel-police-management`. Do not merge until UAT is approved.
+Branch: `arena/554b1a25-sentinel-police-management`. Do not merge until UAT is approved.
 Restart the backend and hard-refresh the browser when testing this branch.
 Use a test database and synthetic identities/documents only.
 
@@ -51,24 +51,45 @@ Personnel · Administration). For every role you test:
    officer. A category with no permitted entry never renders (no empty headings), Central Police
    Search is absent for Fingerprint / Airport / CID, and Administration appears only for a
    SystemAdmin. Nothing that *is* shown may lead to a forbidden page (`go()` still redirects).
-3. **Scalable unit labels** — register a long checkpoint branch name under Branch Management
+3. **Dynamic unit trees** — every operational accordion (*Fingerprint Units*, *Crime Units*,
+   *Airport Control*, *Checkpoint Units*) shows the same three levels: **Region → District →
+   unit**. Expand *Operational Units → Checkpoint Units* and confirm e.g. `Sool → Laascaanood →
+   Lasanod Central` and `Sool → Xudun → Yagoori`; each level carries a count and its own chevron.
+   Regions/districts start collapsed and their state survives a reload
+   (`sentinelNavRegions`, keys `type|region` and `type|region|district`). Clicking a unit opens its
+   register filtered to that posting (the page search box for fingerprint/airport/crime, the
+   location chips for a canonical `South`/`East`/`West` checkpoint) and the unit is highlighted.
+4. **Live updates (no reload)** — in **Branch Management** add a branch (e.g. `Dhahar Branch ·
+   Sanaag · Dhahar`, any unit type) and save; the matching tree must show the new region/district/
+   unit at once. Record a checkpoint stop at a brand-new location from **Checkpoint Unit → Add
+   screening**; the checkpoint tree must list it immediately under its district. Nothing that
+   cannot be placed may disappear — it lands under *Unassigned region* / *Unassigned district*.
+5. **Scalable unit labels** — register a long checkpoint branch name under Branch Management
    (e.g. `Buuhoodle Border Crossing Checkpoint · East Togdheer · Buuhoodle`), then open the
    sidebar: the rail shows a short, single-line label, the tooltip shows the full name, and no
    label wraps or clips the chevron/count.
-4. **Checkpoint sub-menu** — expand *Operational Units → Checkpoint Units*: postings are grouped
-   by region, each region expands to its units (district shown at the end of the row), and the
-   region toggle survives a reload.
-5. **Unit Directory** — open *Unit Directory* from the checkpoint accordion. Filter by Unit type,
-   Region, District and free text; the empty state must explain a dead end. A Checkpoint officer
-   only sees unit types their modules allow. Clicking a row opens that unit's register; a
-   station-scoped officer stays locked to their own posting (toast explains it).
-6. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
+6. **Auto-locked branch selectors** — sign in as a posted **Checkpoint officer** (e.g. `cp.south`,
+   posting `Lasanod Central Checkpoint · Laascaanood · Sool`): open *Checkpoint Unit → Add
+   screening* and confirm **Branch** is pre-selected, **disabled**, and carries the 🔒 note with the
+   posting; the checkpoint location selector is fixed to the assigned area too. Repeat for a
+   Fingerprint / Airport / CID officer in their own intake modal. Sign in as a **SystemAdmin**: every
+   selector is editable and unlocked. Post an officer to an unregistered branch: the field stays
+   editable and the note asks an administrator to register it (a fabricated branch can never be
+   saved); after registering it, the field locks itself.
+7. **Unit Directory** — *Unit Directory* is now a **category-level utility at the top of
+   Operational Units** (no longer inside the Checkpoint Units accordion). Filter by Unit type
+   (*All unit types* by default), Region, District and free text; the empty state must explain a
+   dead end. A Checkpoint officer only sees unit types their modules allow. Clicking a row opens
+   that unit's register; a station-scoped officer stays locked to their own posting (toast
+   explains it), and the directory closes.
+8. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
    control appears in it.
-7. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
-   (`sentinel-sidebar-nav-1-c41f9d2b`); a mismatch means a cached tab.
+9. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
+   (`sentinel-dynamic-nav-1-a4f7c913`); a mismatch means a cached tab.
 
 `python backend/server.py --ui-check` must exit 0 — it now also asserts the four category
-markers, the checkpoint sub-menu mount, the short-label helper and the Unit Directory modal.
+markers, all four dynamic tree mounts, the tree/district/catalogue renderers, the branch-lock
+helpers, the short-label helper and the Unit Directory modal.
 
 ## Officer UAT checklist
 

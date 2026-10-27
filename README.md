@@ -209,11 +209,12 @@ it, and the narrow mobile rail keeps the same hierarchy.
 | **COMMAND CENTER** | *(plain entry)* | **Dashboard** (`dashboard`) |
 | | **Search & Intelligence** | *Central Person Search* (`people`), *Central Police Search* (`policesearch` — one cascading Region → District → Village/Town filter across the officers, stations and cars registers plus free-text search; not granted to the Airport Control or CID Criminal Unit roles) |
 | | **HQ Command** | *Global Executive Dashboard* (`executive`), *Stations Oversight & Regional Data* (`oversight`) |
-| **OPERATIONAL UNITS** | **Fingerprint Units** | *Fingerprint Unit* (`fingerprint`) |
+| **OPERATIONAL UNITS** | *(category utility)* | **Unit Directory** — one searchable directory for every unit the session may read (not a page; see below) |
+| | **Fingerprint Units** | *Fingerprint Unit* (`fingerprint`) + its dynamic Region → District → branch tree |
 | | **Crime Units** | *Crime Unit* (`cid`) |
 | | **Airport Control** | *Airport Unit* (`airport`) |
-| | **Checkpoint Units** | *Unit Directory* launcher + *Checkpoint Unit* (`checkpoints`) + the region → district unit sub-menu (see below) |
-| | **Stations & Registers** | *Police Stations* (`stations`), *Register Crime* (`crimes`) |
+| | **Checkpoint Units** | *Checkpoint Unit* (`checkpoints`) + its dynamic Region → District → checkpoint tree (see below) |
+| | **Stations & Registers** | *Police Stations* (`stations`) + its dynamic Region → District → station tree, *Register Crime* (`crimes`) |
 | **AGENCY & PERSONNEL** | **Police Personnel** | *Registration Office* (`officers`), *Conduct & Discipline* (`conduct`) |
 | | **Transport / Fleet** | *Vehicle Registry* (`cars`), *Vehicle Status & Tracking* (`vehiclestatus`, module `cars`) |
 | **ADMINISTRATION** | **System Administration** | *User Management* (`admin`, System Admin only), *Branch Management* (`branches`, module `admin`) |
@@ -231,27 +232,77 @@ category (or accordion) disappears when every entry inside it is hidden for the 
 e.g. a Checkpoint officer sees only *Command Center → Search & Intelligence* plus *Operational
 Units → Checkpoint Units*, and never an empty heading.
 
-#### Scalable unit lists (short labels + Unit Directory)
+#### Dynamic unit trees (Region → District → unit) + the Unit Directory
 
-Checkpoint postings are unbounded data (an admin can register any number of branches), so the
-sidebar never renders raw names:
+Operational postings are unbounded data — an administrator can register any number of branches and
+checkpoints — so the rail never renders a flat list of raw names. Every operational unit accordion
+(*Fingerprint Units* · *Crime Units* · *Airport Control* · *Checkpoint Units*) — and the
+*Police Stations* register — paints the **same live three-level tree**:
 
-- **Short labels** — `shortUnitLabel()` is the single place that decides what the rail shows: the
-  administrative suffix (*Branch* / *Checkpoint* / *Police Station* / *Outpost* …) is dropped and
-  the remainder is ellipsised to a fixed width (`NAV_UNIT_SHORT_MAX`), so a name such as
-  `Buuhoodle Border Crossing Checkpoint` reads `Buuhoodle Border C…` at 210 px. Every nav label is
-  a single non-wrapping line, and the **full name always survives in the tooltip** and in the
-  Unit Directory.
-- **Region → district sub-menu** — the *Checkpoint Units* accordion lists the postings from the
-  branch catalogue (`/api/branches`) plus any location code that exists only in the register,
-  grouped by region (gazetteer order) and collapsed per region; the region toggle persists its
-  state in `localStorage.sentinelNavRegions`.
-- **Unit Directory** — the accordion's *Unit Directory* button opens a read-only modal
-  (`#unitDir`) listing every unit of the categories the session may read, with **Region**,
-  **District**, **unit type** and free-text filters. Clicking a row opens that unit: a canonical
-  `South` / `East` / `West` posting drives the existing location chips, a named checkpoint scopes
-  the register through its search box. A station-scoped checkpoint officer keeps their RBAC posting
-  — a click can never widen the register beyond the unit they are assigned to (a toast explains it).
+```
+Fingerprint Units
+  Sanaag                    3
+    Ceerigaabo              1
+      Erigavo
+    Badhan                  1
+      Badhan
+Checkpoint Units
+  Sool                      2
+    Laascaanood             1
+      Lasanod Central
+    Xudun                   1
+      Yagoori
+```
+
+- **Live sources** — `unitNavCatalog(type)` merges the branch catalogue (`/api/branches`, via
+  `branchCatalog`) with the **live register** (`db.checkpoints` / `db.fingerprint` /
+  `db.airport` / `db.cases`) and, for checkpoints, the canonical `South` / `East` / `West` codes
+  from `/api/me`. A legacy row whose posting is not (yet) a registered branch still appears,
+  located through its `Name · District · Region` label.
+- **Immediate updates** — `renderUnitNavTrees()` runs on every nav paint, every `renderAll()`,
+  every server sync, after a branch is saved in **Branch Management** and after a checkpoint stop
+  is recorded, so a **new branch or checkpoint is in the sidebar before the next click** (no
+  reload). A row that cannot be placed is shown under *Unassigned region* / *Unassigned district*
+  instead of being dropped.
+- **Short labels** — `shortUnitLabel()` decides what the rail shows: the administrative suffix
+  (*Branch* / *Checkpoint* / *Police Station* / *Outpost* …) is dropped and the remainder is
+  ellipsised to a fixed width (`NAV_UNIT_SHORT_MAX`), so `Buuhoodle Border Crossing Checkpoint`
+  reads `Buuhoodle Border C…` at 210 px. Every nav label is one non-wrapping line and the **full
+  name always survives in the tooltip** and in the Unit Directory.
+- **Persisted state** — region (`type|region`) and district (`type|region|district`) open/closed
+  state lives in `localStorage.sentinelNavRegions`; the region/district owning the active unit is
+  auto-revealed (never collapsed) by `markUnitNavCurrent()`.
+- **Clicking a unit** — `openUnitNavUnit()` opens that unit's register filtered to the posting
+  (the page's own search box for fingerprint / airport / crime; the location chips for a canonical
+  checkpoint). A station-scoped checkpoint officer keeps their RBAC posting — a click can never
+  widen the register beyond the unit they are assigned to (a toast explains it).
+
+**Unit Directory** is a **category-level utility** at the top of *Operational Units* (it is
+deliberately **not** nested inside the Checkpoint Units accordion any more). It opens the read-only
+`#unitDir` modal, which lists every unit of the categories the session may read with
+**unit type / Region / District / free-text** filters, and an *All unit types* view. Clicking a row
+opens that unit exactly like the tree does. It stays available to a read-only Commander session
+(a read surface — no write control is rendered inside it).
+
+#### Auto-locked branch selectors for posted officers
+
+Record-creation modals carry a branch selector (`fpBranch`, `airBranch`, `crmBranch`, `stBranch`,
+`cpBranch`). `refreshBranchSelect()` ends with `applyBranchLock()`:
+
+- **Posted officer** — when the session's posting (`users.branch`, or `users.location_scope` for
+  checkpoint postings) resolves to a branch of the unit being recorded (`branchLockFor()` matches
+  the exact name, then a prefix/containment match, then a canonical checkpoint area), the selector
+  is **pre-selected and disabled**, with an inline note naming the locked posting. The record can
+  therefore not be filed under another branch by accident or by editing the form.
+- **System Administrator** — `sessionVisibility.is_admin` / `can_manage_records` (or the
+  `SystemAdmin` / HQ roles) are never locked, so an administrator can pick any branch, and the
+  checkpoint location selector stays editable too.
+- **Unknown posting** — if the officer's posting is not registered for that unit, the field is left
+  editable (a fabricated `branch_id` could never be saved) and the officer is told to ask an
+  administrator to register the branch — after which the field locks itself.
+- This is a **form-level guard only**: no API contract, RBAC gate or database schema changed. The
+  server continues to validate every write exactly as before.
+
 ### Regional location schema (Sool · Sanaag · East Togdheer)
 
 Registration modules share one location hierarchy — **Region → District → Village/Town** — defined once in the `LOCATIONS` constant in `index.html`. It is the single source of truth for every location control, so extending the gazetteer there is all that is needed to make a new district selectable everywhere.
