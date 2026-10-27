@@ -112,9 +112,12 @@ else
   echo "$HTML" | grep -q 'function openStationEdit(' \
     && ok "the Edit modal entry point is present" \
     || bad "the Edit modal is MISSING from the served page"
-  echo "$HTML" | grep -q '?v=0f8552e' \
-    && ok "static references carry ?v=0f8552e" \
-    || bad "static references are not version-stamped"
+  # The cache-busting token is derived from the build stamp itself, so this
+  # check keeps working after every release bump (sentinel-…-<asset version>).
+  ASSET_TOKEN="${LOCAL_STAMP##*-}"
+  echo "$HTML" | grep -q "?v=$ASSET_TOKEN" \
+    && ok "static references carry ?v=$ASSET_TOKEN" \
+    || bad "static references are not version-stamped (?v=$ASSET_TOKEN)"
 fi
 
 say

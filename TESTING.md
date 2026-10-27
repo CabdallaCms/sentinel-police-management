@@ -59,6 +59,7 @@ Personnel · Administration). For every role you test:
    (`sentinelNavRegions`, keys `type|region` and `type|region|district`). Clicking a unit opens its
    register filtered to that posting (the page search box for fingerprint/airport/crime, the
    location chips for a canonical `South`/`East`/`West` checkpoint) and the unit is highlighted.
+   The canonical areas appear under their own **Checkpoint areas** group.
 4. **Live updates (no reload)** — in **Branch Management** add a branch (e.g. `Dhahar Branch ·
    Sanaag · Dhahar`, any unit type) and save; the matching tree must show the new region/district/
    unit at once. Record a checkpoint stop at a brand-new location from **Checkpoint Unit → Add

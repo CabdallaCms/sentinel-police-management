@@ -262,8 +262,9 @@ Checkpoint Units
 - **Immediate updates** — `renderUnitNavTrees()` runs on every nav paint, every `renderAll()`,
   every server sync, after a branch is saved in **Branch Management** and after a checkpoint stop
   is recorded, so a **new branch or checkpoint is in the sidebar before the next click** (no
-  reload). A row that cannot be placed is shown under *Unassigned region* / *Unassigned district*
-  instead of being dropped.
+  reload). The canonical `South` / `East` / `West` areas (which have no gazetteer district of
+  their own) are grouped under *Checkpoint areas*, and a row that cannot be placed at all is shown
+  under *Unassigned region* / *Unassigned district* instead of being dropped.
 - **Short labels** — `shortUnitLabel()` decides what the rail shows: the administrative suffix
   (*Branch* / *Checkpoint* / *Police Station* / *Outpost* …) is dropped and the remainder is
   ellipsised to a fixed width (`NAV_UNIT_SHORT_MAX`), so `Buuhoodle Border Crossing Checkpoint`

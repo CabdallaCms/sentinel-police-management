@@ -187,8 +187,8 @@ try {
   // Checkpoint tree: Sool → Laascaanood / Xudun → the postings.
   const cpRegions = treeRegions('checkpoint');
   assert.deepEqual(cpRegions.map((r) => r.dataset.navRegion),
-    ['Sool', 'East Togdheer', 'Unassigned region'],
-    'Sool first (gazetteer order), then East Togdheer, then the canonical codes');
+    ['Sool', 'East Togdheer', 'Checkpoint areas'],
+    'Sool first (gazetteer order), then East Togdheer, then the canonical areas');
   const sool = cpRegions.find((r) => r.dataset.navRegion === 'Sool');
   assert.deepEqual([...sool.querySelectorAll('.nav-district')].map((d) => d.dataset.navDistrict),
     ['Laascaanood', 'Xudun']);
@@ -279,7 +279,7 @@ try {
   $('udUnitType').value = 'checkpoint';
   run(`populateUnitDirectoryFilters(true);renderUnitDirectory();`);
   assert.deepEqual(queryAll('#udRegion option').map((o) => o.value),
-    ['', 'East Togdheer', 'Sool'],
+    ['', 'Checkpoint areas', 'East Togdheer', 'Sool'],
     'the directory filter lists the regions that actually carry units');
   $('udRegion').value = 'Sool';
   run(`populateUnitDirectoryDistricts();renderUnitDirectory();`);

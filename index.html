@@ -3470,6 +3470,7 @@ const NAV_UNIT_TREE_TYPES=[
 ];
 const NAV_NO_REGION='Unassigned region';
 const NAV_NO_DISTRICT='Unassigned district';
+const NAV_CHECKPOINT_AREAS='Checkpoint areas';   // canonical South / East / West
 function unitNavSpec(type){
   return NAV_UNIT_TREE_TYPES.find(t=>t.type===type)||null;
 }
@@ -3547,8 +3548,12 @@ function registerUnitRows(type){
     (db&&Array.isArray(db.checkpoints)?db.checkpoints:[]).forEach(row=>{
       const raw=String(row.checkpoint_location||row.location_code||row.location||'').trim();
       const parsed=splitUnitBranchLabel(row.branch);
+      const canonical=cpCodeFromLabel(raw);
       const label=CP_LOCATIONS.indexOf(raw)!==-1?checkpointLabelText(raw):raw;
-      push(label, parsed.region, parsed.district, cpCodeFromLabel(raw));
+      // A register row stopped at a canonical area has no gazetteer region of
+      // its own: group it with the areas instead of "Unassigned region".
+      const region=parsed.region||(canonical?NAV_CHECKPOINT_AREAS:'');
+      push(label, region, parsed.district, canonical);
     });
   }else if(type==='fingerprint' && db&&Array.isArray(db.fingerprint)){
     db.fingerprint.forEach(x=>{const p=splitUnitBranchLabel(x.branch);push(p.name,p.region,p.district,'');});
@@ -3602,7 +3607,10 @@ function unitNavCatalog(type){
     const roster=(sessionRoster&&Array.isArray(sessionRoster.checkpoint_locations))?sessionRoster.checkpoint_locations:[];
     roster.forEach(code=>{
       if(covered.has(code)) return;
-      add({label:checkpointLabelText(code),code,source:'roster'});
+      // Canonical South / East / West are AREAS, not registered branches: they
+      // have no gazetteer district, so they get their own honest group instead
+      // of pretending to be an unplaced posting.
+      add({label:checkpointLabelText(code),region:NAV_CHECKPOINT_AREAS,code,source:'roster'});
     });
   }
   return Array.from(seen.values());
