@@ -130,10 +130,10 @@ UI and the API can never disagree:
   (`application.html`) carries the same rule: a read-only session gets no *Approve Application*
   button, a view-only note instead, and `approve()` never issues the request.
 - **Confirming which build is live (and never running a cached one).** `index.html` stamps
-  `<meta name="sentinel-ui-build" content="sentinel-officer-profile-5-3c8f1a76">` and shows *UI build …*
+  `<meta name="sentinel-ui-build" content="sentinel-checkpoint-audit-6-9a4c7f31">` and shows *UI build …*
   in the sidebar footer (`window.SENTINEL_UI_BUILD`). The stamp ends with the short commit the page
   was published from, which is also the `?v=` parameter on every static reference in the app
-  (`certificate.html?v=3c8f1a76&id=…`, `images/police_logo.png?v=3c8f1a76`) — bump `ASSET_VERSION`
+  (`certificate.html?v=9a4c7f31&id=…`, `images/police_logo.png?v=9a4c7f31`) — bump `ASSET_VERSION`
   *and* `UI_BUILD` in `backend/server.py` together with the `?v=` parameters in `index.html`,
   `application.html` and `certificate.html` (the station action suite asserts all of them agree).
   Served documents answer `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` +
@@ -192,7 +192,7 @@ Central Police Search). Now:
   read-only command role is not in force in that process (`RBAC self-test: PASS — module denylist in
   force for AirportControl, CIDUnit, read-only roles: chief_commander`).
 
-**Role normalization.** Every accepted Checkpoint-officer spelling (`CheckpointSouth` / `CheckpointEast` / `CheckpointWest`, `checkpoint_south`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, …) is normalized to the canonical role **`checkpoint_officer`** while the officer's `location_scope` (`South` / `East` / `West`) is preserved (and derived from the alias when not passed explicitly). `GET /api/dashboard` and `GET /api/checkpoint-events` return HTTP 200 for all of these roles — never 404/401 for a valid checkpoint officer — and the checkpoint query matches the location case-insensitively (`LOWER(location_code) = 'south' OR LOWER(checkpoint_location) LIKE '%south%'` and equivalent columns).
+**One Checkpoint Officer role.** There is a single assignable role, **`checkpoint_officer`**; *which* checkpoint an officer commands is data (`users.location_scope` + the composed `users.branch` label), assigned through the Region → District → Checkpoint cascade. The historical spellings (`CheckpointSouth` / `CheckpointEast` / `CheckpointWest`, `checkpoint_south`, `cp_south`, `cp.east`, `Checkpoint Officer (West)`, …) are still **accepted and normalised** to the unified role so an older client or an un-migrated row keeps working, and `migrate()` rewrites every stored compound role in place while preserving its scope. The compound roles are no longer in `ALL_ROLES`, so they can never be assigned again. `GET /api/dashboard` and `GET /api/checkpoint-events` return HTTP 200 for all of these roles — never 404/401 for a valid checkpoint officer — and the checkpoint query matches the location case-insensitively (`LOWER(location_code) = 'south' OR LOWER(checkpoint_location) LIKE '%south%'` and equivalent columns).
 
 **Checkpoint table freshness.** `submitCheckpoint()` prepends the new stop into `db.checkpoints` immediately so the table and the location badge update instantly (`South Checkpoint 0 → 1`), and `syncServer()` never overwrites `db.checkpoints` with `[]` from a transient/failed response — only a successful response with rows replaces the local cache.
 
@@ -800,7 +800,7 @@ cascade. The third selector changes shape with the role family:
 
 | Role family | Region | District | Third selector | Hidden field |
 |---|---|---|---|---|
-| Checkpoint (`CheckpointSouth/East/West`, `checkpoint_officer`, `cp_south`, …) | required | required | **Checkpoint** — only the *active* checkpoints of that district | Station / Branch / Unit |
+| Checkpoint (`checkpoint_officer`; legacy `CheckpointSouth/East/West`, `cp_south`, … normalise to it) | required | required | **Checkpoint** — only the *active* checkpoints of that district | Station / Branch / Unit |
 | Station / Unit (Fingerprint, Airport, CID, HR, Police Station / Branch units) | required | required | **Station / Branch / Unit** — the stations and branches registered in that district | Checkpoint |
 
 - Changing **Region** re-populates (and clears) **District**; changing **District** re-populates
@@ -849,3 +849,52 @@ Clearance approvals, signed-scan uploads, checkpoint screenings, officer / stati
 vehicle registrations and unit updates now call `refreshLiveMetrics()` right after the successful
 write: the executive KPIs and the activity feed repaint from `/api/dashboard` — no reload, no cache
 clear, no manual sync.
+
+## One Checkpoint Officer role & per-record audit history (testing branch)
+
+### A single, scalable checkpoint role
+
+`CheckpointSouth` / `CheckpointEast` / `CheckpointWest` are gone as roles. Every checkpoint
+officer now holds the one **`checkpoint_officer`** role, and *which* checkpoint they command is
+**data**:
+
+| Stored field | Example | Meaning |
+|---|---|---|
+| `users.role` | `checkpoint_officer` | the same role for every checkpoint officer |
+| `users.location_scope` | `South` / `Adhi Cadeeye Outpost` | the checkpoint (or district post) the officer is scoped to |
+| `users.branch` | `Adhi Cadeeye Outpost · Laascaanood · Sool` | the readable posting label |
+
+- **Assigning** — User Management → New / Edit Officer → role **Checkpoint Officer** switches the
+  third selector to **Checkpoint** (Region → District → the *active* checkpoints of that district)
+  and hides Station / Branch. Any other role does the reverse. Changing the region resets the
+  district, changing the district resets the posting, and the selection is stored exactly as above.
+- **Scaling** — adding a checkpoint is a data entry in the station/branch registry; it appears in
+  the cascade immediately and needs no new role, no code change and no migration.
+- **Compatibility (zero breaking changes)** — every historical spelling still normalises to the
+  unified role and keeps its area (`cp_south` → `checkpoint_officer` + `South`), `migrate()` rewrites
+  stored compound rows in place (`unify_checkpoint_roles()`), keeps an explicit
+  `location_scope`, and is idempotent. The compound roles were removed from `ALL_ROLES` only, so
+  they can never be assigned again — the API, sessions, RBAC gates, module sets and permissions are
+  unchanged.
+
+### Audit history on the record itself
+
+Every primary record view now carries an **Audit history** tab (Person Details, Police Registration)
+or section (**Police Stations → View**):
+
+- The full chronological log, newest first: identity creation, enrichment/updates, approval,
+  signed-scan upload, checkpoint screening, station registration / edit, account changes.
+- Each event shows the readable action (*Created*, *Updated*, *Uploaded*, *Approved*), the acting
+  officer, the role and the **badge chip** (`Badge #FP-102`, or `#Not recorded` when a row really
+  has none), the record the event belongs to, the details and the UTC timestamp.
+- `GET /api/persons/{person_id}/audit-history` gathers the identity’s events plus every linked unit
+  record the caller may read (clearance applications **and** their signed scans, airport movements,
+  checkpoint screenings inside the officer’s scope, CID suspect listings).
+- `GET /api/audit/entity/{entity}/{id}` serves any other record: `person`, `officer`,
+  `police_station`, `clearance_application`, `checkpoint_event`, `suspect_alert`, `vehicle`,
+  `conduct_action`, `user`, … Each entity kind declares the module that governs it, so a record’s
+  history can never show more than the register the viewer could already open
+  (`403 audit_scope_forbidden` otherwise, `404` for an unknown entity kind).
+- Both surfaces read the **same append-only `audit_events` rows** as the administrative register in
+  User Management, so the record history is always a subset of the admin trail — never a second log
+  that can drift.

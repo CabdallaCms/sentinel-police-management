@@ -202,14 +202,19 @@ try {
   assert.notEqual(unitField.style.display, 'none',
     'a Station / Unit role shows the Station / Branch / Unit field');
 
-  // Checkpoint role: the checkpoint selector is live, the station field hides.
-  $('nu-role').value = 'CheckpointSouth';
+  // Checkpoint role: ONE unified role, and it drives the cascade.
+  const roleValues = [...$('nu-role').options].map((o) => o.value);
+  assert.ok(roleValues.includes('checkpoint_officer'),
+    'the role picker offers the single unified Checkpoint Officer role');
+  assert.ok(!roleValues.some((r) => /^Checkpoint(South|East|West)$/.test(r)),
+    'the hardcoded CheckpointSouth / East / West roles are no longer assignable');
+  $('nu-role').value = 'checkpoint_officer';
   run("onUserLocationChange('nu','role')");
   await tick();
   assert.notEqual(checkpointField.style.display, 'none',
-    'a Checkpoint role shows the Checkpoint field');
+    'the Checkpoint Officer role shows the Checkpoint field');
   assert.equal(unitField.style.display, 'none',
-    'a Checkpoint role hides the Station / Branch field');
+    'a Checkpoint Officer role hides the Station / Branch field');
 
   // Region → District cascade.
   $('nu-region').value = 'Sool';
@@ -274,6 +279,18 @@ try {
     'a station from another district is never offered');
   assert.equal(checkpointField.style.display, 'none',
     'switching role back to Station / Unit hides the checkpoint field again');
+  // A legacy row stored as a compound role still resolves to the checkpoint
+  // family, and the Edit drawer shows it as the unified role — so the next save
+  // rewrites the stored value without the administrator noticing a change.
+  assert.equal(run("isCheckpointRole('CheckpointSouth')"), true,
+    'the legacy compound role keeps resolving to the checkpoint family');
+  assert.equal(run("normalizeRole('CheckpointSouth')"), 'checkpoint_officer',
+    'the legacy compound role normalises to the unified role');
+  const legacyOptions = run("userRoleOptions('CheckpointSouth')");
+  assert.match(legacyOptions, /value="checkpoint_officer" selected/,
+    'the Edit drawer shows a legacy row as the unified Checkpoint Officer role');
+  assert.ok(!/value="CheckpointSouth"/.test(legacyOptions),
+    'a legacy row can no longer be saved back into a compound role');
   console.log('ok 3: role-driven Region → District → (Checkpoint | Station / Branch / Unit) cascade');
 } catch (err) { console.error(err); process.exit(1); }
 

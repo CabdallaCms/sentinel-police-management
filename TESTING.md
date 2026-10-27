@@ -13,6 +13,8 @@ npm install --no-save --package-lock=false jsdom@26
 
 node backend/test_form_improvements.mjs
 node backend/test_shell_workflow_integration.mjs
+node backend/test_record_audit_ui.mjs
+.venv/bin/python backend/test_checkpoint_roles_audit.py
 PYTHON="$PWD/.venv/bin/python" node backend/test_frontend_session.mjs
 PYTHON="$PWD/.venv/bin/python" node backend/test_station_integration.mjs
 node backend/test_station_frontend.mjs
@@ -227,11 +229,11 @@ tests instead of silently leaving a stale page on screen.
 
 ### What changed
 - **Versioned static references.** Every static reference the app ships carries `?v=<ASSET_VERSION>`:
-  `index.html` → `certificate.html?v=3c8f1a76&id=…` and `application.html?v=3c8f1a76&id=…`,
-  `application.html` / `certificate.html` → `index.html?v=3c8f1a76`, the brand emblem →
-  `images/police_logo.png?v=3c8f1a76`, and `certificate.html` → `application.html?v=3c8f1a76&id=…`.
+  `index.html` → `certificate.html?v=9a4c7f31&id=…` and `application.html?v=9a4c7f31&id=…`,
+  `application.html` / `certificate.html` → `index.html?v=9a4c7f31`, the brand emblem →
+  `images/police_logo.png?v=9a4c7f31`, and `certificate.html` → `application.html?v=9a4c7f31&id=…`.
   `ASSET_VERSION` lives at the top of `backend/server.py` (currently the short commit the feature
-  shipped from, `3c8f1a76`).
+  shipped from, `9a4c7f31`).
 - **`Cache-Control: no-store` on the documents themselves.** The UI ships as self-contained
   documents (inline `<script>`/`<style>`, no external bundle), so the HTML *is* the asset that must
   never be replayed. `send_file()` now answers documents, uploads and un-versioned assets with
@@ -239,7 +241,7 @@ tests instead of silently leaving a stale page on screen.
   `Pragma: no-cache`; a `?v=`-stamped asset alone gets
   `Cache-Control: public, max-age=31536000, immutable`.
 - **A stamp that tells you *which* page you have.** `<meta name="sentinel-ui-build">` is now
-  `sentinel-officer-profile-5-3c8f1a76` (revision **and** the short commit) and is shown as *UI build …*
+  `sentinel-checkpoint-audit-6-9a4c7f31` (revision **and** the short commit) and is shown as *UI build …*
   in the sidebar footer (`window.SENTINEL_UI_BUILD`). `GET /api/health` reports `ui_build` — read
   from the `index.html` on disk on every call, not from a constant — plus `asset_version` and
   `static_cache`, so the footer can be compared with what the server is handing out: *footer ≠
@@ -263,14 +265,14 @@ node backend/test_frontend_session.mjs             # pins the stamp shape + that
 ### Officer UAT checklist
 1. Sign in as `admin`, open **Police Stations → Registered stations**: the **Actions** column with
    **View**/**Edit** is present immediately on a normal reload (`Ctrl+R`) — no hard refresh needed.
-2. Sidebar footer shows *UI build sentinel-officer-profile-5-3c8f1a76*; `curl -s localhost:8001/api/health`
-   reports the same `ui_build` and `asset_version: "3c8f1a76"`.
+2. Sidebar footer shows *UI build sentinel-checkpoint-audit-6-9a4c7f31*; `curl -s localhost:8001/api/health`
+   reports the same `ui_build` and `asset_version: "9a4c7f31"`.
 3. `curl -sI localhost:8001/ | grep -i cache-control` → `no-store, no-cache, must-revalidate, max-age=0`;
-   `curl -sI "localhost:8001/images/police_logo.png?v=3c8f1a76" | grep -i cache-control` →
+   `curl -sI "localhost:8001/images/police_logo.png?v=9a4c7f31" | grep -i cache-control` →
    `public, max-age=31536000, immutable`.
 4. Open **View → Certificate / Print** (devtools → Network): the created document URL carries
-   `?v=3c8f1a76`.
-5. Open the app with a stale tab (`/?v=3c8f1a76`) and confirm the Actions column still renders.
+   `?v=9a4c7f31`.
+5. Open the app with a stale tab (`/?v=9a4c7f31`) and confirm the Actions column still renders.
 
 ## Served-template identity: no stale page can reach UAT (2026-10-17)
 
@@ -319,7 +321,7 @@ that names the missing Actions column.
 2. `curl -s <preview-url>/api/health` → `ui_actions_published: true`, `ui_ok: true`, and
    `ui_sha256` equal to `sha256sum index.html`.
 3. Open the preview in a private window → sidebar footer *UI build
-   sentinel-officer-profile-5-3c8f1a76*; Police Stations → Registered stations → **Actions** column
+   sentinel-checkpoint-audit-6-9a4c7f31*; Police Stations → Registered stations → **Actions** column
    with **View** / **Edit** (admin).
 4. If any of 1–3 fails, the preview is attached to a process serving a different template: restart
    from this checkout (`bash scripts/restart-8001.sh`) or use the preview URL reported for the
@@ -362,12 +364,12 @@ cache, restart or file watcher exists to go stale. The resolved path is used for
 cd sentinel-police-management
 python backend/server.py --ui-check        # exit 0, "Actions column: yes"
 python backend/server.py                   # prints: ui template / ui source / ui checkout
-curl -s http://localhost:8001/ | grep -E 'sentinel-officer-profile-5-3c8f1a76|<th>Actions</th>'
+curl -s http://localhost:8001/ | grep -E 'sentinel-checkpoint-audit-6-9a4c7f31|<th>Actions</th>'
 ```
 Verified on a fresh clone: on `main` the server refuses to start and prints *“this checkout predates
 the station View/Edit feature — switch to the feature branch or merge it first”*; after
 `git checkout arena/70d3d88b-sentinel-police-management`, `GET /` returns both
-`sentinel-officer-profile-5-3c8f1a76` and `<th>Actions</th>` (and `openStationView` / `openStationEdit`).
+`sentinel-checkpoint-audit-6-9a4c7f31` and `<th>Actions</th>` (and `openStationView` / `openStationEdit`).
 
 ### Automated
 ```sh
@@ -522,7 +524,7 @@ endpoints, and the Commander's `403 read_only_role` firewall on all of them.
    picture replaces the initials. Change the password with a wrong current
    password (refused), then correctly (accepted); a second tab is signed out.
 2. Sign in as `admin` → **User management** → **New officer**: pick
-   *Checkpoint Officer (South)* — the **Checkpoint** field appears and
+   *Checkpoint Officer* — the **Checkpoint** field appears and
    *Station / Branch / Unit* disappears; choose **Sool → Laascaanood** and the
    checkpoint list holds only active Laascaanood checkpoints (e.g. *Adhi Cadeeye
    Outpost*); switch the role to *Fingerprint Unit* — the station/branch list
@@ -536,3 +538,51 @@ endpoints, and the Commander's `403 read_only_role` firewall on all of them.
 5. Sign in as `chief` (`ChangeMe123!`): the identity block still opens the
    profile, but it is marked view-only and all three endpoints answer
    `403 read_only_role`.
+
+## Checkpoint role unification & record audit history (testing branch)
+
+### Automated
+```sh
+.venv/bin/python backend/test_checkpoint_roles_audit.py   # real API + throwaway PostgreSQL
+node backend/test_record_audit_ui.mjs                     # jsdom: the Audit history tab
+```
+
+`test_checkpoint_roles_audit.py` proves: the three seeded checkpoint officers hold the one
+`checkpoint_officer` role with their area kept as data (`South` / `East` / `West`), the assignable
+role list offers Checkpoint Officer exactly once and no compound role, the cascade creates a
+district checkpoint officer (`Adhi Cadeeye Outpost · Laascaanood · Sool`, scope = the posting,
+`CP-` badge), every legacy spelling (`CheckpointSouth`, `checkpoint_east`, `cp.west`,
+`Checkpoint Officer (South)`) still creates a working unified officer with the right scope,
+`unify_checkpoint_roles()` rewrites hand-inserted compound rows in place (keeping an explicit
+`location_scope`) and is idempotent, and the migrated officer signs in with the unified role.
+It then drives a full record history: person creation, clearance application, signed-scan upload
+and approval all appear on `GET /api/persons/{id}/audit-history` with badge attribution, newest
+first, and are a subset of `GET /api/admin/audit`; a checkpoint officer sees only their own
+screening and never fingerprint events, another checkpoint area never sees it, and
+`GET /api/audit/entity/...` gates stations/officers/user accounts by module (403 for a checkpoint
+officer) with a 404 for an unknown entity kind.
+
+`test_record_audit_ui.mjs` proves, in the real page script: the Person Details modal carries the
+**Audit history** tab and panel, the timeline renders *Created / Updated / Uploaded / Approved* with
+the acting officer and badge chips (including the `#Not recorded` fallback), events are newest
+first, the counter matches, audit details are escaped (no markup injection), empty and refused logs
+are explicit, and the Station View drawer plus Police Registration records load the same trail from
+the generic endpoint.
+
+### Officer UAT checklist
+1. Sign in as `admin` → **User management** → **New officer**: the Role list has one
+   **Checkpoint Officer** entry (no “(South) / (East) / (West)” variants). Choose it, then
+   **Sool → Laascaanood → Adhi Cadeeye Outpost**: the officer is created and its row shows
+   *Checkpoint Officer · Adhi Cadeeye Outpost Checkpoint*.
+2. Open the officer’s **Edit** drawer: the role shows *Checkpoint Officer* and the posting is
+   pre-selected in the cascade. Switch the role to *Fingerprint Unit*: the Checkpoint field is
+   replaced by Station / Branch / Unit; switch back and the checkpoint list returns.
+3. Sign in as `cp.south` (`ChangeMe123!`): the header reads *Checkpoint Officer · South Checkpoint*
+   and the checkpoint register shows only South screenings.
+4. Open **Persons → any person → Audit history**: the tab lists the identity’s events newest first
+   with the acting officer and badge. As `fp.officer` open a person with a clearance application:
+   the creation, the signed-scan upload and the approval all appear on the same record.
+5. As `cp.south` open the same person: only the checkpoint screening you performed (and identity
+   events) appear — no fingerprint application events.
+6. **Police Stations → View** on a station: the *Audit history* section lists its registration and
+   edits with the administrator’s badge.

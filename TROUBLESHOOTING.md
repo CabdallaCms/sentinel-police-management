@@ -134,15 +134,15 @@ Still seeing the old menu, or a Register without the Actions/View/Edit controls,
 Check which page the browser actually has before blaming the server:
 
 1. The sidebar footer shows *UI build …* (`window.SENTINEL_UI_BUILD`). It must end with the short
-   commit of the deployment (`sentinel-officer-profile-5-3c8f1a76` for the officer-profile / audit build) —
+   commit of the deployment (`sentinel-checkpoint-audit-6-9a4c7f31` for the officer-profile / audit build) —
    anything else is a page that was rendered before the update.
 2. `GET /api/health` answers `ui_build` (read from the `index.html` on disk) and `asset_version`
-   (`3c8f1a76`); if those differ from the footer, the tab is cached, not the server.
+   (`9a4c7f31`); if those differ from the footer, the tab is cached, not the server.
 3. Reload. Pages are served with `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`,
    `Expires: 0` and `Pragma: no-cache`, and every static reference carries `?v=<asset_version>`
-   (`certificate.html?v=3c8f1a76&id=…`, `images/police_logo.png?v=3c8f1a76`), so an ordinary reload or
+   (`certificate.html?v=9a4c7f31&id=…`, `images/police_logo.png?v=9a4c7f31`), so an ordinary reload or
    hard refresh (Ctrl+Shift+R) always lands on the current build. A proxy that ignores the headers
-   can still be flushed by opening the page with a changed parameter (`/?v=3c8f1a76`).
+   can still be flushed by opening the page with a changed parameter (`/?v=9a4c7f31`).
 
 The backend itself logs its RBAC guarantees at start-up and answers 403 for every command-role
 write, so a stale *server* is never the explanation for an old *page*: the stamp tells you which of
@@ -162,7 +162,7 @@ It prints the checkout's stamp/sha256 next to the live server's `ui_build`/`ui_s
 fails loudly when they differ, e.g.:
 
 ```
-  FAIL stamp mismatch: live=sentinel-rbac-readonly-3 checkout=sentinel-officer-profile-5-3c8f1a76
+  FAIL stamp mismatch: live=sentinel-rbac-readonly-3 checkout=sentinel-checkpoint-audit-6-9a4c7f31
        => the running process serves a DIFFERENT index.html (an older deployment).
 ```
 
@@ -184,14 +184,14 @@ python backend/server.py --ui-check
 ```
 
 ```
-build    : sentinel-officer-profile-5-3c8f1a76
+build    : sentinel-checkpoint-audit-6-9a4c7f31
 candidates:
-  OK /home/you/sentinel-police-management/index.html  [sentinel-officer-profile-5-3c8f1a76]  (current working directory)
+  OK /home/you/sentinel-police-management/index.html  [sentinel-checkpoint-audit-6-9a4c7f31]  (current working directory)
 
 OK — GET / would serve:
 serving  : /home/you/sentinel-police-management/index.html
 via      : current working directory   (cwd /home/you/sentinel-police-management)
-stamp    : 'sentinel-officer-profile-5-3c8f1a76'   expected 'sentinel-officer-profile-5-3c8f1a76'
+stamp    : 'sentinel-checkpoint-audit-6-9a4c7f31'   expected 'sentinel-checkpoint-audit-6-9a4c7f31'
 checkout : branch arena/70d3d88b-sentinel-police-management @ 1a5be49
   Actions column: yes
 ```
@@ -240,7 +240,7 @@ the port:
 ```
 FATAL: the index.html this server would serve is not the current page; refusing to start.
        template : /srv/sentinel/index.html
-       stamp    : 'sentinel-rbac-readonly-3' (expected 'sentinel-officer-profile-5-3c8f1a76')
+       stamp    : 'sentinel-rbac-readonly-3' (expected 'sentinel-checkpoint-audit-6-9a4c7f31')
        - the page stamps itself 'sentinel-rbac-readonly-3' but this build is ...
        - the page is missing the served build's features: Actions column, ...
 ```

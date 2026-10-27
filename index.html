@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-officer-profile-5-3c8f1a76" />
+<meta name="sentinel-ui-build" content="sentinel-checkpoint-audit-6-9a4c7f31" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -233,6 +233,32 @@ body.modal-open{overflow:hidden}
 .person-detail-tab .tab-count{margin-left:5px}
 .person-detail-panel{display:none;min-width:0}
 .person-detail-panel.active{display:block;animation:detailPaneIn .16s ease}
+/* ---- per-record audit history (Audit history tab / station drawer) ---- */
+.pv-audit-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  border:1px solid var(--line);background:var(--surface-alt);border-radius:10px;padding:9px 12px;margin:0 0 12px}
+.pv-audit-head b{font-size:12.5px}
+.pv-audit-head .pv-audit-scope{font-size:11.5px;color:var(--muted);max-width:62ch;line-height:1.5}
+.audit-timeline{list-style:none;margin:0;padding:0 0 0 18px;position:relative}
+.audit-timeline::before{content:'';position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.audit-event{position:relative;padding:0 0 12px}
+.audit-event::before{content:'';position:absolute;left:-17px;top:13px;width:10px;height:10px;border-radius:50%;
+  background:var(--blue);box-shadow:0 0 0 3px #fff}
+.audit-event.tone-green::before{background:#12805c}
+.audit-event.tone-blue::before{background:var(--blue)}
+.audit-event.tone-gray::before{background:#8d99ab}
+.audit-event.tone-red::before{background:#b4232f}
+.audit-card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px 12px}
+.audit-card header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.audit-card header b{font-size:12.5px;color:var(--ink)}
+.audit-card .audit-when{margin-left:auto;font-size:11px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.audit-card .audit-actor{margin-top:5px;font-size:12px;color:var(--ink)}
+.audit-card .audit-actor small{color:var(--muted)}
+.audit-card .audit-meta{margin-top:4px;font-size:11.5px;color:var(--muted)}
+.audit-card .audit-detail{margin-top:6px;font-size:12px;color:var(--ink);line-height:1.5;word-break:break-word}
+.audit-empty{border:1px dashed var(--line);border-radius:10px;padding:16px;color:var(--muted);font-size:12.5px;text-align:center}
+body.dark-mode .audit-card,body[data-theme="dark"] .audit-card{background:#16202f;border-color:#334155}
+body.dark-mode .audit-event::before,body[data-theme="dark"] .audit-event::before{box-shadow:0 0 0 3px #16202f}
+body.dark-mode .audit-timeline::before,body[data-theme="dark"] .audit-timeline::before{background:#334155}
 @keyframes detailPaneIn{from{opacity:.65;transform:translateY(3px)}to{opacity:1;transform:none}}
 #personDetailModal .pv-grid.pd-bio-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .pd-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:2px 0 12px;flex-wrap:wrap}
@@ -5527,11 +5553,16 @@ function renderPersonDetail(record,mode){
       <button class="person-detail-tab active" type="button" role="tab" aria-selected="true" data-detail-tab="overview" onclick="setPersonDetailTab('overview')">Biographic Information</button>
       <button class="person-detail-tab" type="button" role="tab" aria-selected="false" data-detail-tab="documents" onclick="setPersonDetailTab('documents')">Documents &amp; Attachments <span class="badge gray tab-count" id="personDetailDocCount">…</span></button>
       <button class="person-detail-tab" type="button" role="tab" aria-selected="false" data-detail-tab="linked" onclick="setPersonDetailTab('linked')">${isOfficer?'Registration Details':'Linked Unit Records'}</button>
+      <button class="person-detail-tab" type="button" role="tab" aria-selected="false" data-detail-tab="audit" onclick="setPersonDetailTab('audit')">Audit history <span class="badge gray tab-count" id="personAuditCount">…</span></button>
     </div>
     <section class="person-detail-panel active" role="tabpanel" data-person-detail-panel="overview"><div class="pd-section-heading"><div><h4>Biographic Information</h4><p>${editing?'Update the profile fields your role may change, then save. Locked fields need an administrator.':'Complete identity details available in the '+(isOfficer?'Police Registration':'Central Person Registry')+' record.'}</p></div></div>${editing?personBioForm(record):personBioGrid(record,mode)}${!isOfficer&&unitsHtml?`<section class="pv-units"><small>Linked Units</small><div>${unitsHtml}</div></section>`:''}</section>
     <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="documents"><div class="pd-section-heading"><div><h4>Documents &amp; Attachments</h4><p>Readable previews of identity documents, passport scans, application files and supporting attachments. Open any item full size for inspection.</p></div></div><div id="personDocumentGrid"><div class="pd-doc-empty"><b>Loading documents…</b>Checking attachments available to your unit.</div></div><p class="pd-scope-note" id="personDocumentScopeNote"></p></section>
-    <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="linked"><div class="pd-section-heading"><div><h4>${isOfficer?'Police Registration details':'Linked Unit Records'}</h4><p>${isOfficer?'Service, assignment, guarantor and registration details.':'Branch provenance and source information for linked records within your access scope.'}</p></div></div><div id="pvLinkedRecords">${isOfficer?unitsBlock:'<p class="muted">Loading branch and source details…</p>'}</div></section>${foot}`;
+    <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="linked"><div class="pd-section-heading"><div><h4>${isOfficer?'Police Registration details':'Linked Unit Records'}</h4><p>${isOfficer?'Service, assignment, guarantor and registration details.':'Branch provenance and source information for linked records within your access scope.'}</p></div></div><div id="pvLinkedRecords">${isOfficer?unitsBlock:'<p class="muted">Loading branch and source details…</p>'}</div></section>
+    <section class="person-detail-panel" role="tabpanel" data-person-detail-panel="audit"><div class="pd-section-heading"><div><h4>Audit history</h4><p>Chronological event log for this record — creation, enrichment, updates, approvals and signed-scan uploads — with the acting officer's badge, alongside the administrative audit trail.</p></div><button class="btn ghost small" type="button" onclick="reloadRecordAuditHistory()">↻ Refresh</button></div><div id="personAuditTrail"><div class="audit-empty"><b>Loading audit history…</b></div></div></section>${foot}`;
   openEntryModal('personDetailModal');
+  // The Audit history tab loads with the record (one request) so switching to
+  // it never shows a spinner; the admin trail stays on User Management.
+  if(auditMount('personAuditTrail')) loadRecordAuditHistory(personId,isOfficer?'officer':'person');
   if(isOfficer){
     personDocumentRequest++;
     const docs=officerDocuments(record);
@@ -6773,7 +6804,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=3c8f1a76&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=9a4c7f31&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -6900,7 +6931,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=3c8f1a76&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=9a4c7f31&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -7179,7 +7210,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=3c8f1a76&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=9a4c7f31&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -7850,9 +7881,9 @@ const DEMO_ACCOUNTS = [
   {username:'fp.officer',  label:'Fingerprint Unit',       role:'FingerprintUnit',  detail:'Module only'},
   {username:'ap.officer',  label:'Airport Control',        role:'AirportControl',   detail:'Module only'},
   {username:'cid.officer', label:'CID Criminal Unit',      role:'CIDUnit',          detail:'Module only'},
-  {username:'cp.south',    label:'Checkpoint · South',     role:'CheckpointSouth',  detail:'South scope'},
-  {username:'cp.east',     label:'Checkpoint · East',      role:'CheckpointEast',   detail:'East scope'},
-  {username:'cp.west',     label:'Checkpoint · West',      role:'CheckpointWest',   detail:'West scope'},
+  {username:'cp.south',    label:'Checkpoint · South',     role:'checkpoint_officer', detail:'South Checkpoint'},
+  {username:'cp.east',     label:'Checkpoint · East',      role:'checkpoint_officer', detail:'East Checkpoint'},
+  {username:'cp.west',     label:'Checkpoint · West',      role:'checkpoint_officer', detail:'West Checkpoint'},
   {username:'chief',       label:'Chief Commander (HQ)',   role:'chief_commander',  detail:'Global oversight'},
 ];
 
@@ -8486,6 +8517,135 @@ async function submitOfficerPassword(){
     opNotice('opPasswordNotice','ok','Password changed. Every other signed-in browser for this account was signed out.');
     toast('Password changed','Your new password is active immediately');
   }catch(e){ opNotice('opPasswordNotice','error', e.message||'Could not change the password.'); }
+}
+
+// ===========================================================================
+// Per-record "Audit history" (Person Details, Police Registration and the
+// Station View drawer).
+// ===========================================================================
+// The administrative register below answers "what happened in the system?".
+// A record view asks the mirror question — "what happened to THIS record?" —
+// and both read the same append-only audit table, so a record can never show
+// a history that disagrees with the admin trail.
+const AUDIT_ACTION_TONE={CREATE:'green',UPSERT:'green',APPROVE:'green',UPDATE:'blue',
+  UPLOAD:'blue',REVIEW:'blue',ENRICH:'gray',DELETE:'red',LOGIN:'gray'};
+function auditTone(action){return AUDIT_ACTION_TONE[String(action||'').toUpperCase()]||'gray'}
+function auditActionLabel(e){
+  if(e.action_label) return e.action_label;
+  const map={CREATE:'Created',UPDATE:'Updated',UPSERT:'Registered',ENRICH:'Enriched',
+    APPROVE:'Approved',UPLOAD:'Uploaded',REVIEW:'Reviewed',DELETE:'Deleted',LOGIN:'Signed in'};
+  const key=String(e.action||'').toUpperCase();
+  return map[key]||(key.charAt(0)+key.slice(1).toLowerCase())||'Event';
+}
+function auditEventCard(e){
+  const a=e.actor||{};
+  const badge=e.badge_number||a.badge_number||'';
+  const badgeText=badge?(e.badge_label||a.badge_label||('Badge #'+badge)):'#Not recorded';
+  const actor=esc(a.display_name||a.username||'System');
+  const role=a.role_label?` · <small>${esc(a.role_label)}</small>`:'';
+  const who=a.username&&a.display_name?` <small class="muted">(${esc(a.username)})</small>`:'';
+  const scope=e.entity_label||e.entity||'';
+  const detail=String(e.details||'').trim();
+  return `<li class="audit-event tone-${auditTone(e.action)}">
+    <article class="audit-card">
+      <header>
+        <b>${esc(auditActionLabel(e))}</b>
+        <span class="badge ${auditTone(e.action)}">${esc(e.action||'EVENT')}</span>
+        <span class="audit-when" title="${esc(e.created_at||'')}">${esc(e.created_at||'Time not recorded')}</span>
+      </header>
+      <div class="audit-actor">${actor}${who}${role}
+        <span class="audit-badge badge ${badge?'blue':'gray'}">${esc(badgeText)}</span></div>
+      <div class="audit-meta">${esc(scope)}${e.entity_id?' · '+esc(e.entity_id):''}</div>
+      ${detail?`<div class="audit-detail">${esc(detail)}</div>`:''}
+    </article></li>`;
+}
+function renderAuditHistory(data,opts={}){
+  const items=(data&&Array.isArray(data.items))?data.items:[];
+  const label=opts.label||(data&&data.entity_label)||'this record';
+  const scope=(data&&data.scope_note)||'Every recorded event for this record, newest first.';
+  const head=`<div class="pv-audit-head">
+      <div><b>${items.length} recorded event${items.length===1?'':'s'}</b>
+        <div class="pv-audit-scope">${esc(scope)}</div></div>
+      <span class="badge gray">Append-only · badge attributed</span>
+    </div>`;
+  if(!items.length){
+    return head+`<div class="audit-empty"><b>No audit history yet</b><br>
+      Nothing has been recorded against ${esc(label)}. Creations, updates, approvals and
+      signed-scan uploads appear here the moment they happen.</div>`;
+  }
+  return head+`<ol class="audit-timeline">${items.map(auditEventCard).join('')}</ol>`;
+}
+function auditHistoryError(message){
+  return `<div class="audit-empty"><b>Audit history unavailable</b><br>${esc(message||'The audit trail could not be loaded.')}</div>`;
+}
+// The two record views share one loader; the ids live in window state so the
+// Refresh button never has to interpolate a record id into an inline handler.
+window._auditTarget={id:'',entity:'person'};
+let personAuditRequest=0;          // stale-response guard for the record view
+let stationAuditRequest=0;         // … and for the station drawer
+// The DOM can disappear between the request and its answer (modal closed,
+// document torn down); every await re-checks before touching it.
+function auditMount(id){
+  return (typeof document!=='undefined'&&document&&document.getElementById)
+    ? document.getElementById(id) : null;
+}
+function reloadRecordAuditHistory(){
+  const t=window._auditTarget||{};
+  if(!t.id) return;
+  loadRecordAuditHistory(t.id,t.entity);
+}
+async function loadRecordAuditHistory(id,entity){
+  const target=auditMount('personAuditTrail');
+  const count=auditMount('personAuditCount');
+  if(!target||!id) return;
+  window._auditTarget={id:String(id),entity:entity||'person'};
+  if(!serverOn){
+    if(count) count.textContent='!';
+    target.innerHTML=auditHistoryError('Audit history is read from the server. Reconnect to load the chronological log for this record.');
+    return;
+  }
+  const token=++personAuditRequest;
+  target.innerHTML='<div class="audit-empty"><b>Loading audit history…</b>Reading the append-only event log.</div>';
+  try{
+    const data=await api((entity==='person')
+      ? '/api/persons/'+encodeURIComponent(id)+'/audit-history'
+      : '/api/audit/entity/'+encodeURIComponent(entity||'person')+'/'+encodeURIComponent(id));
+    if(token!==personAuditRequest||window._auditTarget.id!==String(id)) return;
+    const mount=auditMount('personAuditTrail');
+    if(!mount) return;
+    mount.innerHTML=renderAuditHistory(data);
+    const badge=auditMount('personAuditCount');
+    if(badge) badge.textContent=String(data.total??0);
+  }catch(e){
+    if(token!==personAuditRequest) return;
+    const mount=auditMount('personAuditTrail');
+    if(!mount) return;
+    mount.innerHTML=auditHistoryError(e&&e.message);
+    const badge=auditMount('personAuditCount');
+    if(badge) badge.textContent='!';
+  }
+}
+// Station View drawer: the same trail, scoped to one station record.
+async function loadStationAuditHistory(id){
+  const target=auditMount('stationAuditTrail');
+  if(!target||!id) return;
+  if(!serverOn){
+    target.innerHTML=auditHistoryError('Audit history is read from the server. Reconnect to load it.');
+    return;
+  }
+  const token=++stationAuditRequest;
+  target.innerHTML='<div class="audit-empty"><b>Loading audit history…</b></div>';
+  try{
+    const data=await api('/api/audit/entity/police_station/'+encodeURIComponent(id));
+    if(token!==stationAuditRequest) return;
+    const mount=auditMount('stationAuditTrail');
+    if(!mount) return;
+    mount.innerHTML=renderAuditHistory(data,{label:'this station'});
+  }catch(e){
+    if(token!==stationAuditRequest) return;
+    const mount=auditMount('stationAuditTrail');
+    if(mount) mount.innerHTML=auditHistoryError(e&&e.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -9295,11 +9455,21 @@ function checkpointScopeFor(name){
   if(m) return m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
   return text || null;
 }
+// One assignable 'Checkpoint Officer' role: WHICH checkpoint an officer commands
+// is data (Region → District → Checkpoint), never a role. A legacy row still
+// stored as 'CheckpointSouth' is shown as the unified role and is rewritten by
+// the server migration on its next save.
 function userRoleOptions(selected){
-  const roles = ((sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','hr_officer','CheckpointSouth','CheckpointEast','CheckpointWest','chief_commander']).slice();
-  if(selected && !roles.includes(selected)) roles.unshift(selected);
+  const roles = ((sessionRoster && sessionRoster.roles) || ['SystemAdmin','FingerprintUnit','AirportControl','CIDUnit','hr_officer','checkpoint_officer','chief_commander']).slice();
+  const unified = r => normalizeRole(r)==='checkpoint_officer' ? 'checkpoint_officer' : r;
+  const list = [];
+  roles.map(unified).concat(selected?[unified(selected)]:[]).forEach(r=>{
+    if(r && !list.includes(r)) list.push(r);
+  });
+  // The historical compound roles are no longer assignable: they collapse into
+  // the single 'checkpoint_officer' option above.
   const labels = (sessionRoster && sessionRoster.role_labels) || {};
-  return roles.map(r=>`<option value="${esc(r)}" ${r===selected?'selected':''}>${esc(labels[r] || r)}</option>`).join('');
+  return list.map(r=>`<option value="${esc(r)}" ${unified(r)===unified(selected)?'selected':''}>${esc(labels[r] || (r==='checkpoint_officer'?'Checkpoint Officer':r))}</option>`).join('');
 }
 function userDrawerLocationFields(prefix){
   return `
@@ -10085,6 +10255,14 @@ function paintStationView(station,detail,local){
        ${branchMeta?`<small class="muted" style="text-transform:none;letter-spacing:0">${esc(branchMeta)}</small>`:''}</div>
    </section>`;
   const notesBlock=s.notes?`<section class="pv-units" style="margin-top:16px"><h3>Notes</h3><div class="pv-field full"><b>${esc(s.notes)}</b></div></section>`:'';
+  // Audit history for this station record (registrations, edits) — the same
+  // append-only log the admin trail reads, filled in right after the drawer
+  // opens so the officer never has to leave the record.
+  const auditBlock=`<section class="pv-units" style="margin-top:16px">
+     <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px">Audit history
+       <button class="btn ghost small" type="button" onclick="loadStationAuditHistory('${esc(stationActionId(s))}')">↻ Refresh</button></h3>
+     <div id="stationAuditTrail"><div class="audit-empty"><b>Loading audit history…</b></div></div>
+   </section>`;
   const canEdit=(detail&&typeof detail.can_edit!=='undefined')?detail.can_edit===true:(canEditStations()&&stationIsEditable(s));
   const denied=detail&&detail.edit_disabled_reason?`<small class="muted" style="display:block;margin-top:8px">${esc(detail.edit_disabled_reason)}</small>`:'';
   const foot=`<div class="pv-foot">
@@ -10101,7 +10279,10 @@ function paintStationView(station,detail,local){
      </div>
    </div>
    <div class="pv-grid">${grid.map(([k,v,cls])=>`<div class="pv-field${cls?' '+cls:''}"><small>${esc(k)}</small><b>${v}</b></div>`).join('')}</div>
-   ${deployBlock}${lineageBlock}${notesBlock}${foot}`;
+   ${deployBlock}${lineageBlock}${notesBlock}${auditBlock}${foot}`;
+  // Paint the trail only for a record that exists on the server; a locally
+  // synthesised row simply shows the empty-state copy.
+  if(serverOn && stationActionId(s)) loadStationAuditHistory(stationActionId(s));
 }
 // ---- Actions → Edit: the administration edit modal (SystemAdmin only) --------
 function fillStationEditForm(s){

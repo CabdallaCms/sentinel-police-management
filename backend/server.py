@@ -664,11 +664,11 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '3c8f1a76'
+ASSET_VERSION = '9a4c7f31'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-officer-profile-5-' + ASSET_VERSION
+UI_BUILD = 'sentinel-checkpoint-audit-6-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -706,6 +706,12 @@ UI_REQUIRED_MARKERS = (
     ('Station / branch posting selector', 'function userUnitOptions('),
     ('Audit trail with badge attribution', 'id="auditTrailTable"'),
     ('Instant metrics refresh after writes', 'async function refreshLiveMetrics('),
+    # ---- this release: one checkpoint role + record-level audit history ----
+    ('Single Checkpoint Officer role', "'checkpoint_officer','chief_commander'"),
+    ('Record audit history tab', 'data-detail-tab="audit"'),
+    ('Record audit history panel', 'data-person-detail-panel="audit"'),
+    ('Record audit history timeline', 'function renderAuditHistory('),
+    ('Station record audit history', 'function loadStationAuditHistory('),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
@@ -1276,9 +1282,27 @@ ROLE_HR = 'hr_officer'
 # The Police Officer Registration Office IS the HR Directorate — the
 # dashboard builders refer to it by this name.
 ROLE_REGISTRATION = ROLE_HR
+# ---------------------------------------------------------------------------
+# Checkpoint officers — ONE unified role.
+# ---------------------------------------------------------------------------
+# Every checkpoint officer now holds the single generic role
+# 'checkpoint_officer' (ROLE_CHECKPOINT_OFFICER below); WHICH checkpoint the
+# officer commands is data, not a role: it lives in users.location_scope and
+# in users.branch ('Adhi Cadeeye Outpost · Laascaanood · Sool'), assigned by
+# the Region → District → Checkpoint cascade in User Management.
+#
+# The three historical compound roles are kept ONLY as read-compatible
+# aliases so a database written by an older release keeps working unchanged:
+#   * they still resolve to ROLE_CHECKPOINT_OFFICER everywhere (alias table,
+#     module set, permissions, scope derivation), and
+#   * migrate() rewrites every stored row to the unified role while preserving
+#     its location_scope (unify_checkpoint_roles()).
+# They are no longer part of ALL_ROLES, so they can never be assigned again.
 ROLE_CHECKPOINT_SOUTH = 'CheckpointSouth'
 ROLE_CHECKPOINT_EAST = 'CheckpointEast'
 ROLE_CHECKPOINT_WEST = 'CheckpointWest'
+LEGACY_CHECKPOINT_ROLES = (ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST,
+                           ROLE_CHECKPOINT_WEST)
 # Chief Commander of Police Office (HQ / Command) — the COMMAND / "Commander"
 # role. A GLOBAL, cross-department MONITORING role: it READS every directorate
 # (CID, Personnel, Transport, Stations, Registers, executive analytics) and is
@@ -1425,9 +1449,13 @@ def normalize_role(role):
         return ROLE_CHECKPOINT_OFFICER
     return r
 
+# The assignable roles. 'checkpoint_officer' is the single checkpoint role —
+# the compound CheckpointSouth / CheckpointEast / CheckpointWest roles are
+# deliberately absent (see LEGACY_CHECKPOINT_ROLES): they still NORMALISE to
+# the unified role so an old client keeps working, but a caller can no longer
+# create or PATCH a user into one.
 ALL_ROLES = (ROLE_ADMIN, ROLE_FINGERPRINT, ROLE_AIRPORT, ROLE_CID, ROLE_HR,
-             ROLE_CHECKPOINT_SOUTH, ROLE_CHECKPOINT_EAST, ROLE_CHECKPOINT_WEST,
-             ROLE_CHIEF)
+             ROLE_CHECKPOINT_OFFICER, ROLE_CHIEF)
 
 # Spec-facing snake_case name for every canonical role. Surfaced by
 # /api/me as `role_alias` (and `spec_role`) so a client can key its UI off
@@ -1730,11 +1758,33 @@ ROLE_LABELS = {
     ROLE_AIRPORT: 'Airport Control Officer',
     ROLE_CID: 'CID Criminal Unit Officer',
     ROLE_HR: 'HR Directorate Officer',
-    ROLE_CHECKPOINT_SOUTH: 'Checkpoint Officer (South)',
-    ROLE_CHECKPOINT_EAST: 'Checkpoint Officer (East)',
-    ROLE_CHECKPOINT_WEST: 'Checkpoint Officer (West)',
+    # One label for every checkpoint officer, whichever checkpoint they
+    # command; the checkpoint itself is printed from the posting, not the role.
+    ROLE_CHECKPOINT_OFFICER: 'Checkpoint Officer',
     ROLE_CHIEF: 'Chief Commander (HQ / Command)',
+    # Legacy compound roles (a row that has not been migrated yet) render the
+    # same unified label — never 'Checkpoint Officer (South)'.
+    ROLE_CHECKPOINT_SOUTH: 'Checkpoint Officer',
+    ROLE_CHECKPOINT_EAST: 'Checkpoint Officer',
+    ROLE_CHECKPOINT_WEST: 'Checkpoint Officer',
 }
+
+
+def role_label_for(role):
+    """Human label for any stored/alias role spelling.
+
+    Resolves through the canonical unit role and the normalised alias so a
+    legacy row ('CheckpointSouth'), a spec spelling ('cp_south') and the
+    unified role all print the same label. Falls back to the raw value.
+    """
+    raw = str(role or '').strip()
+    if not raw:
+        return ''
+    for candidate in (raw, canonical_unit_role(raw), normalize_role(raw)):
+        label = ROLE_LABELS.get(candidate)
+        if label:
+            return label
+    return raw
 
 # Map a role to the operational modules it is allowed to use. Admins get
 # everything; unit users get their single module; checkpoint users only get
@@ -2270,6 +2320,36 @@ def backfill_badge_numbers(c):
     return len(rows)
 
 
+def unify_checkpoint_roles(c):
+    """Rewrite every legacy compound checkpoint role to the unified role.
+
+    The three hardcoded roles (`CheckpointSouth` / `CheckpointEast` /
+    `CheckpointWest`) are replaced by the single `checkpoint_officer` role;
+    WHICH checkpoint an officer commands is data (users.location_scope +
+    users.branch), not a role.
+
+    The rewrite is lossless: an existing `location_scope` always wins, and a
+    row that has none inherits the area implied by its old role name, so a
+    migrated officer keeps seeing exactly the same checkpoint events.
+    Idempotent — a second run finds no legacy rows and does nothing.
+
+    Returns the number of rows rewritten.
+    """
+    legacy = ", ".join("'" + r + "'" for r in LEGACY_CHECKPOINT_ROLES)
+    rows = c.execute(f'SELECT id, role, location_scope FROM users '
+                     f'WHERE role IN ({legacy})').fetchall()
+    rewritten = 0
+    for row in rows:
+        role = str(row['role'] or '')
+        stored = str(row['location_scope'] or '').strip()
+        derived = role[len('Checkpoint'):] if role.startswith('Checkpoint') else ''
+        scope = stored or derived or None
+        c.execute('UPDATE users SET role=%s, location_scope=%s WHERE id=%s',
+                  (ROLE_CHECKPOINT_OFFICER, scope, row['id']))
+        rewritten += 1
+    return rewritten
+
+
 # ---------------------------------------------------------------------------
 # Role-driven location assignment (User Management modal)
 # ---------------------------------------------------------------------------
@@ -2394,7 +2474,7 @@ def user_view(user):
         # officer, which keeps the 12-hour review lock fail-closed.
         'role_spec': spec_role,
         'spec_role': spec_role,
-        'role_label': ROLE_LABELS.get(raw_role, raw_role),
+        'role_label': role_label_for(raw_role),
         'branch': user.get('branch') or '',
         'location_scope': scope,
         'location': location,
@@ -2630,6 +2710,15 @@ def migrate(c):
             # Never block startup on the attribution backfill; the audit trail
             # keeps rendering its documented '#Not recorded' fallback.
             pass
+        try:
+            # Checkpoint roles were unified into 'checkpoint_officer': every
+            # pre-existing CheckpointSouth / CheckpointEast / CheckpointWest
+            # row is rewritten in place, keeping its checkpoint scope.
+            unify_checkpoint_roles(c)
+        except Exception:
+            # A legacy row that cannot be rewritten still resolves through
+            # CHECKPOINT_ROLE_ALIASES, so the officer keeps working.
+            pass
     # Branch catalogue evolution: Police Stations department was added
     # after the initial four-unit schema. Existing databases carry a CHECK
     # constraint limited to ('fingerprint','crime','checkpoint','airport');
@@ -2807,9 +2896,11 @@ def init_db():
             ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!', 'AP-201'),
             ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!', 'CID-301'),
             ('hr.officer',  'Officer S. Warsame',    ROLE_HR,              'HR Directorate',   None,                'ChangeMe123!', 'HR-401'),
-            ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_SOUTH,'Checkpoint South', 'South',             'ChangeMe123!', 'CP-501'),
-            ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_EAST, 'Checkpoint East',  'East',              'ChangeMe123!', 'CP-502'),
-            ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_WEST, 'Checkpoint West',  'West',              'ChangeMe123!', 'CP-503'),
+            # Checkpoint officers: ONE unified role. The checkpoint itself is
+            # the posting data (branch label + location_scope), never a role.
+            ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_OFFICER, 'South Checkpoint',  'South', 'ChangeMe123!', 'CP-501'),
+            ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_OFFICER, 'East Checkpoint',   'East',  'ChangeMe123!', 'CP-502'),
+            ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_OFFICER, 'West Checkpoint',   'West',  'ChangeMe123!', 'CP-503'),
             ('chief',       'Gen. C. Warsame',       ROLE_CHIEF,           'Police HQ / Command', None,             'ChangeMe123!', 'CMD-901'),
         ]
         for u, dn, role, branch, scope, pw, badge in seeds:
@@ -3051,8 +3142,48 @@ def audit(c, user, action, entity, entity_id, details=''):
               (user['id'], action, entity, entity_id, details))
 
 
+def audit_event_view(row):
+    """One audit row in the public shape (badge attribution + actor block).
+
+    Shared by the administrative audit register (`GET /api/admin/audit`) and the
+    per-record history (`GET /api/audit/entity/...`), so both surfaces print the
+    identical attribution ('Badge #FP-102', '#Not recorded' fallback).
+    """
+    badge = str(_val(row, 'actor_badge', '') or '').strip()
+    role = _val(row, 'actor_role', '') or ''
+    return {
+        'id': _val(row, 'id'),
+        'action': _val(row, 'action') or '',
+        'entity': _val(row, 'entity') or '',
+        'entity_id': _val(row, 'entity_id') or '',
+        'details': _val(row, 'details') or '',
+        'created_at': _val(row, 'created_at') or '',
+        'actor': {
+            'id': _val(row, 'actor_id'),
+            'username': _val(row, 'actor_username') or '',
+            'display_name': _val(row, 'actor_display_name') or '',
+            'role': role,
+            'role_label': role_label_for(role),
+            'badge_number': badge,
+            'badge_label': badge_label(badge),
+        },
+        # Flat copies so a template can print the attribution without walking
+        # into the nested object.
+        'badge_number': badge,
+        'badge_label': badge_label(badge),
+        'badge_recorded': bool(badge),
+    }
+
+
+AUDIT_SELECT_SQL = ('SELECT e.id, e.action, e.entity, e.entity_id, e.details, e.created_at, '
+                    'u.id AS actor_id, u.username AS actor_username, '
+                    'u.display_name AS actor_display_name, u.role AS actor_role, '
+                    'u.badge_number AS actor_badge '
+                    'FROM audit_events e LEFT JOIN users u ON u.id = e.user_id ')
+
+
 def audit_trail(c, limit=60, entity='', action=''):
-    """Audit register with badge attribution for every entry.
+    """Administrative audit register with badge attribution for every entry.
 
     Each row carries the actor's stored `badge_number` and the ready-to-print
     `badge_label` ('Badge #FP-102'). The LEFT JOIN is deliberate: an audit row
@@ -3069,42 +3200,204 @@ def audit_trail(c, limit=60, entity='', action=''):
         limit = max(1, min(200, int(limit)))
     except (TypeError, ValueError):
         limit = 60
-    rows = c.execute(f'''SELECT e.id, e.action, e.entity, e.entity_id, e.details, e.created_at,
-            u.id AS actor_id, u.username AS actor_username,
-            u.display_name AS actor_display_name, u.role AS actor_role,
-            u.badge_number AS actor_badge
-        FROM audit_events e LEFT JOIN users u ON u.id = e.user_id
-        {clause} ORDER BY e.id DESC LIMIT %s''', (*args, limit)).fetchall()
-    items = []
-    for r in rows:
-        badge = str(_val(r, 'actor_badge', '') or '').strip()
-        role = _val(r, 'actor_role', '') or ''
-        items.append({
-            'id': _val(r, 'id'),
-            'action': _val(r, 'action') or '',
-            'entity': _val(r, 'entity') or '',
-            'entity_id': _val(r, 'entity_id') or '',
-            'details': _val(r, 'details') or '',
-            'created_at': _val(r, 'created_at') or '',
-            'actor': {
-                'id': _val(r, 'actor_id'),
-                'username': _val(r, 'actor_username') or '',
-                'display_name': _val(r, 'actor_display_name') or '',
-                'role': role,
-                'role_label': ROLE_LABELS.get(canonical_unit_role(role), role) if role else '',
-                'badge_number': badge,
-                'badge_label': badge_label(badge),
-            },
-            # Flat copies so a template can print the attribution without
-            # walking into the nested object.
-            'badge_number': badge,
-            'badge_label': badge_label(badge),
-            'badge_recorded': bool(badge),
-        })
+    clause += ' ORDER BY e.id DESC LIMIT %s'
+    rows = c.execute(AUDIT_SELECT_SQL + clause, (*args, limit)).fetchall()
+    items = [audit_event_view(r) for r in rows]
     return {'items': items,
             'total': len(items),
             'badge_fallback': BADGE_NOT_RECORDED,
             'generated_at': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}
+
+
+# ---------------------------------------------------------------------------
+# Per-record audit history (the "Audit history" tab of every record view)
+# ---------------------------------------------------------------------------
+# The administrative register (GET /api/admin/audit) answers "what happened in
+# the system?". A record view needs the mirror question: "what happened to THIS
+# record?" — creations, updates, approvals and signed-scan uploads, newest
+# first, with the same badge attribution. Both read the one append-only
+# `audit_events` table, so there is no second log to keep in sync.
+#
+# Every entity kind declares which module a caller must hold to read its rows;
+# the related records pulled in for a person are themselves filtered by module
+# and by the officer's checkpoint scope, so a record view can never widen
+# access beyond the register the viewer could already open.
+AUDIT_ENTITY_MODULES = {
+    'person': None,                      # any signed-in reader of the profile
+    'clearance_application': 'fingerprint',
+    'clearance_signed_document': 'fingerprint',
+    'airport_record': 'airport',
+    'checkpoint_event': 'checkpoints',
+    'suspect_alert': 'cid',
+    'crime_case': 'crimes',
+    'officer': 'officers',
+    'officer_promotion': 'officers',
+    'officer_discipline': 'officers',
+    'conduct_action': 'conduct',
+    'police_station': 'stations',
+    'vehicle': 'cars',
+    'police_branch': 'admin',
+    'user': 'admin',
+    'user_profile': 'admin',
+    'user_avatar': 'admin',
+    'user_password': 'admin',
+}
+AUDIT_ENTITY_LABELS = {
+    'person': 'Central Person Registry',
+    'clearance_application': 'Fingerprint clearance application',
+    'clearance_signed_document': 'Signed application scan',
+    'airport_record': 'Airport movement record',
+    'checkpoint_event': 'Checkpoint screening',
+    'suspect_alert': 'CID suspect listing',
+    'crime_case': 'CID case',
+    'officer': 'Police Registration record',
+    'officer_promotion': 'Promotion nomination',
+    'officer_discipline': 'Disciplinary action',
+    'conduct_action': 'Conduct file',
+    'police_station': 'Police station',
+    'vehicle': 'Vehicle register',
+    'police_branch': 'Branch catalogue',
+    'user': 'User account',
+    'user_profile': 'Officer profile',
+    'user_avatar': 'Officer profile picture',
+    'user_password': 'Officer password',
+}
+
+
+def audit_action_label(action):
+    """Readable verb for an audit action ('Uploaded', 'Approved', …)."""
+    return {'CREATE': 'Created', 'UPDATE': 'Updated', 'UPSERT': 'Registered',
+            'ENRICH': 'Enriched', 'APPROVE': 'Approved', 'UPLOAD': 'Uploaded',
+            'REVIEW': 'Reviewed', 'DELETE': 'Deleted', 'LOGIN': 'Signed in',
+            }.get(str(action or '').upper(), str(action or '').title() or 'Event')
+
+
+def audit_event_view_enriched(row):
+    """audit_event_view() plus the reader-facing labels used by record views."""
+    item = audit_event_view(row)
+    item['action_label'] = audit_action_label(item['action'])
+    item['entity_label'] = AUDIT_ENTITY_LABELS.get(item['entity'], item['entity'])
+    return item
+
+
+def can_read_audit_entity(user, entity):
+    """May this caller read the audit rows of `entity`?"""
+    module = AUDIT_ENTITY_MODULES.get(entity, 'admin')
+    if module is None:
+        return True
+    return module in user_module_set(user)
+
+
+def audit_rows_for_pairs(c, pairs, limit=200):
+    """Audit rows for a set of (entity, entity_id) pairs, newest first."""
+    pairs = [(str(e), str(i)) for e, i in pairs if str(i or '').strip()]
+    if not pairs:
+        return []
+    try:
+        limit = max(1, min(500, int(limit)))
+    except (TypeError, ValueError):
+        limit = 200
+    clause = ' WHERE ' + ' OR '.join(
+        '(e.entity=%s AND e.entity_id=%s)' for _ in pairs)
+    args = [value for pair in pairs for value in pair]
+    clause += ' ORDER BY e.id DESC LIMIT %s'
+    return c.execute(AUDIT_SELECT_SQL + clause, (*args, limit)).fetchall()
+
+
+def person_audit_history(c, person, user, limit=120):
+    """Full chronological event log for one person, newest first.
+
+    Collects the person's own events plus the events of every unit record the
+    caller may read that belongs to them: clearance applications and their
+    signed scans, airport movements, checkpoint screenings (location-scoped)
+    and CID suspect listings. `counts` summarises the log for the tab header.
+    """
+    modules = user_module_set(user)
+    pairs = [('person', person['person_id'])]
+    related = []
+
+    if 'fingerprint' in modules:
+        for row in c.execute('SELECT application_id FROM clearance_applications '
+                             'WHERE person_id=%s ORDER BY id DESC',
+                             (person['id'],)).fetchall():
+            pairs.append(('clearance_application', row['application_id']))
+            related.append(('clearance_application', row['application_id']))
+        for row in c.execute('''SELECT d.id FROM clearance_signed_documents d
+                    JOIN clearance_applications a ON a.application_id=d.application_id
+                    WHERE a.person_id=%s ORDER BY d.id DESC''',
+                             (person['id'],)).fetchall():
+            pairs.append(('clearance_signed_document', str(row['id'])))
+            related.append(('clearance_signed_document', str(row['id'])))
+    if 'airport' in modules:
+        for row in c.execute('SELECT record_id FROM airport_passengers '
+                             'WHERE person_id=%s ORDER BY id DESC',
+                             (person['id'],)).fetchall():
+            pairs.append(('airport_record', row['record_id']))
+            related.append(('airport_record', row['record_id']))
+    if 'checkpoints' in modules:
+        where, params = checkpoint_scope_sql(checkpoint_scope(user), 'ce')
+        clause = (where + ' AND ce.person_id=%s') if where else 'WHERE ce.person_id=%s'
+        for row in c.execute(f'SELECT ce.event_id FROM checkpoint_events ce {clause} '
+                             'ORDER BY ce.id DESC', (*params, person['id'])).fetchall():
+            pairs.append(('checkpoint_event', row['event_id']))
+            related.append(('checkpoint_event', row['event_id']))
+    if 'cid' in modules:
+        for row in c.execute('SELECT alert_id FROM suspect_alerts '
+                             'WHERE person_id=%s ORDER BY id DESC',
+                             (person['id'],)).fetchall():
+            pairs.append(('suspect_alert', row['alert_id']))
+            related.append(('suspect_alert', row['alert_id']))
+
+    items = [audit_event_view_enriched(r) for r in
+             audit_rows_for_pairs(c, pairs, limit)]
+    counts = {}
+    for item in items:
+        counts[item['entity']] = counts.get(item['entity'], 0) + 1
+    return {
+        'entity': 'person',
+        'entity_id': person['person_id'],
+        'person_id': person['person_id'],
+        'display_name': person.get('full_name') or '',
+        'items': items,
+        'total': len(items),
+        'counts': counts,
+        'related_records': [{'entity': e, 'entity_id': i} for e, i in related],
+        'badge_fallback': BADGE_NOT_RECORDED,
+        'scope_note': ('Every event recorded against this identity and the unit '
+                       'records your role may read, newest first.'),
+        'generated_at': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()),
+    }
+
+
+def entity_audit_history(c, entity, entity_id, user, limit=120):
+    """Audit history for any other primary record (officer, station, vehicle…).
+
+    `entity` must be one of AUDIT_ENTITY_MODULES and the caller must hold the
+    module that governs it — the same gate that protects the register itself.
+    Returns None when the entity kind is unknown or not readable by the caller.
+    """
+    entity = str(entity or '').strip().lower()
+    entity_id = str(entity_id or '').strip()
+    if entity not in AUDIT_ENTITY_MODULES or not entity_id:
+        return None
+    if not can_read_audit_entity(user, entity):
+        return None
+    items = [audit_event_view_enriched(r) for r in
+             audit_rows_for_pairs(c, [(entity, entity_id)], limit)]
+    counts = {}
+    for item in items:
+        counts[item['entity']] = counts.get(item['entity'], 0) + 1
+    return {
+        'entity': entity,
+        'entity_id': entity_id,
+        'entity_label': AUDIT_ENTITY_LABELS.get(entity, entity),
+        'items': items,
+        'total': len(items),
+        'counts': counts,
+        'badge_fallback': BADGE_NOT_RECORDED,
+        'scope_note': 'Events recorded against this record, newest first.',
+        'generated_at': time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()),
+    }
 
 
 def new_person_id(c):
@@ -6903,6 +7196,17 @@ class API(BaseHTTPRequestHandler):
                 if not person:
                     self.send_json(404, {'error': 'Person not found'}); c.close(); return
                 result = person_document_records(c, person, user)
+            elif p.path.startswith('/api/persons/') and p.path.endswith('/audit-history'):
+                # The "Audit history" tab of the Person Details modal: the full
+                # chronological log of the identity and of every linked unit
+                # record the caller may already read (same module + checkpoint
+                # scope filter as /documents and /linked-records).
+                pid = unquote(p.path.split('/')[3])
+                person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s', (pid,)).fetchone())
+                if not person:
+                    self.send_json(404, {'error': 'Person not found'}); c.close(); return
+                result = person_audit_history(c, person, user,
+                                             parse_qs(p.query).get('limit', ['120'])[0])
             elif p.path.startswith('/api/persons/'):
                 pid = p.path.split('/')[3]
                 person = rowdict(c.execute('SELECT * FROM persons WHERE person_id=%s',(pid,)).fetchone())
@@ -7015,6 +7319,27 @@ class API(BaseHTTPRequestHandler):
                               'roles': list(ALL_ROLES),
                               'role_labels': ROLE_LABELS,
                               'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
+            elif p.path.startswith('/api/audit/entity/'):
+                # Generic per-record history: GET /api/audit/entity/<entity>/<id>
+                # e.g. .../officer/POL-2026-0001 or .../police_station/ST-004.
+                # The entity kind decides the module gate (AUDIT_ENTITY_MODULES),
+                # so opening a record's history never widens the caller's read
+                # scope beyond the register that record lives in.
+                parts = p.path.split('/')
+                entity = unquote(parts[4]) if len(parts) > 5 else ''
+                entity_id = unquote('/'.join(parts[5:])) if len(parts) > 5 else ''
+                result = entity_audit_history(c, entity, entity_id, user,
+                                             parse_qs(p.query).get('limit', ['120'])[0])
+                if result is None:
+                    if entity and entity not in AUDIT_ENTITY_MODULES:
+                        self.send_json(404, {'error': 'Unknown record type for audit history',
+                                             'entity': entity,
+                                             'allowed': sorted(AUDIT_ENTITY_MODULES)})
+                    else:
+                        self.send_json(403, {'error': 'Audit history for this record is '
+                                                      'restricted to the role that owns the register',
+                                             'code': 'audit_scope_forbidden'})
+                    c.close(); return
             elif p.path == '/api/admin/audit':
                 # Append-only audit register. Admin only (the module gate
                 # above answers 403 for every other role, including the
