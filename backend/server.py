@@ -664,11 +664,11 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = 'a4f7c913'
+ASSET_VERSION = 'e83c5d16'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-dynamic-nav-1-' + ASSET_VERSION
+UI_BUILD = 'sentinel-branch-scope-1-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -735,6 +735,13 @@ UI_REQUIRED_MARKERS = (
     ('Auto-locked branch selector', 'function applyBranchLock('),
     ('Branch lock resolves the posting', 'function branchLockFor('),
     ('Unit tree opens a register', 'function openUnitNavUnit('),
+    # ---- this release: robust posting resolution, strict scoping, headers ----
+    ('Posting canonicaliser', 'function canonicalPostingKey('),
+    ('Posting branch resolver', 'function resolvePostingBranch('),
+    ('Locked-branch indicator', 'Locked to assigned branch'),
+    ('Contextual unit headers', 'data-unit-head="fingerprint"'),
+    ('Posting scope on the session payload', 'branch_scope_status'),
+    ('Lock chip styling', 'branch-lock-hint'),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
@@ -2433,7 +2440,341 @@ def resolve_checkpoint_scope(value):
     return text
 
 
-def user_view(user):
+# ---------------------------------------------------------------------------
+# Posting → registered branch resolution (the ONE canonicaliser)
+# ---------------------------------------------------------------------------
+# A user's posting is free text: `users.branch` keeps a readable label such as
+# 'Lasanod Branch', the legacy unit label 'Fingerprint Unit', or the composed
+# 'Lasanod Branch · Laascaanood · Sool'; `users.location_scope` carries the
+# checkpoint area ('South') or a named checkpoint. Neither column is a foreign
+# key, so every consumer — the form lock, the read scoping and the dashboard
+# header — has to canonicalise the posting before it can be matched against
+# `police_branches`. That canonicalisation lives here and ONLY here, so the UI
+# and the API can never disagree about which branch an officer belongs to.
+POSTING_UNIT_WORDS = frozenset({
+    'branch', 'branches', 'unit', 'units', 'checkpoint', 'checkpoints',
+    'outpost', 'outposts', 'station', 'stations', 'office', 'offices', 'desk',
+    'centre', 'center', 'post', 'hq', 'department', 'dept', 'directorate',
+    'control', 'division', 'section', 'registry', 'command',
+})
+# The lowest confidence that still locks a selector / scopes a read. Below it
+# the posting is treated as AMBIGUOUS and the officer keeps the free choice
+# (the UI then says so, and an administrator assigns a real branch).
+POSTING_MATCH_MIN = 45
+# A posting that names only the officer's own unit ('Fingerprint Unit') is a
+# legacy unit-level assignment: it resolves when exactly one registered branch
+# of that unit remains after the region filter, never by guessing.
+UNIT_POSTING_KEYS = {
+    'fingerprint': frozenset({'fingerprint', 'fingerprint unit'}),
+    'airport': frozenset({'airport', 'airport control', 'airport unit'}),
+    'crime': frozenset({'crime', 'crime unit', 'cid', 'criminal unit',
+                        'crime department'}),
+    'checkpoint': frozenset({'checkpoint', 'checkpoint unit'}),
+    'police_station': frozenset({'police', 'police station', 'police stations',
+                                 'station registry'}),
+}
+# Modules whose officers are posted to a branch of one specific unit type.
+# Used to resolve a posting outside a request (the session payload, the
+# dashboard header) with the same rule the request handlers use.
+MODULE_UNIT_TYPES = (
+    ('fingerprint', 'fingerprint'),
+    ('airport', 'airport'),
+    ('cid', 'crime'),
+    ('checkpoints', 'checkpoint'),
+    ('stations', 'police_station'),
+)
+BRANCH_SCOPE_CODE = 'branch_scope_forbidden'
+
+
+class BranchScopeError(PermissionError):
+    """A scoped officer queried or filed a record outside their own branch.
+
+    Carries its own HTTP status so the handlers answer **403 Forbidden**
+    (not the 401 used for a missing/insufficient session) and the client can
+    tell a scope violation from a signed-out request.
+    """
+
+    status_code = 403
+    http_status = 403
+    code = BRANCH_SCOPE_CODE
+
+
+def canonical_posting_key(value):
+    """Case/punctuation/suffix-insensitive key for a branch or posting name.
+
+    '  Lasanod Branch ' / 'LASANOD branch' / 'Lasanod' all become 'lasanod';
+    the legacy unit label 'Fingerprint Unit' becomes 'fingerprint'. A posting
+    that is nothing BUT unit words keeps its leading word so it stays
+    meaningful instead of collapsing to an empty string.
+    """
+    text = re.sub(r'[\u00b7\u2022]', ' ', str(value or ''))
+    text = re.sub(r'[^A-Za-z0-9]+', ' ', text).strip().lower()
+    words = [w for w in text.split() if w]
+    while len(words) > 1 and words[-1] in POSTING_UNIT_WORDS:
+        words.pop()
+    return ' '.join(words)
+
+
+def posting_parts(user):
+    """Split the stored posting into (name, district, region).
+
+    The composed label is `Name · District · Region`, but legacy rows carry just
+    `Name` or `Name · Region`, so the split is positional from the right.
+    """
+    raw = str((user or {}).get('branch') or '')
+    parts = [re.sub(r'\s+', ' ', p).strip() for p in raw.split('\u00b7')]
+    parts = [p for p in parts if p]
+    name = parts[0] if parts else ''
+    region = parts[-1] if len(parts) > 1 else ''
+    district = parts[-2] if len(parts) > 2 else ''
+    return {'name': name, 'district': district, 'region': region}
+
+
+def primary_unit_type(user):
+    """The unit type a session belongs to, derived from its modules."""
+    modules = user_module_set(user or {})
+    for module, unit_type in MODULE_UNIT_TYPES:
+        if module in modules:
+            return unit_type
+    return None
+
+
+def _posting_keys(user):
+    """Every canonical key that describes the officer's posting."""
+    keys = set()
+    parts = posting_parts(user)
+    for value in (parts['name'], (user or {}).get('location_scope')):
+        key = canonical_posting_key(value)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _branch_match_score(branch, keys, user):
+    """0–100 confidence that `branch` (a police_branches row) is the posting."""
+    bkey = canonical_posting_key(branch.get('name'))
+    if not bkey:
+        return 0
+    bwords = set(bkey.split())
+    score = 0
+    for key in keys:
+        kwords = set(key.split())
+        if key == bkey:
+            score = max(score, 100)
+        elif kwords and kwords <= bwords:
+            # The posting is contained in the branch name
+            # ('Lasanod' -> 'Lasanod Branch') or vice versa ('Lasanod Branch
+            # Central' -> 'Lasanod Branch').
+            score = max(score, 80 if len(kwords) > 1 else 70)
+        elif bwords and bwords <= kwords:
+            score = max(score, 72)
+    # Geography hints: a posting/duty-station that names the region or the
+    # district narrows the catalogue without naming the branch itself. This is
+    # what lets a legacy 'Fingerprint Unit · Sool' (or a checkpoint officer
+    # whose location_scope is their district) resolve inside one region.
+    parts = posting_parts(user)
+    hints = {canonical_posting_key(parts['district']),
+             canonical_posting_key(parts['region']),
+             canonical_posting_key((user or {}).get('location_scope'))}
+    hints.discard('')
+    if hints:
+        if canonical_posting_key(branch.get('district')) in hints:
+            score = max(score, 62)
+        elif canonical_posting_key(branch.get('region')) in hints:
+            score = max(score, 52)
+    # A unit-level legacy posting ('Fingerprint Unit') names the unit, not the
+    # branch: every branch of that unit is a candidate, ranked by geography.
+    unit_keys = UNIT_POSTING_KEYS.get(normalize_branch_unit_type(branch.get('unit_type')), ())
+    if keys & set(unit_keys):
+        score = max(score, 46 if score else 40)
+    return score
+
+
+def resolve_posting_branch(c, user, unit_type=None):
+    """The single registered branch an officer's posting identifies, or None.
+
+    `unit_type` restricts the catalogue to the officer's own department (the
+    same branch name exists once per department, so resolving across
+    departments would be ambiguous by construction). Returns None when the
+    posting is empty, unknown, or ambiguous — callers must treat that as "no
+    scope", never as "scope to everything".
+    """
+    if not c or not user:
+        return None
+    keys = _posting_keys(user)
+    if not keys:
+        return None
+    unit = normalize_branch_unit_type(unit_type) if unit_type else None
+    sql = 'SELECT id,name,region,district,unit_type FROM police_branches'
+    args = []
+    if unit:
+        sql += ' WHERE unit_type=%s'
+        args.append(unit)
+    sql += ' ORDER BY id'
+    try:
+        rows = [rowdict(r) for r in c.execute(sql, args).fetchall()]
+    except Exception:
+        return None
+    best_score, best = 0, []
+    for branch in rows:
+        score = _branch_match_score(branch, keys, user)
+        if score > best_score:
+            best_score, best = score, [branch]
+        elif score and score == best_score:
+            best.append(branch)
+    if best_score < POSTING_MATCH_MIN or len(best) != 1:
+        return None
+    return best[0]
+
+
+def branch_scope_view(c, user, unit_type=None):
+    """The scoped posting of an officer, or None when they are unrestricted.
+
+    Privileged sessions (SystemAdmin, the multi-branch Commander, and every
+    HQ/records administrator) are never scoped. A standard officer is scoped to
+    exactly the registered branch their posting resolves to; an unresolvable
+    posting stays unscoped but reports `resolved: False` via
+    `posting_scope_status()` so the UI can say why the selector is open.
+    """
+    if not c or not user:
+        return None
+    role = (user or {}).get('role') or ''
+    if is_admin_user(user) or is_records_admin(user):
+        return None
+    if is_read_only_user(user):
+        return None
+    if canonical_unit_role(role) in (ROLE_ADMIN, ROLE_CHIEF):
+        return None
+    unit = normalize_branch_unit_type(unit_type) if unit_type else primary_unit_type(user)
+    if not unit:
+        return None
+    branch = resolve_posting_branch(c, user, unit)
+    if not branch:
+        return None
+    return {
+        'branch_id': int(branch['id']),
+        'branch_name': branch['name'],
+        'region': branch.get('region') or '',
+        'district': branch.get('district') or '',
+        'unit_type': normalize_branch_unit_type(branch.get('unit_type')),
+        'posting': str((user or {}).get('branch') or ''),
+        'location_scope': (user or {}).get('location_scope') or '',
+        'scoped': True,
+    }
+
+
+def posting_scope_status(c, user, unit_type=None):
+    """Explain a posting for the session payload / dashboard header.
+
+    Returns ``{'resolved': bool, 'branch': {...}|None, 'posting': label,
+    'unit_type': ...}`` so the UI can lock a selector, label the operations
+    header and explain an unresolvable legacy posting without a second call.
+    """
+    unit = normalize_branch_unit_type(unit_type) if unit_type else primary_unit_type(user or {})
+    posting = str((user or {}).get('branch') or '')
+    status = {'resolved': False, 'branch': None, 'posting': posting,
+              'unit_type': unit or '', 'scoped': False,
+              'override': bool(user) and (is_admin_user(user)
+                                          or is_records_admin(user)
+                                          or is_read_only_user(user))}
+    if not user or not unit:
+        return status
+    if status['override']:
+        return status
+    branch = resolve_posting_branch(c, user, unit)
+    if branch:
+        status['resolved'] = True
+        status['scoped'] = True
+        status['branch'] = {
+            'branch_id': int(branch['id']), 'branch_name': branch['name'],
+            'region': branch.get('region') or '',
+            'district': branch.get('district') or '',
+            'unit_type': normalize_branch_unit_type(branch.get('unit_type')),
+        }
+    return status
+
+
+def user_branch_scope(c, user, unit_type=None):
+    """Alias used by the read paths: the scoped branch dict or None."""
+    return branch_scope_view(c, user, unit_type)
+
+
+def require_branch_write_scope(c, user, branch_row, unit_type):
+    """Refuse a write filed under a branch that is not the officer's own.
+
+    Returns the branch row a record must be stored against: a scoped officer is
+    pinned to their own branch (silently adopting it when the client omitted a
+    branch) and a cross-branch filing is rejected with **403 Forbidden**.
+    Unscoped sessions (SystemAdmin / Commander / unresolvable posting) keep
+    exactly the previous behaviour.
+    """
+    scope = user_branch_scope(c, user, unit_type)
+    if not scope:
+        return branch_row
+    own_id = int(scope['branch_id'])
+    if branch_row is None:
+        row = c.execute('SELECT id,name,region,district,unit_type FROM police_branches '
+                        'WHERE id=%s', (own_id,)).fetchone()
+        return row
+    if int(branch_row['id']) != own_id:
+        raise BranchScopeError(
+            f'Your posting is {scope["branch_name"]} — a record for another branch '
+            'cannot be filed from this account.')
+    return branch_row
+
+
+# Which branch a stored record belongs to, per audit entity. Used by the
+# per-record history endpoint so a scoped officer cannot read the audit trail of
+# another branch's record by guessing its identifier.
+AUDIT_ENTITY_BRANCH_SOURCES = {
+    'clearance_application': ('clearance_applications', 'application_id'),
+    'clearance_signed_document': ('clearance_signed_documents', 'application_id'),
+    'airport_record': ('airport_passengers', 'record_id'),
+    'crime_case': ('crime_cases', 'case_id'),
+    'checkpoint_event': ('checkpoint_events', 'event_id'),
+}
+AUDIT_ENTITY_UNIT_TYPES = {
+    'clearance_application': 'fingerprint',
+    'clearance_signed_document': 'fingerprint',
+    'airport_record': 'airport',
+    'crime_case': 'crime',
+    'checkpoint_event': 'checkpoint',
+}
+
+
+def record_branch_id(c, entity, entity_id):
+    """The branch a stored record was filed under (None when unknown)."""
+    source = AUDIT_ENTITY_BRANCH_SOURCES.get(str(entity or '').lower())
+    if not source:
+        return None
+    table, column = source
+    try:
+        row = c.execute(f'SELECT branch_id FROM {table} WHERE {column}=%s',
+                        (str(entity_id),)).fetchone()
+    except Exception:
+        return None
+    return rowdict(row).get('branch_id') if row else None
+
+
+def require_record_branch_scope(c, user, unit_type, branch_id, label, record_id=''):
+    """Refuse a scoped officer's request for another branch's record (403).
+
+    Reads of a single record (a clearance application, its printable page, its
+    audit history) go through this so a guessed identifier can never widen the
+    officer's scope. Rows stored without a branch are treated as out of scope
+    for a scoped officer — "unknown" must never mean "everything".
+    """
+    scope = user_branch_scope(c, user, unit_type)
+    if not scope:
+        return
+    if branch_id is None or int(branch_id) != int(scope['branch_id']):
+        raise BranchScopeError(
+            f'That {label} belongs to another branch — your posting is '
+            f'{scope["branch_name"]}.')
+    return
+
+
+def user_view(user, branch_scope=None):
     """Return the public-facing user payload (no password hash) with RBAC info.
 
     Surfaces BOTH the raw stored role (e.g. 'CheckpointSouth') AND the
@@ -2501,6 +2842,13 @@ def user_view(user):
         'branch': user.get('branch') or '',
         'location_scope': scope,
         'location': location,
+        # Posting → registered branch resolution. Additive: `branch` stays the
+        # raw stored label and `location_scope` the checkpoint area. These two
+        # keys are what the record-creation forms lock on and what the module
+        # operations headers read, so the browser and the API scope records
+        # identically ('resolved' False = the posting names no single branch).
+        'branch_scope': (branch_scope or {}).get('branch') if branch_scope else None,
+        'branch_scope_status': branch_scope or None,
         'modules': sorted(modules),
         'permissions': sorted(user_permissions(user)),
         # Management-table ROW EDITS (the Actions → Edit action on the
@@ -3156,9 +3504,15 @@ def require_auth(handler):
         'SELECT id,username,display_name,role,branch,location_scope,badge_number,'
         'avatar_path,avatar_preset,active '
         'FROM users WHERE id=%s AND active=1',(user_id,)).fetchone())
+    if not user:
+        c.close()
+        raise PermissionError('Authentication required')
+    # Resolve the officer's posting to a registered branch while the
+    # connection is open: the form lock and the module headers render from
+    # this payload, and the API scopes reads with the same resolver.
+    posting = posting_scope_status(c, user)
     c.close()
-    if not user: raise PermissionError('Authentication required')
-    return user_view(user)
+    return user_view(user, posting)
 
 def audit(c, user, action, entity, entity_id, details=''):
     c.execute('INSERT INTO audit_events(user_id,action,entity,entity_id,details) VALUES(%s,%s,%s,%s,%s)',
@@ -3405,6 +3759,14 @@ def entity_audit_history(c, entity, entity_id, user, limit=120):
         return None
     if not can_read_audit_entity(user, entity):
         return None
+    # A scoped unit officer may only read the history of a record filed under
+    # their own branch — the identifier alone never widens the read scope.
+    unit_type = AUDIT_ENTITY_UNIT_TYPES.get(entity)
+    if unit_type:
+        require_record_branch_scope(c, user, unit_type,
+                                    record_branch_id(c, entity, entity_id),
+                                    AUDIT_ENTITY_LABELS.get(entity, entity) + ' record',
+                                    entity_id)
     items = [audit_event_view_enriched(r) for r in
              audit_rows_for_pairs(c, [(entity, entity_id)], limit)]
     counts = {}
@@ -6442,12 +6804,21 @@ def build_dashboard(c, user):
     modules_alias = sorted(allowed_modules_for_role(role_alias))
     modules = sorted(set(modules_raw) | set(modules_alias))
 
+    # The posting resolved to a registered branch (None for an administrator,
+    # the multi-branch Commander or an unresolvable legacy posting). Additive:
+    # `subhead` keeps its previous contract for the read-only Commander.
+    dashboard_scope = branch_scope_view(c, user) if user else None
     return {
         'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now_ts)),
         'role': role,
         'role_alias': role_alias,
         'is_admin': is_admin,
         'location_scope': scope,
+        'branch_scope': dashboard_scope,
+        'branch_context': (
+            f"{ROLE_LABELS.get(role, role)} — {dashboard_scope['branch_name']}"
+            if dashboard_scope else ''
+        ),
         'modules': modules,
         'cards': cards,
         'quick_actions': quick,
@@ -6981,6 +7352,17 @@ class API(BaseHTTPRequestHandler):
         self.send_json(403, {'error': str(exc), 'code': ADMIN_ONLY_CODE,
                              'admin_only': True, 'path': path or self.path})
 
+    def branch_scope_403(self, exc, path=None):
+        """Answer an HTTP 403 Forbidden for a cross-branch read or write.
+
+        A scoped unit officer only ever sees their own branch's records, so a
+        request that names a record from another branch is refused with the
+        same shape everywhere (`code: branch_scope_forbidden`).
+        """
+        self.send_json(403, {'error': str(exc), 'code': BRANCH_SCOPE_CODE,
+                             'branch_scope_forbidden': True,
+                             'path': path or self.path})
+
     def field_edit_403(self, exc, path=None):
         """Answer an HTTP 403 Forbidden for a protected person-field change.
 
@@ -7195,7 +7577,14 @@ class API(BaseHTTPRequestHandler):
                     require_module(user, mod)
                     break
             if p.path == '/api/me':
-                result = {**user, 'visibility': filter_visibility(user),
+                # Re-resolve the posting on every session read so a branch
+                # created/renamed in Branch Management is picked up without a
+                # re-login.
+                posting = posting_scope_status(c, user)
+                result = {**user,
+                          'branch_scope': posting.get('branch'),
+                          'branch_scope_status': posting,
+                          'visibility': filter_visibility(user),
                           'roles': list(ALL_ROLES),
                           'role_labels': ROLE_LABELS,
                           'checkpoint_locations': list(CHECKPOINT_LOCATIONS)}
@@ -7244,14 +7633,26 @@ class API(BaseHTTPRequestHandler):
                     FROM checkpoint_events WHERE person_id=%s ORDER BY id DESC''',(person['id'],)).fetchall()]
                 result = person
             elif p.path == '/api/airport-records':
-                rows = c.execute('''SELECT a.record_id,a.branch_id,b.name AS branch_name,b.region AS branch_region,
+                # Strict branch isolation: a posted Airport officer only ever
+                # receives the movements filed under their own branch.
+                scope = user_branch_scope(c, user, 'airport')
+                sql = '''SELECT a.record_id,a.branch_id,b.name AS branch_name,b.region AS branch_region,
                     a.movement,a.travel_date,a.flight_number,a.airline,a.origin_city,a.destination_city,
                     a.route,a.notes,p.person_id,p.full_name,p.national_id
                     FROM airport_passengers a JOIN persons p ON p.id=a.person_id
-                    LEFT JOIN police_branches b ON b.id=a.branch_id ORDER BY a.id DESC''').fetchall()
-                result = {'items':[rowdict(r) for r in rows]}
+                    LEFT JOIN police_branches b ON b.id=a.branch_id'''
+                args = []
+                if scope:
+                    sql += ' WHERE a.branch_id=%s'; args.append(scope['branch_id'])
+                sql += ' ORDER BY a.id DESC'
+                rows = c.execute(sql, args).fetchall()
+                result = {'items':[rowdict(r) for r in rows], 'branch_scope': scope}
             elif p.path == '/api/clearance-applications':
-                rows = c.execute('''SELECT a.application_id,a.branch_id,b.name AS branch_name,
+                # Strict branch isolation: a posted Fingerprint officer only
+                # receives the applications filed under their own branch (an
+                # administrator / multi-branch Commander stays unrestricted).
+                scope = user_branch_scope(c, user, 'fingerprint')
+                list_sql = '''SELECT a.application_id,a.branch_id,b.name AS branch_name,
                     b.region AS branch_region,a.purpose,a.status,a.certificate_number,a.created_at,
                     a.applicant_photo,a.guardian_name,p.person_id,p.full_name,p.national_id,p.passport_id,p.phone,
                     (SELECT d.file_path FROM clearance_signed_documents d
@@ -7259,7 +7660,13 @@ class API(BaseHTTPRequestHandler):
                     (SELECT d.file_name FROM clearance_signed_documents d
                      WHERE d.application_id=a.application_id ORDER BY d.id DESC LIMIT 1) AS signed_document_name
                     FROM clearance_applications a JOIN persons p ON p.id=a.person_id
-                    LEFT JOIN police_branches b ON b.id=a.branch_id ORDER BY a.id DESC''').fetchall()
+                    LEFT JOIN police_branches b ON b.id=a.branch_id'''
+                list_args = []
+                if scope:
+                    list_sql += ' WHERE a.branch_id=%s'
+                    list_args.append(scope['branch_id'])
+                list_sql += ' ORDER BY a.id DESC'
+                rows = c.execute(list_sql, list_args).fetchall()
                 items = []
                 for r in rows:
                     item = rowdict(r)
@@ -7274,7 +7681,9 @@ class API(BaseHTTPRequestHandler):
                     item['certificate_print'] = certificate_print_state(
                         item, user, item['signed_scan_present'])
                     items.append(item)
-                result = {'items': items, 'review_window_hours': FINGERPRINT_REVIEW_WINDOW_HOURS}
+                result = {'items': items,
+                          'review_window_hours': FINGERPRINT_REVIEW_WINDOW_HOURS,
+                          'branch_scope': scope}
             elif p.path.startswith('/api/clearance-applications/'):
                 aid = p.path.split('/')[3]
                 a = rowdict(c.execute('''SELECT a.*,p.person_id AS applicant_person_id,
@@ -7285,6 +7694,8 @@ class API(BaseHTTPRequestHandler):
                     LEFT JOIN police_branches b ON b.id=a.branch_id
                     WHERE a.application_id=%s''',(aid,)).fetchone())
                 if not a: self.send_json(404,{'error':'Application not found'}); c.close(); return
+                require_record_branch_scope(c, user, 'fingerprint', a.get('branch_id'),
+                                            'clearance application', aid)
                 signed_rows = c.execute('''SELECT d.id,d.file_path AS path,d.file_name AS name,
                     d.file_type,d.created_at AS uploaded_at,u.display_name AS uploaded_by
                     FROM clearance_signed_documents d LEFT JOIN users u ON u.id=d.uploaded_by
@@ -7301,19 +7712,29 @@ class API(BaseHTTPRequestHandler):
                     a, user, a['signed_scan_present'])
                 result = a
             elif p.path == '/api/crime-cases':
-                rows = c.execute('''SELECT cc.*,b.name AS branch_name,b.region AS branch_region,
+                # Strict branch isolation: a posted CID officer only receives
+                # the cases filed under their own branch.
+                case_scope = user_branch_scope(c, user, 'crime')
+                case_sql = '''SELECT cc.*,b.name AS branch_name,b.region AS branch_region,
                     COUNT(sa.id) AS participant_count
                     FROM crime_cases cc
                     LEFT JOIN police_branches b ON b.id=cc.branch_id
-                    LEFT JOIN suspect_alerts sa ON sa.case_id=cc.id
-                    GROUP BY cc.id,b.name,b.region ORDER BY cc.id DESC''').fetchall()
-                result = {'items':[rowdict(r) for r in rows]}
+                    LEFT JOIN suspect_alerts sa ON sa.case_id=cc.id'''
+                case_args = []
+                if case_scope:
+                    case_sql += ' WHERE cc.branch_id=%s'
+                    case_args.append(case_scope['branch_id'])
+                case_sql += ' GROUP BY cc.id,b.name,b.region ORDER BY cc.id DESC'
+                rows = c.execute(case_sql, case_args).fetchall()
+                result = {'items':[rowdict(r) for r in rows], 'branch_scope': case_scope}
             elif p.path.startswith('/api/crime-cases/'):
                 cid = p.path.split('/')[3]
                 case = rowdict(c.execute('''SELECT cc.*,b.name AS branch_name,b.region AS branch_region
                     FROM crime_cases cc LEFT JOIN police_branches b ON b.id=cc.branch_id
                     WHERE cc.case_id=%s''',(cid,)).fetchone())
                 if not case: self.send_json(404,{'error':'Case not found'}); c.close(); return
+                require_record_branch_scope(c, user, 'crime', case.get('branch_id'),
+                                            'CID case', cid)
                 case['participants'] = [dict(r) for r in c.execute('''SELECT sa.alert_id,sa.role,sa.notes,sa.alert_status,
                     sa.origin,cc.case_id,p.person_id,p.full_name,p.national_id,p.phone FROM suspect_alerts sa
                     JOIN persons p ON p.id=sa.person_id JOIN crime_cases cc ON cc.id=sa.case_id
@@ -7585,15 +8006,22 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/officers':
                 result = {'items': [officer_view(r) for r in officer_rows(c)]}
             elif p.path == '/api/crimes':
-                rows = c.execute('''SELECT ci.*, s.station_id AS station_code, s.code AS station_short_code,
+                # Strict branch isolation for the crime / victim intake register.
+                crime_scope = user_branch_scope(c, user, 'police_station')
+                crime_sql = '''SELECT ci.*, s.station_id AS station_code, s.code AS station_short_code,
                     o.service_id AS officer_service_id, o.full_name AS officer_name,
                     b.name AS branch_name,b.region AS branch_region
                     FROM crime_incidents ci
                     JOIN police_stations s ON s.id=ci.station_id
                     JOIN officers o ON o.id=ci.officer_id
-                    LEFT JOIN police_branches b ON b.id=ci.branch_id
-                    ORDER BY ci.id DESC''').fetchall()
-                result = {'items': [crime_view(r) for r in rows]}
+                    LEFT JOIN police_branches b ON b.id=ci.branch_id'''
+                crime_args = []
+                if crime_scope:
+                    crime_sql += ' WHERE ci.branch_id=%s'
+                    crime_args.append(crime_scope['branch_id'])
+                crime_sql += ' ORDER BY ci.id DESC'
+                rows = c.execute(crime_sql, crime_args).fetchall()
+                result = {'items': [crime_view(r) for r in rows], 'branch_scope': crime_scope}
             elif p.path == '/api/vehicles':
                 q = parse_qs(p.query).get('q', [''])[0]
                 result = {'items': list_vehicles(c, q)}
@@ -7662,6 +8090,9 @@ class API(BaseHTTPRequestHandler):
             else:
                 self.send_json(404,{'error':'Not found'}); c.close(); return
             c.close(); self.send_json(200, result)
+        except BranchScopeError as e:
+            if c: c.close()
+            self.branch_scope_403(e)
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
@@ -7686,12 +8117,16 @@ class API(BaseHTTPRequestHandler):
             if p.path == '/api/login':
                 data = body_json(self); c = get_db_connection()
                 u = c.execute('SELECT * FROM users WHERE username=%s AND password_hash=%s AND active=1',
-                              (data.get('username'), password_hash(data.get('password','')))).fetchone(); c.close()
-                if not u: self.send_json(401,{'error':'Invalid username or password'}); return
+                              (data.get('username'), password_hash(data.get('password','')))).fetchone()
+                if not u:
+                    c.close()
+                    self.send_json(401,{'error':'Invalid username or password'}); return
+                posting = posting_scope_status(c, rowdict(u))
+                c.close()
                 # Persistent session: the token survives a server restart, so
                 # /api/me keeps answering 200 for a signed-in officer.
                 token = create_session(u['id'])
-                self.send_json(200,{'token':token,'user':user_view(rowdict(u))},
+                self.send_json(200,{'token':token,'user':user_view(rowdict(u), posting)},
                                extra_headers=[('Set-Cookie',
                                                f'sentinel_session={token}; Path=/; HttpOnly; SameSite=Lax')])
                 return
@@ -7750,8 +8185,9 @@ class API(BaseHTTPRequestHandler):
                 c.commit()
                 fresh = rowdict(c.execute('SELECT * FROM users WHERE id=%s',
                                           (int(user['id']),)).fetchone())
+                posting = posting_scope_status(c, fresh)
                 c.close()
-                self.send_json(200, {'user': user_view(fresh), 'updated': True})
+                self.send_json(200, {'user': user_view(fresh, posting), 'updated': True})
                 return
             if p.path == '/api/me/password':
                 data = body_json(self); c = get_db_connection()
@@ -7914,6 +8350,7 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/airport-records':
                 data = body_json(self)
                 branch = resolve_branch(c, data.get('branch_id'), 'airport')
+                branch = require_branch_write_scope(c, user, branch, 'airport')
                 person, created = ensure_person(c, data)
                 if created:
                     audit(c,user,'CREATE','person',person['person_id'],'auto-created from airport register')
@@ -7941,6 +8378,9 @@ class API(BaseHTTPRequestHandler):
                 else:
                     fields, files = body_json(self), {}
                 branch = resolve_branch(c, fields.get('branch_id'), 'fingerprint')
+                # A posted Fingerprint officer can only file under their own
+                # branch; an administrator / commander keeps the free choice.
+                branch = require_branch_write_scope(c, user, branch, 'fingerprint')
                 if not build_full_name(fields):
                     raise ValueError('Applicant full name (4-part) is required')
                 if not (fields.get('national_id') or '').strip() and not (fields.get('passport_id') or '').strip():
@@ -8069,6 +8509,7 @@ class API(BaseHTTPRequestHandler):
             elif p.path == '/api/crime-cases':
                 data = body_json(self)
                 branch = resolve_branch(c, data.get('branch_id'), 'crime')
+                branch = require_branch_write_scope(c, user, branch, 'crime')
                 if not data.get('category'): raise ValueError('category is required')
                 nxt = c.execute('SELECT COUNT(*) FROM crime_cases').fetchone()[0]+8
                 case_id = 'CID-2026-'+str(nxt).zfill(3)
@@ -8206,6 +8647,7 @@ class API(BaseHTTPRequestHandler):
                 else:
                     data, files = body_json(self), {}
                 branch = resolve_branch(c, data.get('branch_id'), 'checkpoint')
+                branch = require_branch_write_scope(c, user, branch, 'checkpoint')
                 # ---- validate everything before any person/file writes ----
                 if not build_full_name(data):
                     raise ValueError('Traveler full name (4-part) is required')
@@ -8452,6 +8894,10 @@ class API(BaseHTTPRequestHandler):
             # Management-table write attempted by a non-admin role → 403.
             if c: c.close()
             self.admin_only_403(e)
+        except BranchScopeError as e:
+            # A scoped officer tried to file a record under another branch.
+            if c: c.close()
+            self.branch_scope_403(e)
         except ReadOnlyRoleError as e:
             # Read-only role (Commander / High Command) attempted a write.
             if c: c.close()
@@ -8521,8 +8967,9 @@ class API(BaseHTTPRequestHandler):
                 c.commit()
                 fresh = rowdict(c.execute('SELECT * FROM users WHERE id=%s',
                                           (int(user['id']),)).fetchone())
+                posting = posting_scope_status(c, fresh)
                 c.close()
-                self.send_json(200, {'user': user_view(fresh), 'updated': True})
+                self.send_json(200, {'user': user_view(fresh, posting), 'updated': True})
                 return
             # Management-table edits (Police Stations registry): the Admin
             # role only. Checked here, ahead of the route body, so no branch
@@ -8706,6 +9153,9 @@ class API(BaseHTTPRequestHandler):
             # Management-table edit attempted by a non-admin role → 403.
             if c: c.close()
             self.admin_only_403(e)
+        except BranchScopeError as e:
+            if c: c.close()
+            self.branch_scope_403(e)
         except ReadOnlyRoleError as e:
             # Read-only role (Commander / High Command) attempted a write.
             if c: c.close()
@@ -8800,6 +9250,9 @@ class API(BaseHTTPRequestHandler):
         except AdminOnlyWriteError as e:
             if c: c.close()
             self.admin_only_403(e)
+        except BranchScopeError as e:
+            if c: c.close()
+            self.branch_scope_403(e)
         except ReadOnlyRoleError as e:
             if c: c.close()
             self.read_only_403(e)

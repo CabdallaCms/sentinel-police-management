@@ -14,6 +14,7 @@ npm install --no-save --package-lock=false jsdom@26
 node backend/test_form_improvements.mjs
 node backend/test_shell_workflow_integration.mjs
 node backend/test_sidebar_navigation.mjs
+.venv/bin/python backend/test_branch_scope.py
 node backend/test_record_audit_ui.mjs
 .venv/bin/python backend/test_checkpoint_roles_audit.py
 PYTHON="$PWD/.venv/bin/python" node backend/test_frontend_session.mjs
@@ -69,28 +70,46 @@ Personnel · Administration). For every role you test:
    (e.g. `Buuhoodle Border Crossing Checkpoint · East Togdheer · Buuhoodle`), then open the
    sidebar: the rail shows a short, single-line label, the tooltip shows the full name, and no
    label wraps or clips the chevron/count.
-6. **Auto-locked branch selectors** — sign in as a posted **Checkpoint officer** (e.g. `cp.south`,
-   posting `Lasanod Central Checkpoint · Laascaanood · Sool`): open *Checkpoint Unit → Add
-   screening* and confirm **Branch** is pre-selected, **disabled**, and carries the 🔒 note with the
-   posting; the checkpoint location selector is fixed to the assigned area too. Repeat for a
-   Fingerprint / Airport / CID officer in their own intake modal. Sign in as a **SystemAdmin**: every
-   selector is editable and unlocked. Post an officer to an unregistered branch: the field stays
-   editable and the note asks an administrator to register it (a fabricated branch can never be
-   saved); after registering it, the field locks itself.
-7. **Unit Directory** — *Unit Directory* is now a **category-level utility at the top of
+6. **Posting resolution + auto-locked branch selectors** — the posting is free text, so test the
+   fuzzy shapes. In **User Management** create a Fingerprint officer with the *Station / Branch*
+   `Lasanod Branch` (Sool · Laascaanood), sign in as them and open *Fingerprint Unit → New Clearance
+   Application*: **Branch** must be pre-selected to `Lasanod Branch`, **disabled**, and carry the
+   clean `🔒 Locked to assigned branch · Lasanod Branch · Laascaanood · Sool` chip — no yellow
+   warning banner. Repeat with a legacy posting typed straight into the **Branch** field:
+   `  lasanod branch ` and `Lasanod` both lock to the same branch; `Fingerprint Unit · Sool` locks
+   to the Sool branch; a bare `Fingerprint Unit` (three branches, no region) is *ambiguous* and
+   leaves the selector open with a muted ⓘ note. A System Administrator, HQ and the Commander keep
+   every selector editable, and the checkpoint location selector stays editable for them too.
+7. **Strict branch scoping** — as the `Lasanod Branch` fingerprint officer, file one application.
+   As an administrator, file another one at `Erigavo Branch`. Sign back in as the officer: the
+   register lists **only** the Lasanod application, and opening the Erigavo one by URL
+   (`/api/clearance-applications/<id>`) answers **403**. The same holds for the airport movement
+   register, CID cases and `/api/audit/entity/clearance_application/<id>`. A cross-branch POST
+   (e.g. editing the disabled selector with dev tools) answers **403 branch_scope_forbidden** and
+   names the officer's posting. The administrator and the Commander still see every branch.
+8. **Contextual headers** — a `Lasanod Branch` fingerprint officer's dashboard heading and
+   *Fingerprint Unit* overview banner both read
+   `Fingerprint Unit — Lasanod Branch Operations` (detail line `Laascaanood · Sool`); a checkpoint
+   officer reads `Checkpoint Unit — <their checkpoint> Operations`; an administrator reads
+   `— all branches` / `Cross-unit Operations`; the Commander reads `— cross-region command`.
+9. **Unit Directory** — *Unit Directory* is now a **category-level utility at the top of
    Operational Units** (no longer inside the Checkpoint Units accordion). Filter by Unit type
    (*All unit types* by default), Region, District and free text; the empty state must explain a
    dead end. A Checkpoint officer only sees unit types their modules allow. Clicking a row opens
    that unit's register; a station-scoped officer stays locked to their own posting (toast
    explains it), and the directory closes.
-8. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
-   control appears in it.
-9. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
-   (`sentinel-dynamic-nav-1-a4f7c913`); a mismatch means a cached tab.
+10. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
+    control appears in it.
+11. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
+    (`sentinel-branch-scope-1-e83c5d16`); a mismatch means a cached tab.
 
 `python backend/server.py --ui-check` must exit 0 — it now also asserts the four category
-markers, all four dynamic tree mounts, the tree/district/catalogue renderers, the branch-lock
+markers, all five dynamic tree mounts, the tree/district/catalogue renderers, the posting
+canonicaliser/resolver, the locked-branch indicator, the contextual unit headers, the branch-lock
 helpers, the short-label helper and the Unit Directory modal.
+
+`python backend/test_branch_scope.py` is the API-level proof for items 6–7 (posting resolution,
+read scoping, 403 on another branch's record and audit history, write scoping, override roles).
 
 ## Officer UAT checklist
 

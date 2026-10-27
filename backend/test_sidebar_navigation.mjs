@@ -89,6 +89,7 @@ const BRANCHES = [
   { id: 'b6', name: 'Burao Branch', region: 'East Togdheer', district: 'Burao', unit_type: 'fingerprint' },
   { id: 'b7', name: 'Burao Airport Desk', region: 'East Togdheer', district: 'Burao', unit_type: 'airport' },
   { id: 'b8', name: 'Laascaanood CID Office', region: 'Sool', district: 'Laascaanood', unit_type: 'crime' },
+  { id: 'b10', name: 'Lasanod Branch', region: 'Sool', district: 'Laascaanood', unit_type: 'fingerprint' },
 ];
 
 try {
@@ -171,9 +172,10 @@ try {
   signIn('SystemAdmin', ALL_MODULES, true);
   setCatalogue(BRANCHES);
   const fpRegions = treeRegions('fingerprint');
-  assert.deepEqual(fpRegions.map((r) => r.dataset.navRegion), ['Sanaag', 'East Togdheer'],
+  assert.deepEqual(fpRegions.map((r) => r.dataset.navRegion),
+    ['Sool', 'Sanaag', 'East Togdheer'],
     'the fingerprint tree is grouped by region in gazetteer order');
-  const sanaag = fpRegions[0];
+  const sanaag = fpRegions.find((r) => r.dataset.navRegion === 'Sanaag');
   assert.deepEqual([...sanaag.querySelectorAll('.nav-district')].map((d) => d.dataset.navDistrict),
     ['Ceerigaabo', 'Badhan'], 'the second level is the district');
   const sanaagDistricts = [...sanaag.querySelectorAll('.nav-district')].map((d) => ({
@@ -213,7 +215,8 @@ try {
   assert.equal(treeUnits('fingerprint').length, beforeFp + 1,
     'a branch created in the system must appear in the tree immediately');
   assert.ok(treeUnits('fingerprint').some((b) => b.dataset.unitLabel === 'Dhahar Branch'));
-  const dhahar = treeRegions('fingerprint')[0].querySelectorAll('.nav-district');
+  const dhahar = treeRegions('fingerprint')
+    .find((r) => r.dataset.navRegion === 'Sanaag').querySelectorAll('.nav-district');
   assert.deepEqual([...dhahar].map((d) => d.dataset.navDistrict), ['Ceerigaabo', 'Badhan', 'Dhahar'],
     'the new district joins its region in gazetteer order');
   // A checkpoint recorded at a location that exists only in the register.
@@ -341,17 +344,85 @@ try {
   assert.equal($('fpBranch-lock').textContent.includes('Erigavo Branch'), true);
   run(`closeEntryModal('fpDrawer')`);
 
+  // The locked note is a clean chip with the documented wording — never a
+  // yellow warning banner, and never the old 'Assigned to …' warning.
+  const lockHint = $('fpBranch-lock');
+  assert.ok(lockHint.textContent.includes('Locked to assigned branch'),
+    'the locked selector shows the clean 🔒 Locked to assigned branch indicator');
+  assert.equal(lockHint.classList.contains('is-note'), false);
+  assert.equal(w.getComputedStyle(lockHint).backgroundColor.includes('255, 247, 230'), false,
+    'the lock indicator must not use the yellow warning palette');
+
+  // ---- 10b) fuzzy / canonical posting matching -------------------------
+  // 'Lasanod Branch' (clean), '  lasanod branch ' (noise),
+  // 'Lasanod' (suffix dropped) and 'Erigavo Branch · Sanaag' all resolve.
+  const matchCases = [
+    ['Lasanod Branch', 'b10', 'a clean branch name'],
+    ['  LASANOD branch ', 'b10', 'case + padding noise'],
+    ['Lasanod', 'b10', 'the administrative suffix omitted'],
+    ['Erigavo Branch · Sanaag', 'b4', 'the composed Name · Region label'],
+    ['Erigavo Branch · Ceerigaabo · Sanaag', 'b4', 'the composed Name · District · Region label'],
+  ];
+  for (const [posting, expectedId, why] of matchCases) {
+    signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false, { branch: posting });
+    run(`openEntryModal('fpDrawer')`);
+    await run(`refreshBranchSelect('fpBranch','fingerprint')`);
+    assert.equal($('fpBranch').disabled, true, `a fingerprint officer is locked for ${why}`);
+    assert.equal($('fpBranch').value, expectedId, `${why} resolves to the right branch`);
+    run(`closeEntryModal('fpDrawer')`);
+  }
+
+  // A legacy UNIT-LEVEL posting ('Fingerprint Unit') resolves through the
+  // officer's geography; with no geography it stays unambiguous-by-rule and
+  // the selector stays open (a branch is never invented).
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Fingerprint Unit · Sool' });
+  run(`openEntryModal('fpDrawer')`);
+  await run(`refreshBranchSelect('fpBranch','fingerprint')`);
+  assert.equal($('fpBranch').disabled, true,
+    'a legacy unit posting narrowed by its region still locks');
+  assert.equal($('fpBranch').value, 'b10', 'the Sool fingerprint branch is selected');
+  run(`closeEntryModal('fpDrawer')`);
+
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Fingerprint Unit' });
+  run(`openEntryModal('fpDrawer')`);
+  await run(`refreshBranchSelect('fpBranch','fingerprint')`);
+  assert.equal($('fpBranch').disabled, false,
+    'an ambiguous unit-level posting (four branches, no region) never guesses');
+  assert.equal($('fpBranch').dataset.branchLocked, undefined);
+
   // A unit officer whose posting is not in the catalogue keeps the choice, and
-  // is told why (the branch has to be registered first).
+  // is told — in muted text, not a warning — that the branch has to be
+  // registered first.
   signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
     { branch: 'Nowhere Branch · Sanaag' });
   run(`openEntryModal('fpDrawer')`);
   await run(`refreshBranchSelect('fpBranch','fingerprint')`);
   assert.equal($('fpBranch').disabled, false, 'an unknown posting cannot fabricate a branch id');
   assert.equal($('fpBranch').dataset.branchLocked, undefined);
-  assert.ok($('fpBranch-lock').textContent.includes('not registered'),
+  assert.ok($('fpBranch-lock').textContent.includes('does not name one registered branch'),
     'the officer is told the posting has to be registered first');
+  assert.equal($('fpBranch-lock').classList.contains('is-note'), true,
+    'the unresolvable posting is information, not a warning');
   run(`closeEntryModal('fpDrawer')`);
+
+  // The API's resolved posting (session payload) is authoritative: a legacy
+  // branch label with a server-side resolution locks to that branch id even
+  // when the label alone would not match.
+  signIn('AirportUnit', ['dashboard', 'airport'], false,
+    { branch: 'Yagoori Village Checkpoint', branch_scope_status: {
+      resolved: true, posting: 'Yagoori Village Checkpoint',
+      branch: { branch_id: 'b7', branch_name: 'Burao Airport Desk',
+                region: 'East Togdheer', district: 'Burao', unit_type: 'airport' },
+    } });
+  run(`openEntryModal('airDrawer')`);
+  await run(`refreshBranchSelect('airBranch','airport')`);
+  assert.equal($('airBranch').disabled, true,
+    'the server-resolved posting locks the selector');
+  assert.equal($('airBranch').value, 'b7');
+  assert.ok($('airBranch-lock').textContent.includes('Locked to assigned branch'));
+  run(`closeEntryModal('airDrawer')`);
 
   // System Administrators stay free to pick any branch.
   signIn('SystemAdmin', ALL_MODULES, true);
@@ -362,6 +433,44 @@ try {
   assert.equal($('cpLoc').disabled, false, 'an admin can record any checkpoint location');
   run(`closeDrawer()`);
   console.log('ok: posted officers are locked to their own branch; administrators keep a free choice');
+
+  // ---- 10c) contextual module headers ----------------------------------
+  // The module banner names the officer's POSTING, not just the unit.
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Lasanod Branch' });
+  const fpHead = query('[data-unit-head="fingerprint"]');
+  assert.equal(fpHead.textContent, 'Fingerprint Unit — Lasanod Branch Operations',
+    'the fingerprint banner names the officer\'s branch');
+  assert.ok(query('[data-unit-head-sub="fingerprint"]').textContent.includes('Laascaanood · Sool'),
+    'the banner detail line carries the district and region');
+  assert.equal(query('[data-unit-head="airport"]').textContent, 'Airport Control · overview',
+    'a unit the session cannot reach never borrows the officer\'s posting');
+
+  signIn('checkpoint_officer', ['dashboard', 'people', 'checkpoints'], false,
+    { location_scope: 'South', branch: 'Lasanod Central Checkpoint · Laascaanood · Sool' });
+  assert.equal(query('[data-unit-head="checkpoints"]').textContent,
+    'Checkpoint Unit — Lasanod Central Checkpoint Operations',
+    'the checkpoint banner names the assigned checkpoint');
+
+  signIn('SystemAdmin', ALL_MODULES, true);
+  assert.equal(query('[data-unit-head="fingerprint"]').textContent, 'Fingerprint Unit — all branches',
+    'an administrator sees the cross-branch label');
+  signIn('chief_commander', ['dashboard', 'fingerprint', 'checkpoints', 'executive', 'oversight'], false);
+  assert.equal(query('[data-unit-head="fingerprint"]').textContent,
+    'Fingerprint Unit — cross-region command',
+    'the multi-branch Commander keeps the override label');
+
+  // The dashboard heading is contextual too (never the generic page title).
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Lasanod Branch' });
+  run(`go('dashboard')`);
+  assert.equal($('pageTitle').textContent, 'Fingerprint Unit — Lasanod Branch Operations',
+    'the operations dashboard heading names unit + branch');
+  signIn('SystemAdmin', ALL_MODULES, true);
+  run(`go('dashboard')`);
+  assert.equal($('pageTitle').textContent, 'Cross-unit Operations',
+    'an administrator keeps the cross-unit dashboard heading');
+  console.log('ok: module + dashboard headers name the officer\'s posting, not a generic unit title');
 
   // ---- 11) restore ordering --------------------------------------------
   signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint']);

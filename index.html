@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-dynamic-nav-1-a4f7c913" />
+<meta name="sentinel-ui-build" content="sentinel-branch-scope-1-e83c5d16" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -658,9 +658,18 @@ body{min-height:100vh;background:var(--bg);color:var(--ink);font-size:14px;line-
 .nav-unit-meta{flex:none;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   color:#6d87a7;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.35px}
 .cmodal.unit-dir{width:min(860px,calc(100vw - 44px))}
-.branch-lock-hint{display:block;margin-top:5px;padding:6px 9px;border-radius:8px;
-  background:#fff7e6;border:1px solid #f0dcae;color:#7a5b17;font-size:11px;font-weight:600;line-height:1.45}
-.branch-lock-hint b{font-weight:800}
+/* Locked-posting indicator: a clean, quiet chip — never a yellow warning
+   banner. The officer's branch is already selected and disabled, so the note
+   only confirms WHY the field cannot be changed. */
+.branch-lock-hint{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;
+  margin-top:6px;padding:4px 10px;border-radius:999px;
+  background:#eef4ff;border:1px solid #d5e2fb;color:#27446f;
+  font-size:11px;font-weight:700;line-height:1.5}
+.branch-lock-hint .bll-label{color:#1e3a66;font-weight:800}
+.branch-lock-hint .bll-where{color:#5b7395;font-weight:600}
+/* The unresolvable legacy posting is information, not an error: muted grey. */
+.branch-lock-hint.is-note{background:#f5f7fa;border-color:#e3e8ef;color:#5a6779;font-weight:600}
+.branch-lock-hint.is-note .bll-label{color:#475668;font-weight:700}
 .field select[data-branch-locked]{background:#f4f6f9;color:#5a6779;cursor:not-allowed;font-weight:700}
 .ud-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:11px 14px;margin-bottom:11px}
 #udTable tr.clickable{cursor:pointer}
@@ -1593,7 +1602,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <!-- FINGERPRINT -->
 <section id="fingerprint" class="page">
 <div class="unit-stats" id="usFingerprint">
-  <div class="us-head"><span>Fingerprint Unit · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-head"><span data-unit-head="fingerprint">Fingerprint Unit · overview</span><small data-unit-head-sub="fingerprint">Live counters — update with the register</small></div>
   <div class="us-row" id="usFingerprintRow"></div>
 </div>
 <div class="panel">
@@ -1640,7 +1649,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <!-- AIRPORT -->
 <section id="airport" class="page">
 <div class="unit-stats" id="usAirport">
-  <div class="us-head"><span>Airport Unit · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-head"><span data-unit-head="airport">Airport Unit · overview</span><small data-unit-head-sub="airport">Live counters — update with the register</small></div>
   <div class="us-row" id="usAirportRow"></div>
 </div>
 <div class="panel">
@@ -1683,7 +1692,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <!-- CID -->
 <section id="cid" class="page">
 <div class="unit-stats" id="usCid">
-  <div class="us-head"><span>Crime Department · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-head"><span data-unit-head="cid">Crime Department · overview</span><small data-unit-head-sub="cid">Live counters — update with the register</small></div>
   <div class="us-row" id="usCidRow"></div>
 </div>
 <div class="panel">
@@ -1761,7 +1770,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <!-- CHECKPOINTS -->
 <section id="checkpoints" class="page">
 <div class="unit-stats" id="usCheckpoints">
-  <div class="us-head"><span>Checkpoint Unit · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-head"><span data-unit-head="checkpoints">Checkpoint Unit · overview</span><small data-unit-head-sub="checkpoints">Live counters — update with the register</small></div>
   <div class="us-row" id="usCheckpointsRow"></div>
 </div>
 <div class="panel">
@@ -1817,7 +1826,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
 <!-- POLICE STATIONS REGISTRATION -->
 <section id="stations" class="page">
 <div class="unit-stats" id="usStations">
-  <div class="us-head"><span>Station registry · overview</span><small>Live counters — update with the register</small></div>
+  <div class="us-head"><span data-unit-head="stations">Station registry · overview</span><small data-unit-head-sub="stations">Live counters — update with the register</small></div>
   <div class="us-row" id="usStationsRow"></div>
 </div>
 <div class="da-note admin-write-note" style="margin-bottom:12px">Creating or editing a police station is a SystemAdmin action — this register is read-only for your role (the station list below still feeds officer postings and the deployment matrix).</div>
@@ -2992,49 +3001,124 @@ async function loadBranchCatalog(force=false){
 // ---- auto-locked branch selectors -------------------------------------------
 // A posted officer must not be able to file a record under another branch. The
 // posting lives on the session (users.branch, `users.location_scope` for
-// checkpoint postings); when it resolves to a branch of the unit being
-// recorded, the selector is pre-selected and DISABLED. System Administrators
-// (and the record-management admin flag) are never locked, so they can pick any
-// branch. Nothing here changes what the API accepts — the server gates are
-// untouched — it removes the accidental cross-branch filing from the form.
-function sessionPostingParts(){
-  const parts=String((sessionUser&&sessionUser.branch)||'').split('·').map(x=>x.trim()).filter(Boolean);
-  const name=parts[0]||'';
-  return {name, region:parts.length>1?parts[parts.length-1]:''};
+// checkpoint postings); it is FREE TEXT, so it is canonicalised here with the
+// exact same rules the API uses (server.py `canonical_posting_key` /
+// `resolve_posting_branch`) before it is matched to the branch catalogue. The
+// matched branch is pre-selected AND disabled; System Administrators, HQ and
+// multi-branch commanders keep a free choice. Nothing here changes what the API
+// accepts — the server re-checks every write — it removes the accidental
+// cross-branch filing from the form.
+//
+// Posting shapes this resolves:
+//   'Lasanod Branch'                        → Lasanod Branch
+//   'Lasanod Branch · Laascaanood · Sool'   → Lasanod Branch
+//   '  lasanod branch '                     → Lasanod Branch (case/padding)
+//   'Lasanod'                               → Lasanod Branch (suffix dropped)
+//   'Fingerprint Unit'                      → unit-level: the officer's region
+//                                             decides, never a guess
+//   'Fingerprint Unit · Sool'               → the Sool branch
+const POSTING_UNIT_WORDS=new Set(['branch','branches','unit','units','checkpoint','checkpoints',
+  'outpost','outposts','station','stations','office','offices','desk','centre','center','post','hq',
+  'department','dept','directorate','control','division','section','registry','command']);
+const POSTING_MATCH_MIN=45;
+const UNIT_POSTING_KEYS={
+  fingerprint:['fingerprint','fingerprint unit'],
+  airport:['airport','airport control','airport unit'],
+  crime:['crime','crime unit','cid','criminal unit','crime department'],
+  checkpoint:['checkpoint','checkpoint unit'],
+  police_station:['police','police station','police stations','station registry']
+};
+function canonicalPostingKey(value){
+  const words=String(value==null?'':value).replace(/[·•]/g,' ').replace(/[^A-Za-z0-9]+/g,' ')
+    .trim().toLowerCase().split(' ').filter(Boolean);
+  while(words.length>1&&POSTING_UNIT_WORDS.has(words[words.length-1])) words.pop();
+  return words.join(' ');
+}
+// 'Name · District · Region' split positionally from the right, because legacy
+// rows carry only 'Name' or 'Name · Region'.
+function postingParts(){
+  const parts=String((sessionUser&&sessionUser.branch)||'').split('·')
+    .map(x=>x.trim()).filter(Boolean);
+  return {name:parts[0]||'',
+    district:parts.length>2?parts[parts.length-2]:'',
+    region:parts.length>1?parts[parts.length-1]:''};
+}
+function scorePostingBranch(branch,keys,parts,locationScope,unitType){
+  const bkey=canonicalPostingKey(branch&&branch.name);
+  if(!bkey) return 0;
+  const bwords=new Set(bkey.split(' '));
+  let score=0;
+  keys.forEach(key=>{
+    if(!key) return;
+    const kwords=new Set(key.split(' '));
+    if(key===bkey) score=Math.max(score,100);
+    else if(kwords.size&&[...kwords].every(w=>bwords.has(w))) score=Math.max(score,80);
+    else if(bwords.size&&[...bwords].every(w=>kwords.has(w))) score=Math.max(score,72);
+  });
+  const hints=new Set([canonicalPostingKey(parts.district),canonicalPostingKey(parts.region),
+    canonicalPostingKey(locationScope)].filter(Boolean));
+  if(hints.size){
+    if(hints.has(canonicalPostingKey(branch.district))) score=Math.max(score,62);
+    else if(hints.has(canonicalPostingKey(branch.region))) score=Math.max(score,52);
+  }
+  // A legacy unit-level posting ('Fingerprint Unit') names the unit, not the
+  // branch: it resolves only when the geography leaves one candidate.
+  const unitKeys=UNIT_POSTING_KEYS[unitType]||[];
+  if(unitKeys.some(k=>keys.has(k))) score=Math.max(score,score?46:40);
+  return score;
+}
+// The single registered branch this session's posting identifies, or null.
+function resolvePostingBranch(unitType){
+  const items=((branchCatalog&&branchCatalog.items)||[])
+    .filter(b=>b&&unitTypeOf(b.unit_type)===unitType);
+  if(!items.length) return null;
+  // The API already resolved the posting (session payload `branch_scope_status`)
+  // — trust it when it names a branch of the unit being recorded.
+  const status=(sessionUser&&sessionUser.branch_scope_status)||null;
+  if(status&&status.resolved&&status.branch&&unitTypeOf(status.branch.unit_type)===unitType){
+    const match=items.find(b=>String(b.id)===String(status.branch.branch_id));
+    if(match) return match;
+  }
+  const parts=postingParts();
+  const locationScope=(sessionUser&&sessionUser.location_scope)||'';
+  const keys=new Set([canonicalPostingKey(parts.name),
+    canonicalPostingKey(locationScope)].filter(Boolean));
+  if(!keys.size) return null;
+  const scored=items.map(b=>({branch:b,score:scorePostingBranch(b,keys,parts,locationScope,unitType)}))
+    .filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+  if(!scored.length) return null;
+  const top=scored[0].score;
+  if(top<POSTING_MATCH_MIN) return null;
+  const winners=scored.filter(x=>x.score===top);
+  return winners.length===1?winners[0].branch:null;   // ambiguous → free choice
+}
+function sessionBranchScope(unitType){
+  const status=(sessionUser&&sessionUser.branch_scope_status)||null;
+  if(!status||!status.resolved||!status.branch) return null;
+  if(unitType&&unitTypeOf(status.branch.unit_type)!==unitType) return null;
+  return status.branch;
+}
+// Short 'Branch · District · Region' label for the lock chip and the headers.
+function branchWhereLabel(branch){
+  if(!branch) return '';
+  return [branch.name,branch.district,branch.region].filter(Boolean).join(' · ');
 }
 function branchSelectUnlockedForUser(){
   if(!sessionUser) return true;
   if(sessionVisibility && (sessionVisibility.is_admin || sessionVisibility.can_manage_records)) return true;
   if(isAdminRole(sessionUser.role) || isChiefRole(sessionUser.role)) return true;
+  // Multi-branch commanders and HQ keep the override even when they hold a
+  // concrete posting (the server says so with `override`).
+  const status=sessionUser.branch_scope_status;
+  if(status&&status.override) return true;
   return false;
 }
 // The branch this officer is assigned to, within `unitType`, or null.
 function branchLockFor(unitType){
   if(branchSelectUnlockedForUser()) return null;
-  const items=((branchCatalog&&branchCatalog.items)||[]).filter(b=>b && unitTypeOf(b.unit_type)===unitType);
-  if(!items.length) return null;
-  const norm=v=>String(v||'').trim().toLowerCase();
-  const {name}=sessionPostingParts();
-  if(!name) return null;
-  const exact=items.find(b=>norm(b.name)===norm(name));
-  if(exact) return exact;
-  // The stored posting may carry the district/region suffix, or the branch may
-  // be the longer of the two ('Lasanod Branch' vs 'Lasanod').
-  const loose=items.find(b=>norm(name).indexOf(norm(b.name))===0||norm(b.name).indexOf(norm(name))===0);
-  if(loose) return loose;
-  // A checkpoint officer's canonical area ('South') matches the branch posted
-  // to that area when the catalogue names it.
-  if(isCheckpointRole(sessionUser.role)||unitType==='checkpoint'){
-    const scope=norm(sessionUser.location_scope||scopeFromRole(sessionUser.role)||'');
-    if(scope){
-      const byScope=items.find(b=>norm(cpCodeFromLabel(b.name))===scope)
-        || items.find(b=>norm(b.name).indexOf(scope)!==-1);
-      if(byScope) return byScope;
-    }
-  }
-  return null;
+  return resolvePostingBranch(unitType);
 }
-function branchLockHint(select,html,show){
+function branchLockHint(select,html,show,note){
   if(!select||!select.parentNode) return null;
   const id=select.id+'-lock';
   let hint=document.getElementById(id);
@@ -3047,8 +3131,10 @@ function branchLockHint(select,html,show){
     hint=document.createElement('small');
     hint.id=id;
     hint.className='branch-lock-hint';
+    hint.setAttribute('role','note');
     select.parentNode.appendChild(hint);
   }
+  hint.className='branch-lock-hint'+(note?' is-note':'');
   hint.innerHTML=html;
   hint.style.display='';
   select.setAttribute('aria-describedby',id);
@@ -3058,26 +3144,28 @@ function applyBranchLock(select,unitType){
   if(!select) return null;
   const lock=branchLockFor(unitType);
   if(lock){
+    const where=[lock.district,lock.region].filter(Boolean).join(' · ');
     select.value=String(lock.id);
     select.disabled=true;
     select.dataset.branchLocked=String(lock.id);
-    select.title='Locked to your posting — '+lock.name;
-    branchLockHint(select,'<span aria-hidden="true">🔒</span> Assigned to <b>'+esc(lock.name)+'</b>'
-      +(lock.district?' · '+esc(lock.district):'')
-      +(lock.region?' · '+esc(lock.region):'')
-      +' — locked so this record cannot be filed under another branch.',true);
+    select.title='🔒 Locked to assigned branch — '+(lock.name||'');
+    branchLockHint(select,
+      '<span aria-hidden="true">🔒</span><span class="bll-label">Locked to assigned branch</span>'
+      +'<span class="bll-where">'+esc(lock.name||'')+(where?' · '+esc(where):'')+'</span>',true,false);
     return lock;
   }
   delete select.dataset.branchLocked;
   select.removeAttribute('title');
-  // Not locked: an officer with a posting that the unit catalogue does not
-  // know about is told why they still have to choose (an administrator can
-  // register the branch, after which the field locks itself).
-  const posting=sessionPostingParts().name;
-  const orphan=!branchSelectUnlockedForUser() && posting && select.options.length>1;
-  if(orphan){
-    branchLockHint(select,'Your posting <b>'+esc(posting)+'</b> is not registered for this unit — '
-      +'pick the matching branch, or ask a System Administrator to add it under Branch Management.',true);
+  // Not locked. An officer whose posting names no single registered branch is
+  // told once, in muted text (never a yellow warning), that an administrator
+  // has to assign the branch — after which the field locks itself.
+  const posting=(postingParts().name||'').trim();
+  const unresolved=!branchSelectUnlockedForUser() && posting && select.options.length>1;
+  if(unresolved){
+    branchLockHint(select,
+      '<span aria-hidden="true">ⓘ</span><span class="bll-where">Your posting “'+esc(posting)
+      +'” does not name one registered branch of this unit — pick the branch you are filing for, '
+      +'or ask a System Administrator to assign it.</span>',true,true);
   }else{
     branchLockHint(select,'',false);
   }
@@ -3158,6 +3246,8 @@ function stripServer(d){return{full_name:d.name||[d.first,d.second,d.third,d.fou
   mother_name:d.motherName||'',place_of_birth:d.pob||'',residence:d.residence||'',occupation:d.occupation||''}}
 
 // ============================ nav ============================
+// The page the router last opened (`go()` keeps this in step with the DOM).
+let activePage='dashboard';
 const TITLES={dashboard:'Operations dashboard',people:'Central person search',policesearch:'Central police search',fingerprint:'Fingerprint Unit',airport:'Airport Unit',cid:'Crime Department',caseworkspace:'CID · Case workspace',checkpoints:'Checkpoint Unit',stations:'Police stations registration',officers:'Police officers registration',cars:'Police cars registration',crimes:'Crime / victim intake',admin:'User management',branches:'Branch Management',executive:'Global Executive Dashboard',oversight:'Stations Oversight & Regional Data',vehiclestatus:'Vehicle Status & Tracking',conduct:'Conduct, Promotions & Disciplinary Management'};
 // Current session ----------------------------------------------------
 let sessionUser=null;          // {id,username,display_name,role,role_label,branch,location,location_scope,modules,active}
@@ -3204,6 +3294,13 @@ function go(page){
   try{ markUnitNavCurrent(); }catch(_){ }
   closeSidebar();
   document.getElementById('pageTitle').textContent=TITLES[page]||'';
+  activePage=page;
+  if(page==='dashboard'){
+    // The dashboard is the officer's own operations board: the heading names
+    // their unit AND posting instead of the generic 'Operations dashboard'.
+    const ctx=dashboardHeaderContext();
+    if(ctx) document.getElementById('pageTitle').textContent=ctx;
+  }
   if(page==='cid') renderCases();
   if(page==='admin') renderUserTable();
   if(page==='branches') refreshBranchManagement();
@@ -6794,7 +6891,17 @@ function paintDashboard(d){
   const sub = document.getElementById('dashSub');
   const subhead = document.getElementById('dashSubhead');
   if(sub) sub.textContent = d.subhead || ('Updated '+ (d.generated_at||'') +' · '+ (d.role||'') + (d.location_scope ? ' · '+checkpointLabelText(d.location_scope) : ''));
-  if(subhead) subhead.textContent = (d.is_admin ? 'Cross-unit Operations' : (d.location_scope ? (d.location_scope+' Checkpoint Operations') : ((d.role||'Module')+' Operations')));
+  if(subhead){
+    // The banner names the officer's precise posting: 'Fingerprint Unit —
+    // Lasanod Branch Operations'. `branch_context` comes from the server (the
+    // same resolver the API scopes reads with); the client context is the
+    // fallback for an older payload.
+    subhead.textContent = d.branch_context
+      || dashboardHeaderContext()
+      || (d.is_admin ? 'Cross-unit Operations'
+          : (d.location_scope ? (d.location_scope+' Checkpoint Operations')
+             : ((d.role||'Module')+' Operations')));
+  }
 
   // Live status pill — the dashboard is refreshed automatically on every
   // page visit and on POST events so the data is always current.
@@ -7756,7 +7863,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=a4f7c913&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=e83c5d16&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -7883,7 +7990,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=a4f7c913&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=e83c5d16&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -8093,6 +8200,9 @@ function renderUnitStats(){
     const el=document.getElementById(mounts[page]);
     if(el)el.innerHTML=UNIT_STATS[page]();
   });
+  // The module header banner names the officer's posting, so it is repainted
+  // with the counters on every navigation / save / branch-catalogue refresh.
+  try{ paintModuleHeaders(); }catch(_){ }
 }
 
 function renderAll(){
@@ -8166,7 +8276,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=a4f7c913&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=e83c5d16&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -9340,8 +9450,102 @@ function updateUserPill(){
   if(eb){
     let txt = 'Signed in as ' + sessionUser.display_name;
     if(uScope && isCheckpointRole(sessionUser.role)) txt += ' · ' + checkpointLabelText(uScope);
+    const posting=branchWhereLabel(sessionBranchScope());
+    if(posting) txt += ' · ' + posting;
     eb.textContent = txt;
   }
+  // Session changes (sign-in, profile adoption, admin/role switch) re-label the
+  // module headers and the dashboard banner with the new posting.
+  try{ paintModuleHeaders(); }catch(_){ }
+}
+// ---- contextual module headers ---------------------------------------------
+// Every operational page opens with a module header ("banner") that names the
+// officer's POSTING, not just the unit: 'Fingerprint Unit — Lasanod Branch
+// Operations'. The branch comes from the same resolver the form lock uses, so
+// the header, the locked selector and the API's read scope always agree.
+const UNIT_HEADER_SPECS={
+  fingerprint:{unitType:'fingerprint',module:'fingerprint',label:'Fingerprint Unit'},
+  airport:{unitType:'airport',module:'airport',label:'Airport Control'},
+  cid:{unitType:'crime',module:'cid',label:'Crime Department'},
+  checkpoints:{unitType:'checkpoint',module:'checkpoints',label:'Checkpoint Unit'},
+  stations:{unitType:'police_station',module:'stations',label:'Station Registry'},
+  officers:{unitType:null,label:'HR Directorate'},
+  crimes:{unitType:null,label:'Crime Intake'},
+  cars:{unitType:null,label:'Vehicle Registry'},
+  vehiclestatus:{unitType:null,label:'Fleet Status'}
+};
+function moduleBranchContext(page){
+  const spec=UNIT_HEADER_SPECS[page];
+  if(!spec) return null;
+  const posting=postingParts().name||'';
+  if(!spec.unitType){
+    return {label:spec.label,branch:null,title:spec.label+' · overview',detail:''};
+  }
+  // A unit this session cannot reach is never labelled with their posting.
+  const modules=Array.isArray(sessionUser&&sessionUser.modules)?sessionUser.modules:[];
+  if(spec.module&&modules.indexOf(spec.module)===-1){
+    return {label:spec.label,branch:null,title:spec.label+' · overview',
+      detail:'Live counters — update with the register'};
+  }
+  const branch=resolvePostingBranch(spec.unitType);
+  if(branchSelectUnlockedForUser()){
+    const override=isChiefRole(sessionUser&&sessionUser.role) ? 'cross-region command' : 'all branches';
+    return {label:spec.label,branch:branch,
+      title:spec.label+' — '+override,
+      detail:(branch?branchWhereLabel(branch):override)};
+  }
+  if(branch){
+    return {label:spec.label,branch,
+      title:spec.label+' — '+branch.name+' Operations',
+      detail:[branch.district,branch.region].filter(Boolean).join(' · ')};
+  }
+  // Unresolved posting: name it so the header is never a generic unit title.
+  return {label:spec.label,branch:null,
+    title:spec.label+' — '+(posting||'unassigned posting')+' Operations',
+    detail:posting?'Posting not yet registered as a branch':'No branch posting on this account'};
+}
+function paintModuleHeaders(){
+  Object.keys(UNIT_HEADER_SPECS).forEach(page=>{
+    const ctx=moduleBranchContext(page);
+    document.querySelectorAll('[data-unit-head="'+page+'"]').forEach(el=>{
+      el.textContent=ctx.title;
+      el.title=ctx.detail?ctx.title+' · '+ctx.detail:ctx.title;
+    });
+    const sub=document.querySelector('[data-unit-head-sub="'+page+'"]');
+    if(sub){
+      sub.textContent=ctx.detail?ctx.detail+' · live counters':'Live counters — update with the register';
+    }
+  });
+  // The dashboard banner follows the same context (the server payload's
+  // `branch_context` wins when it is present, so a renamed branch shows up on
+  // the next refresh without a reload).
+  // Only the dashboard's own heading is contextual; every other page keeps the
+  // title its route set (tracked explicitly so a late repaint — or a sandbox
+  // with an unusual class-selector implementation — can never retitle it).
+  if(activePage!=='dashboard') return;
+  const dashTitle=document.getElementById('pageTitle');
+  const ctx=dashboardHeaderContext();
+  if(dashTitle&&ctx) dashTitle.textContent=ctx;
+}
+function dashboardHeaderContext(){
+  if(!sessionUser) return null;
+  if(isAdminRole(sessionUser.role)) return 'Cross-unit Operations';
+  if(isChiefRole(sessionUser.role)) return 'Cross-region Command Operations';
+  const unit=primaryUnitPageForSession();
+  const ctx=unit?moduleBranchContext(unit):null;
+  return ctx?ctx.title:null;
+}
+// The unit page whose posting governs this session (the first module the
+// officer holds among the operational units).
+function primaryUnitPageForSession(){
+  const order=['fingerprint','airport','cid','checkpoints','stations'];
+  const modules=Array.isArray(sessionUser&&sessionUser.modules)?sessionUser.modules:[];
+  for(const page of order){
+    const spec=UNIT_HEADER_SPECS[page];
+    const moduleName=page==='cid'?'cid':page==='stations'?'stations':page;
+    if(spec&&spec.unitType&&modules.indexOf(moduleName)!==-1) return page;
+  }
+  return null;
 }
 // 'South' -> 'South Checkpoint'; a named checkpoint keeps its own name.
 function checkpointLabelText(scope){

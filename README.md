@@ -285,24 +285,78 @@ deliberately **not** nested inside the Checkpoint Units accordion any more). It 
 opens that unit exactly like the tree does. It stays available to a read-only Commander session
 (a read surface — no write control is rendered inside it).
 
-#### Auto-locked branch selectors for posted officers
+#### Robust posting resolution + auto-locked branch selectors
 
-Record-creation modals carry a branch selector (`fpBranch`, `airBranch`, `crmBranch`, `stBranch`,
-`cpBranch`). `refreshBranchSelect()` ends with `applyBranchLock()`:
+A posting is **free text**: `users.branch` stores a readable label and
+`users.location_scope` stores the checkpoint area, and neither is a foreign key. Before a branch
+can be locked (or a register scoped) the posting is therefore **canonicalised** — in exactly one
+place per tier, `canonical_posting_key()` / `resolve_posting_branch()` in `backend/server.py` and
+their JS twins in `index.html`:
 
-- **Posted officer** — when the session's posting (`users.branch`, or `users.location_scope` for
-  checkpoint postings) resolves to a branch of the unit being recorded (`branchLockFor()` matches
-  the exact name, then a prefix/containment match, then a canonical checkpoint area), the selector
-  is **pre-selected and disabled**, with an inline note naming the locked posting. The record can
-  therefore not be filed under another branch by accident or by editing the form.
-- **System Administrator** — `sessionVisibility.is_admin` / `can_manage_records` (or the
-  `SystemAdmin` / HQ roles) are never locked, so an administrator can pick any branch, and the
+| Stored posting | Resolves to |
+|----------------|-------------|
+| `Lasanod Branch` | `Lasanod Branch` |
+| `  LASANOD branch ` | `Lasanod Branch` (case, padding, punctuation ignored) |
+| `Lasanod` | `Lasanod Branch` (administrative suffix dropped) |
+| `Lasanod Branch · Laascaanood · Sool` | `Lasanod Branch` (composed label split) |
+| `Fingerprint Unit · Sool` | the Sool branch (legacy **unit-level** posting + region) |
+| `Fingerprint Unit` (three branches, no region) | **nothing** — ambiguous, so the officer keeps the free choice |
+| `South Checkpoint` (checkpoint officer) | the branch posted to that area, else nothing |
+
+Rules: the catalogue is first restricted to the officer's own department (the same branch name
+exists once per department), then scored per candidate — exact canonical name **100** / one name
+contained in the other **70–80** / district hint **62** / region hint **52** / legacy unit-level
+posting **40–46**. The highest score wins **only if it is unique** and at least
+`POSTING_MATCH_MIN`; a tie is never broken by guessing.
+
+`GET /api/login` and `GET /api/me` return the resolved posting (`branch_scope`) and its status
+(`branch_scope_status: {resolved, branch, posting, unit_type, override}`), so the browser and the
+API always agree. `refreshBranchSelect()` ends with `applyBranchLock()`:
+
+- **Posted officer** — the resolved branch is **pre-selected and disabled**, with a clean
+  `🔒 Locked to assigned branch · <branch> · <district> · <region>` chip (no yellow warning banner).
+- **System Administrator / multi-branch Commander** — `is_admin`, `can_manage_records`, the
+  `SystemAdmin`/HQ roles or the payload's `override` flag keep the selector open, and the
   checkpoint location selector stays editable too.
-- **Unknown posting** — if the officer's posting is not registered for that unit, the field is left
-  editable (a fabricated `branch_id` could never be saved) and the officer is told to ask an
-  administrator to register the branch — after which the field locks itself.
-- This is a **form-level guard only**: no API contract, RBAC gate or database schema changed. The
-  server continues to validate every write exactly as before.
+- **Unresolvable posting** — the field stays editable (a fabricated `branch_id` could never be
+  saved) and a muted `ⓘ` note explains that an administrator has to assign a branch, after which
+  the field locks itself.
+
+#### Strict branch scoping (reads and writes)
+
+The API scopes with the **same** resolver (`branch_scope_view()`), so what the UI pins is what the
+server enforces. A standard officer whose posting resolves to a branch is *scoped*; a
+System Administrator, the Commander and any unresolvable posting stay unrestricted (never silently
+narrowed):
+
+- **Registers** — `GET /api/clearance-applications`, `/api/airport-records`, `/api/crime-cases` and
+  `/api/crimes` add `WHERE branch_id = <own branch>`; the checkpoint event filter keeps its
+  existing location scope. Each payload echoes `branch_scope`.
+- **Single records** — a clearance application, its printable page, a CID case and
+  `/api/audit/entity/<entity>/<id>` answer **403 `branch_scope_forbidden`** when the record belongs
+  to another branch (a guessed identifier can never widen the scope; a record with no branch is
+  out of scope for a scoped officer).
+- **Writes** — a scoped officer filing under another branch is refused with the same 403 and the
+  message names their posting; a legacy client that omits `branch_id` is pinned to the officer's
+  own branch instead of storing an unscoped record.
+- **Untouched** — authentication, session cookies, module gates, the read-only firewall, the
+  12-hour fingerprint review lock and the existing database schema are unchanged.
+
+#### Contextual module headers
+
+Each operational page's overview banner and the dashboard heading now name the officer's posting
+instead of a generic unit title:
+
+| Session | Banner |
+|---------|--------|
+| Fingerprint officer posted to `Lasanod Branch` | `Fingerprint Unit — Lasanod Branch Operations` (detail line `Laascaanood · Sool`) |
+| Checkpoint officer at `Lasanod Central Checkpoint` | `Checkpoint Unit — Lasanod Central Checkpoint Operations` |
+| System Administrator | `Fingerprint Unit — all branches` · dashboard `Cross-unit Operations` |
+| Commander | `Fingerprint Unit — cross-region command` |
+| Unresolved posting | `Fingerprint Unit — <posting> Operations` (the posting is named) |
+
+`paintModuleHeaders()` repaints on every navigation, save and session change from the same
+resolver the lock uses, and `GET /api/dashboard` adds `branch_scope` / `branch_context`.
 
 ### Regional location schema (Sool · Sanaag · East Togdheer)
 
