@@ -262,7 +262,10 @@ Checkpoint Units
 - **Immediate updates** — `renderUnitNavTrees()` runs on every nav paint, every `renderAll()`,
   every server sync, after a branch is saved in **Branch Management** and after a checkpoint stop
   is recorded, so a **new branch or checkpoint is in the sidebar before the next click** (no
-  reload). The canonical `South` / `East` / `West` areas (which have no gazetteer district of
+  reload). Editing a branch's **Region / District** re-places it in the tree in the same paint
+  (`applyBranchUpdate()` merges the saved row into the one catalogue the tree reads), and a branch
+  toggled **Inactive** leaves the tree (and the intake dropdowns) immediately — the row, its
+  records and its officer postings are still there, so re-activating it restores the entry. The canonical `South` / `East` / `West` areas (which have no gazetteer district of
   their own) are grouped under *Checkpoint areas*, and a row that cannot be placed at all is shown
   under *Unassigned region* / *Unassigned district* instead of being dropped.
 - **Short labels** — `shortUnitLabel()` decides what the rail shows: the administrative suffix
@@ -854,6 +857,53 @@ mirror is view-only even for an administrator — it is edited in Branch Managem
 `can_edit_records` / `can_edit_stations` are the reusable capability flags the same
 administration rule exposes to every management table, so admins keep full edit
 access wherever an inline Edit action exists.
+
+## Branch Management — full CRUD (Edit / Deactivate) & legacy placement cleanup (testing branch)
+
+The **Administration → Branch Management** page is now a full lifecycle surface. Editing never
+deletes a branch, so every foreign key that already points at it (clearance applications, airport
+records, CID cases, checkpoint events, mirrored stations), every officer posting and every audit
+row keeps its link.
+
+- **Actions column.** Every row carries **Edit** and an **Activate / Deactivate** toggle (both
+  `.admin-edit`, hidden for every non-admin session by the same CSS rule as the station Edit
+  action), plus a **Status** badge (Active / Inactive) and a placement hint when the row still
+  lands under *Unassigned district*.
+- **Edit Branch modal** (`#branchEditModal`, Actions → Edit): rename the branch (e.g. `East` →
+  `East Lasanod Checkpoint`), re-assign **Region → District** (fixing legacy unassigned /
+  unplaced checkpoints so they map into the gazetteer), change the **Unit Department**
+  (Fingerprint / Crime / Checkpoint / Airport / Police Stations) and toggle **Active / Inactive**.
+- **Rename keeps the posting link.** `users.branch` (and a checkpoint officer's named
+  `location_scope`) is a free-text label, not an FK. A rename / re-placement rewrites those
+  labels in place (`relabel_branch_postings()`), so an active officer's posting keeps resolving
+  and their intake form stays locked to their own branch. The row reports how many postings it
+  relabelled (`relabelled_postings`).
+- **Mirrored stations follow.** Renaming / re-placing a `police_station` branch updates its
+  mirrored `police_stations` row (`name`, `region`, `district`, derived `village`) without
+  changing the station's numeric id, so officer / vehicle / crime FKs stay valid.
+- **Deactivate = retire, not delete.** An Inactive branch stays in the administrator catalogue
+  and every register, but is no longer offered by the intake dropdowns, the sidebar tree or the
+  Unit Directory, and `resolve_branch()` refuses a NEW record filed under it (400 with an
+  explanatory message). Existing records and postings are untouched; re-activating restores it.
+- **Legacy placement cleanup** (`#branchLegacyPanel`): the page lists every branch whose
+  placement is not a gazetteer pair (blank district, blank region, `district = region`, a district
+  outside its region, or a region outside Sool / Sanaag / East Togdheer — the same predicate the
+  sidebar uses for *Unassigned district*). Select the bare `East` / `South` / `West Checkpoint`
+  rows, pick e.g. **Sool → Laascaanood** and **Assign selected branches**: they are re-placed in
+  one batch and move into the correct sidebar accordion immediately.
+
+**API**
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/api/admin/branches` | SystemAdmin only. Every branch (including Inactive) + `unassigned` cleanup queue, `gazetteer`, `gazetteer_regions`, `counts`. |
+| `PATCH` | `/api/admin/branches/<id>` | SystemAdmin / Admin only. Body `{name?, region?, district?, unit_type?, active?}`; PATCH semantics, edits in place, 409 on a duplicate (same name + region + unit), 403 (`code: admin_only`) for every other role, 404 for an unknown id, 400 for an invalid Region → District pair. Alias: `PATCH /api/branches/<id>`. |
+| `POST` | `/api/admin/branches/bulk-assign` | SystemAdmin / Admin only. Body `{ids: [...], region, district}`; returns `{updated, skipped, counts}` and audits each applied row. A row that collides with an existing branch of the same unit in the target placement is reported in `skipped` instead of aborting the batch. |
+| `GET` | `/api/branches` | Unchanged default shape (every branch, now also carrying `active`, `status`, `unit_label`, `legacy_reason`). Optional `active=1` / `active=0` filters; `?unit_type=…&region=…&district=…` behave exactly as before. |
+
+Migration is additive and idempotent (`ADDED_COLUMNS`): `police_branches.active` (default 1),
+`updated_at`, `updated_by`; rows that predate the columns are backfilled to Active. Audit rows are
+written as `UPDATE police_branch` with the changed fields and the relabelled-posting count.
 
 ## Clearance purpose, document viewer, certificate print lock & field-level RBAC (testing branch)
 

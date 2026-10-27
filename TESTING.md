@@ -30,6 +30,8 @@ PYTHON="$PWD/.venv/bin/python" node backend/test_approval_flow.mjs
 .venv/bin/python backend/test_field_level_rbac.py
 node backend/test_clearance_rbac_ui.mjs
 node backend/test_reverse_sequence_ui.mjs
+node backend/test_branch_management_ui.mjs
+.venv/bin/python -m pytest backend/test_branch_management_crud.py -q
 ```
 
 The linked-record suite **always** provisions isolated PostgreSQL. Review-gate,
@@ -101,7 +103,7 @@ Personnel · Administration). For every role you test:
 10. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
     control appears in it.
 11. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
-    (`sentinel-sidebar-scope-1-b4d29a71`); a mismatch means a cached tab.
+    (`sentinel-branch-crud-1-e7c41b90`); a mismatch means a cached tab.
 
 12. **Branch-scoped sidebar tree** — sign in as a Fingerprint officer posted to
     `Lasanod Branch · Laascaanood · Sool`. Every dynamic tree (Fingerprint Units, Crime Units,
@@ -678,3 +680,86 @@ the generic endpoint.
    events) appear — no fingerprint application events.
 6. **Police Stations → View** on a station: the *Audit history* section lists its registration and
    edits with the administrator’s badge.
+
+## Branch Management — Edit / Deactivate + legacy placement cleanup (2026-10-27)
+
+Branch: `arena/b4919f35-sentinel-police-management` (feature branch `arena/branch-management-crud`).
+Do not merge until UAT is approved. Restart the backend and hard-refresh the browser when testing
+this branch (`?v=` stamps and the UI build marker were republished as
+`sentinel-branch-crud-1-e7c41b90`). Use a test database and synthetic identities only.
+
+### What changed
+- **Actions column + Edit Branch modal.** The Branch Management table gained **Status** and
+  **Actions** columns; every row has **Edit** (`openBranchEdit()`) and an
+  **Activate / Deactivate** toggle (`toggleBranchActive()`), both `.admin-edit`. The modal
+  (`#branchEditModal`) edits the name, Region → District, Unit Department and the Active / Inactive
+  status, and saves through `PATCH /api/admin/branches/<id>`.
+- **Edit is in place, never delete/re-create.** `police_branches.id` stays the FK target for
+  clearance applications, airport records, CID cases, checkpoint events and mirrored stations, so
+  the branch table's `active` / `updated_at` / `updated_by` columns are added by the idempotent
+  `ADDED_COLUMNS` migration (pre-existing rows backfill to Active).
+- **Posting links survive a rename.** `relabel_branch_postings()` rewrites the free-text
+  `users.branch` (and a checkpoint officer's named `location_scope`) that pointed at the old name,
+  so an active officer keeps their locked intake posting; the count is returned as
+  `relabelled_postings` and printed in the audit detail.
+- **Mirrored stations follow the branch.** `sync_mirrored_station_for_branch()` moves the mirrored
+  `police_stations` row (name / region / district / derived village) without touching its id.
+- **Retire, don't delete.** An Inactive branch is excluded from the intake dropdowns
+  (`refreshBranchSelect`), the sidebar trees (`unitNavCatalog`), the Unit Directory and NEW intake
+  writes (`resolve_branch()` → 400), while every existing record / posting stays linked.
+  `GET /api/branches?active=1` / `?active=0` make the split explicit; the default response keeps
+  the previous shape and now also carries `active` / `status` / `unit_label` / `legacy_reason`.
+- **Real-time sidebar sync.** `applyBranchUpdate()` merges the saved row into the one
+  `branchCatalog` and `repaintBranchConsumers()` repaints the Region → District → unit trees, the
+  Unit Directory, the branch datalist and any open intake selector — no reload.
+- **Legacy cleanup tool.** `#branchLegacyPanel` lists every branch that still lands under
+  *Unassigned district* (blank / placeholder / non-gazetteer placement) with the reason, and
+  batch-assigns the selection through `POST /api/admin/branches/bulk-assign`
+  (`{ids, region, district}` → `{updated, skipped, counts}`). Conflicts are reported per row.
+- **API + RBAC.** `GET /api/admin/branches` (SystemAdmin) returns every branch including inactive
+  ones, the `unassigned` queue, the gazetteer and counts. `PATCH /api/admin/branches/<id>` (alias
+  `PATCH /api/branches/<id>`) answers **403** `code: admin_only` for every non-admin (including the
+  HR Directorate, which may read the catalogue), **409** for a duplicate name + region + unit,
+  **400** for an invalid district and **404** for an unknown id; each applied edit writes an
+  `UPDATE police_branch` audit row.
+
+### Manual verification
+1. Sign in as `admin` (`ChangeMe123!`) → **Administration → Branch Management**. The table lists
+   every branch with **Status** and **Actions**; a row whose District is blank shows the amber
+   *Unassigned district* badge and the reason under its name.
+2. **Actions → Edit** on a bare `East Checkpoint` row: rename it to `East Lasanod Checkpoint`,
+   set Region **Sool**, District **Laascaanood**, keep *Checkpoint Unit*, status **Active** →
+   **Save changes**. The row is renamed and re-placed, and the **Checkpoint Units** accordion in
+   the sidebar moves that unit from *Unassigned district* into **Sool → Laascaanood** without a
+   page reload. `PATCH /api/admin/branches/<id>` is the only write in the Network tab.
+3. **Deactivate** the same branch: the status badge turns Inactive, the toast explains that
+   records/postings keep their link, and the unit disappears from the sidebar tree and from
+   **Checkpoint → New screening** branch selector. **Activate** restores both.
+4. **Legacy placement cleanup**: if any row is still unplaced, select a few (or *select all*),
+   choose e.g. **Sool → Laascaanood** and **Assign selected branches** — the queue shrinks, the
+   panel disappears when it empties, and the units are in the gazetteer tree.
+5. **Non-admin check**: sign in as `fp.officer` or `chief`. The Edit / toggle controls are hidden,
+   and forcing `PATCH /api/admin/branches/1` returns **403** `admin_only` (the Commander is refused
+   even earlier with `read_only_role`).
+6. **Posting preservation**: as `admin`, edit an account's **Branch** to a new branch name, rename
+   that branch in Branch Management, then reload the account: its posting shows the new name and
+   the officer's intake selector stays locked.
+7. Confirm the sidebar footer reports `sentinel-branch-crud-1-e7c41b90`, matching
+   `/api/health` → `ui_build` / `asset_version`, and `python backend/server.py --ui-check` exits 0.
+
+### Automated
+- `node backend/test_branch_management_ui.mjs` (jsdom) — Actions column, prefilled Edit modal,
+  rename + re-place moving the unit between sidebar accordions in real time, Deactivate/Activate
+  removing and restoring it in the tree, the batch cleanup sending one `bulk-assign` request and
+  emptying the queue, and a non-admin session being refused before any PATCH leaves the browser.
+- `python3 -m pytest backend/test_branch_management_crud.py -q` — pure validation of
+  `plan_branch_update()` (PATCH semantics, gazetteer rules, name/region/district/length limits,
+  Active/Inactive coercion), `branch_view()` lifecycle fields, `branch_legacy_reason()`, the
+  frontend/asset-stamp contract, and a live PostgreSQL suite covering the admin catalogue, the
+  403/404/409/400 answers, rename + re-placement, the active filter, batch assignment, the
+  mirrored-station rename, the officer-posting relabel and the `UPDATE police_branch` audit rows
+  (the live part SKIPs when no PostgreSQL engine is available).
+- The rest of the suite (`test_dynamic_branches.py`, `test_station_actions.py`,
+  `test_branch_scope.py`, `test_read_only_rbac.py`, `test_sidebar_navigation.mjs`,
+  `test_station_frontend.mjs`, …) still passes; `test_server.py` and `test_conduct_frontend.mjs`
+  remain on the retired SQLite harness and were already failing before this branch.

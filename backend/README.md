@@ -155,6 +155,34 @@ continues to accept older clients that do not send it); the current UI requires 
 selection and displays the saved branch on its register row. Branch writes are audited
 and SystemAdmin-only.
 
+### Branch lifecycle (Edit / Deactivate) and placement
+
+A branch is **never deleted**: Branch Management rewrites it in place and toggles it
+**Active / Inactive**, so `police_branches.id` remains the FK target for every record,
+officer posting and audit row. `police_branches` gained `active` (default 1), `updated_at`
+and `updated_by`; the migration backfills existing rows to Active.
+
+- `PATCH /api/admin/branches/<id>` — SystemAdmin / Admin only (`403 code: admin_only` for
+  every other role, `403 code: read_only_role` for the Commander). Body
+  `{name?, region?, district?, unit_type?, active?}` — PATCH semantics, edits in place.
+  `409` on a duplicate (same name + region + unit), `404` unknown id, `400` for an invalid
+  Region → District pair (a gazetteer region only accepts its own districts and a district
+  may not repeat the region name). A rename / region move also relabels the free-text
+  `users.branch` postings (`relabelled_postings`) and moves the mirrored `police_stations`
+  row without changing its id. `/api/branches/<id>` is an accepted alias.
+- `GET /api/admin/branches` — SystemAdmin only. Every branch (including Inactive) plus the
+  `unassigned` cleanup queue, the `gazetteer` / `gazetteer_regions`, the unit labels and
+  `counts` (`total / active / inactive / unassigned`).
+- `POST /api/admin/branches/bulk-assign` — SystemAdmin only. `{ids: [...], region, district}`
+  places the legacy rows that land under the sidebar's *Unassigned district* accordion;
+  returns `{updated, skipped, counts}` (a colliding row is reported in `skipped` instead of
+  aborting the batch) and audits each applied row.
+- `GET /api/branches` keeps its previous default shape (every branch, now also carrying
+  `active`, `status`, `unit_label`, `legacy_reason`); `?active=1` / `?active=0` narrow the
+  lifecycle. An Inactive branch is not offered by intake, the sidebar tree or the Unit
+  Directory, and `resolve_branch()` refuses a NEW record filed under it — existing records
+  and postings stay linked until it is re-activated.
+
 ## Current endpoints
 
 - `POST /api/login`
@@ -163,6 +191,9 @@ and SystemAdmin-only.
 - `GET /api/me` (authenticated)
 - `GET /api/branches?unit_type=fingerprint|crime|checkpoint|airport&region=...` (authenticated — filters the dynamic branch catalogue by department and/or region; returns `items`, available `regions`, and unit labels; `/branches` and `/api/branches/` are normalized aliases)
 - `POST /api/branches` (SystemAdmin only — `{name, region, unit_type}`; adds a branch immediately, rejects case-insensitive duplicates with 409; `/branches` and `/api/branches/` are normalized aliases)
+- `GET /api/admin/branches` (SystemAdmin only — every branch incl. Inactive, the legacy `unassigned` placement queue, `gazetteer`, `counts`)
+- `PATCH /api/admin/branches/{id}` (SystemAdmin only — `{name?, region?, district?, unit_type?, active?}`; in-place edit, 403 `admin_only` for non-admins, 409 duplicate, 404 unknown)
+- `POST /api/admin/branches/bulk-assign` (SystemAdmin only — `{ids, region, district}`; batch-places the legacy unassigned branches)
 - `GET /api/persons?q=...` (authenticated — searches name parts, full name, National ID, passport, phone, mother's name, Person ID)
 - `POST /api/persons` (authenticated — strict create, 409 if the National ID/passport already exists)
 - `POST /api/persons/resolve` (authenticated — Tier 1/2/3/4 smart identity resolution with flexible partial-name matching and dropdown `suggestions`)
@@ -284,6 +315,8 @@ python3 backend/test_dynamic_branches.py # default branch seed, filtering, admin
 node backend/test_frontend_session.mjs # frontend session smoke test (Node >= 18)
 node backend/test_approval_flow.mjs   # approve/print button journey (Node >= 18)
 node backend/test_conduct_frontend.mjs # conduct & disciplinary UI journey (Node >= 18)
+python3 -m pytest backend/test_branch_management_crud.py -q # branch edit/deactivate/cleanup (pure + PostgreSQL)
+node backend/test_branch_management_ui.mjs # Branch Management Edit / toggle / sidebar movement (jsdom)
 ```
 
 The backend serves **PostgreSQL only**. Configure `SENTINEL_DATABASE_URL` or the individual
