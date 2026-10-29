@@ -5,6 +5,7 @@ Nothing in the repository was modified to produce this report other than adding 
 **Audit date:** 2026-10-27
 **Audited revision:** branch `arena/8834f56d-sentinel-police-management`, commit `381545c8401b36cf18241c2065ea62a42e59606d`, working tree clean.
 **Auditor scope:** repository inspection, static code review, and execution of the project's own test suites plus a read-only/synthetic-data probe session against a throwaway PostgreSQL cluster.
+**Document revision:** v2 (2026-10-27) — Section 10 rewritten with objective acceptance criteria, verification methods, a negative-test matrix and a remediation tracking table. **No finding, evidence, severity or readiness verdict was changed, downgraded or removed.** Sections 1–9, 11, 12 and the appendices are byte-identical to v1.
 
 > **No production system, operational database, or real police record was accessed.** Every identity, document and record used in live testing was synthetic and generated during the audit. No migration was designed, created or applied. No application file, dependency, configuration or database state outside a disposable `/tmp` cluster was altered.
 
@@ -805,43 +806,384 @@ A disposable PostgreSQL cluster + `backend/server.py` on port 8123, nine seeded 
 
 ## 10. Prioritized action plan
 
+> **Revision note (v2 — audit only).** This section was rewritten to add objective, testable acceptance criteria, verification methods and remediation tracking. **No finding in §6 was changed, re-worded, downgraded or removed**, and no evidence in §1–§9 or the appendices was altered. Every remediation item below cites the finding it addresses. Nothing in this section has been implemented.
+
+### 10.0 How to read this section
+
+**Structure.** Every remediation item (B1–B13, M-a–M-j) carries the same eight fields so it can be reviewed, estimated and closed without ambiguity:
+
+| Field | Meaning |
+|---|---|
+| **Behaviour that must change** | The externally observable behaviour after the fix, stated as an outcome, not a task list |
+| **Risk addressed** | The §6 finding ID(s) and the concrete harm the item removes |
+| **Acceptance criteria** | Numbered, binary, independently checkable conditions (`AC-<item>.<n>`) |
+| **Required tests** | Named automated tests that must exist and pass; negative cases are mandatory where applicable |
+| **PASS evidence** | The artefacts an approver must see in the release packet |
+| **Dependencies** | Other items, decisions, or prerequisites that must land first |
+| **Migration risk** | What could break existing data or a running deployment, and how it is mitigated |
+| **Rollback** | How to undo safely, and what cannot be undone |
+
+**Definition of PASS (applies to every item).** An item may be marked PASS only when **all** of the following hold:
+
+1. Every acceptance criterion is demonstrated by an automated test that is committed to the repository and green on a throwaway PostgreSQL cluster (`pgserver`, per `TESTING.md`), **or** by a named manual procedure where the item is explicitly marked *manual* (several M items concern deployment and backup, which cannot be fully automated).
+2. The named negative tests in §10.6 that reference the item are green. A fix proven only by the happy path is not PASS.
+3. The PASS evidence listed for the item is attached to the release packet.
+4. No other finding regressed: the full suite (§8.2) plus the new suites is green in one run.
+5. **Code review alone can never produce PASS.** The audit reproduced every Critical and High finding by executing requests against a running system; the fixes must be held to the same standard.
+
+**Test conventions used below.** Proposed new suites are named `backend/test_<topic>.py` (standard-library `urllib` against a booted server with a throwaway cluster) or `backend/test_<topic>.mjs` (jsdom / Node VM), matching the existing conventions. Where an existing suite is the right home, the item says "extend". Tests that write data must use synthetic identities only, as the current suites already do.
+
+**Evidence classes.** `[V]` = verified by execution during this audit · `[C]` = code-review observation, not executed · `[A]` = assumption · `[D]` = decision required from the project owner. The full register is §10.8.
+
+**Sequencing.** §10.5 preserves the original recommended order of work. One sequencing note was added (not a reordering) documenting an additive-only constraint for B5 and B6.
+
+---
+
 ### 10.1 Critical blockers — must close before any real data enters the system
 
-| # | Action | Finding | Acceptance criteria |
+| # | Action | Finding | Release gate |
 |---|---|---|---|
-| B1 | Remove the public `/uploads/` handler; serve documents through an authenticated, scoped, audited route; move storage out of the web root | C-1 | Anonymous `GET` of any stored document returns 401. Cross-branch document access returns 403. Every document read produces an audit row. Verified by a new test that requests a real upload anonymously and cross-branch. |
-| B2 | Remove seeded credentials from the default startup path; generate a random first-administrator password with a forced change; refuse to start in non-development mode with any default hash | C-2 | A fresh database contains zero accounts with a known password. Startup prints the generated password exactly once. A "demo seed" requires an explicit environment flag. |
-| B3 | Replace SHA-256 with Argon2id and rehash on login; add a password policy | C-3 | No stored hash is a bare SHA-256 of the password. Existing accounts upgrade transparently on next login. A known-hash lookup of any row fails. |
-| B4 | Apply `require_record_branch_scope()` to `/approve`, `/signed-document`, document manifests and printable pages; branch-filter `person_document_records()` | H-2 | A branch-B officer cannot approve, attach a scan to, or list documents of a branch-A application — all return 403, with tests. |
+| B1 | Authenticated document delivery; remove public `/uploads/` | C-1 | Before any real document is uploaded |
+| B2 | Remove default credentials from the default startup path | C-2 | Before the first non-development start |
+| B3 | Argon2id password storage with transparent rehash | C-3 | Before any real password is stored |
+| B4 | Branch scope on approve / signed-scan / document routes | H-2 | Before any branch files its second clearance application |
+
+#### B1 — Authenticated, scoped, audited document delivery
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | `serve_static()` must no longer resolve `/uploads/…` at all. Documents are fetched only through `GET /api/documents/<opaque-token>`, which authenticates the caller, resolves the token server-side to the owning record, applies that record's module and branch scope, writes an audit row, and returns the bytes with `Content-Disposition: attachment`. Stored files move out of the served directory. |
+| **Risk addressed** | **C-1 `[V]`** — an anonymous `GET` returned `200 image/jpeg` for a synthetic applicant photograph and `200 application/pdf` for a synthetic birth certificate. Permanent, unrevokable disclosure of national IDs, passports, photographs, guarantor documents and signed clearance scans from a URL that appears in logs, screenshots and audit rows. |
+| **Acceptance criteria** | **AC-B1.1** Anonymous `GET /uploads/<any existing stored filename>` → `404`, never `200`. **AC-B1.2** Anonymous `GET /api/documents/<any token>` → `401`. **AC-B1.3** Authenticated officer scoped to branch A requesting a document whose owning record is branch B → `403`, response body contains no file bytes. **AC-B1.4** Authenticated officer whose modules do not include the owning register (e.g. Checkpoint officer → clearance document) → `403` or `404`, never `200`. **AC-B1.5** Each successful document read inserts **exactly one** `audit_events` row (verified by count before/after). **AC-B1.6** Response carries `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`. **AC-B1.7** Traversal attempts (`../`, `%2e%2e%2f`, absolute paths, null bytes) → `400`/`404`, never file content. **AC-B1.8** The stored filename is **not** a valid token: requesting `/api/documents/f_<hex>` for a real file → `404`. |
+| **Required tests** | New `backend/test_document_access.py`: upload synthetic JPEG + PDF through clearance intake, then assert AC-B1.1–B1.8, plus **NT-01, NT-02, NT-03, NT-04** (§10.6). Existing `test_clearance_rbac_ui.mjs` and `test_form_improvements.mjs` must be updated for the new URL shape and stay green. |
+| **PASS evidence** | Suite output `N checks passed, 0 failed`; `grep -n "uploads" backend/server.py` shows no static handler; a redacted `curl` transcript proving `401`/`403`/`404` on the three negative paths; one audit row excerpt for a successful read. |
+| **Dependencies** | D-7 (storage backend). Coordinates with **M-e** (same validated-upload helper) and **B4/B5** (same scope helper). **B10** enriches the audit row with IP/agent later — not blocking, since `audit()` already writes. |
+| **Migration risk** | Document paths are stored as text in several columns (`persons.photo_path`, `clearance_applications.applicant_docs`/`guardian_docs`/`applicant_photo`, `clearance_signed_documents.file_path`, `case_evidence.file_path`, `checkpoint_events.traveler_docs`/`guardian_docs`). Token↔path resolution can be derived at read time, so **no schema change and no data rewrite is required**. If a `documents` table is preferred, it is additive. Moving files on disk is a one-time copy; keep the old directory read-only until verified, then delete out-of-band (not in the release). |
+| **Rollback** | Revert the route and restore the previous `serve_static` branch. **Warning:** doing so re-exposes every document. Therefore rollback of B1 must be paired with a proxy/firewall block on `/uploads/` (documented manual step in the rollback runbook), and the file move must not be reversed. |
+
+#### B2 — No working credentials on a fresh install
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | `init_db()` must not create nine accounts with a known password. On an empty database it creates exactly one bootstrap administrator with a cryptographically random password, printed **once** to stdout, flagged `must_change_password`; that account can reach only `/api/me`, `/api/me/password` and `/api/logout` until the password is changed. Demo accounts exist only behind an explicit flag (`SENTINEL_DEMO_SEED=1`) and are marked as demo accounts. Startup refuses to serve when a known default hash is present in a production-mode environment. |
+| **Risk addressed** | **C-2 `[V]`** — nine seeded accounts (`admin`, `fp.officer`, `ap.officer`, `cid.officer`, `hr.officer`, `cp.south`, `cp.east`, `cp.west`, `chief`) all authenticated with `ChangeMe123!`, which is published in `README.md:563-586`. A deployed instance is fully compromised at first boot by anyone who can read the repository. |
+| **Acceptance criteria** | **AC-B2.1** Fresh database, default environment: `SELECT COUNT(*) FROM users` = 1; the account is the bootstrap administrator; its password is ≥ 20 random characters printed on exactly one line of startup output and stored in no file. **AC-B2.2** That password authenticates; `/api/me` reports `must_change_password: true`; every other route returns `403 code: password_change_required` until the password is changed; `POST /api/me/password` works and clears the flag. **AC-B2.3** Restarting the server does not re-print the password and does not create a second administrator. **AC-B2.4** On the fresh database, none of the nine legacy usernames can authenticate with `ChangeMe123!`. **AC-B2.5** With `SENTINEL_DEMO_SEED=1`, the nine demo accounts exist, are flagged `demo = true`, and `/api/health` reports the demo state. **AC-B2.6** In production mode (D-4), startup exits non-zero with a clear message if any `demo = true` account exists or any hash equals a known default. |
+| **Required tests** | New `backend/test_bootstrap_admin.py`: fresh cluster → capture stdout, assert single print, assert bootstrap login, assert gated routes for AC-B2.2, restart for AC-B2.3, legacy credentials for AC-B2.4, demo flag for AC-B2.5, refusal for AC-B2.6 (**NT-05**). |
+| **PASS evidence** | Suite green; redacted startup transcript showing exactly one password line; `SELECT username, must_change_password, demo FROM users` output; screenshot/log of the production-mode refusal. |
+| **Dependencies** | D-2 (bootstrap account model/name), D-4 (environment-mode flag), D-5 (what to do with already-seeded demo accounts). Must land **before or with B3** so the bootstrap password satisfies the new policy. |
+| **Migration risk** | Adds `must_change_password` and `demo` columns (additive, nullable). Bootstrap runs only when `users` is empty, so an existing deployment is untouched. **Removing the seed block does not delete already-seeded accounts** — that is an explicit, separately approved data action (D-5); this item must not delete users silently. |
+| **Rollback** | Revert the code path. New columns remain and are ignored by older code. No account is deleted by the rollback. |
+
+#### B3 — Password storage that resists offline attack
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Passwords are stored with Argon2id (per-user salt, configured work factor). Login verifies Argon2id and, on a successful login against a legacy SHA-256 row, transparently rehashes and updates that row. A documented password policy is enforced on set/change. |
+| **Risk addressed** | **C-3 `[V]`** — the stored hash for `admin` was byte-identical to the published `sha256("abcdef")`. Any database disclosure (backup, dump, injection, stolen disk) yields near-instant recovery of most operational passwords, and identical passwords are identifiable by hash equality. |
+| **Acceptance criteria** | **AC-B3.1** After the change, no `users.password_hash` value matches the bare-hex-SHA-256 pattern `^[0-9a-f]{64}$` (measured by SQL, reported as a count). **AC-B3.2** A legacy row logs in successfully once and its stored value becomes `$argon2id$…` (before/after SQL). **AC-B3.3** Setting a password to `abcdef`-style input through `/api/me/password` stores Argon2id; the known hash `9a4aabf0…` never appears again. **AC-B3.4** Argon2 parameters are read from configuration and are ≥ the approved baseline (D-3). **AC-B3.5** Wrong password → `401`, and the stored hash is unchanged. **AC-B3.6** Policy violations (< min length, common-password list, reuse of current) → `400` with a specific message; the existing 6-character acceptance is gone. |
+| **Required tests** | New `backend/test_password_storage.py`: hash-format sweep, legacy-upgrade flow, wrong-password non-mutation, policy cases, parameter assertion. Existing login-dependent suites must run unchanged (they use seeded credentials on throwaway clusters). |
+| **PASS evidence** | Suite green; SQL output of hash **prefixes only** (first 10 characters; never full hashes, and only for synthetic accounts); a documented work-factor/timing measurement. |
+| **Dependencies** | D-3 (min length, work factor, rotation), D-5 (dormant accounts). Blocks nothing, but the bootstrap password in B2 must satisfy the policy. |
+| **Migration risk** | Lazy rehash means a dormant account keeps its weak hash until its next login. Mitigation: report the count of un-upgraded rows to `/api/health` and force a reset deadline for dormant accounts (D-5). Keep dual-verify (legacy accepted for verification only) for one release so a rollback cannot lock users out. |
+| **Rollback** | Revert to dual-verify then legacy verify. **Never write SHA-256 again once B3 ships**, including on rollback — the rehash is one-way and the old rows are already gone; rolling back must not recreate them. |
+
+#### B4 — Branch scope on the approval, signed-scan and document routes
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | `POST /api/clearance-applications/<id>/approve`, `POST …/signed-document`, the document manifest (`GET /api/persons/<id>/documents`), the per-record audit history and the printable pages must all apply `require_record_branch_scope()` against the record's own `branch_id`, exactly as the read route already does. `person_document_records()` must filter fingerprint documents by branch. |
+| **Risk addressed** | **H-2 `[V]`** — an officer posted to Erigavo attached a signed scan to a Lasanod application (`201`), then approved it and received certificate `CL-29158847`, while the same officer was correctly refused (`403`) when reading that same application seconds earlier. Cross-branch authority to change and certify a record, plus misleading audit attribution. |
+| **Acceptance criteria** | **AC-B4.1** Branch-B officer `POST /approve` on a branch-A application → `403 code: branch_scope_forbidden`, and the row's `status`/`certificate_number` are **unchanged** (asserted by SQL, not just the response). **AC-B4.2** Same for `POST /signed-document` → `403`, and `clearance_signed_documents` gains **no** row for that application. **AC-B4.3** `GET /api/persons/<id>/documents` as a branch-B officer lists **zero** documents sourced from branch-A records, and `total_count` equals the filtered list length. **AC-B4.4** The branch-A officer performs the same three calls → `200`/`201` (positive control). **AC-B4.5** Administrator and Commander keep their current behaviour (administrator `200`; Commander `403 read_only_role` on writes). **AC-B4.6** A legacy application with `branch_id IS NULL` → scoped officer gets `403` (unknown must never mean "everything"); administrator is permitted. |
+| **Required tests** | New `backend/test_clearance_branch_scope.py` (or §7 of `test_branch_scope.py`) reproducing the exact audit sequence — Erigavo officer, Lasanod application, scan then approve — as a **permanent regression test**, plus AC-B4.4–B4.6 and **NT-06, NT-07, NT-08**. |
+| **PASS evidence** | Suite green; the pre-fix commit fails the same test (proves the test is meaningful — see M-j); SQL excerpt showing the application row unchanged after the refused approval. |
+| **Dependencies** | None to start (independent of B1–B3). Shares the scope helper with **B5**; B4 must land first so B5 has one helper to harden. |
+| **Migration risk** | None — no schema change, no data rewrite. Existing cross-branch approvals already in the database are **not** undone; a report listing them is produced for the owner's decision (see §12 item 6). |
+| **Rollback** | Revert the added scope calls. This re-opens the cross-branch write path, so rollback is permitted only during a maintenance window with the API closed to non-administrators. |
+
+---
 
 ### 10.2 High priority — before a controlled pilot
 
-| # | Action | Finding |
-|---|---|---|
-| B5 | Make branch scoping **fail closed**: foreign-key `users.branch_id`/`placement` instead of free text; unresolved posting ⇒ refuse writes and return an empty (not full) scope; explicit `unscoped` flag settable only by an admin; reject a blank `location_scope` for checkpoint roles | H-2, M-2 |
-| B6 | Session hardening: `expires_at` + idle timeout, revocation on password change/reset, role change and deactivation, admin session list, "sign out everywhere" | H-3 |
-| B7 | Login protection and authentication audit: rate limiting, lockout with admin unlock, `LOGIN_SUCCESS/FAILED/LOGOUT` audit rows, alerting hook | H-4 |
-| B8 | Protect the last administrator (transactional zero-admin check), add a break-glass admin CLI, forbid silent self-demotion | H-5 |
-| B9 | Replace generated identifiers with sequences inside the insert transaction; derive the year; retry `UniqueViolation` server-side | H-6 |
-| B10 | Complete the audit trail: authentication/session/read/export events; IP, user agent, session id, before/after JSON; append-only enforcement at the database role and a trigger; retention policy | H-7 |
-| B11 | TLS termination + HSTS + `Secure`/`__Host-` cookie; choose one transport and delete the `localStorage` token; add the standard security-header set and a CSP | H-8, M-5 |
-| B12 | Require approver ≠ submitter; make the `Citizenship` exemption a server-side verified attribute or remove it | M-3 |
-| B13 | Fix the 401/403 contract and update the client to sign out only on `code: 'unauthenticated'` | M-9 |
+| # | Action | Finding | Acceptance criteria |
+|---|---|---|---|
+| B5 | Make branch scoping **fail closed**; replace free-text authorization input with a branch reference | H-2, M-2 | AC-B5.1–B5.7 |
+| B6 | Session expiry, idle timeout and revocation | H-3 | AC-B6.1–B6.9 |
+| B7 | Login throttling, lockout and authentication audit | H-4 | AC-B7.1–B7.7 |
+| B8 | Last-administrator protection and break-glass recovery | H-5 | AC-B8.1–B8.6 |
+| B9 | Transactional identifier generation | H-6 | AC-B9.1–B9.6 |
+| B10 | Complete and make the audit trail append-only | H-7 | AC-B10.1–B10.6 |
+| B11 | TLS, secure cookie, single transport, security headers, CORS | H-8, M-5 | AC-B11.1–B11.7 |
+| B12 | Separation of duties on approval; constrain the Citizenship exemption | M-3 | AC-B12.1–B12.5 |
+| B13 | Correct 401/403 contract and client sign-out behaviour | M-9 | AC-B13.1–B13.6 |
+
+#### B5 — Fail-closed branch scoping
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Authorization must stop depending on the free-text `users.branch` label. Users gain a nullable `branch_id` reference (label retained for display) and an explicit `branch_unrestricted` boolean that only an administrator can grant, with a mandatory reason. An officer whose branch is unresolved is **denied**: reads return an empty set, writes are refused. `location_scope` becomes mandatory for checkpoint roles on update as well as create. |
+| **Risk addressed** | **H-2** (fail-open half) and **M-2 `[V]`** — setting an officer's branch to an unregistered label produced `branch_scope: null`, `resolved: false` and exposed **3 of 3** clearance applications instead of their branch's subset; clearing `location_scope` changed a checkpoint officer's `visible_locations` from `['South']` to `['South','East','West']`. A typo in User Management silently removes isolation for that account. |
+| **Acceptance criteria** | **AC-B5.1** `branch_id IS NULL` and `branch_unrestricted = false`: `GET /api/clearance-applications` returns `items: []`, `branch_scope_status.resolved: false`, and the response is **not** the national list. **AC-B5.2** The same officer's create/approve/attach requests → `403 code: branch_scope_unresolved`. **AC-B5.3** Changing the `branch` **label** to an unregistered string no longer changes authorization at all (re-running the exact M-2/H-2 probe yields denial, not widening). **AC-B5.4** Administrator grants `branch_unrestricted = true` with a reason → national scope, and one audit row records actor, target and reason; a missing reason → `400`. **AC-B5.5** `PATCH /api/admin/users/<id> {"location_scope": ""}` on a checkpoint role → `400`, stored value unchanged. **AC-B5.6** Backfill maps existing labels to `branch_id` only where the existing resolver matched at ≥ `POSTING_MATCH_MIN`; unmapped rows are written to a report and remain denied until an administrator assigns. **AC-B5.7** No officer can change their own `branch`, `branch_id`, `location_scope` or `branch_unrestricted` through `/api/me`. |
+| **Required tests** | New `backend/test_branch_fail_closed.py` covering AC-B5.1–B5.7 and **NT-09, NT-10, NT-11, NT-12**. **`test_branch_scope.py` §6 must be inverted** — it currently asserts that an unresolved posting is "never silently narrowed"; the new expectation is denial. That deliberate expectation change must be recorded in the test docstring with the reason (this audit's §5.5/§6 H-2). |
+| **PASS evidence** | Suite green; the inverted §6 assertion documented; a backfill dry-run report on production-shaped synthetic data showing mapped/unmapped counts; an audit row excerpt for AC-B5.4. |
+| **Dependencies** | **B4** (one scope helper to harden), **M-a** strongly recommended before the backfill, **D-6** (may any role be national-scope, and who may grant it). |
+| **Migration risk** | **The highest migration risk in this plan.** Adds a FK column plus a backfill on live user rows; ambiguous or mis-spelled labels can be mis-assigned. Mitigations: additive columns only; no assignment below the confidence threshold; `branch_unrestricted` defaults **false**, so the worst failure mode is over-denial (safe), never over-exposure; the dry-run report is reviewed before the real run; the old `branch` column is retained untouched. |
+| **Rollback** | Code revert restores the previous behaviour because `users.branch` is untouched by this item. `branch_unrestricted` also acts as a per-account kill switch for urgent recovery. The backfill fills only a new column, so it never destroys information. |
+
+#### B6 — Session expiry, idle timeout and revocation
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Sessions gain an absolute lifetime, an idle timeout, revocation metadata and attribution. A token is accepted only while it is unexpired, unrevoked and within the idle window. Password change, password **reset**, deactivation and explicit logout revoke the affected sessions immediately. Reactivation does not revive them. Administrators can list active sessions and force revocation. |
+| **Risk addressed** | **H-3 `[V]`** — `sessions` has no expiry column; a token survived a full server restart, survived an administrator password reset (old token `200` while the old password correctly returned `401`), and a token issued before deactivation was accepted again after reactivation. A stolen token is permanent, and password rotation — the standard incident response — does not evict the attacker. |
+| **Acceptance criteria** | **AC-B6.1** `sessions` carries `expires_at`, `idle_expires_at`, `revoked_at`, `revoked_reason`, `ip`, `user_agent`. **AC-B6.2** A session past its absolute lifetime → `401 code: session_expired` (proved with a backdated row). **AC-B6.3** A session idle beyond the timeout → `401`; activity slides the idle clock (two calls within the window stay alive; a call after the window fails). **AC-B6.4** After an administrator resets a user's password, that user's existing token → `401` on the next request. **AC-B6.5** After a self-service password change, the caller's session survives and all their other sessions are revoked (existing good behaviour preserved). **AC-B6.6** Deactivation revokes sessions; **reactivation does not restore the old token** — the user must sign in again. **AC-B6.7** Role change does not require revocation because the role is re-read per request, and this is asserted explicitly (a role downgrade takes effect on the next request — already `[V]`). **AC-B6.8** `GET /api/admin/sessions` lists active sessions per user and is administrator-only (`403` for others); `POST /api/me/sessions/revoke-all` works. **AC-B6.9** An expired or revoked token is refused even when present in the in-process `TOKENS` cache. |
+| **Required tests** | New `backend/test_session_lifecycle.py`: absolute expiry, idle expiry, reset-revokes, change-keeps-current, deactivate-then-reactivate (**NT-13**), admin listing and revocation, cache-poisoning case for AC-B6.9, plus the existing restart-persistence check (must stay green). |
+| **PASS evidence** | Suite green; SQL excerpt of a revoked row with reason; a two-session transcript showing one survives and one does not after a password change; the restart-persistence test still passing. |
+| **Dependencies** | **B13** (error codes so clients distinguish expiry from a permission failure), **M-a** (recommended for the schema change), **D-8** (lifetime policy, revise-on-role-change policy). |
+| **Migration risk** | Additive columns; existing rows need a one-time `expires_at` derivation at migration time, which **logs everyone out once** unless the value is future-dated. Plan: set `expires_at = created_at + policy` and announce a one-time re-login; this is the only user-visible migration effect. Do not silently revive expired sessions during the backfill. |
+| **Rollback** | Added columns are nullable and ignored by older code; reverting removes enforcement but does not invalidate anything. Revocation rows deleted by rollback would re-enable tokens — therefore the rollback runbook must state: "do not roll back B6 without first forcing a global `DELETE FROM sessions`". |
+
+#### B7 — Login throttling, lockout and authentication audit
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Repeated failed authentication is rate-limited per account and per source, with a temporary lockout and an administrator unlock. Every authentication event (success, failure, logout, revocation) is written to `audit_events` with source attribution. No password or hash is ever written to the log. Lockout responses do not reveal whether an account exists. |
+| **Risk addressed** | **H-4 `[V]`** — 15 consecutive wrong-password attempts returned `401` with no delay, no counter and no lockout, and the correct password then worked; **zero** authentication rows appeared in `audit_events` after 15 failures and 7 successes. Combined with C-2/C-3 this makes online guessing cheap and leaves no forensic trace. |
+| **Acceptance criteria** | **AC-B7.1** After the configured threshold of failures for one username within the window → `429` with `Retry-After`; a **correct** password during the lockout is also refused (`429`). **AC-B7.2** Per-source limiting: failures spread across different usernames from one source trigger `429`. **AC-B7.3** Known and unknown usernames produce the same status and message, and the response time difference stays within a documented tolerance. **AC-B7.4** `LOGIN_SUCCESS`, `LOGIN_FAILED`, `LOGOUT` and `SESSION_REVOKED` rows appear in `audit_events` with actor (where known), `ip` and `user_agent`. **AC-B7.5** No audit row contains the submitted password, a hash, or a token (asserted by scanning the rows created during the test). **AC-B7.6** `POST /api/admin/users/<id>/unlock` clears a lockout, is audited, and is refused for non-administrators (`401`/`403`). **AC-B7.7** After the lockout window elapses, login succeeds with no administrator action. |
+| **Required tests** | New `backend/test_auth_hardening.py` covering AC-B7.1–B7.7 and **NT-14, NT-15**. Must include the exact audit probe (15 failures) as a regression test. |
+| **PASS evidence** | Suite green; audit row excerpts for one success, one failure and one unlock; a timing comparison for AC-B7.3; confirmation that no secret appears in any row. |
+| **Dependencies** | **B2** (no published credentials to guess), **B10** for the enriched event columns (B7 owns the *events*, B10 owns the *enrichment and immutability* — documented because the recommended order runs B7 before B10), **D-9** (thresholds, lockout duration, unlock authority). |
+| **Migration risk** | Counters must **not** live only in process memory: with two application colours, per-process counters halve the effective threshold. Use an additive `login_attempts` table (shared, prunable) or a shared cache. Prune policy required so the table cannot grow without bound. |
+| **Rollback** | Revert enforcement; the table and the audit rows remain (correctly — audit rows must not be deleted by a rollback). |
+
+#### B8 — Last-administrator protection and break-glass recovery
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | No administrative action may leave zero active administrators. Self-demotion requires an explicit confirmation. A documented out-of-band recovery path exists that requires only filesystem access to the host. |
+| **Risk addressed** | **H-5 `[V]`** — the sole administrator demoted themselves (`200`); the immediate attempt to restore the role was refused (`401 Restricted to HR Directorate Officer`), producing permanent lockout that was only recoverable by direct SQL on the disposable audit cluster. On a fresh install there is exactly one administrator, so this is one click away. |
+| **Acceptance criteria** | **AC-B8.1** Demoting the only active `SystemAdmin` → `409 code: last_admin_protected`, and the role is unchanged in the database. **AC-B8.2** Deactivating the only active administrator → `409`, `active` unchanged. **AC-B8.3** With two active administrators, demoting one succeeds (positive control). **AC-B8.4** Two concurrent requests demoting the two administrators: exactly one succeeds and the other receives `409`, leaving ≥ 1 active administrator (the negative concurrency case). **AC-B8.5** A documented recovery command (e.g. `python backend/server.py --create-admin`) restores administrative access using only local shell access, prints a one-time password, and writes an audit row. **AC-B8.6** Self-demotion without `{"confirm_self_demotion": true}` → `400` with an explicit message. |
+| **Required tests** | New `backend/test_last_admin.py`: AC-B8.1–B8.6, including a two-thread race for AC-B8.4 (**NT-16**) and a simulated recovery run for AC-B8.5. |
+| **PASS evidence** | Suite green (including the race, run ≥ 50 iterations without producing a zero-admin state); transcript of the recovery command; one audit row from the recovery. |
+| **Dependencies** | None. The recovery tooling overlaps **M-a**/`tools/` conventions. |
+| **Migration risk** | None — no schema or data change. The check must run **inside** the same transaction as the update with row locking, or AC-B8.4 cannot be satisfied. |
+| **Rollback** | Guard removal is trivial and safe; no data was changed by the guard. |
+
+#### B9 — Transactional identifier generation
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Human-facing identifiers are produced from PostgreSQL sequences inside the same statement/transaction that inserts the row, and the year segment is derived from the database date. A generated-identifier collision never surfaces as a user-facing `409`; it is retried server-side or made impossible. |
+| **Risk addressed** | **H-6 `[V]`** — 12 concurrent case creations produced **8 × 201 and 4 × 409 `Database constraint failed`**; the case prefix is hard-coded `CID-2026-`; application and certificate numbers derive from the epoch-millisecond clock, which collides for parallel submissions. UNIQUE constraints prevent duplicates but not lost work. |
+| **Acceptance criteria** | **AC-B9.1** 20 concurrent `POST /api/crime-cases` → **20 × 201, 0 × 409**, all identifiers distinct. **AC-B9.2** 20 concurrent clearance applications → 20 distinct `application_id`, `0 × 409`. **AC-B9.3** 10 concurrent creations each for officers, vehicles, badges and stations → no `409`, no duplicates. **AC-B9.4** The year segment equals the database's current year (asserted against `CURRENT_DATE`, not the Python clock). **AC-B9.5** Acceptance is uniqueness + monotonicity; **gaps are explicitly permitted** (a rolled-back transaction may consume a value) — stated so nobody over-specifies gaplessness. **AC-B9.6** Existing identifiers are unchanged and still resolve (no renumbering). |
+| **Required tests** | New `backend/test_identifier_concurrency.py`: threaded batches per register reproducing the audit probe, plus AC-B9.4–B9.6 (**NT-17, NT-18**). |
+| **PASS evidence** | Suite green across repeated runs (state the run count); before/after concurrency table showing `4/12 failures → 0/20`; `SELECT last_value FROM …` and a sample of new identifiers. |
+| **Dependencies** | **M-a** (a clean, versioned place for the `CREATE SEQUENCE` statements), **D-10** (is the existing format contractual?). |
+| **Migration risk** | Additive: create sequences and `setval` above the current maximum. **Do not renumber or rewrite existing rows** — printed certificates and audit rows already reference them. If any identifier format is contractual (D-10), the sequence value must continue the existing pattern rather than start at 1. |
+| **Rollback** | Keep the previous generator behind a temporary flag for one release; sequences can be dropped without touching row data. |
+
+#### B10 — Complete and append-only audit trail
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | The audit trail records authentication, session, read (including document access), approval and administrative changes with source attribution and before/after values, and cannot be altered or deleted by the application's own database role. |
+| **Risk addressed** | **H-7 `[V]`/`[C]`** — no authentication or read events; no IP, user agent, session id or before/after values; `audit_events` is an ordinary table the application connection can `UPDATE`/`DELETE`. The log cannot answer "who saw, decided or changed what, from where" under challenge. |
+| **Acceptance criteria** | **AC-B10.1** `audit_events` gains `ip`, `user_agent`, `session_id`, `before`, `after`, `request_id` (additive). **AC-B10.2** A role change records the previous and new role as structured values (asserted JSON), not only a column list. **AC-B10.3** The application's database role cannot `UPDATE` or `DELETE` rows in `audit_events` (attempt through the application DSN → error). **AC-B10.4** A trigger rejects `UPDATE`/`DELETE` even for the table owner. **AC-B10.5** Document reads (B1) and `location_scope` edits (M-2) both produce rows. **AC-B10.6** No audit row contains a password, token or document body (row scan asserted). |
+| **Required tests** | New `backend/test_audit_integrity.py`: AC-B10.1–B10.6, plus **NT-19, NT-20**. |
+| **PASS evidence** | Suite green; `\dp audit_events` output showing the grants; a failed `UPDATE` transcript; sample before/after JSON for one role change. |
+| **Dependencies** | **B7** (owns the initial authentication events), **M-b** (role separation makes AC-B10.3 real). Recommended order runs B7 before B10 — documented here because the dependency is partial, not cyclic. |
+| **Migration risk** | Adding columns is additive and safe. **Revoking `UPDATE`/`DELETE` is a one-way privilege change on a live database** and must be executed by the migration role, not the application role. Any existing tooling that "cleans up" audit rows will begin failing — that is intended, and must be inventoried first. |
+| **Rollback** | Columns may remain. **Do not roll back the privilege revocation or the trigger**: restoring mutability of the audit log silently undermines every row written after the fix. If a rollback is unavoidable, it requires a signed exception. |
+
+#### B11 — Transport security, secure cookie, single session transport, headers
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | All traffic is HTTPS via a reverse proxy with HSTS. The session cookie is `Secure`, `HttpOnly`, `SameSite=Lax` and `__Host-`-prefixed. The browser uses **one** transport: the cookie. The bearer token is no longer persisted in `localStorage`. Standard security headers are present and CORS is restricted to the application origin. |
+| **Risk addressed** | **H-8 `[V]`, M-5 `[V]`** — plain HTTP; cookie without `Secure`; no HSTS; no CSP/`nosniff`/`frame-ancestors`/`Referrer-Policy`; `Access-Control-Allow-Origin: *`; and the same bearer token written to `localStorage`, which nullifies `HttpOnly`. Credentials and tokens cross the network in clear text and a single XSS becomes permanent takeover. |
+| **Acceptance criteria** | **AC-B11.1** The application port is not reachable from branch networks directly; plain HTTP requests to the app port are refused or redirected `308` to HTTPS at the proxy. **AC-B11.2** HTTPS responses carry HSTS `max-age ≥ 31536000; includeSubDomains`. **AC-B11.3** The session cookie carries `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` and the `__Host-` prefix, and has an explicit short lifetime. **AC-B11.4** After sign-in, `localStorage` contains **no** token (`sentinel_token`, `sentinel_user` and legacy `sentinel_session` are all absent); the SPA, `application.html` and `certificate.html` still work using the cookie. **AC-B11.5** A `Content-Security-Policy` is sent; either enforced without `unsafe-inline` (requires moving the inline script/style) or in report-only with a dated sunset recorded in the release packet (D-11). **AC-B11.6** `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `frame-ancestors 'none'` present; the `Server` banner is suppressed. **AC-B11.7** CORS is no longer `*`. |
+| **Required tests** | New `backend/test_http_hardening.py` (header assertions, cookie attributes, CORS) + a jsdom assertion in `test_frontend_session.mjs` for AC-B11.4 + updated printable-page tests for cookie-based access. **NT-21, NT-22**. |
+| **PASS evidence** | Suite green; `curl -I` transcripts for HTTPS and the proxy redirect; a browser devtools screenshot showing an empty `localStorage` and a `Secure` cookie; the CSP header and, if report-only, the signed sunset decision. |
+| **Dependencies** | **D-1** (hosting/proxy), **D-11** (CSP scope). Must precede any pilot with non-developer users. Note the built-in coupling: `application.html` and `certificate.html` read the session from `localStorage` today and **must** be updated in the same change. |
+| **Migration risk** | No data migration. Operational risk: a misconfigured proxy or CSP blocks the UI at cut-over — stage behind the staging environment first and keep a tested rollback of the proxy config. Removing `localStorage` persistence logs every user out once. |
+| **Rollback** | Revert the proxy configuration and the cookie attribute change. **Never reintroduce the token into `localStorage`** as a "quick fix"; if the cookie path fails, fix forward or roll back the whole release. |
+
+#### B12 — Separation of duties on approval
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | The account that created a clearance application cannot approve it. The 12-hour window is not bypassable through data the submitting officer controls. Administrator bypass remains, but is recorded with actor identity and reason. |
+| **Risk addressed** | **M-3 `[V]`** — an officer filed a `Citizenship` application and approved **their own** application seconds later, receiving `CL-29199707` with `review_period_bypassed: true`. The headline integrity control on certificates is removable by the person it constrains. |
+| **Acceptance criteria** | **AC-B12.1** `POST /approve` by the creating account → `403 code: approval_requires_independent_reviewer`; status unchanged. **AC-B12.2** `purpose = Citizenship` no longer bypasses the window unless `citizenship_verified` was set by an authorised role (or the exemption is removed — D-12). **AC-B12.3** Administrator bypass records the bypassing account, role and a reason; `review_period_bypassed: true` remains in the response. **AC-B12.4** Two different officers complete the same flow successfully (positive control). **AC-B12.5** The boot self-test still reports `8/8` and gains cases for self-approval and the Citizenship path. |
+| **Required tests** | Extend `backend/test_review_gate.py` and `backend/test_approval_flow.mjs`; the audit's self-approval sequence becomes a permanent regression test (**NT-23**). |
+| **PASS evidence** | Suite green; self-test output listing the new cases; SQL showing the row unchanged after the refused self-approval; an excerpt of the bypass audit row. |
+| **Dependencies** | **D-12** (is independent approval mandatory; is the Citizenship exemption legal?). Blocks nothing else. |
+| **Migration risk** | No schema change. **Existing rows where creator = approver already exist** — this item produces a report only and must not retro-invalidate issued certificates (that is a policy decision for the owner). |
+| **Rollback** | Revert the guard; the recorded bypass reasons remain in the audit trail. |
+
+#### B13 — Correct the 401/403 contract
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | `401` means "not authenticated" (missing, invalid, expired or revoked credential). `403` means "authenticated but not permitted", with a machine-readable `code`. The client signs a user out only on a genuine authentication failure, never on a permission denial. |
+| **Risk addressed** | **M-9 `[V]`** — a legitimate HR officer calling a register they may not read receives `401`, which the SPA treats as "session ended", so a permission denial logs the officer out mid-task; monitoring cannot distinguish an attack from a misconfigured role. |
+| **Acceptance criteria** | **AC-B13.1** Missing/invalid/expired/revoked credential → `401` with `code: unauthenticated` (or `session_expired`). **AC-B13.2** Authenticated-but-unauthorised → `403` with a specific code (`restricted_module`, `admin_only`, `branch_scope_forbidden`, `read_only_role`, `field_edit_forbidden`, `branch_scope_unresolved`). **AC-B13.3** Every route in the §5.3/§5.4 matrices returns the corrected status (the matrices become the fixture). **AC-B13.4** The SPA signs out only on `code: unauthenticated`/`session_expired`; a `403` renders an in-place refusal and preserves in-progress form state. **AC-B13.5** The Commander still receives `403 read_only_role` for writes and now receives `403` (not `401`) for out-of-scope reads. **AC-B13.6** No route returns `500` for an authorization outcome. |
+| **Required tests** | Extend `backend/test_read_only_rbac.py` (its 179 checks already encode intents), update `backend/test_frontend_session.mjs` for AC-B13.4, and add `backend/test_status_contract.py` that walks the old matrices asserting the corrected codes (**NT-24**). |
+| **PASS evidence** | Suite green; the two matrices reproduced with corrected status codes; a jsdom assertion that a `403` does not clear the stored session. |
+| **Dependencies** | None. **B6** depends on this for expiry codes; **B4/B5** for `branch_scope_unresolved`. Land B13 early — it is small, and it makes every later negative test unambiguous. |
+| **Migration risk** | None (no schema, no data). Compatibility risk: any external consumer keying on `401` for permission failures will change behaviour — inventory integrations first (none were found in the repository). |
+| **Rollback** | Revert both server mapping and client handling together; reverting only one side reproduces the logout bug. |
+
+---
 
 ### 10.3 Medium priority — before production
 
-- **M-a** Version migrations: `migrations/` + `schema_migrations` + advisory lock + a separate migration job; the web process verifies the expected version; adopt expand/contract; remove port eviction from the default path (M-11).
-- **M-b** Least-privilege database role, TLS to the database, a connection pool, credentials from a secret manager (M-8).
-- **M-c** Scope `/api/persons/<id>` aggregates by module and branch (M-1).
-- **M-d** Redact error responses; log exceptions server-side with correlation ids; put the diagnostic payload of `/api/health` behind authentication; make `/readyz` execute `SELECT 1` and check the schema version (M-4, M-12).
-- **M-e** One validated upload path everywhere (allow-list + magic bytes + size + re-encode), encrypted storage, AV scan hook, retention, orphan-file cleanup (M-7).
-- **M-f** Case-insensitive unique usernames (M-6).
-- **M-g** Add FK and filter indexes; migrate timestamp columns to `timestamptz` (7.1).
-- **M-h** Delete the four SQLite-era artifacts; add `requirements.txt` (pinned, hashed) and `package.json`; wire the suite into CI on a throwaway cluster; rewrite the two failing suites (M-10, 8.6).
-- **M-i** Backups + tested restore + monitoring/alerting + log rotation and structured logs (M-12).
-- **M-j** Regression tests for every finding in this report — in particular: anonymous document access, cross-branch approve/signed-scan, fail-open posting, self-demotion, session survival after reset, login throttling, concurrent identifier generation, `Citizenship` self-approval.
+Each item below has a **verification method**, a **binary pass/fail condition**, and the five fields required for every item. None of these may be marked PASS by code review alone except where explicitly marked **manual**.
+
+#### M-a — Versioned migrations with an advisory lock
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Schema changes ship as ordered, recorded migration files applied by a dedicated job, not as a side effect of the web process. The web process verifies the schema version and refuses to serve on mismatch. Port eviction is removed from the default startup path. |
+| **Risk addressed** | **M-11 `[V]`/`[C]`** — unversioned boot-time DDL with no checksum, no ordering, no lock and no down path; two starting instances race; `terminate_listener()` SIGKILLs whatever owns the port (including the other colour of a blue-green pair). |
+| **Verification method** | Create `migrations/0001…` applied by `tools/migrate.py`; run twice; start the app with a deliberately wrong expected version; start two migration jobs concurrently. |
+| **Pass/fail** | **PASS** = `schema_migrations` lists applied versions in order with checksums; a second run is a no-op (exit 0, zero DDL); the app refuses to serve when `expected_version` ≠ applied (non-zero exit, clear message); two concurrent migration jobs serialise and both exit 0; `/api/health` reports the schema version. **FAIL** = any DDL still emitted by the web process at startup, any race observable, or app serving with a mismatched version. |
+| **Required tests** | New `backend/test_migrations.py` (idempotency, version-mismatch refusal, two-process lock) + startup log assertions. **NT-25**. |
+| **PASS evidence** | `SELECT * FROM schema_migrations`; logs of the double run; the refusal transcript; a runbook entry for the migration job. |
+| **Dependencies** | Should precede **B5**, **B6**, **B9**, **M-b**, **M-g** to reduce their risk. Can proceed in parallel with B1–B4. |
+| **Migration risk** | Low, but it **changes the release procedure** (migrations become a separate step) — every later release depends on this being understood by operators. |
+| **Rollback** | Forward-only by design; a failed migration run aborts before committing and is retried. Reverting this item restores boot-time DDL and is permitted only before the first versioned schema change ships. |
+
+#### M-b — Least-privilege database access, TLS and pooling
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | The application connects with a role holding only the DML it needs (no `DELETE`, no DDL, no rights on `audit_events` beyond `INSERT`/`SELECT`), over TLS with certificate verification, through a connection pool. Migrations use a separate role. Credentials are not stored in the repository. |
+| **Risk addressed** | **M-8 `[C]`** — superuser connection, empty-password default, `SENTINEL_DB_PASSWORD=change-me`, no `sslmode`, no pool. One application compromise yields database ownership, including the ability to rewrite the audit log. |
+| **Verification method** | Connect as the app role and attempt `DELETE`, `TRUNCATE`, DDL and an `UPDATE` on `audit_events`; inspect `pg_stat_activity` for `sslmode`; measure connection reuse under a small load run. |
+| **Pass/fail** | **PASS** = every privilege attempt fails with a permissions error; the TLS state shows an encrypted connection with verification; the pool is bounded and reused (connection count stays flat under 50 sequential requests); no credential literal exists in the repository. **FAIL** = any privilege attempt succeeds, an unencrypted connection is accepted, or a secret appears in the tree. |
+| **Required tests** | `backend/test_db_privileges.py` (manual-marked for the infra parts, automated for privilege assertions). |
+| **PASS evidence** | Role DDL script, `\dp` output, TLS query output, pooled connection metrics, secret-scan result. |
+| **Dependencies** | **M-a** (the migration role), **M-i** (restore must still work with the restricted role), **D-1** (hosting). |
+| **Migration risk** | **Privilege revocation can break application paths that rely on `DELETE`/DDL at runtime** — inventory them first (the audit found none, but confirm). Roll out to staging before production. |
+| **Rollback** | Re-grant the previous privileges (fast, but weakens security); keep the grant script under version control for both directions. |
+
+#### M-c — Scope the person-detail aggregates
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | `GET /api/persons/<id>` returns only the record sections the caller's modules and branch permit, using the same filter as `/documents`, `/linked-records` and `/audit-history`. |
+| **Risk addressed** | **M-1 `[V]`** — a Checkpoint officer received a person's Fingerprint clearance summary (and, for other people, airport and all-location checkpoint data). Cross-unit and cross-branch metadata disclosure. |
+| **Verification method** | Fetch one synthetic person as each of the seven roles; assert the returned section keys against the role's module set and branch. |
+| **Pass/fail** | **PASS** = for every role/person combination, no section appears whose module or branch the caller lacks; the response explicitly marks hidden sections rather than silently omitting them (the documented pattern); administrator and Commander still see everything. **FAIL** = any unauthorised section present. |
+| **Required tests** | New `backend/test_person_scope.py` (7-role × section matrix) + update `test_linked_records.py` if expectations change. **NT-26**. |
+| **PASS evidence** | The matrix output; one before/after response pair for the Checkpoint officer. |
+| **Dependencies** | **B5** (scope helper), **B4** (precedent). |
+| **Migration risk** | None. |
+| **Rollback** | Revert the filter; no data changed. |
+
+#### M-d — Safe error responses and health payload
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Unexpected exceptions return a generic `500` with a correlation id and are logged server-side with that id. Driver/constraint text is never returned. Echoed input is not reflected in errors. `/api/health` returns only `{status}` to unauthenticated callers; diagnostics move behind authentication or a separate admin/metrics surface. `/readyz` executes `SELECT 1` and checks the schema version. |
+| **Risk addressed** | **M-4 `[V]`** (Python internals, constraint names and input echo in responses; unauthenticated disclosure of build/commit/path/database/pid) and **M-12 `[V]`** (health does not touch the database). |
+| **Verification method** | Malformed JSON body, duplicate insert, unknown route, unknown identifier, database stopped; then `/api/health` and `/readyz` anonymously and authenticated. |
+| **Pass/fail** | **PASS** = every error body matches `{error, incident}` with no `str(e)`, no constraint name and no echoed user input; the exception **is** logged with the same incident id; anonymous `/api/health` returns only `{status}`; `/readyz` returns `503` when the database is stopped and `200` when it is up with the expected schema version. **FAIL** = any internal string leaks, any exception unlogged, or `/readyz` returning `200` with the database down. |
+| **Required tests** | New `backend/test_error_contract.py` + `backend/test_health_probes.py` (stop the disposable cluster, assert `503`). **NT-27**. |
+| **PASS evidence** | Before/after response bodies; a log line matching its incident id; the `503`/`200` probe transcript. |
+| **Dependencies** | **D-4** (environment mode for diagnostics), **M-a** (schema version for `/readyz`). |
+| **Migration risk** | None. |
+| **Rollback** | Revert; note that restoring the verbose error payload re-opens information disclosure. |
+
+#### M-e — One validated upload path
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Every upload (clearance documents included) goes through one helper enforcing extension allow-list, magic-byte verification, size cap, and safe re-encode for images. Files are stored encrypted outside the web root, scanned, retention-limited, and orphaned files are reconciled. |
+| **Risk addressed** | **M-7 `[V]`/`[C]`** — the clearance intake calls the unvalidated `save_upload()`, so arbitrary file types and unbounded sizes are accepted; files are written before the database insert, so a failed insert leaves a publicly retrievable orphan. |
+| **Verification method** | Upload `.exe`, a 30 MB file, a `.jpg` whose bytes are not a JPEG, and a valid PDF; then force a database failure after the file write. |
+| **Pass/fail** | **PASS** = every invalid upload is rejected `400` with a specific reason and **no file is written**; a valid file is accepted and readable only through the authenticated route; a failed insert leaves no file (or is removed by the reconciler, asserted by a run); oversized input is rejected before the body is fully buffered. **FAIL** = any invalid file stored, or an orphan remains after reconciliation. |
+| **Required tests** | Extend `backend/test_document_access.py`; new `backend/test_upload_validation.py`. **NT-28**. |
+| **PASS evidence** | Rejection transcript per bad input; storage listing before/after; reconciler run output. |
+| **Dependencies** | **B1** (same route), **D-7** (storage). |
+| **Migration risk** | Existing non-conforming files (if any) will no longer be served by the old path — inventory first, and do not delete anything during the release. |
+| **Rollback** | Revert the helper; already-migrated storage stays valid. |
+
+#### M-f — Case-insensitive unique usernames
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Usernames are unique case-insensitively and normalised on input. |
+| **Risk addressed** | **M-6 `[V]`** — `Audit1baf` and `AUDIT1BAF` were both created (`201`), allowing confusable duplicate accounts and ambiguous audit attribution, while badge uniqueness is already case-insensitive. |
+| **Verification method** | Create `X` then `x`; create `X` then `X ` with whitespace; check existing duplicates in a synthetic dataset. |
+| **Pass/fail** | **PASS** = the second creation returns `409` with a clear message; a functional unique index on `LOWER(username)` exists; a pre-flight query reports any pre-existing case-duplicates for manual resolution. **FAIL** = any case-variant accepted. |
+| **Required tests** | New `backend/test_username_uniqueness.py`. **NT-29**. |
+| **PASS evidence** | Index definition; the `409` transcript; the pre-existing-duplicates report (expected empty). |
+| **Dependencies** | **M-a** (index creation as a migration). |
+| **Migration risk** | The index creation **fails** if duplicates already exist — hence the pre-flight report and a manual merge decision. Never auto-merge accounts. |
+| **Rollback** | Drop the index; no data changed. |
+
+#### M-g — Indexes and timestamp types
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Foreign keys and the branch/location filters used by every list query are indexed; new timestamp columns use `timestamptz`. |
+| **Risk addressed** | **§7.1 `[C]`** — no FK indexes at all, so every branch-filtered list is a sequential scan; text timestamps require parsing and block range queries and retention jobs. |
+| **Verification method** | `EXPLAIN (ANALYZE)` the branch-filtered list queries before and after on ≥ 100k synthetic rows. |
+| **Pass/fail** | **PASS** = the benchmarked queries use index scans and meet a stated latency target at 100k rows; new timestamp columns are `timestamptz`; existing `TEXT` timestamps are explicitly deferred (documented) rather than half-converted. **FAIL** = any target query still sequential-scans, or a partial type conversion ships. |
+| **Required tests** | `backend/test_query_plans.py` (seeds synthetic volume, asserts plan and latency). **Manual** for the deferred-conversion note. |
+| **PASS evidence** | Before/after `EXPLAIN` output and timings; the schema diff. |
+| **Dependencies** | **M-a**; **B5** for `branch_id`. |
+| **Migration risk** | **Converting `TEXT` timestamps to `timestamptz` is a destructive rewrite** and is explicitly **out of scope here** — it belongs to its own expand/contract release with a dual-write period. Adding indexes takes locks: use `CREATE INDEX CONCURRENTLY` outside a transaction. |
+| **Rollback** | Drop the added indexes; no data change. A timestamp conversion rollback is a restore — which is why it is deferred. |
+
+#### M-h — Remove stale artifacts; pin dependencies; CI
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | The SQLite-era scripts and the two failing suites are removed or rewritten for PostgreSQL; the repository pins its dependencies and runs the full suite in CI on a throwaway cluster. |
+| **Risk addressed** | **M-10 `[V]`** — `audit_instant_approvals.py --revert` and `migrate_rbac.py` operate on a SQLite file that holds no data (a clean report is meaningless); `database.py` declares a conflicting schema; no manifest exists, so builds are not reproducible and dependency vulnerabilities cannot be assessed. |
+| **Verification method** | Clean-venv install from the manifest; full suite in CI; `grep` for `sqlite3` in the tree. |
+| **Pass/fail** | **PASS** = `pip install -r requirements.txt` succeeds in a clean venv; the full suite (including the two rewritten suites) is green in CI; no `sqlite3` import remains; `pip-audit`/`npm audit` runs and its result is recorded. **FAIL** = any SQLite code path remains reachable, or any suite is silently excluded. |
+| **Required tests** | The CI job itself is the test; `test_conduct_frontend.mjs` and `test_server.py` rewritten (not skipped). |
+| **PASS evidence** | CI run link, manifest files, audit report, the git diff removing the artifacts. |
+| **Dependencies** | None; safe to do first and cheap. |
+| **Migration risk** | None (no application behaviour changes) — but **deleting `audit_instant_approvals.py` before B12 lands loses a forensic tool**; rewrite it for PostgreSQL rather than deleting it. |
+| **Rollback** | Revert the commit; nothing in the running system changes. |
+
+#### M-i — Backups, tested restore, monitoring, log hygiene
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Database and uploaded files are backed up on a schedule with verified restores; logs are structured, rotated, redacted and shipped; metrics and alerts cover availability, error rate, failed-login spikes and audit-write failures. |
+| **Risk addressed** | **M-12 `[V]`/`[C]`**, **L-3 `[V]`** — no backup or restore exists, so a failed release cannot be undone and a disk loss is total; PII-bearing search terms are written to unrotated stdout; unhandled exceptions are never logged server-side. |
+| **Verification method** | **Manual + rehearsed:** restore the latest backup into a clean environment, compare row counts and file checksums, and record the elapsed time; stop the database and confirm alerts fire. |
+| **Pass/fail** | **PASS** = a dated, witnessed restore completes within the agreed RTO with matching row/file counts; backups are encrypted and off-site; alerting fires within the agreed window for database-down and failed-login-spike; logs are JSON with redacted query strings and retention configured. **FAIL** = no rehearsal recorded, any count mismatch, or no alert. |
+| **Required tests** | Restore rehearsal is **manual** and produces a signed record; automated probe `backend/test_health_probes.py` covers the alarm path. |
+| **PASS evidence** | Restore runbook + rehearsal record (date, operator, RTO achieved, verification counts); backup configuration; an alert screenshot. |
+| **Dependencies** | **M-a**, **M-b** (restore must recreate grants), **D-1** (off-site location), RPO/RTO decision (§12 item 8). |
+| **Migration risk** | None; however the first restore rehearsal must use a **synthetic** copy, never production, until the data-protection decision is settled. |
+| **Rollback** | N/A — this item provides the rollback capability for everything else. |
+
+#### M-j — Regression tests for every finding (the proof gate)
+
+| Field | Requirement |
+|---|---|
+| **Behaviour that must change** | Each finding in §6 acquires a named automated test that **fails on the pre-fix commit and passes after the fix**, so the audit's evidence becomes a permanent guard rather than a one-off report. |
+| **Risk addressed** | **§8.4/§8.5 `[V]`** — the suite is strong where it was aimed and silent where it was not: no test covered document anonymity, cross-branch approval, session reset, self-demotion or concurrency. Four routes leaked precisely because no test asserted them. |
+| **Verification method** | For each item, check out the parent commit, run the new test (expect failure), then run it on the fix commit (expect pass). Record both. |
+| **Pass/fail** | **PASS** = every Critical/High/Medium finding has a named test; each test fails on the parent commit (proving it detects the defect) and passes on the fix; the full suite is green in one CI run. **FAIL** = any finding without a test, or any test that passes on the pre-fix commit (a test that cannot detect the defect). |
+| **Required tests** | The tests themselves, plus a machine-readable mapping table (finding → test → commit pair) checked into the repository. |
+| **PASS evidence** | The mapping table; CI runs for both commits; a summary line per finding. |
+| **Dependencies** | Runs alongside every item; the "fails before, passes after" check is the release gate for each. |
+| **Migration risk** | None. |
+| **Rollback** | N/A. |
+
+---
 
 ### 10.4 Optional / future
+
+*(Unchanged from the original plan. These items are not gated and carry no acceptance criteria, because they are not required for any of the readiness verdicts in §11.)*
 
 - SSO/MFA (OIDC), account self-service recovery with verified channels.
 - Certificate verification endpoint + QR code on the printed certificate; tamper-evident audit export for legal discovery.
@@ -849,7 +1191,11 @@ A disposable PostgreSQL cluster + `backend/server.py` on port 8123, nine seeded 
 - Append-only audit sink (WORM object storage) and legal retention automation.
 - Read-replica reporting, pgbouncer, horizontal app scaling.
 
+---
+
 ### 10.5 Suggested order of work (why this order)
+
+*(Preserved verbatim from the original plan — the order is unchanged.)*
 
 1. **B1-B3** — because each is a one-way door: documents already served cannot be un-leaked, and a compromised password file cannot be un-cracked. Do them before more data exists.
 2. **B4-B5** — because branch isolation is the product's core promise and is currently both incomplete and fail-open. Do these before any pilot demonstrates the gap to a user.
@@ -857,6 +1203,159 @@ A disposable PostgreSQL cluster + `backend/server.py` on port 8123, nine seeded 
 4. **B7-B8** — operational safety: you cannot run a pilot if you can lose your only administrator or cannot see who signed in.
 5. **B9-B10** — data integrity and defensibility: sequences first (cheap), then the audit completion (needed before real decisions are recorded).
 6. **M-* before production**, in the order given: migrations and database privilege first (they gate every future release), then backups/restore (the only thing that saves you when a release goes wrong), then the rest.
+
+**Sequencing note (added in v2 — a constraint, not a reordering).** Two items in this order introduce schema changes ahead of **M-a**: **B5** (a branch reference plus backfill) and **B6** (session columns). To keep the recommended order intact, both must ship as **additive-only** DDL, hand-written in the existing idempotent style, with **no destructive statement** (no drop, rename, type change or constraint tightening) and no backfill below the documented confidence threshold. If the team instead wants a true backfill of historical rows in B5, **M-a must move ahead of B5**, because an unversioned backfill has no rollback path. That is the only condition under which the order above should change, and it requires your approval.
+
+**Additional note on B13.** It is small and unblocks clean negative-test assertions for B4, B5 and B6, so it may be done first within step 1 without changing the substance of the order.
+
+---
+
+### 10.6 Negative test matrix (mandatory)
+
+Every item's PASS depends on the negative cases that reference it. The audit reproduced each of these classes at least once; each row must become an automated test. "Synthetic only" applies to all rows.
+
+| ID | Negative scenario | Request / method | Expected result | Items |
+|---|---|---|---|---|
+| NT-01 | Anonymous document retrieval (legacy URL) | `GET /uploads/<existing file>` | `404`, no bytes | B1 |
+| NT-02 | Anonymous document retrieval (new route) | `GET /api/documents/<token>` | `401` | B1, B13 |
+| NT-03 | Cross-branch document read | branch-B officer, branch-A document | `403`, no bytes | B1, B4 |
+| NT-04 | Wrong-module document read | Checkpoint officer, clearance document | `403`/`404` | B1, M-c |
+| NT-05 | Default credentials on a fresh install | `POST /api/login` with each legacy seed | `401` for all | B2 |
+| NT-06 | Cross-branch approval | branch-B officer, branch-A application | `403`, row unchanged | B4, B12 |
+| NT-07 | Cross-branch signed-scan upload | branch-B officer, branch-A application | `403`, no new row | B4 |
+| NT-08 | Cross-branch record read (control) | same as NT-06 on the read route | `403` (already correct) | B4 |
+| NT-09 | Unresolved branch assignment | officer with `branch_id IS NULL` | empty list + `403` on write | B5 |
+| NT-10 | Invalid branch label | set `branch` to an unregistered string | no widening (denied) | B5 |
+| NT-11 | Blank `location_scope` | PATCH checkpoint officer, `""` | `400`, unchanged | B5 |
+| NT-12 | Self-granted scope | officer `PATCH /api/me` with branch fields | `400`/ignored, no change | B5 |
+| NT-13 | Session after deactivation/reactivation | old token while disabled, then after enable | `401` both times | B6 |
+| NT-14 | Login brute force | 15 wrong passwords | `429` + `Retry-After` | B7 |
+| NT-15 | Unknown-username probing | same threshold, non-existent user | identical status/message, timing within tolerance | B7 |
+| NT-16 | Concurrent last-admin demotion | two threads, two admins | one `200`, one `409`, ≥1 admin left | B8 |
+| NT-17 | Concurrent identifier generation | 20 parallel creates | 20 unique ids, zero `409` | B9 |
+| NT-18 | Duplicate user-supplied key | same national id twice | `409` (correct: genuine duplicate) | B9 |
+| NT-19 | Audit row tampering via the app role | `UPDATE`/`DELETE audit_events` on the app DSN | permission error | B10, M-b |
+| NT-20 | Audit row tampering via the owner | `UPDATE` as table owner | trigger exception | B10 |
+| NT-21 | Plain HTTP / insecure cookie | `http://` request, cookie inspection | redirect or refused; cookie `Secure` | B11 |
+| NT-22 | Token in `localStorage` | read storage after login | absent | B11 |
+| NT-23 | Self-approval | creator approves own application | `403` | B12 |
+| NT-24 | Permission denial must not sign out | `403` on a register the role may not read | no session cleared | B13 |
+| NT-25 | Version-mismatched startup | app started against an older schema | refuses to serve | M-a |
+| NT-26 | Person-detail section leak | Checkpoint officer, clearance data | section absent/withheld | M-c |
+| NT-27 | Exception leakage | malformed JSON, duplicate insert, DB down | generic `500` + incident id; `503` on `/readyz` | M-d |
+| NT-28 | Malicious upload | `.exe`, oversize, wrong magic bytes | `400`, nothing written | M-e, B1 |
+| NT-29 | Confusable username | `X` then `x` | `409` | M-f |
+
+---
+
+### 10.7 Remediation tracking table
+
+Status values: **Not started** (all items — no remediation has been approved or performed) · In progress · Blocked (dependency or decision outstanding) · Ready for review · PASS · Closed-by-decision.
+
+| Action | Finding(s) | Priority | Depends on | Status | Test evidence required | Release gate |
+|---|---|---|---|---|---|---|
+| B1 | C-1 | Critical | D-7 | **Not started** | `test_document_access.py` + NT-01–NT-04 | Before any real document |
+| B2 | C-2 | Critical | D-2, D-4, D-5 | **Not started** | `test_bootstrap_admin.py` + NT-05 | Before first production-mode start |
+| B3 | C-3 | Critical | D-3, D-5 | **Not started** | `test_password_storage.py` | Before any real password |
+| B4 | H-2 | Critical | — | **Not started** | `test_clearance_branch_scope.py` + NT-06–NT-08 | Before a second branch's second application |
+| B5 | H-2, M-2 | High | B4, M-a*, D-6 | **Not started** | `test_branch_fail_closed.py` + NT-09–NT-12 | Pilot |
+| B6 | H-3 | High | B13, M-a*, D-8 | **Not started** | `test_session_lifecycle.py` + NT-13 | Pilot |
+| B7 | H-4 | High | B2, B10**, D-9 | **Not started** | `test_auth_hardening.py` + NT-14, NT-15 | Pilot |
+| B8 | H-5 | High | — | **Not started** | `test_last_admin.py` + NT-16 | Pilot |
+| B9 | H-6 | High | M-a*, D-10 | **Not started** | `test_identifier_concurrency.py` + NT-17, NT-18 | Pilot |
+| B10 | H-7 | High | B7, M-b | **Not started** | `test_audit_integrity.py` + NT-19, NT-20 | Pilot |
+| B11 | H-8, M-5 | High | D-1, D-11 | **Not started** | `test_http_hardening.py` + NT-21, NT-22 | Pilot |
+| B12 | M-3 | High | D-12 | **Not started** | `test_review_gate.py` (extended) + NT-23 | Pilot |
+| B13 | M-9 | High | — | **Not started** | `test_status_contract.py` + NT-24 | Pilot |
+| M-a | M-11 | Medium | — | **Not started** | `test_migrations.py` + NT-25 | Production |
+| M-b | M-8 | Medium | M-a, M-i, D-1 | **Not started** | `test_db_privileges.py` + NT-19 | Production |
+| M-c | M-1 | Medium | B4, B5 | **Not started** | `test_person_scope.py` + NT-26 | Production |
+| M-d | M-4, M-12 | Medium | D-4, M-a | **Not started** | `test_error_contract.py`, `test_health_probes.py` + NT-27 | Production |
+| M-e | M-7 | Medium | B1, D-7 | **Not started** | `test_upload_validation.py` + NT-28 | Production |
+| M-f | M-6 | Medium | M-a | **Not started** | `test_username_uniqueness.py` + NT-29 | Production |
+| M-g | §7.1 | Medium | M-a, B5 | **Not started** | `test_query_plans.py` | Production |
+| M-h | M-10, L-3 | Medium | — | **Not started** | CI green + audit report | Production |
+| M-i | M-12, L-3 | Medium | M-a, M-b, D-1, RPO/RTO | **Not started** | Restore rehearsal record (manual) | Production |
+| M-j | §8.4 | Medium | all items | **Not started** | finding→test→commit mapping | Every release |
+| L-1 | CSRF | Low | B11 | **Not started** | token/header test after cookie-only transport | Production (after B11) |
+| L-2 | Weak policy | Low | B3 | **Not started** | covered by `test_password_storage.py` | With B3 |
+| L-3 | Logging/PII | Low | M-d, M-i | **Not started** | redaction test + log sample | Production |
+| L-4 | Predictable ids / certificate verification | Low | B9 | **Not started** | verification endpoint test (optional) | Post-pilot |
+| L-5 | No MFA/SSO, no recovery | Low | D-3, §12 item 3 | **Not started** | IdP integration test | Post-pilot |
+| L-6 | Offline mode can show non-live data | Low | §12 item 11 | **Not started** | sync/conflict test if offline is in scope | Post-pilot |
+| L-7 | Dead code in `rbac_self_test()` | Low | — | **Not started** | self-test still 8/8 + RBAC suite green | With any release |
+
+\* Additive-only DDL constraint applies (see §10.5 sequencing note). \*\* B7 owns the initial authentication events; B10 adds enrichment and immutability.
+
+**Release-gate definitions used above:** *Before any real document / password / production-mode start* = the system must not accept genuine data until the item is PASS. *Pilot* = a controlled pilot with authorised users and real (or de-identified) police data is blocked until PASS. *Production* = production deployment is blocked until PASS. *Post-pilot* = tracked, not blocking.
+
+---
+
+### 10.8 Evidence classification register
+
+Requirement 6 of this revision: findings must be separable into what was **proven**, what was **read**, what is **assumed**, and what **needs your decision**. Nothing in §6 changes status because of this register.
+
+#### 10.8.1 Verified facts `[V]` — reproduced by execution during this audit
+
+| # | Fact | Where |
+|---|---|---|
+| V-1 | Anonymous `GET /uploads/<file>` returns `200` for a synthetic JPEG and PDF | C-1 |
+| V-2 | Nine seeded accounts all authenticate with `ChangeMe123!` | C-2 |
+| V-3 | The stored hash for `admin` equalled the published `sha256("abcdef")` after that password was set | C-3 |
+| V-4 | An Erigavo-scoped officer attached a signed scan to, and then approved, a Lasanod application (`201`, certificate issued) while being refused (`403`) on the read route | H-2 |
+| V-5 | A token survived a full server restart, survived an administrator password reset, and was revived by reactivation | H-3 |
+| V-6 | 15 failed logins produced no throttling; zero authentication rows appeared in the audit log | H-4 |
+| V-7 | The sole administrator demoted themselves and could not restore the role (`401`) | H-5 |
+| V-8 | 12 concurrent case creations gave 8 × 201 and 4 × 409 | H-6 |
+| V-9 | The cookie lacks `Secure`; no HSTS; no security headers; CORS `*`; token present in `localStorage` | H-8, M-5 |
+| V-10 | A Checkpoint officer received another unit's clearance summary via `/api/persons/<id>` | M-1 |
+| V-11 | Clearing `location_scope` widened a checkpoint officer from `['South']` to all locations | M-2 |
+| V-12 | An officer self-approved a Citizenship application seconds after creating it | M-3 |
+| V-13 | Malformed JSON returned `500` with Python internals; `409` echoed the constraint name | M-4 |
+| V-14 | `Audit1baf` and `AUDIT1BAF` were both accepted | M-6 |
+| V-15 | A legitimate HR officer's permission denial returned `401` | M-9 |
+| V-16 | 21 of 23 existing suites pass; the two failures are SQLite-era harnesses | §8.2 |
+
+#### 10.8.2 Code-review observations `[C]` — read, not executed
+
+- No FK indexes and no `audit_events`/`sessions(user_id)` index (§7.1).
+- Timestamps stored as `TEXT` throughout (§7.1/M-g).
+- `/api/health` performs no database query (M-12).
+- The application connects as `postgres` with no `sslmode` and no pool (M-8).
+- Migrations have no version table, checksum or advisory lock (M-11).
+- `person_document_records()` applies checkpoint scope but not fingerprint branch scope (§5.8).
+- Unreachable statements after `return` in `rbac_self_test()` (L-7).
+- Clearance intake calls the unvalidated `save_upload()` (M-7).
+
+#### 10.8.3 Assumptions `[A]` — stated so they can be corrected
+
+| # | Assumption | If wrong |
+|---|---|---|
+| A-1 | "Pilot" means real police data with authorised users, so all Critical + High items gate it | If the pilot is synthetic-only, the gate relaxes to **staging**, and B1–B4 still apply |
+| A-2 | Deployment target is one HQ plus three branches over a private VPN, with PostgreSQL staying the engine | Changes §11 architecture and M-b/M-i only |
+| A-3 | No external identity provider must be integrated before production | If one exists, L-5 becomes a production gate |
+| A-4 | The twelve prior findings in the request are the complete prior list | §9 would need reconciliation (see 10.8.4 D-12/§12 item 12) |
+| A-5 | No printed certificates are yet in circulation outside the system, so identifier formats may be adjusted (subject to D-10) | If certificates are already issued, identifier formats become frozen |
+| A-6 | "Three branches" corresponds to the seeded Sool / Sanaag / East Togdheer units | Mostly affects test fixtures |
+| A-7 | Current demo data exists only in throwaway environments | If demo accounts exist in a shared environment, D-5 becomes urgent |
+| A-8 | No legal requirement is known for the Citizenship exemption | Determines B12's design (D-12) |
+
+#### 10.8.4 Decisions required from you `[D]` — an item cannot be marked PASS while its decision is open
+
+| # | Decision | Blocks | If unanswered |
+|---|---|---|---|
+| D-1 | Hosting target, regions, data residency; VPN/certificate ownership | B11, M-b, M-i | Items can be implemented but not deployed/verified |
+| D-2 | Bootstrap administrator model and account name | B2 | Use: one `bootstrap_admin`, random 24-char password, forced change |
+| D-3 | Password policy: minimum length, work factor, rotation, reuse history | B3, L-2 | Use: ≥ 12 chars, Argon2id at OWASP baseline, no mandatory rotation, block last 5 |
+| D-4 | Runtime environment mode flag and its production semantics | B2, M-d | Use: `SENTINEL_ENV` ∈ {development, staging, production} |
+| D-5 | Existing demo/dormant accounts: mass reset vs lazy upgrade vs disable | B2, B3 | Use: disable demo accounts in production, lazy upgrade + 30-day reset deadline |
+| D-6 | May any role hold national scope, and who may grant it? | B5 | Use: administrator only, mandatory reason, audited |
+| D-7 | Document storage backend (encrypted local volume vs object storage) | B1, M-e | Use: encrypted local volume for pilot, object storage before production |
+| D-8 | Session lifetime (absolute + idle) and revoke-on-role-change policy | B6 | Use: 12 h absolute, 30 min idle, revoke on deactivate/reset only (role re-read per request) |
+| D-9 | Lockout thresholds, window, unlock authority | B7 | Use: 5 failures / 15 min → 15 min lockout, administrator unlock |
+| D-10 | Are current identifier formats contractual (printed certificates, integrations)? | B9 | Use: preserve `PREFIX-YYYY-NNNN` shape, continue numbering |
+| D-11 | CSP scope: strict now (inline-script refactor) vs report-only with sunset | B11 | Use: report-only at pilot, enforced before production, sunset date recorded |
+| D-12 | Is independent approval mandatory, and is the Citizenship exemption a legal requirement? | B12, A-8 | Use: independent approval required; exemption removed until evidenced |
 
 ---
 
