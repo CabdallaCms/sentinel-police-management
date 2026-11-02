@@ -93,8 +93,10 @@ Personnel · Administration). For every role you test:
 8. **Contextual headers** — a `Lasanod Branch` fingerprint officer's dashboard heading and
    *Fingerprint Unit* overview banner both read
    `Fingerprint Unit — Lasanod Branch Operations` (detail line `Laascaanood · Sool`); a checkpoint
-   officer reads `Checkpoint Unit — <their checkpoint> Operations`; an administrator reads
-   `— all branches` / `Cross-unit Operations`; the Commander reads `— cross-region command`.
+   officer reads `Checkpoint Unit — <their checkpoint> Operations`; a Crime Department officer
+   reads `[Region] — [Branch Name] Crime Department Operations`; an administrator reads
+   `— all branches` and the dashboard `National Command — All Branches Operations`; the Commander
+   reads `— cross-region command` and the same national dashboard banner.
 9. **Unit Directory** — *Unit Directory* is now a **category-level utility at the top of
    Operational Units** (no longer inside the Checkpoint Units accordion). Filter by Unit type
    (*All unit types* by default), Region, District and free text; the empty state must explain a
@@ -104,7 +106,7 @@ Personnel · Administration). For every role you test:
 10. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
     control appears in it.
 11. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
-    (`sentinel-crime-scope-1-9f3c2ab7`); a mismatch means a cached tab.
+    (`sentinel-sidebar-header-1-4d8b7e21`); a mismatch means a cached tab.
 
 12. **Branch-scoped sidebar tree** — sign in as a Fingerprint officer posted to
     `Lasanod Branch · Laascaanood · Sool`. Every dynamic tree (Fingerprint Units, Crime Units,
@@ -146,12 +148,17 @@ read scoping, 403 on another branch's record and audit history, write scoping, o
 - **Catalogue + page contract** — `/api/branches?unit_type=crime` (and `?unit=crime`) returns the
   Sool / Sanaag / East Togdheer Crime Units grouped by region; the page ships the locked suspect
   branch selector (`id="spBranch"`), the `🔒 Locked to assigned branch` indicator, the
-  branch-bound payload and the region-led `Sool Region — Crime Department Operations` header, with
+  branch-bound payload and the `[Region] — [Branch Name] Crime Department Operations` header, with
   one consistent version stamp; `--ui-check` is executed as part of the suite.
+- **Header + dashboard naming** — a scoped officer's `/api/dashboard` `branch_context` is
+  `Sool Region — Lasanod Branch Crime Department Operations`; the System Administrator and the
+  Chief Commander read `National Command — All Branches Operations`.
 `node backend/test_sidebar_navigation.mjs` is the jsdom proof for items 12–13: a scoped officer's
-five trees each keep exactly one region, one district and one branch; the Unit Directory launcher
-is hidden and the drawer refuses to open with the restriction toast, while `admin` and the
-Commander keep national visibility and the directory.
+own tree keeps exactly one region, one district and one branch, every other unit category fails
+closed (no national fallback), a same-district / same-name legacy row is refused, and the Unit
+Directory launcher is hidden while the drawer refuses to open with the restriction toast. `admin`
+and the Commander keep national visibility, the directory, the national header and the national
+dashboard heading.
 
 ## Officer UAT checklist
 
@@ -707,7 +714,7 @@ the generic endpoint.
 Branch: `arena/b4919f35-sentinel-police-management` (feature branch `arena/branch-management-crud`).
 Do not merge until UAT is approved. Restart the backend and hard-refresh the browser when testing
 this branch (`?v=` stamps and the UI build marker were republished as
-`sentinel-crime-scope-1-9f3c2ab7`). Use a test database and synthetic identities only.
+`sentinel-sidebar-header-1-4d8b7e21`). Use a test database and synthetic identities only.
 
 ### What changed
 - **Actions column + Edit Branch modal.** The Branch Management table gained **Status** and
@@ -765,7 +772,7 @@ this branch (`?v=` stamps and the UI build marker were republished as
 6. **Posting preservation**: as `admin`, edit an account's **Branch** to a new branch name, rename
    that branch in Branch Management, then reload the account: its posting shows the new name and
    the officer's intake selector stays locked.
-7. Confirm the sidebar footer reports `sentinel-crime-scope-1-9f3c2ab7`, matching
+7. Confirm the sidebar footer reports `sentinel-sidebar-header-1-4d8b7e21`, matching
    `/api/health` → `ui_build` / `asset_version`, and `python backend/server.py --ui-check` exits 0.
 
 ### Automated

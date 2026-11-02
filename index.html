@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-crime-scope-1-9f3c2ab7" />
+<meta name="sentinel-ui-build" content="sentinel-sidebar-header-1-4d8b7e21" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -3113,28 +3113,54 @@ function scorePostingBranch(branch,keys,parts,locationScope,unitType){
   const bkey=canonicalPostingKey(branch&&branch.name);
   if(!bkey) return 0;
   const bwords=new Set(bkey.split(' '));
+  const unitKeys=UNIT_POSTING_KEYS[unitType]||[];
+  // A legacy UNIT-level posting names the unit, never a branch. Matching its
+  // words against branch names would pin 'Fingerprint Unit' to whichever branch
+  // happens to contain 'fingerprint' (e.g. 'Xudun Fingerprint Annex'), i.e. it
+  // would invent a posting — exactly what the lock must never do.
+  const isUnitKey=(key)=>unitKeys.includes(key);
+  const unitPosting=[...keys].some(isUnitKey);
   let score=0;
   keys.forEach(key=>{
-    if(!key) return;
+    if(!key||isUnitKey(key)) return;
     const kwords=new Set(key.split(' '));
     if(key===bkey) score=Math.max(score,100);
-    else if(kwords.size&&[...kwords].every(w=>bwords.has(w))) score=Math.max(score,80);
-    else if(bwords.size&&[...bwords].every(w=>kwords.has(w))) score=Math.max(score,72);
+    // Partial matches need at least two words on the officer's side: a single
+    // token ('Lasanod') must never match an unrelated unit that merely starts
+    // with it ('Lasanod Central Checkpoint').
+    else if(kwords.size>1&&[...kwords].every(w=>bwords.has(w))) score=Math.max(score,80);
+    else if(kwords.size>1&&bwords.size&&[...bwords].every(w=>kwords.has(w))) score=Math.max(score,72);
   });
-  const hints=new Set([canonicalPostingKey(parts.district),canonicalPostingKey(parts.region),
-    canonicalPostingKey(locationScope)].filter(Boolean));
-  if(hints.size){
-    if(hints.has(canonicalPostingKey(branch.district))) score=Math.max(score,62);
-    else if(hints.has(canonicalPostingKey(branch.region))) score=Math.max(score,52);
+  // Geography ranks a LEGACY UNIT-LEVEL posting ('Fingerprint Unit · Sool');
+  // it never creates a branch match on its own, or a fingerprint officer would
+  // be scoped to the geographically closest checkpoints / CID office.
+  if(unitPosting){
+    const hints=new Set([canonicalPostingKey(parts.district),canonicalPostingKey(parts.region),
+      canonicalPostingKey(locationScope)].filter(Boolean));
+    if(hints.size){
+      if(hints.has(canonicalPostingKey(branch.district))) score=Math.max(score,62);
+      else if(hints.has(canonicalPostingKey(branch.region))) score=Math.max(score,52);
+    }
+    score=Math.max(score,40);
   }
-  // A legacy unit-level posting ('Fingerprint Unit') names the unit, not the
-  // branch: it resolves only when the geography leaves one candidate.
-  const unitKeys=UNIT_POSTING_KEYS[unitType]||[];
-  if(unitKeys.some(k=>keys.has(k))) score=Math.max(score,score?46:40);
   return score;
+}
+// The one unit category the officer's ROLE belongs to ('' when the role does
+// not name a unit, e.g. HR / station registry staff). A branch posting may only
+// scope its own category: 'Lasanod Branch' must never scope the police-station
+// or checkpoint tree just because those names share a place name.
+function roleUnitType(role){
+  const family=unitFamily(role);
+  if(family==='cid') return 'crime';
+  if(family) return family;
+  const norm=normalizeRole(role);
+  if(norm==='checkpoint_officer') return 'checkpoint';
+  return '';
 }
 // The single registered branch this session's posting identifies, or null.
 function resolvePostingBranch(unitType){
+  const ownType=roleUnitType(sessionUser&&sessionUser.role);
+  if(ownType&&ownType!==unitType) return null;
   const items=((branchCatalog&&branchCatalog.items)||[])
     .filter(b=>b&&unitTypeOf(b.unit_type)===unitType);
   if(!items.length) return null;
@@ -3156,7 +3182,28 @@ function resolvePostingBranch(unitType){
   const top=scored[0].score;
   if(top<POSTING_MATCH_MIN) return null;
   const winners=scored.filter(x=>x.score===top);
-  return winners.length===1?winners[0].branch:null;   // ambiguous → free choice
+  if(winners.length===1) return winners[0].branch;
+  // The same branch name may exist in two regions (the catalogue is unique on
+  // name + region + unit). Break the tie with the officer's OWN geography —
+  // never with catalogue order, which would silently lock them to a foreign
+  // regional branch (and leak its tree).
+  const districtKey=canonicalPostingKey(parts.district);
+  const regionKey=canonicalPostingKey(parts.region);
+  const locationKey=canonicalPostingKey(locationScope);
+  if(districtKey){
+    const exact=winners.filter(x=>canonicalPostingKey(x.branch.district)===districtKey);
+    if(exact.length===1) return exact[0].branch;
+  }
+  if(regionKey){
+    const inRegion=winners.filter(x=>canonicalPostingKey(x.branch.region)===regionKey);
+    if(inRegion.length===1) return inRegion[0].branch;
+  }
+  if(locationKey){
+    const near=winners.filter(x=>canonicalPostingKey(x.branch.district)===locationKey
+      ||canonicalPostingKey(x.branch.region)===locationKey);
+    if(near.length===1) return near[0].branch;
+  }
+  return null;                                        // ambiguous → free choice
 }
 function sessionBranchScope(unitType){
   const status=(sessionUser&&sessionUser.branch_scope_status)||null;
@@ -3684,9 +3731,29 @@ function splitUnitBranchLabel(value){
 function branchIndexByName(){
   const map=new Map();
   ((branchCatalog&&branchCatalog.items)||[]).forEach(b=>{
-    if(b&&b.name) map.set(String(b.name).toLowerCase(), b);
+    if(!b||!b.name) return;
+    const key=String(b.name).toLowerCase();
+    if(!map.has(key)) map.set(key, b);       // first registration wins
   });
   return map;
+}
+// Locate a legacy register posting in the catalogue WITHOUT guessing: the same
+// branch name can legitimately exist in two regions (the unique index is
+// name + region + unit_type), so the row's own region/district is part of the
+// lookup. Returns null when the identity stays ambiguous.
+function branchIndexForBranch(name,region,district){
+  const key=String(name||'').trim().toLowerCase();
+  if(!key) return null;
+  const items=((branchCatalog&&branchCatalog.items)||[])
+    .filter(b=>b&&String(b.name||'').trim().toLowerCase()===key);
+  if(items.length<=1) return items[0]||null;
+  const r=String(region||'').trim().toLowerCase();
+  const d=String(district||'').trim().toLowerCase();
+  const byRegion=r?items.filter(b=>String(b.region||'').trim().toLowerCase()===r):[];
+  const pool=byRegion.length?byRegion:items;
+  const byDistrict=d?pool.filter(b=>String(b.district||'').trim().toLowerCase()===d):[];
+  if(byDistrict.length===1) return byDistrict[0];
+  return pool.length===1?pool[0]:null;
 }
 function unitTypeOf(objectType){
   return String(objectType||'').trim();
@@ -3694,12 +3761,13 @@ function unitTypeOf(objectType){
 // Legacy register rows: locate the posting in the branch catalogue when it
 // exists (region + district), otherwise keep whatever the row recorded.
 function registerUnitRows(type){
-  const index=branchIndexByName();
   const rows=[];
   const push=(label, region, district, code)=>{
     const name=String(label||'').trim();
     if(!name) return;
-    const hit=index.get(name.toLowerCase());
+    // Resolve against the region/district the ROW recorded, so a same-named
+    // branch in another region can never lend its id to this row.
+    const hit=branchIndexForBranch(name, region, district);
     rows.push({
       label:name,
       region:String((hit&&hit.region)||region||'').trim(),
@@ -3740,19 +3808,25 @@ function unitNavCatalog(type){
     if(!unit) return;
     const label=String(unit.label||'').replace(/\s+/g,' ').trim();
     if(!label) return;
-    const key=label.toLowerCase();
+    const region=String(unit.region||'').trim();
+    const district=String(unit.district||'').trim();
+    // The catalogue identity is label + region + district, NOT the label
+    // alone: two regions may legitimately register the same branch name, and
+    // collapsing them would either hide the officer's own branch or hand its
+    // region to a foreign row.
+    const key=[label.toLowerCase(),region.toLowerCase(),district.toLowerCase()].join('|');
     if(seen.has(key)){
       const prev=seen.get(key);
-      if(!prev.region && unit.region) prev.region=unit.region;
-      if(!prev.district && unit.district) prev.district=unit.district;
+      if(!prev.region && region) prev.region=region;
+      if(!prev.district && district) prev.district=district;
       if(!prev.code && unit.code) prev.code=unit.code;
       if(!prev.branch_id && unit.branch_id) prev.branch_id=unit.branch_id;
       return;
     }
     seen.set(key,{
       label,
-      region:String(unit.region||'').trim(),
-      district:String(unit.district||'').trim(),
+      region,
+      district,
       code:unit.code||'',
       branch_id:unit.branch_id||null,
       unit_type:type,
@@ -3809,7 +3883,9 @@ function navUnitScope(type){
     return {branch_id:branch.id?String(branch.id):'',
       branch_name:branch.name||'',
       region:String(branch.region||'').trim(),
-      district:String(branch.district||'').trim()};
+      district:String(branch.district||'').trim(),
+      // Explicit marker: every consumer must fail closed on this scope.
+      strict:true};
   }
   // The API may already have resolved the posting for this unit type.
   const status=(sessionUser&&sessionUser.branch_scope_status)||null;
@@ -3817,15 +3893,33 @@ function navUnitScope(type){
     return {branch_id:status.branch.branch_id?String(status.branch.branch_id):'',
       branch_name:status.branch.branch_name||'',
       region:String(status.branch.region||'').trim(),
-      district:String(status.branch.district||'').trim()};
+      district:String(status.branch.district||'').trim(),
+      strict:true};
   }
-  return null;                                        // no reliable posting
+  // A branch-scoped officer (their own posting resolved) must never fall back
+  // to the national tree for a unit category that holds none of their branch.
+  // The category stays empty instead of leaking every other region.
+  return sessionHasBranchScope()?{hidden:true,strict:true}:null;
 }
-// Is a catalogued unit inside the officer's scope? Rows that the register
-// recorded without a branch id are matched on their canonical name plus their
-// region/district, so a legacy row can still appear — but only their own.
+// True when this session is pinned to a registered branch (so every tree must
+// fail closed). Admin / HQ / Commander sessions are never pinned.
+function sessionHasBranchScope(){
+  if(!sessionUser||branchSelectUnlockedForUser()) return false;
+  const status=(sessionUser&&sessionUser.branch_scope_status)||null;
+  if(status&&status.resolved&&status.branch) return true;
+  return NAV_UNIT_TREE_TYPES.some(spec=>!!resolvePostingBranch(spec.type));
+}
+// Is a catalogued unit inside the officer's STRICT branch scope?
+//
+// A branch-scoped officer may only ever see their own branch: one region, one
+// district, one unit. Region/district agreement alone is NOT enough — another
+// branch in the same district (or a same-named branch in another region) must
+// stay out of the rail. Rows that the register recorded without a branch id
+// are accepted only when their canonical label names the officer's branch.
+// Anything that cannot be matched is refused, never guessed.
 function unitInNavScope(unit,scope){
   if(!scope) return true;
+  if(scope.hidden) return false;                       // scoped, no branch here
   const region=String(unit.region||'').trim();
   const district=String(unit.district||'').trim();
   if(!region||!district) return false;                 // unassigned / areas
@@ -3833,10 +3927,15 @@ function unitInNavScope(unit,scope){
   if(district===NAV_NO_DISTRICT) return false;
   if(scope.region&&region!==scope.region) return false;
   if(scope.district&&district!==scope.district) return false;
-  if(scope.branch_id&&unit.branch_id){
-    return String(unit.branch_id)===String(scope.branch_id);
-  }
-  return canonicalPostingKey(unit.label)===canonicalPostingKey(scope.branch_name);
+  const scopeId=scope.branch_id?String(scope.branch_id):'';
+  const unitId=unit.branch_id?String(unit.branch_id):'';
+  if(scopeId&&unitId) return unitId===scopeId;
+  // No catalogue id on the row (a legacy register posting): the label must
+  // name exactly the officer's branch. Region/district proximity is not
+  // identity, so this is the only remaining proof we accept.
+  const scopeName=canonicalPostingKey(scope.branch_name);
+  if(!scopeName) return false;
+  return canonicalPostingKey(unit.label)===scopeName;
 }
 // The nested Region → District → unit structure the sidebar paints.
 function unitNavTree(type){
@@ -7101,7 +7200,7 @@ function paintDashboard(d){
     // fallback for an older payload.
     subhead.textContent = d.branch_context
       || dashboardHeaderContext()
-      || (d.is_admin ? 'Cross-unit Operations'
+      || (d.is_admin ? NATIONAL_COMMAND_HEADER
           : (d.location_scope ? (d.location_scope+' Checkpoint Operations')
              : ((d.role||'Module')+' Operations')));
   }
@@ -8066,7 +8165,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=9f3c2ab7&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=4d8b7e21&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -8193,7 +8292,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=9f3c2ab7&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=4d8b7e21&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -8479,7 +8578,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=9f3c2ab7&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=4d8b7e21&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -9666,8 +9765,11 @@ function updateUserPill(){
     eb.textContent = txt;
   }
   // Session changes (sign-in, profile adoption, admin/role switch) re-label the
-  // module headers and the dashboard banner with the new posting.
+  // module headers and the dashboard banner with the new posting, and repaint
+  // the rail from that same scope — a new session must never inherit the
+  // previous officer's (possibly national) unit tree.
   try{ paintModuleHeaders(); }catch(_){ }
+  try{ renderUnitNavTrees(); }catch(_){ }
 }
 // ---- contextual module headers ---------------------------------------------
 // Every operational page opens with a module header ("banner") that names the
@@ -9685,6 +9787,24 @@ const UNIT_HEADER_SPECS={
   cars:{unitType:null,label:'Vehicle Registry'},
   vehiclestatus:{unitType:null,label:'Fleet Status'}
 };
+// The cross-branch command banner. SystemAdmin / HQ read every branch, so
+// their module + dashboard headers say so explicitly instead of borrowing a
+// regional label they do not have.
+const NATIONAL_COMMAND_HEADER='National Command — All Branches Operations';
+// 'Sool' -> 'Sool Region'; an already-suffixed label is left alone.
+function regionHeading(region){
+  const r=String(region||'').trim();
+  if(!r) return '';
+  return /(^|\s)region$/i.test(r)?r:r+' Region';
+}
+// The branch-scoped Crime Department banner:
+//   [Region] — [Branch Name] Crime Department Operations
+// e.g. 'Sool Region — Lasanod Branch Crime Department Operations'.
+function crimeDepartmentHeader(branch){
+  const region=regionHeading(branch&&branch.region);
+  const name=String((branch&&branch.name)||'').trim();
+  return (region?region+' — ':'')+(name?name+' ':'')+'Crime Department Operations';
+}
 function moduleBranchContext(page){
   const spec=UNIT_HEADER_SPECS[page];
   if(!spec) return null;
@@ -9700,26 +9820,29 @@ function moduleBranchContext(page){
   }
   const branch=resolvePostingBranch(spec.unitType);
   if(branchSelectUnlockedForUser()){
+    // Admin / HQ: every branch is visible, so the banner names the national
+    // command instead of a regional posting they do not hold.
+    if(page==='cid'){
+      return {label:spec.label,branch:branch,
+        title:NATIONAL_COMMAND_HEADER,
+        detail:'All registered Crime Department branches across the network'};
+    }
     const override=isChiefRole(sessionUser&&sessionUser.role) ? 'cross-region command' : 'all branches';
     return {label:spec.label,branch:branch,
-      title:page==='cid'
-        ? 'Crime Department — '+override+' Operations'
-        : spec.label+' — '+override,
+      title:spec.label+' — '+override,
       detail:(branch?branchWhereLabel(branch):override)};
   }
   if(branch){
-    const region=String(branch.region||'').trim();
-    // The Crime Department header leads with the officer's REGION, because a
-    // regional Crime Unit is the operational posting ("Sool Region — Crime
-    // Department Operations"); the branch itself stays in the subline.
-    const regionLed=page==='cid'&&!!region;
+    // A branch-scoped officer sees the explicit regional posting AND the
+    // branch name, so the banner can never be mistaken for another region.
+    if(page==='cid'){
+      return {label:spec.label,branch,
+        title:crimeDepartmentHeader(branch),
+        detail:[branch.name,branch.district,branch.region].filter(Boolean).join(' · ')};
+    }
     return {label:spec.label,branch,
-      title:regionLed
-        ? region+' Region — Crime Department Operations'
-        : spec.label+' — '+branch.name+' Operations',
-      detail:regionLed
-        ? [branch.name,branch.district,region].filter(Boolean).join(' · ')
-        : [branch.district,branch.region].filter(Boolean).join(' · ')};
+      title:spec.label+' — '+branch.name+' Operations',
+      detail:[branch.district,branch.region].filter(Boolean).join(' · ')};
   }
   // Unresolved posting: name it so the header is never a generic unit title.
   return {label:spec.label,branch:null,
@@ -9751,8 +9874,8 @@ function paintModuleHeaders(){
 }
 function dashboardHeaderContext(){
   if(!sessionUser) return null;
-  if(isAdminRole(sessionUser.role)) return 'Cross-unit Operations';
-  if(isChiefRole(sessionUser.role)) return 'Cross-region Command Operations';
+  // HQ / SystemAdmin: one explicit cross-branch banner, never a regional one.
+  if(isAdminRole(sessionUser.role)||isChiefRole(sessionUser.role)) return NATIONAL_COMMAND_HEADER;
   const unit=primaryUnitPageForSession();
   const ctx=unit?moduleBranchContext(unit):null;
   return ctx?ctx.title:null;

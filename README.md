@@ -353,10 +353,15 @@ instead of a generic unit title:
 | Session | Banner |
 |---------|--------|
 | Fingerprint officer posted to `Lasanod Branch` | `Fingerprint Unit — Lasanod Branch Operations` (detail line `Laascaanood · Sool`) |
+| Crime Department officer at `Lasanod Branch`, Sool | `Sool Region — Lasanod Branch Crime Department Operations` |
 | Checkpoint officer at `Lasanod Central Checkpoint` | `Checkpoint Unit — Lasanod Central Checkpoint Operations` |
-| System Administrator | `Fingerprint Unit — all branches` · dashboard `Cross-unit Operations` |
-| Commander | `Fingerprint Unit — cross-region command` |
+| System Administrator | `Fingerprint Unit — all branches` · dashboard `National Command — All Branches Operations` |
+| Commander | `Fingerprint Unit — cross-region command` · dashboard `National Command — All Branches Operations` |
 | Unresolved posting | `Fingerprint Unit — <posting> Operations` (the posting is named) |
+
+A branch-scoped officer's sidebar rail follows the same resolver: only their own branch appears
+(one region, one district); every other unit category fails closed instead of falling back to the
+national tree. SystemAdmin / HQ keep the full nationwide tree.
 
 `paintModuleHeaders()` repaints on every navigation, save and session change from the same
 resolver the lock uses, and `GET /api/dashboard` adds `branch_scope` / `branch_context`.
@@ -686,9 +691,10 @@ a tampered `branch_id` is refused while an omitted one is pinned to the posting 
 as `NULL`. The System Administrator and the Chief Commander keep the full cross-region register,
 detail routes and dashboard counters. The suite also asserts `/api/branches?unit_type=crime`
 returns the Sool / Sanaag / East Togdheer Crime Units, the page ships the locked suspect branch
-selector with the `🔒 Locked to assigned branch` indicator and the region-led
-`Sool Region — Crime Department Operations` header, and `python backend/server.py --ui-check`
-exits 0.
+selector with the `🔒 Locked to assigned branch` indicator, the module header and the dashboard
+`branch_context` name the exact posting (`Sool Region — Lasanod Branch Crime Department
+Operations`) while SystemAdmin / HQ read `National Command — All Branches Operations`, and
+`python backend/server.py --ui-check` exits 0.
 
 Review-gate regression suite (PostgreSQL; uses the configured test database or a temporary `pgserver` cluster, and performs timestamp backdating through the application's connection adapter):
 

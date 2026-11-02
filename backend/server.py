@@ -682,11 +682,11 @@ BUILD_TAG = 'sentinel-crime-department-scope'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '9f3c2ab7'
+ASSET_VERSION = '4d8b7e21'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-crime-scope-1-' + ASSET_VERSION
+UI_BUILD = 'sentinel-sidebar-header-1-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -778,7 +778,10 @@ UI_REQUIRED_MARKERS = (
     ('Suspect filing-scope indicator', 'Filing scope'),
     ('Branch-bound suspect payload', 'branch_id:branchId'),
     ('Suspect branch provenance', 'branch_id:x.branch_id||null'),
-    ('Region-led Crime Department header', ' Region — Crime Department Operations'),
+    ('Region-led Crime Department header', 'function crimeDepartmentHeader('),
+    ('National Command banner',
+     "NATIONAL_COMMAND_HEADER='National Command — All Branches Operations'"),
+    ('Strict sidebar branch scope', 'strict:true'),
     # The page refuses approvals against a backend it does not recognise, so
     # its required tag must track BUILD_TAG exactly (a drift disables the
     # review lock in the browser — ui-check now catches it).
@@ -2670,9 +2673,36 @@ def resolve_posting_branch(c, user, unit_type=None):
             best_score, best = score, [branch]
         elif score and score == best_score:
             best.append(branch)
-    if best_score < POSTING_MATCH_MIN or len(best) != 1:
+    if best_score < POSTING_MATCH_MIN or not best:
         return None
-    return best[0]
+    if len(best) == 1:
+        return best[0]
+    # The same branch name may legitimately exist in two regions (the unique
+    # index is name + region + unit_type). Never resolve by catalogue order:
+    # the officer's own geography must select exactly one candidate, otherwise
+    # the posting stays ambiguous (and therefore unscoped) instead of silently
+    # locking them to another region's branch.
+    parts = posting_parts(user)
+    district_hint = canonical_posting_key(parts.get('district'))
+    region_hint = canonical_posting_key(parts.get('region'))
+    scope_hint = canonical_posting_key((user or {}).get('location_scope'))
+    if district_hint:
+        exact = [b for b in best
+                 if canonical_posting_key(b.get('district')) == district_hint]
+        if len(exact) == 1:
+            return exact[0]
+    if region_hint:
+        in_region = [b for b in best
+                     if canonical_posting_key(b.get('region')) == region_hint]
+        if len(in_region) == 1:
+            return in_region[0]
+    if scope_hint:
+        in_scope = [b for b in best
+                    if canonical_posting_key(b.get('district')) == scope_hint
+                    or canonical_posting_key(b.get('region')) == scope_hint]
+        if len(in_scope) == 1:
+            return in_scope[0]
+    return None
 
 
 def branch_scope_view(c, user, unit_type=None):
@@ -2709,6 +2739,42 @@ def branch_scope_view(c, user, unit_type=None):
         'location_scope': (user or {}).get('location_scope') or '',
         'scoped': True,
     }
+
+
+# The banner every cross-branch session carries. SystemAdmin / HQ read every
+# branch, so the dashboard and module headers say so instead of borrowing a
+# regional label they do not have.
+NATIONAL_COMMAND_HEADER = 'National Command — All Branches Operations'
+
+
+def branch_context_label(user, scope):
+    """Precise posting label for the dashboard banner.
+
+    Mirrors the module header in index.html:
+
+      * branch-scoped Crime Department officer:
+        'Sool Region — Lasanod Branch Crime Department Operations'
+      * branch-scoped other unit: '<Unit> — <Branch> Operations'
+      * SystemAdmin / HQ / cross-branch command:
+        'National Command — All Branches Operations'
+      * unresolved posting: '' (the page keeps its own route title)
+    """
+    if not scope:
+        role = (user or {}).get('role') or ''
+        if (not user) or is_admin_user(user) or is_records_admin(user) \
+                or canonical_unit_role(role) == ROLE_CHIEF:
+            return NATIONAL_COMMAND_HEADER
+        return ''
+    unit = normalize_branch_unit_type(scope.get('unit_type')) or primary_unit_type(user)
+    region = str(scope.get('region') or '').strip()
+    branch_name = str(scope.get('branch_name') or '').strip()
+    if unit == 'crime':
+        region_label = (region if region.lower().endswith('region')
+                        else (f'{region} Region' if region else ''))
+        head = f'{region_label} — ' if region_label else ''
+        return f'{head}{branch_name} Crime Department Operations'.strip()
+    label = BRANCH_UNIT_LABELS.get(unit) or ROLE_LABELS.get((user or {}).get('role'), 'Unit')
+    return f'{label} — {branch_name} Operations'
 
 
 def posting_scope_status(c, user, unit_type=None):
@@ -7422,10 +7488,11 @@ def build_dashboard(c, user):
         'is_admin': is_admin,
         'location_scope': scope,
         'branch_scope': dashboard_scope,
-        'branch_context': (
-            f"{ROLE_LABELS.get(role, role)} — {dashboard_scope['branch_name']}"
-            if dashboard_scope else ''
-        ),
+        # The dashboard banner uses the SAME naming rule as the module header:
+        # a scoped Crime Department officer gets '[Region] — [Branch] Crime
+        # Department Operations', HQ gets 'National Command — All Branches
+        # Operations'. The client mirrors this when the payload is older.
+        'branch_context': branch_context_label(user, dashboard_scope),
         'modules': modules,
         'cards': cards,
         'quick_actions': quick,

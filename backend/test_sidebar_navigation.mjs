@@ -92,6 +92,12 @@ const BRANCHES = [
   { id: 'b10', name: 'Lasanod Branch', region: 'Sool', district: 'Laascaanood', unit_type: 'fingerprint' },
   { id: 'b11', name: 'Lasanod Station', region: 'Sool', district: 'Laascaanood', unit_type: 'police_station' },
   { id: 'b12', name: 'Laascaanood Airport Desk', region: 'Sool', district: 'Laascaanood', unit_type: 'airport' },
+  // Neighbours in the SAME region/district: a scoped rail must still hide them.
+  { id: 'b13', name: 'Laascaanood CID Annex', region: 'Sool', district: 'Laascaanood', unit_type: 'crime' },
+  { id: 'b14', name: 'Xudun Fingerprint Annex', region: 'Sool', district: 'Xudun', unit_type: 'fingerprint' },
+  { id: 'b15', name: 'Laascaanood Checkpoint Annex', region: 'Sool', district: 'Laascaanood', unit_type: 'checkpoint' },
+  { id: 'b16', name: 'Laascaanood Airport Annex', region: 'Sool', district: 'Laascaanood', unit_type: 'airport' },
+  { id: 'b17', name: 'Laascaanood Station Annex', region: 'Sool', district: 'Laascaanood', unit_type: 'police_station' },
 ];
 
 try {
@@ -199,7 +205,7 @@ try {
   const lasanod = [...sool.querySelectorAll('.nav-district')]
     .find((d) => d.dataset.navDistrict === 'Laascaanood');
   assert.deepEqual([...lasanod.querySelectorAll('.nav-unit')].map((u) => u.dataset.unitLabel),
-    ['Lasanod Central Checkpoint']);
+    ['Laascaanood Checkpoint Annex', 'Lasanod Central Checkpoint']);
   // Long names never wrap the rail: short label + full tooltip.
   treeUnits('checkpoint').forEach((btn) => {
     const short = btn.querySelector('.nav-unit-short').textContent;
@@ -405,12 +411,25 @@ try {
   // officer's geography; with no geography it stays unambiguous-by-rule and
   // the selector stays open (a branch is never invented).
   signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
-    { branch: 'Fingerprint Unit · Sool' });
+    { branch: 'Fingerprint Unit · Laascaanood · Sool' });
   run(`openEntryModal('fpDrawer')`);
   await run(`refreshBranchSelect('fpBranch','fingerprint')`);
   assert.equal($('fpBranch').disabled, true,
-    'a legacy unit posting narrowed by its region still locks');
-  assert.equal($('fpBranch').value, 'b10', 'the Sool fingerprint branch is selected');
+    'a legacy unit posting narrowed by its district still locks');
+  assert.equal($('fpBranch').value, 'b10', 'the Laascaanood fingerprint branch is selected');
+  run(`closeEntryModal('fpDrawer')`);
+
+  // Sool now holds two fingerprint branches: a region-only legacy posting is
+  // ambiguous and must stay open rather than pick one (the unit name itself is
+  // never allowed to match a branch name such as 'Xudun Fingerprint Annex').
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Fingerprint Unit · Sool' });
+  run(`openEntryModal('fpDrawer')`);
+  await run(`refreshBranchSelect('fpBranch','fingerprint')`);
+  assert.equal($('fpBranch').disabled, false,
+    'a region with two branches never guesses a lock');
+  assert.equal($('fpBranch').dataset.branchLocked, undefined);
+  assert.ok($('fpBranch-lock').textContent.includes('does not name one registered branch'));
   run(`closeEntryModal('fpDrawer')`);
 
   signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
@@ -485,14 +504,21 @@ try {
   signIn('CIDUnit', ['dashboard', 'people', 'cid', 'crimes'], false,
     { branch: 'Laascaanood CID Office · Sool' });
   assert.equal(query('[data-unit-head="cid"]').textContent,
-    'Sool Region — Crime Department Operations',
-    'the Crime Department banner names the officer region');
+    'Sool Region — Laascaanood CID Office Crime Department Operations',
+    'the Crime Department banner names the region AND the officer branch');
   assert.ok(query('[data-unit-head-sub="cid"]').textContent.includes('Laascaanood CID Office'),
     'the banner detail line keeps the branch + district + region');
 
   signIn('SystemAdmin', ALL_MODULES, true);
   assert.equal(query('[data-unit-head="fingerprint"]').textContent, 'Fingerprint Unit — all branches',
     'an administrator sees the cross-branch label');
+  assert.equal(query('[data-unit-head="cid"]').textContent,
+    'National Command — All Branches Operations',
+    'the administrator Crime Department banner names the national command');
+  signIn('chief_commander', ['dashboard', 'cid', 'executive', 'oversight'], false);
+  assert.equal(query('[data-unit-head="cid"]').textContent,
+    'National Command — All Branches Operations',
+    'the HQ Commander Crime Department banner names the national command');
   signIn('chief_commander', ['dashboard', 'fingerprint', 'checkpoints', 'executive', 'oversight'], false);
   assert.equal(query('[data-unit-head="fingerprint"]').textContent,
     'Fingerprint Unit — cross-region command',
@@ -504,10 +530,16 @@ try {
   run(`go('dashboard')`);
   assert.equal($('pageTitle').textContent, 'Fingerprint Unit — Lasanod Branch Operations',
     'the operations dashboard heading names unit + branch');
+  signIn('CIDUnit', ['dashboard', 'people', 'cid', 'crimes'], false,
+    { branch: 'Laascaanood CID Office · Laascaanood · Sool' });
+  run(`go('dashboard')`);
+  assert.equal($('pageTitle').textContent,
+    'Sool Region — Laascaanood CID Office Crime Department Operations',
+    'the CID officer dashboard heading names region + branch');
   signIn('SystemAdmin', ALL_MODULES, true);
   run(`go('dashboard')`);
-  assert.equal($('pageTitle').textContent, 'Cross-unit Operations',
-    'an administrator keeps the cross-unit dashboard heading');
+  assert.equal($('pageTitle').textContent, 'National Command — All Branches Operations',
+    'an administrator dashboard heading names the national command');
   console.log('ok: module + dashboard headers name the officer\'s posting, not a generic unit title');
 
   // ---- 11) restore ordering --------------------------------------------
@@ -571,23 +603,59 @@ try {
   };
   setCatalogue(BRANCHES);
   signIn('FingerprintUnit', ALL_MODULES, false, { branch: scopedPosting });
-  Object.entries(expectedUnit).forEach(([type, label]) => {
-    assert.deepEqual(treeRegions(type).map((r) => r.dataset.navRegion), ['Sool'],
-      `the ${type} tree shows only the officer's own region`);
-    const districts = [...treeRegions(type)[0].querySelectorAll('.nav-district')];
-    assert.deepEqual(districts.map((d) => d.dataset.navDistrict), ['Laascaanood'],
-      `the ${type} tree shows only the officer's own district`);
-    assert.deepEqual(districts[0].querySelectorAll('.nav-unit').length === 1
-      ? [...districts[0].querySelectorAll('.nav-unit')].map((u) => u.dataset.unitLabel) : [],
-      [label], `the ${type} tree shows only the officer's own branch`);
-    assert.equal(treeUnits(type).length, 1,
-      `no external ${type} branch leaks into a scoped rail`);
-    assert.deepEqual(treeRegions(type).filter((r) => ['Unassigned region', 'Checkpoint areas']
-      .includes(r.dataset.navRegion)), [],
-      `the ${type} tree never shows an unassigned / cross-area group`);
-    assert.ok(treeUnits(type).every((u) => (u.getAttribute('title') || '').includes('Sool')),
-      'every remaining unit really belongs to the officer region');
+  // The officer's OWN category: one region, one district, one branch.
+  const ownType = 'fingerprint';
+  assert.deepEqual(treeRegions(ownType).map((r) => r.dataset.navRegion), ['Sool'],
+    'the own-category tree shows only the officer region');
+  const districts = [...treeRegions(ownType)[0].querySelectorAll('.nav-district')];
+  assert.deepEqual(districts.map((d) => d.dataset.navDistrict), ['Laascaanood'],
+    'the own-category tree shows only the officer district');
+  assert.deepEqual([...districts[0].querySelectorAll('.nav-unit')].map((u) => u.dataset.unitLabel),
+    [expectedUnit[ownType]], 'the own-category tree shows only the officer branch');
+  assert.equal(treeUnits(ownType).length, 1, 'no neighbouring branch leaks into the rail');
+  // Every OTHER category holds none of the officer's branch: it stays empty
+  // rather than falling back to the national tree.
+  Object.keys(expectedUnit).filter((type) => type !== ownType).forEach((type) => {
+    assert.deepEqual(treeRegions(type), [],
+      `the ${type} tree fails closed: no branch of that unit belongs to the officer`);
   });
+  assert.deepEqual(treeRegions(ownType).filter((r) => ['Unassigned region', 'Checkpoint areas']
+    .includes(r.dataset.navRegion)), [],
+    'the tree never shows an unassigned / cross-area group');
+  assert.ok(treeUnits(ownType).every((u) => (u.getAttribute('title') || '').includes('Sool')),
+    'every remaining unit really belongs to the officer region');
+  // A legacy register row (no catalogue id) naming a NEIGHBOURING branch in
+  // the same district must not enter the rail: region/district proximity is
+  // not branch identity.
+  run(`db.fingerprint=[{branch:'Lasanod Branch Annex · Laascaanood · Sool'}];renderUnitNavTrees();`);
+  assert.equal(treeUnits('fingerprint').length, 1,
+    'a same-district legacy row never leaks into a scoped tree');
+  assert.equal(treeUnits('fingerprint')[0].dataset.unitLabel, 'Lasanod Branch',
+    'the scoped tree keeps only the officer branch');
+  // A same-NAME row from another region is refused as well.
+  run(`db.fingerprint=[{branch:'Lasanod Branch · Sanaag'}];renderUnitNavTrees();`);
+  assert.equal(treeUnits('fingerprint').length, 1,
+    'a same-name legacy row in another region is not admitted');
+  run(`db.fingerprint=[];renderUnitNavTrees();`);
+
+  // Same branch name registered twice (the schema allows one per region): the
+  // officer's own geography resolves the posting, so the tree stays on their
+  // region and never silently locks to the foreign namesake.
+  setCatalogue([
+    { id: 'd1', name: 'Lasanod Branch', region: 'Sanaag', district: 'Ceerigaabo', unit_type: 'fingerprint' },
+    { id: 'd2', name: 'Lasanod Branch', region: 'Sool', district: 'Laascaanood', unit_type: 'fingerprint' },
+  ]);
+  signIn('FingerprintUnit', ['dashboard', 'people', 'fingerprint'], false,
+    { branch: 'Lasanod Branch · Laascaanood · Sool' });
+  assert.equal(run(`(resolvePostingBranch('fingerprint')||{}).id`), 'd2',
+    'the posting geography breaks a same-name tie');
+  assert.deepEqual(treeRegions('fingerprint').map((r) => r.dataset.navRegion), ['Sool'],
+    'the scoped tree stays on the officer region');
+  assert.equal(treeUnits('fingerprint').length, 1);
+  assert.equal(treeUnits('fingerprint')[0].dataset.unitLabel, 'Lasanod Branch');
+  setCatalogue(BRANCHES);
+  signIn('FingerprintUnit', ALL_MODULES, false, { branch: scopedPosting });
+
   assert.equal(queryAll('#nav [data-unit-directory]').length, 1);
   assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
     'the Unit Directory launcher is hidden for a branch-scoped officer');
@@ -608,9 +676,13 @@ try {
   // A posted checkpoint officer is scoped the same way, in every category.
   signIn('checkpoint_officer', ALL_MODULES, false,
     { branch: 'Lasanod Central Checkpoint · Laascaanood · Sool', location_scope: 'South' });
-  ['fingerprint', 'crime', 'airport', 'checkpoint', 'police_station'].forEach((type) => {
-    assert.deepEqual(treeRegions(type).map((r) => r.dataset.navRegion), ['Sool'],
-      `the checkpoint officer's ${type} tree stays inside Sool`);
+  assert.deepEqual(treeRegions('checkpoint').map((r) => r.dataset.navRegion), ['Sool'],
+    'the checkpoint officer keeps their own Sool checkpoint tree');
+  assert.equal(treeUnits('checkpoint').length, 1,
+    'the checkpoint officer sees exactly one checkpoint');
+  ['fingerprint', 'crime', 'airport', 'police_station'].forEach((type) => {
+    assert.deepEqual(treeRegions(type), [],
+      `the checkpoint officer's ${type} tree fails closed`);
   });
   assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
     'a posted checkpoint officer has no Unit Directory launcher');

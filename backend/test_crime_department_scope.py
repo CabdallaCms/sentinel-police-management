@@ -73,8 +73,18 @@ def static_contract():
           'the suspect payload explicitly carries the selected branch id')
     check('🔒 Locked to assigned branch' in html,
           'the locked-branch indicator is rendered for scoped officers')
-    check("' Region — Crime Department Operations'" in html,
-          'the Crime Department header is computed from the officer region')
+    check('function crimeDepartmentHeader(' in html
+          and "'Crime Department Operations'" in html,
+          'the Crime Department header is computed from the officer region + branch')
+    check("NATIONAL_COMMAND_HEADER='National Command — All Branches Operations'" in html,
+          'the admin / HQ header names the national command, not a region')
+    check('if(ownType&&ownType!==unitType) return null;' in html,
+          'a branch posting only scopes its own unit category')
+    check('if(scope.hidden) return false;' in html
+          and 'function sessionHasBranchScope(' in html,
+          'a scoped officer never falls back to the national tree')
+    check('function branchIndexForBranch(' in html,
+          'same-name branches are disambiguated by region + district')
     check('function applyBranchLock(' in html,
           'the shared branch-lock helper disables the selector')
     check("refreshBranchSelect('caseBranch','crime')" in html
@@ -354,6 +364,18 @@ def run_api_suite(base):
     check(national_open is not None and national_open >= cards['cid_open']['value'],
           'the administrator counters are never narrower than a regional one '
           f'({national_open} vs {cards["cid_open"]["value"]})')
+    check(sool_dash.get('branch_context')
+          == 'Sool Region — Lasanod Branch Crime Department Operations',
+          'the Sool dashboard banner names region + branch: '
+          f"{sool_dash.get('branch_context')!r}")
+    check(admin_dash.get('branch_context') == 'National Command — All Branches Operations',
+          'the administrator dashboard banner names the national command: '
+          f"{admin_dash.get('branch_context')!r}")
+    status, chief_dash = request(base, 'GET', '/api/dashboard', chief)
+    check(status == 200, 'the Commander dashboard is readable')
+    check(chief_dash.get('branch_context') == 'National Command — All Branches Operations',
+          'the Commander dashboard banner names the national command: '
+          f"{chief_dash.get('branch_context')!r}")
 
     status, cid_analytics = request(base, 'GET', '/api/analytics?module=cid', sool)
     check(status == 200, 'the CID analytics bundle is readable')
