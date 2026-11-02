@@ -300,6 +300,7 @@ CREATE TABLE IF NOT EXISTS suspect_alerts(
   id SERIAL PRIMARY KEY, alert_id TEXT UNIQUE NOT NULL,
   person_id INTEGER NOT NULL REFERENCES persons(id),
   case_id INTEGER REFERENCES crime_cases(id),
+  branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL,
   role TEXT NOT NULL DEFAULT 'Suspect',
   alert_status TEXT NOT NULL DEFAULT 'Active alert',
   origin TEXT NOT NULL DEFAULT 'Direct Intelligence Listing',
@@ -507,6 +508,11 @@ ADDED_COLUMNS = {
         ('incident_summary', "ALTER TABLE crime_cases ADD COLUMN incident_summary TEXT"),
     ],
     'suspect_alerts': [
+        # The recording branch of a suspect listing. Case-linked alerts inherit
+        # the case's branch when this is NULL (legacy rows), which is what the
+        # read scope joins on — adding the column in place keeps every existing
+        # FK (person_id / case_id) and every audit row untouched.
+        ('branch_id', "ALTER TABLE suspect_alerts ADD COLUMN branch_id INTEGER REFERENCES police_branches(id) ON DELETE SET NULL"),
         ('role', "ALTER TABLE suspect_alerts ADD COLUMN role TEXT NOT NULL DEFAULT 'Suspect'"),
         ('origin', "ALTER TABLE suspect_alerts ADD COLUMN origin TEXT NOT NULL DEFAULT 'Direct Intelligence Listing'"),
     ],
@@ -663,7 +669,7 @@ FINGERPRINT_ROLE_KEYS = {'fingerprint', 'fingerprintunit', 'fingerprintofficer',
 
 # Build marker — surfaced by /api/health and printed on startup so an operator
 # can confirm the running process carries the review-lock rules.
-BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
+BUILD_TAG = 'sentinel-crime-department-scope'
 
 # ---- static asset versioning / cache busting --------------------------------
 # Every static reference the three pages ship (the brand logo and the links
@@ -676,11 +682,11 @@ BUILD_TAG = 'sentinel-fingerprint-review-lock-12h'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = 'e7c41b90'
+ASSET_VERSION = '9f3c2ab7'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-branch-crud-1-' + ASSET_VERSION
+UI_BUILD = 'sentinel-crime-scope-1-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -767,6 +773,17 @@ UI_REQUIRED_MARKERS = (
     ('Legacy placement cleanup tool', 'id="branchLegacyPanel"'),
     ('Legacy batch assignment', 'async function assignLegacyBranches('),
     ('Live branch catalogue repaint', 'function repaintBranchConsumers('),
+    # ---- this release: Crime Department isolation + branch-bound suspects ----
+    ('Suspect intake branch selector', 'id="spBranch" data-branch-unit="crime"'),
+    ('Suspect filing-scope indicator', 'Filing scope'),
+    ('Branch-bound suspect payload', 'branch_id:branchId'),
+    ('Suspect branch provenance', 'branch_id:x.branch_id||null'),
+    ('Region-led Crime Department header', ' Region — Crime Department Operations'),
+    # The page refuses approvals against a backend it does not recognise, so
+    # its required tag must track BUILD_TAG exactly (a drift disables the
+    # review lock in the browser — ui-check now catches it).
+    ('Frontend review-lock build tag',
+     "REQUIRED_BUILD_TAG='sentinel-crime-department-scope'"),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
@@ -2762,6 +2779,7 @@ AUDIT_ENTITY_BRANCH_SOURCES = {
     'clearance_signed_document': ('clearance_signed_documents', 'application_id'),
     'airport_record': ('airport_passengers', 'record_id'),
     'crime_case': ('crime_cases', 'case_id'),
+    'suspect_alert': ('suspect_alerts', 'alert_id'),
     'checkpoint_event': ('checkpoint_events', 'event_id'),
 }
 AUDIT_ENTITY_UNIT_TYPES = {
@@ -2769,17 +2787,25 @@ AUDIT_ENTITY_UNIT_TYPES = {
     'clearance_signed_document': 'fingerprint',
     'airport_record': 'airport',
     'crime_case': 'crime',
+    'suspect_alert': 'crime',
     'checkpoint_event': 'checkpoint',
 }
 
 
 def record_branch_id(c, entity, entity_id):
     """The branch a stored record was filed under (None when unknown)."""
-    source = AUDIT_ENTITY_BRANCH_SOURCES.get(str(entity or '').lower())
+    key = str(entity or '').lower()
+    source = AUDIT_ENTITY_BRANCH_SOURCES.get(key)
     if not source:
         return None
     table, column = source
     try:
+        if key == 'suspect_alert':
+            # A legacy case-linked listing inherits the case's branch, exactly
+            # like the read scope's COALESCE(sa.branch_id, cc.branch_id).
+            row = c.execute('SELECT branch_id,case_id FROM suspect_alerts WHERE alert_id=%s',
+                            (str(entity_id),)).fetchone()
+            return suspect_alert_branch_id(c, rowdict(row)) if row else None
         row = c.execute(f'SELECT branch_id FROM {table} WHERE {column}=%s',
                         (str(entity_id),)).fetchone()
     except Exception:
@@ -2803,6 +2829,53 @@ def require_record_branch_scope(c, user, unit_type, branch_id, label, record_id=
             f'That {label} belongs to another branch — your posting is '
             f'{scope["branch_name"]}.')
     return
+
+
+# A suspect listing belongs to the branch it was recorded under. Legacy rows
+# carry no `suspect_alerts.branch_id`, so a case-linked listing inherits the
+# case's branch (the exact expression the read scope filters on).
+SUSPECT_ALERT_BRANCH_EXPR = 'COALESCE(sa.branch_id, cc.branch_id)'
+
+
+def suspect_alert_branch_id(c, alert):
+    """The branch a suspect listing belongs to (own column, else its case)."""
+    if not alert:
+        return None
+    own = alert.get('branch_id')
+    if own is not None:
+        return own
+    case_pk = alert.get('case_pk') if alert.get('case_pk') is not None else alert.get('case_id')
+    if case_pk is None:
+        return None
+    try:
+        row = c.execute('SELECT branch_id FROM crime_cases WHERE id=%s', (case_pk,)).fetchone()
+    except Exception:
+        return None
+    return rowdict(row).get('branch_id') if row else None
+
+
+def suspect_alert_detail(c, alert_id, user):
+    """One suspect listing, branch-scoped (404 unknown / 403 other region)."""
+    row = c.execute(f'''SELECT sa.alert_id,sa.role,sa.alert_status,sa.origin,sa.notes,
+            sa.created_at,sa.case_id AS case_pk,sa.branch_id,
+            {SUSPECT_ALERT_BRANCH_EXPR} AS effective_branch_id,
+            cc.case_id,cc.category,cc.status AS case_status,cc.location AS case_location,
+            b.name AS branch_name,b.region AS branch_region,b.district AS branch_district,
+            p.person_id,p.full_name,p.national_id,p.passport_id,p.phone
+            FROM suspect_alerts sa
+            JOIN persons p ON p.id=sa.person_id
+            LEFT JOIN crime_cases cc ON cc.id=sa.case_id
+            LEFT JOIN police_branches b ON b.id={SUSPECT_ALERT_BRANCH_EXPR}
+            WHERE sa.alert_id=%s''', (str(alert_id),)).fetchone()
+    if not row:
+        raise LookupError('Suspect listing not found')
+    item = rowdict(row)
+    require_record_branch_scope(c, user, 'crime', item.get('effective_branch_id'),
+                                'suspect listing', alert_id)
+    item['branch_id'] = item.pop('effective_branch_id', None)
+    item.pop('case_pk', None)
+    item['branch_scope'] = user_branch_scope(c, user, 'crime')
+    return item
 
 
 def user_view(user, branch_scope=None):
@@ -6129,21 +6202,38 @@ def cid_fingerprint_analytics(c):
 
 
 # ---- 2) CID · Crime Department ---------------------------------------------
-def cid_crime_analytics(c):
-    """Case volume by location, time-of-day band, category and open/closed."""
+def cid_crime_analytics(c, user=None):
+    """Case volume by location, time-of-day band, category and open/closed.
+
+    Aggregates the SAME branch scope as `/api/crime-cases`: a posted CID
+    officer's counters only ever summarise their own region, while HQ /
+    SystemAdmin keep the national totals. Counting globally here would leak
+    another region's workload through the dashboard even though the register
+    itself is isolated.
+    """
+    scope = user_branch_scope(c, user, 'crime') if user is not None else None
+    where, params = '', ()
+    if scope:
+        where, params = ' WHERE branch_id=%s', (scope['branch_id'],)
     rows = c.execute('SELECT case_id, category, location, status, created_at '
-                     'FROM crime_cases ORDER BY id').fetchall()
+                     'FROM crime_cases' + where + ' ORDER BY id', params).fetchall()
     total = len(rows)
     closed = sum(1 for r in rows
                  if str(_val(r, 'status', '') or '').strip().lower() == 'closed')
     open_cases = total - closed
-    active_suspects = c.execute(
-        "SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' "
-        "AND alert_status='Active alert'").fetchone()[0]
+    alerts_sql = ("SELECT COUNT(*) FROM suspect_alerts sa "
+                  "LEFT JOIN crime_cases cc ON cc.id=sa.case_id "
+                  "WHERE sa.role='Suspect' AND sa.alert_status='Active alert'")
+    alert_params = ()
+    if scope:
+        alerts_sql += f' AND {SUSPECT_ALERT_BRANCH_EXPR}=%s'
+        alert_params = (scope['branch_id'],)
+    active_suspects = c.execute(alerts_sql, alert_params).fetchone()[0]
     categories = count_by(rows, 'category')
     top_category = max(categories.items(), key=lambda kv: kv[1])[0] if categories else '—'
     return {
         'unit': 'Crime Department',
+        'branch_scope': scope,
         'total_cases': total,
         'open_cases': open_cases,
         'closed_cases': closed,
@@ -6316,7 +6406,7 @@ def build_cid_analytics(c, user):
                'checkpoint_scope': checkpoint_scope(user) or None,
                'sections': [], 'kpis': [], 'charts': {}, 'lists': {}}
     builders = {'fingerprint': lambda: cid_fingerprint_analytics(c),
-                'crime': lambda: cid_crime_analytics(c),
+                'crime': lambda: cid_crime_analytics(c, user),
                 'checkpoint': lambda: cid_checkpoint_analytics(c, user),
                 'airport': lambda: cid_airport_analytics(c)}
     for name in CID_ANALYTICS_SECTIONS:
@@ -7261,7 +7351,9 @@ def build_dashboard(c, user):
     elif role == ROLE_AIRPORT or role_alias == ROLE_AIRPORT:
         cards.extend(_airport_dashboard_cards(c, today))
     elif role == ROLE_CID or role_alias == ROLE_CID:
-        cards.extend(_cid_dashboard_cards(c, today))
+        # A posted CID officer's cards count their own branch only; HQ /
+        # SystemAdmin keep the national totals (see _cid_dashboard_cards).
+        cards.extend(_cid_dashboard_cards(c, today, user))
     elif role == ROLE_REGISTRATION or role_alias == ROLE_REGISTRATION:
         cards.extend(_registration_dashboard_cards(c, today))
     else:
@@ -7537,19 +7629,39 @@ def _airport_dashboard_cards(c, today):
     ]
 
 
-def _cid_dashboard_cards(c, today):
+def _cid_dashboard_cards(c, today, user=None):
+    """Crime Department KPI cards, branch-scoped like the CID registers.
+
+    A posted CID officer's counters describe their own branch — the dashboard
+    must not become the one screen that leaks another region's caseload.
+    HQ / SystemAdmin (scope None) keep the national totals.
+    """
+    scope = user_branch_scope(c, user, 'crime') if user is not None else None
+    case_scope, case_args = '', ()
+    if scope:
+        case_scope, case_args = ' AND branch_id=%s', (scope['branch_id'],)
+    alert_scope, alert_args = '', ()
+    if scope:
+        alert_scope, alert_args = f' AND {SUSPECT_ALERT_BRANCH_EXPR}=%s', (scope['branch_id'],)
+    alert_join = (' FROM suspect_alerts sa LEFT JOIN crime_cases cc ON cc.id=sa.case_id ')
     return [
         {'id':'cid_open','label':'Open crime cases','icon':'⌂',
-         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE status<>'Closed'").fetchone()[0],
+         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE status<>'Closed'"
+                           + case_scope, case_args).fetchone()[0],
          'trend':'Active investigations','module':'cid'},
         {'id':'cid_active_alerts','label':'Active suspect alerts','icon':'!',
-         'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect' AND alert_status='Active alert'").fetchone()[0],
+         'value':c.execute("SELECT COUNT(*) " + alert_join
+                           + "WHERE sa.role='Suspect' AND sa.alert_status='Active alert'"
+                           + alert_scope, alert_args).fetchone()[0],
          'trend':'Restricted operational data','trend_kind':'alert','module':'cid'},
         {'id':'cid_cases_today','label':'Cases reported today','icon':'◉',
-         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE substr(created_at,1,10)=%s", (today,)).fetchone()[0],
+         'value':c.execute("SELECT COUNT(*) FROM crime_cases WHERE substr(created_at,1,10)=%s"
+                           + case_scope, (today, *case_args)).fetchone()[0],
          'trend':f'New intake · {today}','module':'cid'},
         {'id':'cid_suspects','label':'Suspects on file','icon':'⌁',
-         'value':c.execute("SELECT COUNT(*) FROM suspect_alerts WHERE role='Suspect'").fetchone()[0],
+         'value':c.execute("SELECT COUNT(*) " + alert_join
+                           + "WHERE sa.role='Suspect'" + alert_scope,
+                           alert_args).fetchone()[0],
          'trend':'All-time suspect listings','module':'cid'},
     ]
 
@@ -8036,7 +8148,13 @@ class API(BaseHTTPRequestHandler):
             if p.path == '/api/branches':
                 c = get_db_connection()
                 query = parse_qs(p.query)
-                raw_unit_type = str(query.get('unit_type', [''])[0] or '').strip()
+                # `unit_type` is the canonical filter; `unit` / `department` are
+                # the spellings the Crime Department screens use
+                # (`/api/branches?unit=crime`). All three normalize to the same
+                # stable value ('crime' -> Crime Unit).
+                raw_unit_type = str(query.get('unit_type', [''])[0]
+                                    or query.get('unit', [''])[0]
+                                    or query.get('department', [''])[0] or '').strip()
                 unit_type = normalize_branch_unit_type(raw_unit_type) if raw_unit_type else None
                 region = re.sub(r'\s+', ' ', str(query.get('region', [''])[0] or '')).strip()
                 district_q = re.sub(r'\s+', ' ', str(query.get('district', [''])[0] or '')).strip()
@@ -8070,12 +8188,36 @@ class API(BaseHTTPRequestHandler):
                 districts = c.execute('''SELECT DISTINCT district FROM police_branches
                                        WHERE district IS NOT NULL AND TRIM(district) <> ''
                                        ORDER BY district''').fetchall()
+                items = [branch_view(r) for r in rows]
+                # Crime Department catalogue: the Crime Unit branches grouped by
+                # region (Sool, Sanaag, East Togdheer, …). This block is always
+                # present — whatever `unit_type` filter the caller used — so a
+                # regional selector can render the three regional Crime Units
+                # without a second round trip. Deactivated branches stay in
+                # `items` (with active=0) exactly like the rest of the catalogue.
+                crime_units = [b for b in items if b.get('unit_type') == 'crime']
+                crime_regions = []
+                for branch in crime_units:
+                    label = (branch.get('region') or '').strip()
+                    if label and label not in crime_regions:
+                        crime_regions.append(label)
                 result = {
-                    'items': [branch_view(r) for r in rows],
+                    'items': items,
                     'regions': [r['region'] for r in regions],
                     'districts': [r['district'] for r in districts if r['district']],
                     'unit_types': list(BRANCH_UNIT_TYPES),
                     'unit_labels': BRANCH_UNIT_LABELS,
+                    # Echo the resolved filter so a caller can prove which
+                    # department the list was narrowed to.
+                    'unit_type': unit_type,
+                    # Crime Units only, grouped by their registered region.
+                    'crime_units': crime_units,
+                    'crime_regions': crime_regions,
+                    'crime_departments': [
+                        {'region': label,
+                         'items': [b for b in crime_units
+                                   if (b.get('region') or '').strip() == label]}
+                        for label in crime_regions],
                 }
                 c.close()
                 return self.send_json(200, result)
@@ -8100,6 +8242,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/fingerprint/applications': 'fingerprint',
                 '/api/crime-cases': 'cid',
                 '/api/suspect-alerts': 'cid',
+                '/api/suspects': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
                 '/api/admin/audit': 'admin',
@@ -8422,14 +8565,36 @@ class API(BaseHTTPRequestHandler):
                         'degraded': True,
                         'degraded_reason': str(e),
                     }
-            elif p.path == '/api/suspect-alerts':
-                rows = c.execute('''SELECT sa.alert_id,sa.role,sa.alert_status,sa.origin,sa.notes,
+            elif p.path in ('/api/suspect-alerts', '/api/suspects'):
+                # Strict branch isolation for the suspect register: a posted
+                # CID officer only receives the listings filed under their own
+                # branch, including unlinked intelligence listings, and never
+                # another region's case-linked suspects. HQ / SystemAdmin keep
+                # the national view (their scope is None).
+                suspect_scope = user_branch_scope(c, user, 'crime')
+                suspect_sql = f'''SELECT sa.alert_id,sa.role,sa.alert_status,sa.origin,sa.notes,
+                    sa.created_at,
+                    {SUSPECT_ALERT_BRANCH_EXPR} AS branch_id,
+                    b.name AS branch_name,b.region AS branch_region,b.district AS branch_district,
                     cc.case_id,cc.category,cc.status AS case_status,
                     p.person_id,p.full_name,p.national_id,p.passport_id FROM suspect_alerts sa
                     JOIN persons p ON p.id=sa.person_id
                     LEFT JOIN crime_cases cc ON cc.id=sa.case_id
-                    ORDER BY sa.id DESC''').fetchall()
-                result = {'items':[rowdict(r) for r in rows]}
+                    LEFT JOIN police_branches b ON b.id={SUSPECT_ALERT_BRANCH_EXPR}'''
+                suspect_args = []
+                if suspect_scope:
+                    suspect_sql += f' WHERE {SUSPECT_ALERT_BRANCH_EXPR}=%s'
+                    suspect_args.append(suspect_scope['branch_id'])
+                suspect_sql += ' ORDER BY sa.id DESC'
+                rows = c.execute(suspect_sql, suspect_args).fetchall()
+                result = {'items':[rowdict(r) for r in rows],
+                          'branch_scope': suspect_scope}
+            elif (p.path.startswith('/api/suspect-alerts/')
+                  or p.path.startswith('/api/suspects/')):
+                # Direct primary-key lookup — a guessed identifier must never
+                # widen the scope: unknown -> 404, another region -> 403.
+                alert_id = unquote(p.path.rstrip('/').split('/')[3])
+                result = suspect_alert_detail(c, alert_id, user)
             elif p.path == '/api/checkpoint-events':
                 # RBAC: Checkpoint users only see events at their own location.
                 # Admins see all; non-checkpoint users see all but the frontend
@@ -8643,6 +8808,11 @@ class API(BaseHTTPRequestHandler):
         except PermissionError as e:
             if c: c.close()
             self.send_json(401,{'error':str(e)})
+        except LookupError as e:
+            # A GET route that resolves an identifier (e.g. a suspect listing
+            # or another record detail) answers 404 instead of an opaque 500.
+            if c: c.close()
+            self.send_json(404,{'error':str(e)})
         except ValueError as e:
             # A GET route that validates its inputs (e.g. the conduct
             # register's status/category filters) rejects bad values
@@ -8873,6 +9043,7 @@ class API(BaseHTTPRequestHandler):
                 '/api/fingerprint/applications': 'fingerprint',
                 '/api/crime-cases': 'cid',
                 '/api/suspect-alerts': 'cid',
+                '/api/suspects': 'cid',
                 '/api/checkpoint-events': 'checkpoints',
                 '/api/admin/users': 'admin',
                 '/api/stations': 'admin',
@@ -9091,8 +9262,12 @@ class API(BaseHTTPRequestHandler):
                           'branch':branch_view(branch) if branch else None}
             elif p.path.startswith('/api/crime-cases/') and p.path.endswith('/evidence'):
                 cid = p.path.split('/')[3]
-                case = c.execute('SELECT id FROM crime_cases WHERE case_id=%s',(cid,)).fetchone()
+                case = c.execute('SELECT id,branch_id FROM crime_cases WHERE case_id=%s',(cid,)).fetchone()
                 if not case: raise ValueError('case_id must refer to an existing case')
+                # Evidence may only be attached to a case inside the officer's
+                # branch scope (403 otherwise).
+                require_record_branch_scope(c, user, 'crime', rowdict(case).get('branch_id'),
+                                            'CID case', cid)
                 fields, files = parse_multipart(self)
                 if 'file' not in files: raise ValueError('An evidence file is required')
                 meta = save_upload(files['file'])
@@ -9169,13 +9344,29 @@ class API(BaseHTTPRequestHandler):
                 audit(c, user, 'CREATE', 'user', str(new['id']), username)
                 c.commit()
                 result = {'user': user_view(new)}
-            elif p.path == '/api/suspect-alerts':
+            elif p.path in ('/api/suspect-alerts', '/api/suspects'):
                 data = body_json(self)
                 case = None
                 case_id = (data.get('case_id') or '').strip()
                 if case_id:
-                    case = c.execute('SELECT id,case_id,category FROM crime_cases WHERE case_id=%s',(case_id,)).fetchone()
+                    case = c.execute('''SELECT id,case_id,category,branch_id FROM crime_cases
+                                        WHERE case_id=%s''',(case_id,)).fetchone()
                     if not case: raise ValueError('case_id must refer to an existing CID case')
+                    # A scoped officer can never file a suspect against another
+                    # region's case (403) — the case id is not a capability.
+                    require_record_branch_scope(c, user, 'crime', rowdict(case).get('branch_id'),
+                                                'CID case', case_id)
+                # Branch binding. The recording branch is explicit for an
+                # unlinked intelligence listing; a case-linked listing inherits
+                # its case's branch. Either way the officer's verified posting
+                # wins: a tampered `branch_id` from the page is refused (403),
+                # and an omitted one is pinned to the posting (never left NULL).
+                branch = resolve_branch(c, data.get('branch_id'), 'crime')
+                if branch is None and case is not None and rowdict(case).get('branch_id') is not None:
+                    branch = c.execute('''SELECT id,name,region,district,unit_type,active
+                                          FROM police_branches WHERE id=%s''',
+                                       (rowdict(case)['branch_id'],)).fetchone()
+                branch = require_branch_write_scope(c, user, branch, 'crime')
                 reason = (data.get('notes') or data.get('reason') or '').strip()
                 if case and not reason:
                     # Case-linked suspects default the reason to the case details.
@@ -9201,13 +9392,18 @@ class API(BaseHTTPRequestHandler):
                                         (' to that case' if case else ' without a linked case'),
                                         'alert_id':dup['alert_id']}); c.close(); return
                 alert_id = 'AL-'+secrets.token_hex(4)
-                c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,role,alert_status,origin,notes,created_by)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)''',(alert_id,person['id'], case['id'] if case else None,
-                    data.get('role','Suspect'),'Active alert',origin,reason,user['id']))
+                c.execute('''INSERT INTO suspect_alerts(alert_id,person_id,case_id,branch_id,role,
+                        alert_status,origin,notes,created_by)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                    (alert_id,person['id'], case['id'] if case else None,
+                     branch['id'] if branch else None,
+                     data.get('role','Suspect'),'Active alert',origin,reason,user['id']))
                 audit(c,user,'CREATE','suspect_alert',alert_id,
                       data.get('case_id','') or ('no case - '+origin)); c.commit()
                 result = {'alert_id':alert_id,'case_id':case_id or None,'person_id':person['person_id'],
                           'role':data.get('role','Suspect'),'alert_status':'Active alert',
+                          'branch':branch_view(branch) if branch else None,
+                          'branch_id':branch['id'] if branch else None,
                           'origin':origin,'reason':reason,'identity':identity_result(c,data,person)}
             elif p.path == '/api/checkpoint-events':
                 ctype = self.headers.get('Content-Type','')
@@ -9580,8 +9776,12 @@ class API(BaseHTTPRequestHandler):
                 result = {'person': rowdict(c.execute('SELECT * FROM persons WHERE id=%s',(row['id'],)).fetchone())}
             elif p.path.startswith('/api/crime-cases/'):
                 cid = p.path.split('/')[3]
-                row = c.execute('SELECT id FROM crime_cases WHERE case_id=%s',(cid,)).fetchone()
+                row = c.execute('SELECT id,branch_id FROM crime_cases WHERE case_id=%s',(cid,)).fetchone()
                 if not row: self.send_json(404,{'error':'Case not found'}); c.close(); return
+                # A scoped officer may only edit a case filed at their own
+                # branch — the identifier must not widen the write scope.
+                require_record_branch_scope(c, user, 'crime', rowdict(row).get('branch_id'),
+                                            'CID case', cid)
                 updates, params = [], []
                 for f in ('category','location','status','incident_summary','notes'):
                     val = data.get(f)

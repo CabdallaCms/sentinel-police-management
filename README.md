@@ -670,6 +670,26 @@ asserts the **exact arithmetic** of every department endpoint:
   aliases, `module=all`, a `400` for an unknown module, and the per-module RBAC matrix
   (including that `module=all` silently omits bundles the caller may not see).
 
+Crime Department isolation suite (PostgreSQL; throwaway `pgserver` when no test database is configured):
+
+```bash
+python3 backend/test_crime_department_scope.py
+```
+
+Pins the regional Crime Department boundary end to end: `GET /api/crime-cases` is filtered by the
+officer's verified branch at the SQL level (a Region A officer receives an **empty** Region B
+queryset), direct lookups (`GET /api/crime-cases/<id>`, `PATCH`, evidence upload,
+`GET /api/suspects/<alert_id>`) answer `403 branch_scope_forbidden` across regions and `404` for
+unknown ids, the suspect register (`/api/suspect-alerts`, alias `/api/suspects`) and the per-record
+suspect audit history follow the same scope, and both intake endpoints bind the officer's branch —
+a tampered `branch_id` is refused while an omitted one is pinned to the posting instead of stored
+as `NULL`. The System Administrator and the Chief Commander keep the full cross-region register,
+detail routes and dashboard counters. The suite also asserts `/api/branches?unit_type=crime`
+returns the Sool / Sanaag / East Togdheer Crime Units, the page ships the locked suspect branch
+selector with the `🔒 Locked to assigned branch` indicator and the region-led
+`Sool Region — Crime Department Operations` header, and `python backend/server.py --ui-check`
+exits 0.
+
 Review-gate regression suite (PostgreSQL; uses the configured test database or a temporary `pgserver` cluster, and performs timestamp backdating through the application's connection adapter):
 
 ```bash

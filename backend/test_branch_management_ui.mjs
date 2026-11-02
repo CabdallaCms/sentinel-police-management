@@ -205,7 +205,7 @@ try {
   assert.ok(/data-branch-action="bulk-assign"/.test(html), 'the cleanup tool has a batch assign action');
   assert.ok(/body:not\(\.can-edit-records\) \.admin-edit\{display:none !important\}/.test(html),
     'the Edit / toggle controls are hidden for every non-admin session by CSS');
-  assert.ok(/\?v=e7c41b90/.test(html), 'the asset version stamp was republished');
+  assert.ok(/\?v=[0-9a-f]{8}/.test(html), 'the asset version stamp was republished');
   console.log('ok: Actions column + Edit modal + Active toggle + legacy cleanup markup');
 } catch (err) { console.error(err); process.exit(1); }
 

@@ -355,6 +355,33 @@ try {
   assert.equal(w.getComputedStyle(lockHint).backgroundColor.includes('255, 247, 230'), false,
     'the lock indicator must not use the yellow warning palette');
 
+  // The Crime Department intakes lock to the officer's regional Crime Unit:
+  // the New case modal and the Add suspect modal both pre-select it, disable
+  // the control and render the documented lock indicator.
+  signIn('CIDUnit', ['dashboard', 'people', 'cid', 'crimes'], false,
+    { branch: 'Laascaanood CID Office · Sool' });
+  run(`openCaseDrawer()`);
+  await run(`refreshBranchSelect('caseBranch','crime')`);
+  assert.equal($('caseBranch').disabled, true,
+    'a posted CID officer cannot change the case branch');
+  assert.equal($('caseBranch').value, 'b8',
+    'the New case selector defaults to their regional Crime Unit');
+  assert.ok($('caseBranch-lock').textContent.includes('Locked to assigned branch'));
+  run(`closeDrawer()`);
+
+  run(`openAddSuspect()`);
+  await tick(400);
+  assert.equal($('spBranch').disabled, true,
+    'a posted CID officer cannot change the suspect branch');
+  assert.equal($('spBranch').value, 'b8',
+    'the Add suspect selector defaults to their regional Crime Unit');
+  assert.ok($('spBranch-lock').textContent.includes('Locked to assigned branch'),
+    'the Add suspect modal renders the lock indicator');
+  assert.ok($('spScope').value.includes('Locked to assigned branch'),
+    'the filing-scope field repeats the lock for the officer');
+  run(`closeDrawer()`);
+  console.log('ok: Crime Department intakes are branch-locked to the regional Crime Unit');
+
   // ---- 10b) fuzzy / canonical posting matching -------------------------
   // 'Lasanod Branch' (clean), '  lasanod branch ' (noise),
   // 'Lasanod' (suffix dropped) and 'Erigavo Branch · Sanaag' all resolve.
@@ -453,6 +480,15 @@ try {
   assert.equal(query('[data-unit-head="checkpoints"]').textContent,
     'Checkpoint Unit — Lasanod Central Checkpoint Operations',
     'the checkpoint banner names the assigned checkpoint');
+
+  // The Crime Department banner leads with the REGION (the operational posting).
+  signIn('CIDUnit', ['dashboard', 'people', 'cid', 'crimes'], false,
+    { branch: 'Laascaanood CID Office · Sool' });
+  assert.equal(query('[data-unit-head="cid"]').textContent,
+    'Sool Region — Crime Department Operations',
+    'the Crime Department banner names the officer region');
+  assert.ok(query('[data-unit-head-sub="cid"]').textContent.includes('Laascaanood CID Office'),
+    'the banner detail line keeps the branch + district + region');
 
   signIn('SystemAdmin', ALL_MODULES, true);
   assert.equal(query('[data-unit-head="fingerprint"]').textContent, 'Fingerprint Unit — all branches',

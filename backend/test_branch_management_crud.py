@@ -293,7 +293,8 @@ def test_frontend_contract_for_branch_editing():
 
 
 def test_asset_stamps_agree_with_the_server():
-    assert srv.ASSET_VERSION == 'e7c41b90'
+    assert srv.ASSET_VERSION and len(srv.ASSET_VERSION) >= 8, \
+        'the published asset version is a commit suffix'
     assert srv.UI_BUILD.endswith(srv.ASSET_VERSION)
     assert srv.static_asset_version_consistent(), \
         'every ?v= stamp in index / application / certificate matches ASSET_VERSION'

@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-branch-crud-1-e7c41b90" />
+<meta name="sentinel-ui-build" content="sentinel-crime-scope-1-9f3c2ab7" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -6878,13 +6878,37 @@ function openAddSuspect(){
     ${identityFormHTML('sp')}
     <div class="section-label">Suspect record</div>
     <div class="f-row f-2">
-      <div class="field"><label>Linked case (optional)</label><select id="spCase">${caseOptions('')}</select></div>
+      <div class="field"><label>Crime branch *</label><select id="spBranch" data-branch-unit="crime" required><option value="">Loading branches…</option></select></div>
       <div class="field"><label>Origin / reference</label><select id="spOrigin"><option>Direct Intelligence Listing</option><option>Manual Entry</option></select></div>
+    </div>
+    <div class="f-row f-2">
+      <div class="field"><label>Linked case (optional)</label><select id="spCase">${caseOptions('')}</select></div>
+      <div class="field"><label>Filing scope</label><input id="spScope" readonly tabindex="-1" value=""></div>
     </div>
     <div class="field"><label>Suspect reason / alert details <span id="spReasonReq" style="color:var(--red)">(required)</span></label><textarea id="spNote" placeholder="Reason for listing, source of intelligence, last known location, description…"></textarea></div>
     <div class="hint" id="spReasonHint" style="margin-top:-4px">Required when no crime case is linked. When a case <b>is</b> linked it defaults to the case details.</div>
    </form>`,
    `<button class="btn ghost" onclick="closeDrawer()">Cancel</button><button class="btn" onclick="submitAddSuspect()">Add suspect</button>`);
+  // The branch selector opens on the officer's own posting and refreshes the
+  // catalogue in the same pass as the New case drawer: a scoped officer gets a
+  // disabled field plus the "🔒 Locked to assigned branch" indicator, while a
+  // SystemAdmin / HQ keeps the free choice.
+  function syncSuspectFilingScope(){
+    const branch=document.getElementById('spBranch');
+    const scope=document.getElementById('spScope');
+    if(!branch||!scope) return;
+    const locked=branch.dataset.branchLocked;
+    const picked=branch.value?((branchCatalog.items||[]).find(b=>String(b.id)===String(branch.value))||null):null;
+    const where=picked?[picked.name,picked.district,picked.region].filter(Boolean).join(' · '):'';
+    scope.value=locked
+      ? '🔒 Locked to assigned branch'+(where?' · '+where:'')
+      : (where||'Select a branch');
+  }
+  refreshBranchSelect('spBranch','crime').then(()=>{
+    const branch=document.getElementById('spBranch');
+    if(branch) branch.onchange=syncSuspectFilingScope;
+    syncSuspectFilingScope();
+  });
   const sc=document.getElementById('spCase');
   function refreshReason(){spOrigin.disabled=!!sc.value;
     document.getElementById('spReasonReq').textContent=sc.value?'(optional — defaults to case details)':'(required)';
@@ -6905,7 +6929,12 @@ async function submitAddSuspect(){
   const caseId=val('spCase'),origin=caseId?'Case Link':val('spOrigin');
   const reason=val('spNote');
   if(!caseId&&!reason){showFormError('Suspect reason / alert details is required for unlinked suspects.',{names:['spNote'],title:'Unable to Save'});return}
-  const payload={...identityServer(d),person_id:matchedPersonId('sp'),case_id:caseId||null,role:'Suspect',origin,notes:reason};
+  const branchId=val('spBranch');
+  if(!branchId){showFormError('Select the Crime branch this suspect is filed under.',{names:['spBranch'],title:'Unable to Save'});return}
+  // The branch is bound into the payload; the API re-derives it from the
+  // officer's verified posting, so a tampered value here is refused (403).
+  const payload={...identityServer(d),person_id:matchedPersonId('sp'),case_id:caseId||null,
+    branch_id:branchId,role:'Suspect',origin,notes:reason};
   try{
     let msg;
     if(serverOn){
@@ -7840,7 +7869,7 @@ const REVIEW_LOCK_HOURS=12;
 // answers without it (or with review_lock_active:false) is a STALE process
 // started before the review lock existed — it approves instantly, so the
 // UI refuses to offer an Approve button against it at all.
-const REQUIRED_BUILD_TAG='sentinel-fingerprint-review-lock-12h';
+const REQUIRED_BUILD_TAG='sentinel-crime-department-scope';
 let backendBuild=null;              // last /api/health payload (or null)
 let backendBuildChecked=false;      // true once /api/health has answered
 function backendBuildOk(){
@@ -8037,7 +8066,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=e7c41b90&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=9f3c2ab7&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -8164,7 +8193,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=e7c41b90&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=9f3c2ab7&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -8450,7 +8479,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=e7c41b90&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=9f3c2ab7&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }
@@ -8474,7 +8503,7 @@ function renderSuspectTable(){
     const p=person(x.person);
     return [p&&p.name,x.person,x.case,x.role,x.alert,x.origin].some(v=>normTxt(v).includes(q));
   });
-  suspectTable.innerHTML=list.map((x,index)=>`<tr>${sequenceCell(index,list.length)}<td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||`<tr><td colspan="6" class="empty">${q?'No suspects match that search':'No active alerts'}</td></tr>`;
+  suspectTable.innerHTML=list.map((x,index)=>`<tr>${sequenceCell(index,list.length)}<td><b>${esc(person(x.person)?.name||'Unknown')}</b><br><small class="muted">${esc(x.person)}</small></td><td>${x.case?'<span class="badge purple">'+esc(x.case)+'</span>':'<span class="badge blue">'+esc(x.origin||'Direct Intelligence Listing')+'</span>'}${x.branch?`<br><small class="muted">${esc(x.branch)}</small>`:''}</td><td><span class="badge ${(x.role||'Suspect')==='Suspect'?'red':'gray'}">${esc(x.role||'Suspect')}</span></td><td><span class="badge red">${esc(x.alert)}</span></td><td class="actions"><button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button></td></tr>`).join('')||`<tr><td colspan="6" class="empty">${q?'No suspects match that search':'No active alerts'}</td></tr>`;
 }
 function renderCases(){
   if(!window.caseTable)return;
@@ -8661,6 +8690,9 @@ async function openCase(caseId){
   document.getElementById('cwCaseSel').innerHTML=caseOptions(caseId);
   let detail;
   if(serverOn){try{detail=await api('/api/crime-cases/'+caseId)}catch(e){detail=null}}
+  // Never keep a previous case's detail (and therefore its branch id) around:
+  // the participant form posts the branch this case was filed under.
+  db._detail=detail||null;
   if(detail){
     cwTitle.textContent=caseId+' · '+detail.category;cwSub.textContent=detail.location+' · '+detail.status;
     cwCaseId.value=caseId;cwStatus.value=detail.status;cwCategory.value=detail.category;cwLocation.value=detail.location||'';cwSummary.value=detail.incident_summary||'';cwNotes.value=detail.notes||'';
@@ -8690,7 +8722,8 @@ async function addParticipant(){
   const role=cwRole.value,note=cwPartNote.value.trim(),caseId=val('cwCaseSel')||null;
   if(!caseId&&!note){showFormError('Participant note / reason is required when no case is linked.',{names:['cwPartNote'],notice:'cwAlert'});return}
   try{
-    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({...identityServer(d),person_id:matchedPersonId('cw'),case_id:caseId,role,notes:note,origin:caseId?'Case Link':'Direct Intelligence Listing'})});
+    if(serverOn)await api('/api/suspect-alerts',{method:'POST',body:JSON.stringify({...identityServer(d),person_id:matchedPersonId('cw'),case_id:caseId,
+      branch_id:(db._detail&&db._detail.branch_id)||undefined,role,notes:note,origin:caseId?'Case Link':'Direct Intelligence Listing'})});
     else{const c=db.cases.find(x=>x.id===cwCase);const p=await ensureLocalIdentity(d);
       if(c){if(!c.participants)c.participants=[];c.participants.push({person:p.id,role,note});}
       if(role==='Suspect')db.suspects.unshift({person:p.id,case:caseId||'',role,alert:'Active alert',origin:caseId?'Case Link':'Direct Intelligence Listing'});
@@ -9022,7 +9055,8 @@ async function syncServer(){
     // can show why an approval is still locked.
     if(fps.ok) db.fingerprint=fps.items.map(x=>({id:x.application_id,person:x.person_id,purpose:x.purpose,status:x.status,guardian:x.guardian_name,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',certificate:x.certificate_number,review:x.review||null,can_approve:x.can_approve!==false,created_at:x.created_at,signedDocumentPath:x.signed_document_path||'',signedDocumentName:x.signed_document_name||'',applicantPersonId:x.applicant_person_id||'',applicantPhoto:x.applicant_photo||'','certificatePrint':x.certificate_print||null}));
     if(ccs.ok) db.cases=ccs.items.map(x=>({id:x.case_id,category:x.category,location:x.location,status:x.status,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:'',summary:x.incident_summary,created_at:x.created_at||'',participants:[],evidence:[]}));
-    if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link'}));
+    if(sas.ok) db.suspects=sas.items.map(x=>({person:x.person_id,case:x.case_id||'',role:x.role||'Suspect',alert:x.alert_status,origin:x.origin||'Case Link',
+      branch_id:x.branch_id||null,branch:x.branch_name?`${x.branch_name} · ${x.branch_region||''}`:''}));
     // Police Registrations: stations + officers now sync from the central DB.
     // A failed fetch keeps the previous local arrays (never clobbered by a
     // transient error). Officer payloads already match the register's shape.
@@ -9668,13 +9702,24 @@ function moduleBranchContext(page){
   if(branchSelectUnlockedForUser()){
     const override=isChiefRole(sessionUser&&sessionUser.role) ? 'cross-region command' : 'all branches';
     return {label:spec.label,branch:branch,
-      title:spec.label+' — '+override,
+      title:page==='cid'
+        ? 'Crime Department — '+override+' Operations'
+        : spec.label+' — '+override,
       detail:(branch?branchWhereLabel(branch):override)};
   }
   if(branch){
+    const region=String(branch.region||'').trim();
+    // The Crime Department header leads with the officer's REGION, because a
+    // regional Crime Unit is the operational posting ("Sool Region — Crime
+    // Department Operations"); the branch itself stays in the subline.
+    const regionLed=page==='cid'&&!!region;
     return {label:spec.label,branch,
-      title:spec.label+' — '+branch.name+' Operations',
-      detail:[branch.district,branch.region].filter(Boolean).join(' · ')};
+      title:regionLed
+        ? region+' Region — Crime Department Operations'
+        : spec.label+' — '+branch.name+' Operations',
+      detail:regionLed
+        ? [branch.name,branch.district,region].filter(Boolean).join(' · ')
+        : [branch.district,branch.region].filter(Boolean).join(' · ')};
   }
   // Unresolved posting: name it so the header is never a generic unit title.
   return {label:spec.label,branch:null,

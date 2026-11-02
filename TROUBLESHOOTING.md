@@ -25,7 +25,7 @@ Both scripts:
 1. force-kill every process listening on the port,
 2. start `backend/server.py`,
 3. poll `/api/health` until it reports
-   `"build": "sentinel-fingerprint-review-lock-12h"` **and**
+   `"build": "sentinel-crime-department-scope"` **and**
    `"review_lock_active": true`, and **exit 1** if it never does,
 4. run the approval audit to find anything approved too early while the
    stale server was up.
@@ -47,7 +47,7 @@ curl -s http://127.0.0.1:8001/api/health
 ```json
 {
   "status": "ok",
-  "build": "sentinel-fingerprint-review-lock-12h",
+  "build": "sentinel-crime-department-scope",
   "review_lock_active": true,
   "fingerprint_review_window_hours": 12,
   "pid": 8610,
@@ -57,7 +57,7 @@ curl -s http://127.0.0.1:8001/api/health
 
 | Field | Meaning |
 |---|---|
-| `build` | must be `sentinel-fingerprint-review-lock-12h` |
+| `build` | must be `sentinel-crime-department-scope` |
 | `review_lock_active` | the boot self-test re-run live — `false` means this process is not enforcing the lock |
 | `pid` / `started_at` | identifies the process; if `started_at` predates your restart, it is the old process |
 

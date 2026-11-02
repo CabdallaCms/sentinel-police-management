@@ -15,6 +15,7 @@ node backend/test_form_improvements.mjs
 node backend/test_shell_workflow_integration.mjs
 node backend/test_sidebar_navigation.mjs
 .venv/bin/python backend/test_branch_scope.py
+.venv/bin/python backend/test_crime_department_scope.py
 node backend/test_record_audit_ui.mjs
 .venv/bin/python backend/test_checkpoint_roles_audit.py
 PYTHON="$PWD/.venv/bin/python" node backend/test_frontend_session.mjs
@@ -103,7 +104,7 @@ Personnel · Administration). For every role you test:
 10. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
     control appears in it.
 11. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
-    (`sentinel-branch-crud-1-e7c41b90`); a mismatch means a cached tab.
+    (`sentinel-crime-scope-1-9f3c2ab7`); a mismatch means a cached tab.
 
 12. **Branch-scoped sidebar tree** — sign in as a Fingerprint officer posted to
     `Lasanod Branch · Laascaanood · Sool`. Every dynamic tree (Fingerprint Units, Crime Units,
@@ -127,6 +128,26 @@ resolver `navUnitScope(`, its filter `unitInNavScope(`, the directory authority 
 
 `python backend/test_branch_scope.py` is the API-level proof for items 6–7 (posting resolution,
 read scoping, 403 on another branch's record and audit history, write scoping, override roles).
+
+`python backend/test_crime_department_scope.py` is the Crime Department gate for this release:
+
+- **Case register** — a Sool CID officer's `GET /api/crime-cases` never contains a Sanaag case,
+  `GET /api/crime-cases/<id>` / `PATCH` / evidence upload answer `403 branch_scope_forbidden`
+  across regions, and unassigned legacy cases never leak into a scoped queryset.
+- **Suspect register** — `GET /api/suspect-alerts` and the `/api/suspects` alias return only the
+  officer's branch (case-linked listings inherit their case's branch), the new
+  `GET /api/suspects/<alert_id>` detail answers `403` across regions and `404` for unknown ids,
+  and the per-record audit history follows the same scope.
+- **Branch-bound intake** — a tampered `branch_id` on `POST /api/crime-cases` /
+  `POST /api/suspect-alerts` is refused with `403`; an omitted one is pinned to the verified
+  posting, never stored as `NULL`.
+- **HQ / Admin bypass** — SystemAdmin and the Chief Commander still read every regional case and
+  suspect, open any detail by id, and keep the national dashboard counters.
+- **Catalogue + page contract** — `/api/branches?unit_type=crime` (and `?unit=crime`) returns the
+  Sool / Sanaag / East Togdheer Crime Units grouped by region; the page ships the locked suspect
+  branch selector (`id="spBranch"`), the `🔒 Locked to assigned branch` indicator, the
+  branch-bound payload and the region-led `Sool Region — Crime Department Operations` header, with
+  one consistent version stamp; `--ui-check` is executed as part of the suite.
 `node backend/test_sidebar_navigation.mjs` is the jsdom proof for items 12–13: a scoped officer's
 five trees each keep exactly one region, one district and one branch; the Unit Directory launcher
 is hidden and the drawer refuses to open with the restriction toast, while `admin` and the
@@ -686,7 +707,7 @@ the generic endpoint.
 Branch: `arena/b4919f35-sentinel-police-management` (feature branch `arena/branch-management-crud`).
 Do not merge until UAT is approved. Restart the backend and hard-refresh the browser when testing
 this branch (`?v=` stamps and the UI build marker were republished as
-`sentinel-branch-crud-1-e7c41b90`). Use a test database and synthetic identities only.
+`sentinel-crime-scope-1-9f3c2ab7`). Use a test database and synthetic identities only.
 
 ### What changed
 - **Actions column + Edit Branch modal.** The Branch Management table gained **Status** and
@@ -744,7 +765,7 @@ this branch (`?v=` stamps and the UI build marker were republished as
 6. **Posting preservation**: as `admin`, edit an account's **Branch** to a new branch name, rename
    that branch in Branch Management, then reload the account: its posting shows the new name and
    the officer's intake selector stays locked.
-7. Confirm the sidebar footer reports `sentinel-branch-crud-1-e7c41b90`, matching
+7. Confirm the sidebar footer reports `sentinel-crime-scope-1-9f3c2ab7`, matching
    `/api/health` → `ui_build` / `asset_version`, and `python backend/server.py --ui-check` exits 0.
 
 ### Automated
@@ -760,6 +781,7 @@ this branch (`?v=` stamps and the UI build marker were republished as
   mirrored-station rename, the officer-posting relabel and the `UPDATE police_branch` audit rows
   (the live part SKIPs when no PostgreSQL engine is available).
 - The rest of the suite (`test_dynamic_branches.py`, `test_station_actions.py`,
-  `test_branch_scope.py`, `test_read_only_rbac.py`, `test_sidebar_navigation.mjs`,
+  `test_branch_scope.py`, `test_crime_department_scope.py`, `test_read_only_rbac.py`,
+  `test_sidebar_navigation.mjs`,
   `test_station_frontend.mjs`, …) still passes; `test_server.py` and `test_conduct_frontend.mjs`
   remain on the retired SQLite harness and were already failing before this branch.

@@ -953,9 +953,9 @@ async function main() {
       throw new Error('an unknown /api/health must not count as the review-lock build');
     if (healthTruth({ build: 'sentinel-legacy', review_lock_active: true }) !== false)
       throw new Error('a stale build tag must not count as the review-lock build');
-    if (healthTruth({ build: 'sentinel-fingerprint-review-lock-12h', review_lock_active: false }) !== false)
+    if (healthTruth({ build: 'sentinel-crime-department-scope', review_lock_active: false }) !== false)
       throw new Error('review_lock_active:false must not count as the review-lock build');
-    if (healthTruth({ build: 'sentinel-fingerprint-review-lock-12h', review_lock_active: true }) !== true)
+    if (healthTruth({ build: 'sentinel-crime-department-scope', review_lock_active: true }) !== true)
       throw new Error('the real build must be recognised as locked');
 
     // Force the stale state and re-render the register: even an ADMIN and a
@@ -979,7 +979,7 @@ async function main() {
     console.log('ok 9: stale backend (wrong /api/health build) — register locked, no approval request issued');
 
     // and once the real build answers again, the admin bypass comes back
-    probe(sb9, "backendBuild={build:'sentinel-fingerprint-review-lock-12h',review_lock_active:true}; backendBuildChecked=true;");
+    probe(sb9, "backendBuild={build:'sentinel-crime-department-scope',review_lock_active:true}; backendBuildChecked=true;");
     if (probe(sb9, 'backendBuildOk()') !== true)
       throw new Error('backendBuildOk() must recover once the correct build answers');
     console.log('ok 10: correct /api/health build restores normal (lock-aware) rendering');

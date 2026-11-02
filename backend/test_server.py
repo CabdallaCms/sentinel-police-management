@@ -1151,7 +1151,7 @@ def main():
         # with review_lock_active:false) means a stale server is answering.
         status, health = request(base, 'GET', '/api/health')
         assert status == 200, health
-        assert health['build'] == 'sentinel-fingerprint-review-lock-12h', health
+        assert health['build'] == 'sentinel-crime-department-scope', health
         assert health['review_lock_active'] is True, health
         assert health['build_ok'] is True, health
         assert health['fingerprint_review_window_hours'] == 12, health
