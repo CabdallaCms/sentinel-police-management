@@ -786,6 +786,8 @@ UI_REQUIRED_MARKERS = (
     ('Posting label fallbacks', 'function officerPostingLabel('),
     ('Role-first scoping', '// ROLE-FIRST'),
     ('Hard-pruned scoped tree', '// HARD PRUNE'),
+    ('Scoped tree renderer', 'function unitNavTree(type, scoped){'),
+    ('Scoped tree scope signature', 'const scopeKey=scope'),
     # The page refuses approvals against a backend it does not recognise, so
     # its required tag must track BUILD_TAG exactly (a drift disables the
     # review lock in the browser — ui-check now catches it).
@@ -1180,6 +1182,13 @@ def ui_state(path=None):
     text = raw.decode('utf-8', 'replace')
     m = re.search(r'<meta\s+name="sentinel-ui-build"\s+content="([^"]+)"', text)
     stamp = m.group(1) if m else None
+    # The page's REQUIRED_BUILD_TAG is the BACKEND API contract (approvals are
+    # refused unless /api/health reports it). It is a separate stamp from the
+    # asset build, so a half-finished release can update one file and not the
+    # other; both directions are diagnosed here instead of surfacing later as
+    # "approvals disabled" or "the page is not the build this server serves".
+    tag_match = re.search(r"REQUIRED_BUILD_TAG\s*=\s*'([^']+)'", text)
+    page_build_tag = tag_match.group(1) if tag_match else None
     features = {label: (marker in text) for label, marker in UI_REQUIRED_MARKERS}
     missing = [label for label, present in features.items() if not present]
     problems = []
@@ -1188,12 +1197,20 @@ def ui_state(path=None):
     elif stamp != UI_BUILD:
         problems.append(f'the page stamps itself {stamp!r} but this build is {UI_BUILD!r} — '
                         'the served index.html is not the page this server ships')
+    if not page_build_tag:
+        problems.append('the page does not publish REQUIRED_BUILD_TAG '
+                        '(the backend build the review lock is enforced against)')
+    elif page_build_tag != BUILD_TAG:
+        problems.append(
+            f'the page expects backend build {page_build_tag!r} but this server is '
+            f'{BUILD_TAG!r} — index.html and backend/server.py are from different builds')
     if missing:
         problems.append('the page is missing the served build\'s features: ' + ', '.join(missing))
     state = {'path': path, 'exists': True, 'bytes': len(raw),
              'mtime': datetime.datetime.fromtimestamp(st.st_mtime, datetime.timezone.utc)
                       .strftime('%Y-%m-%dT%H:%M:%SZ'),
              'sha256': hashlib.sha256(raw).hexdigest(), 'stamp': stamp,
+             'page_build_tag': page_build_tag,
              'features': features,
              'actions_published': bool(features.get('Actions column')),
              'source': UI_SOURCE if os.path.realpath(path) == os.path.realpath(INDEX_HTML) else 'explicit path',
@@ -1227,7 +1244,9 @@ def ui_diagnosis(path=None):
     state = ui_state(path)
     lines = [f'serving  : {state["path"]}',
              f'via      : {state.get("source") or "?"}   (cwd {state.get("cwd")})',
-             f'stamp    : {state["stamp"]!r}   expected {UI_BUILD!r}']
+             f'stamp    : {state["stamp"]!r}   expected {UI_BUILD!r}',
+             f'backend  : {BUILD_TAG}   page expects '
+             f'{state.get("page_build_tag")!r}']
     git = state.get('git') or {}
     if git.get('branch') or git.get('commit'):
         lines.append(f'checkout : branch {git.get("branch") or "(detached)"} @ '
@@ -10274,6 +10293,7 @@ def _ui_check_cli():
     state = ui_state()
     print(f'build    : {UI_BUILD}')
     print(f'asset    : {ASSET_VERSION}')
+    print(f'backend  : {BUILD_TAG}   page expects {state.get("page_build_tag")!r}')
     print(f'cwd      : {os.getcwd()}')
     print(f'server   : {os.path.join(ROOT, "server.py")}')
     print('candidates:')

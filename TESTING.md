@@ -16,6 +16,8 @@ node backend/test_shell_workflow_integration.mjs
 node backend/test_sidebar_navigation.mjs
 .venv/bin/python backend/test_branch_scope.py
 .venv/bin/python backend/test_crime_department_scope.py
+.venv/bin/python backend/test_ui_build_sync.py
+
 node backend/test_record_audit_ui.mjs
 .venv/bin/python backend/test_checkpoint_roles_audit.py
 PYTHON="$PWD/.venv/bin/python" node backend/test_frontend_session.mjs
@@ -382,12 +384,18 @@ tests instead of silently leaving a stale page on screen.
    `backend/server.py`.
 2. `<meta name="sentinel-ui-build" content="sentinel-officer-profile-<n>-<short commit>" />` in `index.html`.
 3. Every `?v=…` in `index.html`, `application.html`, `certificate.html`.
-4. Run the suite — `static_asset_version_consistent()` + the served-header checks fail on any
-   parameter or stamp left behind.
+4. Keep the BACKEND contract tag in step: `REQUIRED_BUILD_TAG` in `index.html` must equal
+   `BUILD_TAG` in `backend/server.py`. A page that expects another backend build disables the
+   Approve/Print controls; a server with another asset stamp refuses to serve the page.
+5. Run the suite — `static_asset_version_consistent()` + the served-header checks fail on any
+   parameter or stamp left behind, and `backend/test_ui_build_sync.py` proves both drift
+   directions (stale page → `--ui-check` exits 1 and the server refuses to start; stale backend
+   tag → the same refusal with the expected tag printed).
 
 ### Automated
 ```sh
 .venv/bin/python backend/test_station_actions.py   # 140 checks (suite 6 = the cache-busting checks)
+.venv/bin/python backend/test_ui_build_sync.py       # index.html <-> server.py build/tag sync (no DB)
 node backend/test_frontend_session.mjs             # pins the stamp shape + that no static reference
                                                    # is left un-versioned in index.html
 ```

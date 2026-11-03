@@ -136,6 +136,10 @@ UI and the API can never disagree:
   (`certificate.html?v=9a4c7f31&id=…`, `images/police_logo.png?v=9a4c7f31`) — bump `ASSET_VERSION`
   *and* `UI_BUILD` in `backend/server.py` together with the `?v=` parameters in `index.html`,
   `application.html` and `certificate.html` (the station action suite asserts all of them agree).
+  The page's `REQUIRED_BUILD_TAG` must also equal `BUILD_TAG` in `backend/server.py`: a page that
+  expects another backend build disables the Approve/Print controls, and a server whose
+  `UI_BUILD` differs from the page's `<meta>` refuses to serve it. `backend/test_ui_build_sync.py`
+  pins both directions and reproduces the refusal on a deliberately stale copy.
   Served documents answer `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` +
   `Expires: 0` + `Pragma: no-cache`, so a normal reload always fetches the current page, and
   `?v=`-stamped assets are the only ones allowed to be cached (`immutable`). `GET /api/health`
