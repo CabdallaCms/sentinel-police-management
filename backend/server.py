@@ -669,7 +669,7 @@ FINGERPRINT_ROLE_KEYS = {'fingerprint', 'fingerprintunit', 'fingerprintofficer',
 
 # Build marker — surfaced by /api/health and printed on startup so an operator
 # can confirm the running process carries the review-lock rules.
-BUILD_TAG = 'sentinel-officer-scope-resolution'
+BUILD_TAG = 'sentinel-sidebar-hard-prune'
 
 # ---- static asset versioning / cache busting --------------------------------
 # Every static reference the three pages ship (the brand logo and the links
@@ -682,11 +682,11 @@ BUILD_TAG = 'sentinel-officer-scope-resolution'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = 'd3f7a9c2'
+ASSET_VERSION = 'e61c8b47'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-scope-resolve-1-' + ASSET_VERSION
+UI_BUILD = 'sentinel-hard-prune-1-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -785,11 +785,12 @@ UI_REQUIRED_MARKERS = (
     ('Officer posting resolver', 'function getOfficerBranchScope('),
     ('Posting label fallbacks', 'function officerPostingLabel('),
     ('Role-first scoping', '// ROLE-FIRST'),
+    ('Hard-pruned scoped tree', '// HARD PRUNE'),
     # The page refuses approvals against a backend it does not recognise, so
     # its required tag must track BUILD_TAG exactly (a drift disables the
     # review lock in the browser — ui-check now catches it).
     ('Frontend review-lock build tag',
-     "REQUIRED_BUILD_TAG='sentinel-officer-scope-resolution'"),
+     "REQUIRED_BUILD_TAG='sentinel-sidebar-hard-prune'"),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance

@@ -90,6 +90,13 @@ def static_contract():
           'the officer branch scope resolves string postings and alternate fields')
     check('// ROLE-FIRST' in html,
           'every standard role is scoped, even before a branch resolves')
+    check('// HARD PRUNE' in html
+          and 'if(scope.region&&region!==scope.region){ regions.delete(region); return; }' in html
+          and 'if(!districts.size) regions.delete(region);' in html,
+          'a scoped tree prunes foreign/empty regions before it is painted')
+    check('if(unitId!==scopeId) return false;' in html
+          and 'if(scope.region&&region!==scope.region) return false;' in html,
+          'unitInNavScope refuses a foreign branch, region or district')
     check('function applyBranchLock(' in html,
           'the shared branch-lock helper disables the selector')
     check("refreshBranchSelect('caseBranch','crime')" in html

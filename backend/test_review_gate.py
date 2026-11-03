@@ -280,7 +280,7 @@ def main():
         # ---- 0) /api/health proves the review-lock build is running --------
         s, health = request(base, 'GET', '/api/health')
         assert s == 200, health
-        assert health['build'] == 'sentinel-officer-scope-resolution', health
+        assert health['build'] == 'sentinel-sidebar-hard-prune', health
         assert health['review_lock_active'] is True, health
         assert health['fingerprint_review_window_hours'] == 12, health
         print('ok 0: /api/health reports the review-lock build, window=12h, lock armed')

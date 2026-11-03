@@ -460,9 +460,9 @@ def run_frontend_contract():
     check('async function refreshLiveMetrics(' in html
           and html.count('refreshLiveMetrics(') >= 6,
           'every register write refreshes the dashboard metrics and activity feed')
-    check('<meta name="sentinel-ui-build" content="sentinel-scope-resolve-1-d3f7a9c2" />' in html,
+    check('<meta name="sentinel-ui-build" content="sentinel-hard-prune-1-e61c8b47" />' in html,
           'the asset version stamp was republished')
-    check('?v=d3f7a9c2' in html,
+    check('?v=e61c8b47' in html,
           'static references carry the new cache-busting version')
 
 

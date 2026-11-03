@@ -8,7 +8,7 @@
      with the `?v=` asset version below and ASSET_VERSION in
      backend/server.py: the commit suffix is what separates a stale cached
      page from a stale server. -->
-<meta name="sentinel-ui-build" content="sentinel-scope-resolve-1-d3f7a9c2" />
+<meta name="sentinel-ui-build" content="sentinel-hard-prune-1-e61c8b47" />
 <title>Sentinel Police Management</title>
 <style>
 :root{--navy:#11233f;--blue:#246bfe;--cyan:#13b8a6;--bg:#f4f7fb;--ink:#172033;--muted:#68758a;--line:#e3e9f2;--red:#d84f5a;--amber:#c98512;--green:#16856b;--shadow:0 8px 28px #1020400d}
@@ -4041,35 +4041,60 @@ function unitInNavScope(unit,scope){
   // can ever reach this function with a null scope.
   if(!scope) return !sessionHasBranchScope();
   if(scope.hidden) return false;                       // scoped, no branch here
-  // A checkpoint officer is posted to an AREA, not a branch: keep exactly the
-  // entries of that area (their code is 'South' / 'East' / 'West').
-  if(scope.area){
-    return String(unit.code||'').trim().toLowerCase()
-      ===String(scope.area).trim().toLowerCase();
-  }
   const region=String(unit.region||'').trim();
   const district=String(unit.district||'').trim();
-  if(!region||!district) return false;                 // unassigned / areas
+  const code=String(unit.code||'').trim();
+  const scopeId=scope.branch_id?String(scope.branch_id):'';
+  const unitId=unit.branch_id?String(unit.branch_id):'';
+  // 1) Checkpoint AREA posting: only rows carrying that exact area code.
+  if(scope.area){
+    return !!code && code.toLowerCase()===String(scope.area).trim().toLowerCase();
+  }
+  // 2) BRANCH IDENTITY IS DECIDED FIRST. Another branch id is refused even
+  // when the row claims the officer's region/district (a stale or tampered
+  // register row must never ride geography into the rail).
+  if(scopeId){
+    if(unitId){
+      // The id must match AND the row's own region/district must agree with
+      // the scope: a tampered/stale row carrying another region is refused
+      // even when it claims the officer's branch id.
+      if(unitId!==scopeId) return false;
+      if(scope.region&&region!==scope.region) return false;
+      if(scope.district&&district!==scope.district) return false;
+      return true;
+    }
+    // A legacy row with no catalogue id needs the complete proof: identical
+    // geography AND an exact canonical label match. Proximity alone is never
+    // identity.
+    if(!region||!district) return false;
+    if(region===NAV_NO_REGION||region===NAV_CHECKPOINT_AREAS) return false;
+    if(district===NAV_NO_DISTRICT) return false;
+    if(scope.region&&region!==scope.region) return false;
+    if(scope.district&&district!==scope.district) return false;
+    const scopeName=canonicalPostingKey(scope.branch_name);
+    return !!scopeName&&canonicalPostingKey(unit.label)===scopeName;
+  }
+  // 3) Geography-only / area-derived scope: region + district must match
+  // exactly; unassigned ('Unassigned region' / 'Checkpoint areas') rows are
+  // never part of a scoped rail.
+  if(!region||!district) return false;
   if(region===NAV_NO_REGION||region===NAV_CHECKPOINT_AREAS) return false;
   if(district===NAV_NO_DISTRICT) return false;
   if(scope.region&&region!==scope.region) return false;
   if(scope.district&&district!==scope.district) return false;
-  // A region/district-only assignment (the posting named a geography but not a
-  // registered branch) is already confined by the two checks above.
-  if(scope.geo) return true;
-  const scopeId=scope.branch_id?String(scope.branch_id):'';
-  const unitId=unit.branch_id?String(unit.branch_id):'';
-  if(scopeId&&unitId) return unitId===scopeId;
-  // No catalogue id on the row (a legacy register posting): the label must
-  // name exactly the officer's branch. Region/district proximity is not
-  // identity, so this is the only remaining proof we accept.
+  // A branch-name scope without an id still requires the label to match.
   const scopeName=canonicalPostingKey(scope.branch_name);
-  if(!scopeName) return false;
-  return canonicalPostingKey(unit.label)===scopeName;
+  if(scopeName) return canonicalPostingKey(unit.label)===scopeName;
+  return true;
 }
 // The nested Region → District → unit structure the sidebar paints.
-function unitNavTree(type){
-  const units=unitNavCatalog(type);
+function unitNavTree(type, scoped){
+  // `scoped` lets the renderer pass the scope it already resolved; otherwise
+  // resolve here. Filtering twice is deliberate: the catalogue is the single
+  // source, and this pass is the hard guarantee the DOM can never contain a
+  // unit outside the officer's branch.
+  const scope=(scoped===undefined)?navUnitScope(type):scoped;
+  const units=unitNavCatalog(type).filter(u=>unitInNavScope(u,scope));
   const regions=new Map();
   units.forEach(u=>{
     const region=u.region||NAV_NO_REGION;
@@ -4079,6 +4104,31 @@ function unitNavTree(type){
     if(!districts.has(district)) districts.set(district,[]);
     districts.get(district).push(u);
   });
+  // HARD PRUNE (defense in depth, and the actual fix for parent regions
+  // surviving a scope change): a strict scope may only keep the region,
+  // district and checkpoint area it names. A group that ends up empty is
+  // dropped entirely, so its accordion header never reaches the DOM.
+  if(scope&&scope.strict){
+    Array.from(regions.keys()).forEach(region=>{
+      const districts=regions.get(region);
+      if(scope.region&&region!==scope.region){ regions.delete(region); return; }
+      if(scope.district){
+        Array.from(districts.keys()).forEach(district=>{
+          if(district!==scope.district) districts.delete(district);
+        });
+      }
+      if(scope.area){
+        Array.from(districts.keys()).forEach(district=>{
+          const list=districts.get(district).filter(u=>String(u.code||'').trim()
+            .toLowerCase()===String(scope.area).trim().toLowerCase());
+          if(list.length) districts.set(district,list);
+          else districts.delete(district);
+        });
+      }
+      // Never paint an empty parent: no districts → no region header.
+      if(!districts.size) regions.delete(region);
+    });
+  }
   return Array.from(regions.entries())
     .sort((a,b)=>compareRegion(a[0],b[0]))
     .map(([region,districts])=>({
@@ -4141,13 +4191,21 @@ function renderUnitNavTree(type){
     mount.dataset.navSig='';
     return;
   }
-  const tree=unitNavTree(type);
+  const scope=navUnitScope(type);
+  const tree=unitNavTree(type,scope);
   if(!tree.length){
     if(mount.innerHTML!==''){mount.innerHTML=''}
     mount.dataset.navSig='';
     return;
   }
-  const sig=JSON.stringify(tree.map(r=>[r.region,r.districts.map(d=>[d.district,d.units.map(u=>[u.label,u.code])])]));
+  // The signature carries the SCOPE as well as the nodes: a session/scope
+  // change repaints even when the surviving branch happens to look identical,
+  // and a stale nationwide tree can never satisfy the cache.
+  const scopeKey=scope
+    ? [scope.hidden?1:0,scope.geo?1:0,scope.branch_id||'',scope.region||'',
+       scope.district||'',scope.area||''].join('~')
+    : '';
+  const sig=scopeKey+'|'+JSON.stringify(tree.map(r=>[r.region,r.districts.map(d=>[d.district,d.units.map(u=>[u.label,u.code])])]));
   if(mount.dataset.navSig===sig){ markUnitNavCurrent(); return; }
   mount.dataset.navSig=sig;
   mount.innerHTML=tree.map(region=>{
@@ -8098,7 +8156,7 @@ const REVIEW_LOCK_HOURS=12;
 // answers without it (or with review_lock_active:false) is a STALE process
 // started before the review lock existed — it approves instantly, so the
 // UI refuses to offer an Approve button against it at all.
-const REQUIRED_BUILD_TAG='sentinel-officer-scope-resolution';
+const REQUIRED_BUILD_TAG='sentinel-sidebar-hard-prune';
 let backendBuild=null;              // last /api/health payload (or null)
 let backendBuildChecked=false;      // true once /api/health has answered
 function backendBuildOk(){
@@ -8295,7 +8353,7 @@ function certificateLockedControl(item,state){
 }
 function certificateControlHtml(item,state){
   return state.unlocked
-    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=d3f7a9c2&id=${encodeURIComponent(item.id)}">Certificate</a>`
+    ? `<a class="btn green small" target="_blank" rel="noopener" href="certificate.html?v=e61c8b47&id=${encodeURIComponent(item.id)}">Certificate</a>`
     : certificateLockedControl(item,state);
 }
 
@@ -8422,7 +8480,7 @@ function renderClearanceReview(record){
   if(original)original.innerHTML=renderPersonDocuments([...applicantDocs,...guardianDocs],'No original applicant or guarantor files are attached to this application.');
   const row={...record,id,status,created_at:record.created_at||'',certificate:record.certificate_number||record.certificate||'',review:record.review||null,purpose:record.purpose||''};
   const actions=document.getElementById('fpReviewActions');
-  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=d3f7a9c2&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
+  if(actions)actions.innerHTML=`<a class="btn secondary" data-write="1" target="_blank" rel="noopener" href="application.html?v=e61c8b47&id=${encodeURIComponent(id)}">Review / print application</a>${renderRegisterRow(row,currentUser)}<button class="btn ghost" type="button" onclick="closeEntryModal('fpReviewModal')">Close</button>`;
 }
 function openClearanceReview(id){
   if(!canWrite()||guardReadOnly('Opening a clearance review'))return;
@@ -8708,7 +8766,7 @@ function renderFingerprintTable(){
    <td${tdCls}>${signedCell}${signedPath&&x.signedDocumentName?`<br><small class="muted" title="${esc(x.signedDocumentName)}">${esc(x.signedDocumentName)}</small>`:''}</td>
    <td class="actions${hi?' bio-match-cell':''}">
      <button class="btn secondary small" onclick="openPersonView('${esc(x.person)}')">View</button>
-     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=d3f7a9c2&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
+     ${canWrite()?`<a class="btn secondary small" data-write="1" target="_blank" href="application.html?v=e61c8b47&id=${encodeURIComponent(x.id)}">Print</a><button class="btn ghost small" type="button" data-write="1" onclick="openClearanceReview('${esc(x.id)}')">Re-scan</button>`:''}
      ${renderRegisterRow(x,currentUser)}
    </td></tr>`}).join('')||`<tr><td colspan="8" class="empty">${q?'No applications match that search':'No applications yet'}</td></tr>`;
 }

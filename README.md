@@ -389,8 +389,14 @@ register the API would refuse anyway:
   tree (Fingerprint, Crime, Checkpoint, Airport, Stations). Rows are matched on region + district
   and then on `branch_id`, falling back to the canonical branch name for legacy rows that carry no
   `branch_id`; a row that cannot be placed is dropped rather than shown in an *Unassigned* group.
-- **Full national tree** — a System Administrator, the Commander (`can_manage_records`) and any
-  unresolvable posting keep every region, district and unit, exactly as before.
+- **Hard prune** — `unitNavTree(type, scope)` re-applies `unitInNavScope` and then deletes every
+  region/district group the strict scope does not name. A region with zero matching branches is
+  removed *before* HTML is built, so its accordion header never reaches the DOM; the render
+  signature also carries the scope, so a nationwide tree painted by a previous (admin) session is
+  replaced rather than merged when a scoped officer signs in.
+- **Full national tree** — only a System Administrator / the Commander
+  (`branch_scope_status.override`) keeps every region, district and unit. A standard role is
+  always scoped, so an unresolvable posting renders an empty rail instead of the national view.
 
 #### Unit Directory (command authority only)
 

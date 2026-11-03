@@ -656,6 +656,62 @@ try {
   setCatalogue(BRANCHES);
   signIn('FingerprintUnit', ALL_MODULES, false, { branch: scopedPosting });
 
+  // ---- Hard prune: the ENTIRE rail, not just one tree ---------------------
+  // Every region/district node in the DOM (all five mounts, all accordion
+  // headers) must be the officer's own. A foreign parent that merely has no
+  // matching child must not be rendered at all.
+  assert.deepEqual([...new Set(queryAll('#nav .nav-region').map((r) => r.dataset.navRegion))],
+    ['Sool'], 'the whole rail contains exactly one region node: Sool');
+  assert.deepEqual([...new Set(queryAll('#nav .nav-district').map((d) => d.dataset.navDistrict))],
+    ['Laascaanood'], 'the whole rail contains exactly one district node: Laascaanood');
+  ['Sanaag', 'East Togdheer', 'Unassigned region', 'Checkpoint areas'].forEach((name) => {
+    assert.equal(queryAll(`#nav [data-nav-region="${name}"]`).length, 0,
+      `no ${name} region node may exist in the scoped rail`);
+    assert.equal(queryAll(`#nav [data-region-toggle="${name}"]`).length, 0,
+      `no ${name} accordion header may exist in the scoped rail`);
+  });
+  assert.equal(queryAll('#nav .nav-district[data-nav-district="Ceerigaabo"]').length, 0);
+  assert.equal(queryAll('#nav .nav-district[data-nav-district="Burao"]').length, 0);
+
+  // A previously painted nationwide tree is REPLACED, never merged: switching
+  // from the admin session must clear every foreign region from the DOM.
+  signIn('SystemAdmin', ALL_MODULES, true);
+  assert.ok(treeRegions('fingerprint').some((r) => r.dataset.navRegion === 'Sanaag'),
+    'the administrator session paints the nationwide tree');
+  assert.ok(queryAll('#nav [data-nav-region="East Togdheer"]').length > 0);
+  signIn('FingerprintUnit', ALL_MODULES, false, { branch: scopedPosting });
+  assert.equal(queryAll('#nav [data-nav-region="Sanaag"]').length, 0,
+    'the foreign region is pruned after the account switch');
+  assert.equal(queryAll('#nav [data-nav-region="East Togdheer"]').length, 0,
+    'the second foreign region is pruned after the account switch');
+  assert.equal(queryAll('#nav [data-nav-region="Sool"]').length, 1,
+    'the own mount keeps its Sool node; the other categories fail closed');
+
+  // Register rows from other regions can never smuggle a region back in.
+  run(`db.fingerprint=[
+    {branch:'Erigavo Branch · Ceerigaabo · Sanaag'},
+    {branch:'Burao Branch · Burao · East Togdheer'},
+    {branch:'Lasanod Branch · Laascaanood · Sool'}];renderUnitNavTrees();`);
+  assert.deepEqual(treeRegions('fingerprint').map((r) => r.dataset.navRegion), ['Sool'],
+    'foreign register rows never create a foreign region');
+  assert.deepEqual(treeUnits('fingerprint').map((u) => u.dataset.unitLabel), ['Lasanod Branch'],
+    'only the officer branch survives the merge');
+  assert.equal(queryAll('#nav [data-nav-region="Sanaag"]').length, 0);
+  assert.equal(queryAll('#nav [data-nav-region="East Togdheer"]').length, 0);
+  run(`db.fingerprint=[];renderUnitNavTrees();`);
+
+  // The filter itself: identity beats geography in both directions.
+  const strictScope = `{branch_id:'b10',branch_name:'Lasanod Branch',region:'Sool',district:'Laascaanood',strict:true}`;
+  assert.equal(run(`unitInNavScope({label:'Lasanod Branch',region:'Sanaag',district:'Ceerigaabo',branch_id:'b10'},${strictScope})`),
+    false, 'a foreign region is refused even with a matching branch id');
+  assert.equal(run(`unitInNavScope({label:'Lasanod Branch',region:'Sool',district:'Laascaanood',branch_id:'b19'},${strictScope})`),
+    false, 'a different branch id in the same district is refused');
+  assert.equal(run(`unitInNavScope({label:'Erigavo Branch',region:'Sool',district:'Laascaanood',branch_id:'b4'},${strictScope})`),
+    false, 'a foreign branch id inside the officer geography is refused');
+  assert.equal(run(`unitInNavScope({label:'Lasanod Branch',region:'Sool',district:'Laascaanood',branch_id:null},${strictScope})`),
+    true, 'a legacy row with the exact label + geography is admitted');
+  console.log('ok: the scoped rail is hard-pruned to one region and one district');
+
   assert.equal(queryAll('#nav [data-unit-directory]').length, 1);
   assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
     'the Unit Directory launcher is hidden for a branch-scoped officer');
