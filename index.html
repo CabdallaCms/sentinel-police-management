@@ -3792,6 +3792,10 @@ function unitNavCatalog(type){
   // so the tree, the directory rows and the category badge can never disagree.
   const rows=Array.from(seen.values())
     .filter(u=>!(u.branch_id&&retiredIds.has(String(u.branch_id))));
+  if(type==='fingerprint'){
+    const scope=fingerprintRegionalNavScope();
+    return scope?rows.filter(u=>fingerprintUnitInRegionalNavScope(u,scope)):rows;
+  }
   const scope=navUnitScope(type);
   return scope?rows.filter(u=>unitInNavScope(u,scope)):rows;
 }
@@ -3820,6 +3824,25 @@ function navUnitScope(type){
       district:String(status.branch.district||'').trim()};
   }
   return null;                                        // no reliable posting
+}
+// Fingerprint has its own regional hard-pruning boundary. Resolve only this
+// unit's posting and give the registered branch identity precedence over
+// geography: a different Fingerprint branch is foreign even when it shares the
+// officer's region/district. Legacy rows without an id require an exact
+// canonical branch name as well as matching geography.
+function fingerprintRegionalNavScope(){
+  return navUnitScope('fingerprint');
+}
+function fingerprintUnitInRegionalNavScope(unit,scope){
+  if(!scope) return true;
+  if(scope.branch_id&&unit.branch_id&&String(unit.branch_id)!==String(scope.branch_id)) return false;
+  const region=String(unit.region||'').trim();
+  const district=String(unit.district||'').trim();
+  if(!region||!district||region===NAV_NO_REGION||region===NAV_CHECKPOINT_AREAS||district===NAV_NO_DISTRICT) return false;
+  if(scope.region&&region!==scope.region) return false;
+  if(scope.district&&district!==scope.district) return false;
+  if(scope.branch_id&&unit.branch_id) return String(unit.branch_id)===String(scope.branch_id);
+  return canonicalPostingKey(unit.label)===canonicalPostingKey(scope.branch_name);
 }
 // Is a catalogued unit inside the officer's scope? Rows that the register
 // recorded without a branch id are matched on their canonical name plus their
@@ -3918,7 +3941,13 @@ function renderUnitNavTree(type){
     mount.dataset.navSig='';
     return;
   }
-  const sig=JSON.stringify(tree.map(r=>[r.region,r.districts.map(d=>[d.district,d.units.map(u=>[u.label,u.code])])]));
+  const treeSig=tree.map(r=>[r.region,r.districts.map(d=>[d.district,d.units.map(u=>[u.label,u.code])])]);
+  // The fingerprint tree's paint cache is keyed to the resolved scope as well
+  // as its rows. This prevents a nationwide/admin render from being reused by
+  // a regional officer (or one officer's branch from another's) when rendered
+  // tree contents happen to otherwise compare equal.
+  const scopeSig=type==='fingerprint'?fingerprintRegionalNavScope():null;
+  const sig=JSON.stringify(type==='fingerprint'?{tree:treeSig,scope:scopeSig}:treeSig);
   if(mount.dataset.navSig===sig){ markUnitNavCurrent(); return; }
   mount.dataset.navSig=sig;
   mount.innerHTML=tree.map(region=>{
