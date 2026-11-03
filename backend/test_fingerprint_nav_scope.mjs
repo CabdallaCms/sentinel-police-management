@@ -62,6 +62,29 @@ assert.notEqual(mount.dataset.navSig, nationwideSignature,
 assert.doesNotMatch(mount.innerHTML, /Sanaag|East Togdheer|Ceerigaabo|Burao|Unassigned/,
   'pruning happens before rendering, not by hiding rendered nodes');
 
+// Inject contaminated upstream tree data to prove renderUnitNavTree itself
+// rejects foreign regions before generating any sidebar markup.
+run(`window.__originalUnitNavTree=unitNavTree;
+  unitNavTree=function(type){
+    const tree=window.__originalUnitNavTree(type);
+    if(type!=='fingerprint') return tree;
+    return tree.concat([
+      {region:'Sanaag',units:1,districts:[{district:'Ceerigaabo',units:[
+        {label:'Injected Erigavo',code:'',branch_id:'fp-sanaag',region:'Sanaag',district:'Ceerigaabo'}]}]},
+      {region:'East Togdheer',units:1,districts:[{district:'Burao',units:[
+        {label:'Injected Burao',code:'',branch_id:'fp-east',region:'East Togdheer',district:'Burao'}]}]},
+      {region:'Unassigned region',units:1,districts:[{district:'Unassigned district',units:[
+        {label:'Injected Unassigned',code:'',branch_id:'fp-unassigned',region:'',district:''}]}]}
+    ]);
+  };
+  document.querySelector('[data-nav-regions="fingerprint"]').dataset.navSig='';
+  renderUnitNavTree('fingerprint');`);
+assert.deepEqual(regionLabels(), ['Sool'],
+  'the render layer excludes foreign region parents from generated DOM');
+assert.doesNotMatch(mount.innerHTML, /Injected Erigavo|Injected Burao|Injected Unassigned|Sanaag|East Togdheer/,
+  'contaminated branches never reach the Fingerprint HTML paint');
+run('unitNavTree=window.__originalUnitNavTree;delete window.__originalUnitNavTree');
+
 // Changing to another Fingerprint branch must invalidate the cache even when
 // the officer remains in the same region.
 const firstOfficerSignature = mount.dataset.navSig;

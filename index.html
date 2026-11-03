@@ -3944,7 +3944,22 @@ function renderUnitNavTree(type){
     mount.dataset.navSig='';
     return;
   }
-  const tree=unitNavTree(type);
+  // Re-apply the Fingerprint regional boundary at the paint layer itself.
+  // Even if an upstream catalogue/tree cache contains nationwide rows, foreign
+  // parents are removed here before any region/district/unit markup is emitted.
+  const scopeSig=type==='fingerprint'?fingerprintRegionalNavScope():null;
+  const sourceTree=unitNavTree(type);
+  const tree=type==='fingerprint'&&scopeSig
+    ?sourceTree.map(region=>{
+      if(scopeSig.region&&region.region!==scopeSig.region) return null;
+      const districts=region.districts.map(district=>{
+        if(scopeSig.district&&district.district!==scopeSig.district) return null;
+        const units=district.units.filter(unit=>fingerprintUnitInRegionalNavScope(unit,scopeSig));
+        return units.length?{...district,units}:null;
+      }).filter(Boolean);
+      return districts.length?{...region,units:districts.reduce((n,d)=>n+d.units.length,0),districts}:null;
+    }).filter(Boolean)
+    :sourceTree;
   if(!tree.length){
     if(mount.innerHTML!==''){mount.innerHTML=''}
     mount.dataset.navSig='';
@@ -3955,7 +3970,6 @@ function renderUnitNavTree(type){
   // as its rows. This prevents a nationwide/admin render from being reused by
   // a regional officer (or one officer's branch from another's) when rendered
   // tree contents happen to otherwise compare equal.
-  const scopeSig=type==='fingerprint'?fingerprintRegionalNavScope():null;
   const sig=JSON.stringify(type==='fingerprint'?{unitType:type,tree:treeSig,scope:scopeSig}:treeSig);
   if(mount.dataset.navSig===sig){ markUnitNavCurrent(); return; }
   mount.dataset.navSig=sig;
