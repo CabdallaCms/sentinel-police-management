@@ -759,6 +759,11 @@ UI_REQUIRED_MARKERS = (
     ('Navigation scope filter', 'function unitInNavScope('),
     ('Unit Directory authority gate', 'function unitDirectoryAllowed('),
     ('Unit Directory visibility switch', 'function applyUnitDirectoryVisibility('),
+    # ---- this release: CID-only regional hard-prune of the crime tree ------
+    ('CID regional scope renderer', 'function crimeRegionalNavScope('),
+    ('CID-only regional fallback', "if(type==='crime') return crimeRegionalNavScope();"),
+    ('Identity-beats-geography nav filter', 'UNIT IDENTITY BEATS GEOGRAPHY'),
+    ('Scope-aware nav paint cache', 'scope:scope?'),
     # ---- this release: Branch Management edit / deactivate + legacy cleanup --
     ('Branch Actions column', 'data-branch-action="edit"'),
     ('Branch edit modal', 'id="branchEditModal"'),

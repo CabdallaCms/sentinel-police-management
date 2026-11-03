@@ -610,6 +610,139 @@ try {
     'the Unit Directory is reserved for the admin / command authority');
   console.log('ok: the directory is restricted to the admin / cross-branch command roles');
 
+  // ---- 15) CID regional hard-prune: strict regional isolation -------------
+  // The Crime Department tree alone gains a REGIONAL scope: a regional CID
+  // officer's posting names their territory even when it does not resolve to
+  // one single branch, and the tree is then hard-pruned — foreign parent
+  // regions, foreign / unassigned districts never reach the DOM, the paint
+  // cache is scope-aware, and branch identity beats geography.
+  // (b8 'Laascaanood CID Office' from BRANCHES is replaced by c1 so the crime
+  // catalogue carries exactly one branch per name.)
+  const CID_CATALOG = BRANCHES.filter((b) => b.id !== 'b8').concat([
+    { id: 'c1', name: 'Laascaanood CID Office', region: 'Sool', district: 'Laascaanood', unit_type: 'crime' },
+    { id: 'c2', name: 'Xudun CID Post', region: 'Sool', district: 'Xudun', unit_type: 'crime' },
+    { id: 'c3', name: 'Laascaanood CID Annex', region: 'Sool', district: 'Laascaanood', unit_type: 'crime' },
+    { id: 'c4', name: 'Erigavo CID Office', region: 'Sanaag', district: 'Ceerigaabo', unit_type: 'crime' },
+    { id: 'c5', name: 'Burao CID Office', region: 'East Togdheer', district: 'Burao', unit_type: 'crime' },
+    { id: 'b16', name: 'Taleex Branch', region: 'Sool', district: 'Taleex', unit_type: 'fingerprint' },
+  ]);
+  const crimeMount = () => tree('crime');
+  const crimeRegions = () => treeRegions('crime').map((r) => r.dataset.navRegion);
+  const crimeUnitLabels = () => treeUnits('crime').map((u) => u.dataset.unitLabel);
+  const crimeDistricts = () => [...crimeMount().querySelectorAll('.nav-district')]
+    .map((d) => d.dataset.navDistrict);
+  setCatalogue(CID_CATALOG);
+
+  // 15a) a REGIONAL posting ('Crime Department · Sool', ambiguous between the
+  // two Sool crime offices) still hard-prunes every foreign parent region.
+  signIn('CIDUnit', ALL_MODULES, false, {
+    branch: 'Crime Department · Sool',
+    branch_scope_status: { resolved: false, scoped: false, override: false,
+      posting: 'Crime Department · Sool', branch: null },
+  });
+  assert.deepEqual(crimeRegions(), ['Sool'],
+    'a regional CID officer (Sool) sees only their own parent region');
+  assert.equal(crimeMount().querySelector('.nav-region[data-nav-region="Sanaag"]'), null,
+    'Sanaag is hard-pruned out of the DOM before rendering');
+  assert.equal(crimeMount().querySelector('.nav-region[data-nav-region="East Togdheer"]'), null,
+    'East Togdheer is hard-pruned out of the DOM before rendering');
+  assert.equal(crimeMount().querySelector('[data-nav-region="Unassigned region"]'), null,
+    'the unassigned region group never renders for a scoped CID officer');
+  assert.deepEqual(crimeUnitLabels().slice().sort(),
+    ['Laascaanood CID Annex', 'Laascaanood CID Office', 'Xudun CID Post'],
+    'only the crime units of the officer region remain in the tree');
+  assert.deepEqual(crimeDistricts().slice().sort(), ['Laascaanood', 'Xudun'],
+    'the region keeps its own districts');
+  assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
+    'a regionally scoped CID officer has no Unit Directory launcher');
+  console.log('ok: a regional CID posting hard-prunes foreign regions from the crime tree DOM');
+
+  // 15b) a district-narrowed posting prunes foreign districts too.
+  signIn('CIDUnit', ALL_MODULES, false, {
+    branch: 'CID Unit · Laascaanood · Sool',
+    branch_scope_status: { resolved: false, scoped: false, override: false,
+      posting: 'CID Unit · Laascaanood · Sool', branch: null },
+  });
+  assert.deepEqual(crimeRegions(), ['Sool']);
+  assert.deepEqual(crimeDistricts(), ['Laascaanood'],
+    'a district-narrowed CID posting prunes the foreign districts of its region');
+  assert.deepEqual(crimeUnitLabels().slice().sort(),
+    ['Laascaanood CID Annex', 'Laascaanood CID Office'],
+    'only the crime units of the officer district remain');
+  console.log('ok: the regional scope prunes foreign / unassigned districts as well');
+
+  // 15c) branch identity beats geography: a resolved branch scope rejects a
+  // foreign branch id that sits inside the SAME region and district.
+  signIn('CIDUnit', ALL_MODULES, false, {
+    branch: 'Laascaanood CID Office · Laascaanood · Sool',
+    branch_scope_status: { resolved: true, scoped: true, override: false,
+      branch: { branch_id: 'c1', branch_name: 'Laascaanood CID Office',
+                region: 'Sool', district: 'Laascaanood', unit_type: 'crime' } },
+  });
+  assert.deepEqual(crimeRegions(), ['Sool']);
+  assert.deepEqual(crimeDistricts(), ['Laascaanood']);
+  assert.deepEqual(crimeUnitLabels(), ['Laascaanood CID Office'],
+    'the sibling CID Annex (same region + district, foreign branch id) is pruned');
+  run(`var __cidScope={branch_id:'c1',branch_name:'Laascaanood CID Office',region:'Sool',district:'Laascaanood'};`);
+  assert.equal(run(`unitInNavScope({label:'Laascaanood CID Annex',region:'Sool',district:'Laascaanood',branch_id:'c3'},__cidScope)`), false,
+    'unitInNavScope rejects a foreign branch id even inside the officer region/district');
+  assert.equal(run(`unitInNavScope({label:'Laascaanood CID Office',region:'Sool',district:'Laascaanood',branch_id:'c1'},__cidScope)`), true,
+    'the officer own branch passes');
+  assert.equal(run(`unitInNavScope({label:'Laascaanood CID Office',region:'Sool',district:'Laascaanood',branch_id:null},__cidScope)`), true,
+    'a legacy register row of the own branch (no branch id) still passes by name');
+  assert.equal(run(`unitInNavScope({label:'Erigavo CID Office',region:'Sanaag',district:'Ceerigaabo',branch_id:'c4'},__cidScope)`), false,
+    'a foreign region branch is rejected');
+  assert.equal(run(`unitInNavScope({label:'Mystery Post',region:'',district:'',branch_id:'c9'},__cidScope)`), false,
+    'an unassigned row never passes a scoped tree');
+  run(`var __regScope={branch_id:'',branch_name:'',region:'Sool',district:''};`);
+  assert.equal(run(`unitInNavScope({label:'Xudun CID Post',region:'Sool',district:'Xudun',branch_id:'c2'},__regScope)`), true,
+    'a regional scope accepts the units of its own region');
+  assert.equal(run(`unitInNavScope({label:'Erigavo CID Office',region:'Sanaag',district:'Ceerigaabo',branch_id:'c4'},__regScope)`), false,
+    'a regional scope rejects foreign regions');
+  assert.equal(run(`unitInNavScope({label:'Mystery Post',region:'Unassigned region',district:'Unassigned district',branch_id:'c9'},__regScope)`), false,
+    'a regional scope rejects unassigned region/district rows');
+  console.log('ok: unit identity beats geography in unitInNavScope');
+
+  // 15d) the paint cache is scope-aware: an admin national paint is never
+  // reused for a scoped officer (and vice versa).
+  signIn('SystemAdmin', ALL_MODULES, true);
+  const adminRegions = crimeRegions();
+  assert.ok(adminRegions.includes('Sanaag') && adminRegions.includes('East Togdheer'),
+    'the admin crime tree is national');
+  const adminSig = crimeMount().dataset.navSig;
+  assert.equal(JSON.parse(adminSig).scope, null, 'the admin paint carries a null scope signature');
+  signIn('CIDUnit', ALL_MODULES, false, {
+    branch: 'Crime Department · Sool',
+    branch_scope_status: { resolved: false, scoped: false, override: false,
+      posting: 'Crime Department · Sool', branch: null },
+  });
+  const cidSig = crimeMount().dataset.navSig;
+  assert.notEqual(cidSig, adminSig,
+    'the scoped officer repaints — the admin nationwide signature is never reused');
+  assert.deepEqual(JSON.parse(cidSig).scope, { b: '', n: '', r: 'Sool', d: '' },
+    'the scoped paint signature records the regional scope');
+  assert.deepEqual(crimeRegions(), ['Sool'],
+    'the repaint hard-pruned the foreign regions out of the DOM');
+  signIn('SystemAdmin', ALL_MODULES, true);
+  assert.ok(crimeRegions().includes('Sanaag'),
+    'the admin gets the national crime tree back (scope-aware repaint)');
+  assert.notEqual(crimeMount().dataset.navSig, cidSig);
+  console.log('ok: the renderUnitNavTree paint cache signature is scope-aware');
+
+  // 15e) isolation: the regional fallback is CID-ONLY — the very same
+  // ambiguous regional posting keeps the FINGERPRINT tree on its legacy
+  // national view.
+  signIn('FingerprintUnit', ALL_MODULES, false, {
+    branch: 'Fingerprint Unit · Sool',
+    branch_scope_status: { resolved: false, scoped: false, override: false,
+      posting: 'Fingerprint Unit · Sool', branch: null },
+  });
+  assert.ok(treeRegions('fingerprint').map((r) => r.dataset.navRegion).includes('Sanaag'),
+    'the fingerprint tree is untouched by the CID regional fallback (national view kept)');
+  assert.deepEqual(crimeRegions(), ['Sool'],
+    'while the crime tree of the same geographic posting is hard-pruned to Sool');
+  console.log('ok: the regional hard-prune is isolated to the Crime Department tree');
+
   console.log('PASS: hierarchical sidebar, dynamic unit tree, RBAC gates and locked branch selectors');
 } finally {
   // Let pending render promises (page painters fired by go()) settle before the
