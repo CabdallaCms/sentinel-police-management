@@ -669,7 +669,7 @@ FINGERPRINT_ROLE_KEYS = {'fingerprint', 'fingerprintunit', 'fingerprintofficer',
 
 # Build marker — surfaced by /api/health and printed on startup so an operator
 # can confirm the running process carries the review-lock rules.
-BUILD_TAG = 'sentinel-crime-department-scope'
+BUILD_TAG = 'sentinel-officer-scope-resolution'
 
 # ---- static asset versioning / cache busting --------------------------------
 # Every static reference the three pages ship (the brand logo and the links
@@ -682,11 +682,11 @@ BUILD_TAG = 'sentinel-crime-department-scope'
 # application.html and certificate.html together (the station action suite
 # asserts all four agree, so a half-finished bump fails the tests instead of
 # silently leaving a stale page in a browser).
-ASSET_VERSION = '4d8b7e21'
+ASSET_VERSION = 'd3f7a9c2'
 # The frontend build stamp (<meta name="sentinel-ui-build">). The commit suffix
 # is what makes a stale browser tab visible to the operator: a cached page
 # keeps reporting its old stamp in the sidebar footer / window.SENTINEL_UI_BUILD.
-UI_BUILD = 'sentinel-sidebar-header-1-' + ASSET_VERSION
+UI_BUILD = 'sentinel-scope-resolve-1-' + ASSET_VERSION
 
 # What the served index.html MUST contain for the build to be considered
 # current. These are the features this deployment exists to publish — if the
@@ -782,11 +782,14 @@ UI_REQUIRED_MARKERS = (
     ('National Command banner',
      "NATIONAL_COMMAND_HEADER='National Command — All Branches Operations'"),
     ('Strict sidebar branch scope', 'strict:true'),
+    ('Officer posting resolver', 'function getOfficerBranchScope('),
+    ('Posting label fallbacks', 'function officerPostingLabel('),
+    ('Role-first scoping', '// ROLE-FIRST'),
     # The page refuses approvals against a backend it does not recognise, so
     # its required tag must track BUILD_TAG exactly (a drift disables the
     # review lock in the browser — ui-check now catches it).
     ('Frontend review-lock build tag',
-     "REQUIRED_BUILD_TAG='sentinel-crime-department-scope'"),
+     "REQUIRED_BUILD_TAG='sentinel-officer-scope-resolution'"),
 )
 
 # /api/fingerprint/applications* is the spec-facing alias for the clearance
@@ -2566,13 +2569,33 @@ def canonical_posting_key(value):
     return ' '.join(words)
 
 
+def user_posting_label(user):
+    """The officer's posting label, wherever the account/caller stores it.
+
+    `users.branch` is the canonical column, but session dictionaries also reach
+    this module from officer profiles and cached payloads that use `posting`,
+    `station`, `assigned_branch` or `assigned_station`. They all describe the
+    same assignment, so scope resolution reads all of them.
+    """
+    user = user or {}
+    for key in ('branch', 'posting', 'assigned_branch', 'assigned_branch_name',
+                'station', 'assigned_station', 'branch_name'):
+        value = user.get(key)
+        if isinstance(value, dict):
+            value = value.get('name') or value.get('branch_name')
+        text = str(value or '').strip()
+        if text:
+            return text
+    return ''
+
+
 def posting_parts(user):
     """Split the stored posting into (name, district, region).
 
     The composed label is `Name · District · Region`, but legacy rows carry just
     `Name` or `Name · Region`, so the split is positional from the right.
     """
-    raw = str((user or {}).get('branch') or '')
+    raw = user_posting_label(user)
     parts = [re.sub(r'\s+', ' ', p).strip() for p in raw.split('\u00b7')]
     parts = [p for p in parts if p]
     name = parts[0] if parts else ''
@@ -2785,7 +2808,7 @@ def posting_scope_status(c, user, unit_type=None):
     header and explain an unresolvable legacy posting without a second call.
     """
     unit = normalize_branch_unit_type(unit_type) if unit_type else primary_unit_type(user or {})
-    posting = str((user or {}).get('branch') or '')
+    posting = user_posting_label(user)
     status = {'resolved': False, 'branch': None, 'posting': posting,
               'unit_type': unit or '', 'scoped': False,
               'override': bool(user) and (is_admin_user(user)
@@ -2795,6 +2818,11 @@ def posting_scope_status(c, user, unit_type=None):
         return status
     if status['override']:
         return status
+    # ROLE-FIRST: a standard officer of a known unit is SCOPED even when the
+    # posting label names no registered branch. `branch` stays None in that
+    # case (nothing to scope records to), but the UI must not treat them as a
+    # cross-branch account and paint the nationwide tree.
+    status['scoped'] = True
     branch = resolve_posting_branch(c, user, unit)
     if branch:
         status['resolved'] = True
@@ -3443,7 +3471,10 @@ def init_db():
             ('admin',       'Officer A. Hassan',     ROLE_ADMIN,           'Central HQ',      None,                 'ChangeMe123!', 'ADM-101'),
             ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,                'ChangeMe123!', 'FP-102'),
             ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!', 'AP-201'),
-            ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!', 'CID-301'),
+            # The CID demo account ships with a CONCRETE regional posting: a
+            # generic 'CID Unit' label names no branch, so the scoped rail and
+            # the Crime Department banner could not resolve a region for it.
+            ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'Lasanod Branch · Laascaanood · Sool', None, 'ChangeMe123!', 'CID-301'),
             ('hr.officer',  'Officer S. Warsame',    ROLE_HR,              'HR Directorate',   None,                'ChangeMe123!', 'HR-401'),
             # Checkpoint officers: ONE unified role. The checkpoint itself is
             # the posting data (branch label + location_scope), never a role.
@@ -3456,6 +3487,13 @@ def init_db():
             c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,'
                       'badge_number,password_hash) VALUES(%s,%s,%s,%s,%s,%s,%s)',
                       (u, dn, role, branch, scope, badge, password_hash(pw)))
+    # Repair a demo database seeded before the CID account carried a regional
+    # posting: a generic unit label cannot be scoped, which used to paint the
+    # nationwide tree for Officer M. Nuur. Only the untouched seed value is
+    # rewritten — an administrator's real assignment is never overwritten.
+    c.execute("UPDATE users SET branch=%s WHERE username='cid.officer' "
+              "AND branch IN ('CID Unit','CID','Crime Unit','Crime Department')",
+              ('Lasanod Branch · Laascaanood · Sool',))
     if c.execute('SELECT COUNT(*) FROM persons').fetchone()[0] == 0:
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation,passport_id)

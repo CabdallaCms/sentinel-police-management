@@ -363,6 +363,17 @@ A branch-scoped officer's sidebar rail follows the same resolver: only their own
 (one region, one district); every other unit category fails closed instead of falling back to the
 national tree. SystemAdmin / HQ keep the full nationwide tree.
 
+The resolver (`getOfficerBranchScope()` in the page, `user_posting_label()` / `posting_parts()` on
+the server) accepts the assignment in **any** session shape — `branch_id` /
+`assigned_branch_id` / `branch_scope_status`, the composed `branch` label, `posting`, `station`,
+`assigned_branch` or `assigned_station`, a checkpoint area (`location_scope` South/East/West), or a
+region/district-only posting. Scoping itself is **role-first**: every standard role (CIDUnit,
+FingerprintUnit, AirportControl, CheckpointOfficer, StationOfficer, …) is branch-scoped even when
+the backend returns a string posting instead of a numeric branch id, so an unresolved posting
+renders an empty rail — never the nationwide tree. The seeded CID demo account (Officer M. Nuur)
+now carries `Lasanod Branch · Laascaanood · Sool`, and a demo database seeded with the old generic
+`CID Unit` label is repaired once at startup.
+
 `paintModuleHeaders()` repaints on every navigation, save and session change from the same
 resolver the lock uses, and `GET /api/dashboard` adds `branch_scope` / `branch_context`.
 

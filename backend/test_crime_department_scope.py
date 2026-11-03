@@ -78,13 +78,18 @@ def static_contract():
           'the Crime Department header is computed from the officer region + branch')
     check("NATIONAL_COMMAND_HEADER='National Command — All Branches Operations'" in html,
           'the admin / HQ header names the national command, not a region')
-    check('if(ownType&&ownType!==unitType) return null;' in html,
+    check('if(ownType&&wanted&&ownType!==wanted) return null;' in html,
           'a branch posting only scopes its own unit category')
     check('if(scope.hidden) return false;' in html
           and 'function sessionHasBranchScope(' in html,
           'a scoped officer never falls back to the national tree')
     check('function branchIndexForBranch(' in html,
           'same-name branches are disambiguated by region + district')
+    check('function getOfficerBranchScope(' in html
+          and 'function officerPostingLabel(' in html,
+          'the officer branch scope resolves string postings and alternate fields')
+    check('// ROLE-FIRST' in html,
+          'every standard role is scoped, even before a branch resolves')
     check('function applyBranchLock(' in html,
           'the shared branch-lock helper disables the selector')
     check("refreshBranchSelect('caseBranch','crime')" in html

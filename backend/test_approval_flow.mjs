@@ -639,7 +639,7 @@ async function main() {
     if (created.length !== 1 || created[0].id !== 'staleBackendBanner')
       throw new Error('stale banner element was not created: ' + JSON.stringify(created.map((c) => c.id)));
     if (!/not the review-lock build/.test(created[0].innerHTML)
-        || !/sentinel-crime-department-scope/.test(created[0].innerHTML)
+        || !/sentinel-officer-scope-resolution/.test(created[0].innerHTML)
         || !/sentinel-legacy/.test(created[0].innerHTML))
       throw new Error('stale banner message wrong: ' + created[0].innerHTML);
     // Register must be locked while stale — even for the admin.
@@ -650,7 +650,7 @@ async function main() {
     if (!freshRow) throw new Error('stale backend must lock the register rows');
     // Recovery: the banner is removed once the right build answers again.
     sbA.sandbox.document.getElementById = (id) => (id === 'staleBackendBanner' ? created[0] : origGet(id));
-    probe(sbA.sandbox, "backendBuild={build:'sentinel-crime-department-scope',review_lock_active:true}; backendBuildChecked=true;");
+    probe(sbA.sandbox, "backendBuild={build:'sentinel-officer-scope-resolution',review_lock_active:true}; backendBuildChecked=true;");
     probe(sbA.sandbox, 'renderStaleBackendBanner()');
     if (!created[0]._removed) throw new Error('banner must be removed once the locked build answers');
     probe(sbA.sandbox, 'renderAll()');

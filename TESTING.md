@@ -96,7 +96,11 @@ Personnel · Administration). For every role you test:
    officer reads `Checkpoint Unit — <their checkpoint> Operations`; a Crime Department officer
    reads `[Region] — [Branch Name] Crime Department Operations`; an administrator reads
    `— all branches` and the dashboard `National Command — All Branches Operations`; the Commander
-   reads `— cross-region command` and the same national dashboard banner.
+   reads `— cross-region command` and the same national dashboard banner. A session object that
+   stores the assignment only as a string (`{role:'CIDUnit', posting:'Lasanod Branch'}`) must still
+   scope (`sessionHasBranchScope() === true`), render exactly one branch, and label the header
+   `Sool Region — Lasanod Branch Crime Department Operations`; a standard officer with no
+   resolvable posting gets empty trees, never the national view.
 9. **Unit Directory** — *Unit Directory* is now a **category-level utility at the top of
    Operational Units** (no longer inside the Checkpoint Units accordion). Filter by Unit type
    (*All unit types* by default), Region, District and free text; the empty state must explain a
@@ -106,7 +110,7 @@ Personnel · Administration). For every role you test:
 10. **Read-only Commander** — the Unit Directory stays openable (it is a read surface) and no write
     control appears in it.
 11. **Stale build** — the sidebar footer build label must match `/api/health` `ui_build`
-    (`sentinel-sidebar-header-1-4d8b7e21`); a mismatch means a cached tab.
+    (`sentinel-scope-resolve-1-d3f7a9c2`); a mismatch means a cached tab.
 
 12. **Branch-scoped sidebar tree** — sign in as a Fingerprint officer posted to
     `Lasanod Branch · Laascaanood · Sool`. Every dynamic tree (Fingerprint Units, Crime Units,
@@ -714,7 +718,7 @@ the generic endpoint.
 Branch: `arena/b4919f35-sentinel-police-management` (feature branch `arena/branch-management-crud`).
 Do not merge until UAT is approved. Restart the backend and hard-refresh the browser when testing
 this branch (`?v=` stamps and the UI build marker were republished as
-`sentinel-sidebar-header-1-4d8b7e21`). Use a test database and synthetic identities only.
+`sentinel-scope-resolve-1-d3f7a9c2`). Use a test database and synthetic identities only.
 
 ### What changed
 - **Actions column + Edit Branch modal.** The Branch Management table gained **Status** and
@@ -772,7 +776,7 @@ this branch (`?v=` stamps and the UI build marker were republished as
 6. **Posting preservation**: as `admin`, edit an account's **Branch** to a new branch name, rename
    that branch in Branch Management, then reload the account: its posting shows the new name and
    the officer's intake selector stays locked.
-7. Confirm the sidebar footer reports `sentinel-sidebar-header-1-4d8b7e21`, matching
+7. Confirm the sidebar footer reports `sentinel-scope-resolve-1-d3f7a9c2`, matching
    `/api/health` → `ui_build` / `asset_version`, and `python backend/server.py --ui-check` exits 0.
 
 ### Automated

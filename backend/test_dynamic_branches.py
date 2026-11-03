@@ -202,10 +202,23 @@ def run_api_suite(base):
     status, mismatch = request(base, 'POST', '/api/crime-cases', cid, {
         'category': 'Other', 'branch_id': wrong_unit['id']})
     check(status == 400, 'intake rejects a branch belonging to a different unit')
-    status, created_case = request(base, 'POST', '/api/crime-cases', cid, {
+    # The seeded CID account is now scoped to its own regional branch, so the
+    # dynamic-branch intake is exercised by an officer actually posted there.
+    dyn_username = 'cid.dyn.%d' % time.time_ns()
+    status, dyn_created = request(base, 'POST', '/api/admin/users', admin, {
+        'username': dyn_username, 'display_name': 'CID Dynamic Branch',
+        'role': 'CIDUnit', 'password': 'ChangeMe123!',
+        'branch': f'{branch_name} · {branch_district} · Sool'})
+    check(status in (200, 201), 'a CID officer is posted to the new dynamic branch')
+    status, dyn_login = request(base, 'POST', '/api/login', body={
+        'username': dyn_username, 'password': 'ChangeMe123!'})
+    check(status == 200 and dyn_login.get('token'),
+          'the dynamically posted CID officer signs in')
+    dyn_cid = dyn_login['token']
+    status, created_case = request(base, 'POST', '/api/crime-cases', dyn_cid, {
         'category': 'Other', 'location': branch_name, 'branch_id': branch['id']})
     check(status == 201, 'CID case intake accepts a matching dynamic branch')
-    status, cases = request(base, 'GET', '/api/crime-cases', cid)
+    status, cases = request(base, 'GET', '/api/crime-cases', dyn_cid)
     saved = next((row for row in cases.get('items', [])
                   if row.get('case_id') == created_case.get('case_id')), None)
     check(status == 200 and saved and saved['branch_id'] == branch['id']

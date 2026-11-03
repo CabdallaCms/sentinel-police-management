@@ -709,14 +709,74 @@ try {
     'the Commander keeps the directory even without a posting');
   console.log('ok: administrators and commanders retain the national tree and directory');
 
-  // A standard officer with no resolvable posting is not "scoped", but the
-  // directory is still restricted to the command authority.
+  // ---- 15) session payload variants: no numeric branch id required -------
+  // The real session payload stores the assignment under `branch`, but cached
+  // sessions and admin-created accounts may use `posting`, `station`,
+  // `assigned_branch` / `assigned_station` or an id. Every shape must scope.
+  setCatalogue([
+    { id: 'c1', name: 'Lasanod Branch', region: 'Sool', district: 'Laascaanood', unit_type: 'crime' },
+    { id: 'c2', name: 'Erigavo Branch', region: 'Sanaag', district: 'Ceerigaabo', unit_type: 'crime' },
+    { id: 's1', name: 'Lasanod Station', region: 'Sool', district: 'Laascaanood', unit_type: 'police_station' },
+    { id: 's2', name: 'Badhan Station', region: 'Sanaag', district: 'Badhan', unit_type: 'police_station' },
+  ]);
+  const cidModules = ['dashboard', 'people', 'cid', 'crimes'];
+  signIn('CIDUnit', cidModules, false, { posting: 'Lasanod Branch' });
+  assert.equal(run('sessionHasBranchScope()'), true,
+    'a string posting scopes the session without a numeric branch id');
+  assert.equal(run('(getOfficerBranchScope("crime")||{}).id'), 'c1',
+    'the posting label resolves to the registered branch');
+  assert.deepEqual(treeRegions('crime').map((r) => r.dataset.navRegion), ['Sool'],
+    'the rail shows only the officer region');
+  assert.equal(treeUnits('crime').length, 1,
+    'the rail shows exactly ONE branch for a string-posting session');
+  assert.equal(treeUnits('crime')[0].dataset.unitLabel, 'Lasanod Branch');
+  assert.equal(query('[data-unit-head="cid"]').textContent,
+    'Sool Region — Lasanod Branch Crime Department Operations',
+    'the header names the region and branch, never the generic unit title');
+  run(`go('dashboard')`);
+  assert.equal($('pageTitle').textContent,
+    'Sool Region — Lasanod Branch Crime Department Operations',
+    'the dashboard heading resolves the same posting');
+  console.log('ok: a string-posting session is scoped, labelled and limited to one branch');
+
+  // Every alternate assignment field the backend / a cached session may use.
+  for (const field of ['station', 'assigned_branch', 'assigned_station']) {
+    signIn('CIDUnit', cidModules, false, { [field]: 'Lasanod Branch' });
+    assert.equal(run('sessionHasBranchScope()'), true, `${field} scopes the session`);
+    assert.equal(run('(getOfficerBranchScope("crime")||{}).id'), 'c1',
+      `${field} resolves the same branch`);
+  }
+  signIn('CIDUnit', cidModules, false, { assigned_branch_id: 'c2' });
+  assert.equal(run('(getOfficerBranchScope("crime")||{}).id'), 'c2',
+    'an explicit assigned_branch_id resolves without a label');
+  assert.ok(treeUnits('crime').every((u) => u.dataset.unitLabel !== 'Lasanod Branch'),
+    'an id-scoped session never sees another regional branch');
+  console.log('ok: ids and alternate posting fields resolve identically');
+
+  // A station officer role + string posting (the "StationOfficer" case).
+  signIn('StationOfficer', ['dashboard', 'stations'], false, { posting: 'Lasanod Station' });
+  assert.equal(run('sessionHasBranchScope()'), true, 'a station officer is scoped by role');
+  assert.equal(run('(getOfficerBranchScope("police_station")||{}).id'), 's1',
+    'the station posting resolves to its station branch');
+  assert.deepEqual(treeRegions('police_station').map((r) => r.dataset.navRegion), ['Sool']);
+  assert.equal(treeUnits('police_station').length, 1);
+  assert.deepEqual(treeRegions('crime'), [],
+    'the station officer never borrows the CID tree');
+  console.log('ok: station officers are scoped from a string posting too');
+
+  // A standard officer with NO resolvable assignment is STILL scoped and the
+  // rail FAILS CLOSED — the nationwide tree is reserved for admin / HQ.
   signIn('FingerprintUnit', ALL_MODULES, false, { branch: 'Fingerprint Unit' });
-  assert.ok(treeRegions('fingerprint').length > 1,
-    'an unresolved unit-level posting keeps the legacy national view');
+  assert.equal(run('sessionHasBranchScope()'), true,
+    'a standard role is scoped even when the posting names no branch');
+  ['fingerprint', 'crime', 'airport', 'checkpoint', 'police_station'].forEach((type) => {
+    assert.deepEqual(treeRegions(type), [],
+      `the ${type} tree fails closed instead of painting the national view`);
+  });
   assert.equal(query('#nav [data-unit-directory]').style.display, 'none',
     'the Unit Directory is reserved for the admin / command authority');
-  console.log('ok: the directory is restricted to the admin / cross-branch command roles');
+  console.log('ok: unresolved postings fail closed; the directory stays command-only');
+  setCatalogue(BRANCHES);
 
   console.log('PASS: hierarchical sidebar, dynamic unit tree, RBAC gates and locked branch selectors');
 } finally {

@@ -276,6 +276,27 @@ def run_api_suite(base):
     check(admin_me.get('branch_scope_status', {}).get('override') is True,
           'the administrator payload carries the override flag')
 
+    # The seeded CID demo account (Officer M. Nuur) stores its assignment as a
+    # STRING posting, not a numeric branch id. It must still resolve to the Sool
+    # Crime Unit and label the dashboard banner with region + branch.
+    cid_seed, _ = login(base, 'cid.officer')
+    cid_me = scope_of(cid_seed, base)
+    crime_lasanod = ids[('crime', 'Lasanod Branch')]
+    check(cid_me.get('branch_scope')
+          and cid_me['branch_scope']['branch_id'] == crime_lasanod,
+          f"the seeded string-posting CID account resolves to its branch "
+          f"({cid_me.get('branch_scope')})")
+    check(cid_me.get('branch_scope_status', {}).get('resolved') is True,
+          'the seeded CID posting is reported resolved')
+    check(cid_me.get('branch_scope_status', {}).get('posting')
+          == 'Lasanod Branch · Laascaanood · Sool',
+          'the session keeps the composed posting label')
+    status, cid_dash = request(base, 'GET', '/api/dashboard', cid_seed)
+    check(status == 200 and cid_dash.get('branch_context')
+          == 'Sool Region — Lasanod Branch Crime Department Operations',
+          f"the CID dashboard banner names region + branch "
+          f"({cid_dash.get('branch_context')!r})")
+
     print('== 2. strict read scoping on the clearance register ==')
     status, own = create_clearance(base, fp_lasanod, '1001', lasanod_fp)
     check(status in (200, 201), f'the scoped officer files at their own branch ({status} '
