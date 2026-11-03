@@ -46,6 +46,11 @@ assert.deepEqual(regionLabels(), ['Sool', 'Sanaag', 'East Togdheer', 'Unassigned
 
 signIn({ role: 'FingerprintUnit', modules: ['dashboard', 'people', 'fingerprint'],
   branch: 'Lasanod Branch · Laascaanood · Sool' });
+assert.deepEqual(JSON.parse(JSON.stringify(run('navUnitScope("fingerprint")'))),
+  JSON.parse(JSON.stringify(run('fingerprintRegionalNavScope()'))),
+  'navUnitScope dispatches Fingerprint through its dedicated regional resolver');
+assert.notEqual(run('navUnitScope("crime")').branch_id, run('navUnitScope("fingerprint")').branch_id,
+  'the scope is resolved within the requested unit, not borrowed across modules');
 run('renderUnitNavTree("fingerprint")');
 assert.deepEqual(regionLabels(), ['Sool'], 'foreign parent regions are removed from the DOM');
 assert.deepEqual([...mount.querySelectorAll('.nav-district')].map(el => el.dataset.navDistrict),

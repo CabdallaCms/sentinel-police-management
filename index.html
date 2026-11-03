@@ -3806,6 +3806,15 @@ function unitNavCatalog(type){
 // group leaks through. System Administrators, HQ and multi-branch commanders
 // (branchSelectUnlockedForUser() → true) keep the full national tree.
 function navUnitScope(type){
+  // Fingerprint gets an explicit regional resolver, rather than accidentally
+  // inheriting a different unit's scope when the active module changes.
+  if(type==='fingerprint') return fingerprintRegionalNavScope();
+  return regionalNavScope(type);
+}
+// Shared branch/region posting resolver used by unit trees. It is deliberately
+// kept independent of navUnitScope so the Fingerprint specialization cannot
+// recurse back through the dispatcher.
+function regionalNavScope(type){
   if(!sessionUser) return null;
   if(branchSelectUnlockedForUser()) return null;      // admin / HQ / Commander
   const branch=resolvePostingBranch(type);
@@ -3831,7 +3840,7 @@ function navUnitScope(type){
 // officer's region/district. Legacy rows without an id require an exact
 // canonical branch name as well as matching geography.
 function fingerprintRegionalNavScope(){
-  return navUnitScope('fingerprint');
+  return regionalNavScope('fingerprint');
 }
 function fingerprintUnitInRegionalNavScope(unit,scope){
   if(!scope) return true;
@@ -3947,7 +3956,7 @@ function renderUnitNavTree(type){
   // a regional officer (or one officer's branch from another's) when rendered
   // tree contents happen to otherwise compare equal.
   const scopeSig=type==='fingerprint'?fingerprintRegionalNavScope():null;
-  const sig=JSON.stringify(type==='fingerprint'?{tree:treeSig,scope:scopeSig}:treeSig);
+  const sig=JSON.stringify(type==='fingerprint'?{unitType:type,tree:treeSig,scope:scopeSig}:treeSig);
   if(mount.dataset.navSig===sig){ markUnitNavCurrent(); return; }
   mount.dataset.navSig=sig;
   mount.innerHTML=tree.map(region=>{
