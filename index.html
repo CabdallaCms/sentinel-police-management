@@ -3819,11 +3819,52 @@ function navUnitScope(type){
       region:String(status.branch.region||'').trim(),
       district:String(status.branch.district||'').trim()};
   }
+  // CID-ONLY regional fallback (strict regional hard-pruning): a Crime
+  // Department posting names the officer's TERRITORY ('Crime Department ·
+  // Sool', 'CID Unit · Laascaanood · Sool') even when it does not resolve to
+  // one single branch. The crime tree is then scoped to that geography, so
+  // foreign parent regions / unassigned districts are hard-pruned from the
+  // DOM. Every other unit keeps its exact legacy rule below — an unresolved
+  // posting stays unscoped (never silently narrowed).
+  if(type==='crime') return crimeRegionalNavScope();
   return null;                                        // no reliable posting
 }
-// Is a catalogued unit inside the officer's scope? Rows that the register
-// recorded without a branch id are matched on their canonical name plus their
-// region/district, so a legacy row can still appear — but only their own.
+// ---- CID-only scope renderer: regional hard-prune ---------------------------
+// Derives the regional scope of a Crime Department officer from the composed
+// posting label 'Name · District · Region' (or the legacy 'Name · Region' /
+// 'Name · District' shapes), validated against the gazetteer. Returns null
+// when the posting carries no gazetteer geography at all, so a plain unit-level
+// posting ('CID Unit') keeps the documented national view. This function only
+// ever feeds the CRIME tree — the Fingerprint / Airport / Checkpoint / Station
+// trees never call it.
+function crimeRegionalNavScope(){
+  const parts=postingParts();
+  let region=String(parts.region||'').trim();
+  let district=String(parts.district||'').trim();
+  let loc=LOCATIONS.find(l=>l.region===region);
+  if(!loc){
+    // The trailing part is a district, not a region ('CID Unit · Laascaanood'):
+    // the owning region comes from the gazetteer.
+    const owner=LOCATIONS.find(l=>(l.districts||[])
+      .some(d=>d.toLowerCase()===region.toLowerCase()));
+    if(owner){ district=region; region=owner.region; loc=owner; }
+  }
+  if(!loc) return null;                               // no gazetteer geography
+  const scope={branch_id:'',branch_name:'',region:loc.region,district:''};
+  if(district){
+    const canonical=(loc.districts||[]).find(d=>d.toLowerCase()===district.toLowerCase());
+    if(canonical) scope.district=canonical;          // gazetteer spelling wins
+  }
+  return scope;
+}
+// Is a catalogued unit inside the officer's scope?
+// UNIT IDENTITY BEATS GEOGRAPHY: when the scope names a registered branch, a
+// foreign branch id is strictly rejected — even when the row sits inside the
+// officer's own region and district. A register row recorded without a branch
+// id is matched on the canonical name of the scoped branch only, so a legacy
+// row can still appear — but only the officer's own. A regional (geographic)
+// scope without a branch identity lets the region / district decide; rows with
+// no region, no district or the cross-area sentinels never pass.
 function unitInNavScope(unit,scope){
   if(!scope) return true;
   const region=String(unit.region||'').trim();
@@ -3831,12 +3872,20 @@ function unitInNavScope(unit,scope){
   if(!region||!district) return false;                 // unassigned / areas
   if(region===NAV_NO_REGION||region===NAV_CHECKPOINT_AREAS) return false;
   if(district===NAV_NO_DISTRICT) return false;
+  // UNIT IDENTITY BEATS GEOGRAPHY: when the scope names a registered branch,
+  // the branch ids decide — a foreign branch id is strictly rejected even when
+  // the row sits inside the officer's own region and district.
+  if(scope.branch_id&&unit.branch_id)
+    return String(unit.branch_id)===String(scope.branch_id);
   if(scope.region&&region!==scope.region) return false;
   if(scope.district&&district!==scope.district) return false;
-  if(scope.branch_id&&unit.branch_id){
-    return String(unit.branch_id)===String(scope.branch_id);
+  if(scope.branch_id){
+    // A legacy register row carries no branch id: it matches only the canonical
+    // name of the scoped branch — never another branch's row.
+    return !!scope.branch_name
+      && canonicalPostingKey(unit.label)===canonicalPostingKey(scope.branch_name);
   }
-  return canonicalPostingKey(unit.label)===canonicalPostingKey(scope.branch_name);
+  return true;                                         // regional scope: geography decided
 }
 // The nested Region → District → unit structure the sidebar paints.
 function unitNavTree(type){
@@ -3918,7 +3967,18 @@ function renderUnitNavTree(type){
     mount.dataset.navSig='';
     return;
   }
-  const sig=JSON.stringify(tree.map(r=>[r.region,r.districts.map(d=>[d.district,d.units.map(u=>[u.label,u.code])])]));
+  // The paint cache is SCOPE-AWARE: the signature folds in the navigation scope
+  // next to the tree content, so a nationwide (admin / unscoped) paint can
+  // never be reused for a scoped officer — and vice versa. Any scope change
+  // forces a full repaint below, which rebuilds the mount from the pruned tree
+  // and therefore hard-prunes every foreign parent region, foreign district
+  // and unassigned group out of the DOM before rendering.
+  const scope=navUnitScope(type);
+  const sig=JSON.stringify({
+    scope:scope?{b:String(scope.branch_id||''),n:scope.branch_name||'',
+                 r:String(scope.region||''),d:String(scope.district||'')}:null,
+    tree:tree.map(r=>[r.region,r.districts.map(d=>[d.district,d.units.map(u=>[u.label,u.code])])])
+  });
   if(mount.dataset.navSig===sig){ markUnitNavCurrent(); return; }
   mount.dataset.navSig=sig;
   mount.innerHTML=tree.map(region=>{
