@@ -28,6 +28,101 @@ Structured history of significant changes to this repository.
 
 ---
 
+## 2026-11-06 — CID Release 1.0 (pre-development) — Technical and functional assessment (Phase 2)
+
+**Assessment only. No application change. No feature implemented, no defect fixed, no dependency
+installed, no branch merged, no deployment performed.**
+
+### Change description
+
+Completed the owner-approved technical and functional assessment of CID Release 1.0 across the three
+approved units (Fingerprint, Crime, Checkpoint), at commit `a1c2478`. Added a new `assessment/`
+directory containing seven deliverables, and updated `PROJECT_STATUS.md` with the verified results.
+
+Deliverables added:
+
+- `assessment/CID_TECHNICAL_ASSESSMENT.md` — all three units reported against the ten required items
+  (existing functionality · actual implementation status · roles and permissions · workflows ·
+  database tables and relationships · API endpoints and frontend components · existing tests and
+  their results · missing functionality · security weaknesses · integration dependencies), with every
+  feature classified as *Implemented and verified* / *Implemented but not verified* / *Partially
+  implemented* / *Not implemented* / *Blocked*, and a re-verification of the earlier audit's eight
+  headline concerns.
+- `assessment/FINGERPRINT_UNIT_GAP_ANALYSIS.md` — 15 existing capabilities, 21 gaps (FG-01…FG-21).
+- `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` — **proposed, not approved** requirements across
+  the ten required areas, the `crime_cases` ↔ `crime_incidents` investigation with three costed
+  options, and an 18-item advanced-report menu with filters, metrics and proposed access permissions.
+- `assessment/CHECKPOINT_UNIT_GAP_ANALYSIS.md` — 17 existing capabilities (CP-01…CP-17), 17 gaps
+  (G-01…G-17).
+- `assessment/SECURITY_REMEDIATION_PRIORITY.md` — 24 findings (3 CRITICAL, 10 HIGH, 8 MEDIUM, 3 LOW),
+  each with severity, affected file and endpoint, evidence, potential impact, recommended remediation
+  and a required verification test; static findings separated from runtime-historical ones.
+- `assessment/DECISION_REGISTER_RECOMMENDATIONS.md` — 30 open decisions (D-01…D-17 carried forward
+  plus **D-18…D-29** newly raised), grouped into decisions blocking Release 1.0, decisions that can
+  wait, decisions needing legal or operational confirmation, and recommended technical options with
+  their risks.
+- `assessment/DEPENDENCIES_AND_ESTIMATES.md` — 47 work packages with effort bands in **engineering
+  days**, a dependency graph, three chokepoints, two critical chains, a proposed development order,
+  and the verdict on the proposed 10-day sprint.
+
+### Key findings recorded
+
+- **All eight** headline concerns of the PR #23 audit remain present at `a1c2478`; concern #3
+  (fail-open scope) is **wider** than reported — the canonical `checkpoint_officer` role has a blank
+  location scope that disables filtering on **reads and writes**.
+- **Six security findings new to this assessment** (N-1…N-6), the most serious being that
+  `GET /api/suspect-alerts` applies no scoping of any kind and `suspect_alerts` has no `branch_id`
+  column — the only Release 1.0 access-control gap that cannot be closed without a schema change.
+- **Fingerprint biometrics are not stored server-side at all**; captures live in browser
+  `localStorage`, matching is client-side string comparison, and the USB bridge service the UI calls
+  has no code in this repository. Raised as decision **D-18**.
+- **Crime Unit** has no case-assignment model, four competing status vocabularies, no state machine
+  and no dedicated test suite; `crime_cases` and `crime_incidents` have no foreign key and no shared
+  identifier.
+- The owner-reported Fingerprint figure of "approximately 80%" is **neither supportable nor refutable
+  from the repository** and is **not adopted**; the Checkpoint report of "already implemented" is
+  partially contradicted by the scope fail-open and the absent post-flag workflow.
+- **No progress percentage was produced by this assessment.**
+
+### Correction recorded (no history rewritten)
+
+While drafting the security list, an intermediate draft reassigned several of the PR #23 audit's
+finding identifiers. The audit's numbering — as carried in `PROJECT_STATUS.md` §6 — is authoritative
+and was restored before delivery. The conflict is documented in
+`assessment/SECURITY_REMEDIATION_PRIORITY.md` §0.2 rather than silently resolved. **PR #23 and its
+audit report were not modified.**
+
+### Affected modules
+
+Documentation only — new `assessment/` directory; updates to `PROJECT_STATUS.md` and this changelog.
+**No change to `backend/`, `index.html`, `application.html`, `certificate.html`, `scripts/`, any test
+file, or any configuration.**
+
+### Database migrations
+
+**None.** No schema change was made, proposed as executed, or applied.
+
+### Tests performed
+
+| Check | Result |
+|---|---|
+| `python3 backend/server.py --ui-check` | **PASS** — exit 0; build `sentinel-branch-crud-1-e7c41b90`; checkout `arena/6303ef2f-sentinel-police-management @ a1c2478` |
+| `python3 backend/test_print_fit.py` | **PASS** — `ALL PRINT TEMPLATE TESTS PASSED` |
+| The other **23** suites | **NOT RUN.** They require `psycopg2-binary`, `pgserver` and `jsdom@26`; none are installed and installing dependencies was out of scope. Recorded as *not run*, never as passing. |
+
+### Commit reference
+
+Recorded in the commit that adds this entry, on branch
+`arena/6303ef2f-sentinel-police-management`.
+
+### Next step
+
+**STOP — awaiting owner approval.** No implementation, remediation or scheduling work is authorised.
+Fifteen of the thirty open decisions block Release 1.0; **D-18**, **D-14** and **D-15** must be
+answered before the remaining work can be sized.
+
+---
+
 ## 2026-11-06 — CID Release 1.0 (pre-development) — Documentation baseline
 
 **This entry is the documentation setup for CID Release 1.0. It is not a feature release and contains

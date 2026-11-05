@@ -15,13 +15,14 @@ Rules governing this file: `PROJECT_CONTEXT.md` §14.3.
 | **Project name** | Sentinel Police Management System |
 | **Repository** | `CabdallaCms/sentinel-police-management` |
 | **Current release** | **CID Release 1.0** |
-| **Current project phase** | **Documentation baseline established — awaiting owner-approved repository assessment and delivery plan.** No implementation work is authorised. |
+| **Current project phase** | **Phase 2 complete — CID Release 1.0 technical and functional assessment delivered. Awaiting owner decisions and approval of a delivery plan.** No implementation work is authorised. |
 | **Current Git branch** | `arena/6303ef2f-sentinel-police-management` |
 | **Current commit hash** | `a1c2478262776e9f20b4c3ad806eaa86adc27792` (`a1c2478`) |
 | **Commit date / subject** | 2026-10-27 17:13:20 +0000 — *"Branch Management: full CRUD (edit/deactivate) + legacy placement cleanup"* |
-| **Last verified commit** | `a1c2478262776e9f20b4c3ad806eaa86adc27792` — verified 2026-11-06 by repository inspection; identical to `origin/main` at that time; working tree clean before documentation files were added |
+| **Last verified commit** | `a1c2478262776e9f20b4c3ad806eaa86adc27792` — verified 2026-11-06 by repository inspection; identical to `origin/main` at that time. Phase 2 assessed this same commit; **no application file was modified in either phase** |
 | **Build identity (verified)** | `sentinel-branch-crud-1-e7c41b90` (`python3 backend/server.py --ui-check` → exit 0) |
-| **Last update date** | **2026-11-06** (documentation baseline; session executed 2026-11-05 UTC) |
+| **Last update date** | **2026-11-06** (Phase 2 — CID Release 1.0 assessment; supersedes the Phase 1 documentation-baseline update of the same date) |
+| **Assessment deliverables** | `assessment/` — seven documents, indexed in §13 |
 
 ---
 
@@ -29,40 +30,70 @@ Rules governing this file: `PROJECT_CONTEXT.md` §14.3.
 
 > Scope definitions are in `PROJECT_CONTEXT.md` §3–§5 and `RELEASE_PLAN.md`. This section reports
 > **state**, not scope.
+>
+> **Updated 2026-11-06 by the Phase 2 assessment.** Every feature in the three units was classified as
+> *Implemented and verified* · *Implemented but not verified* · *Partially implemented* · *Not
+> implemented* · *Blocked*. Full evidence, with file and line citations, is in
+> `assessment/CID_TECHNICAL_ASSESSMENT.md`.
+>
+> **Binding caveat on the word "verified".** Only **one** feature area in the entire system is
+> *Implemented and verified*: the A4 print contract (`backend/test_print_fit.py`, executed
+> 2026-11-06 → PASS). **23 of 25 test suites still cannot be executed** (missing `psycopg2-binary`,
+> `pgserver`, `jsdom@26`; installing them was out of scope), so almost everything that works is
+> recorded as *Implemented but **not** verified*. That is a statement about the project's evidence,
+> not a criticism of the code.
+
+### 2.0 Classification roll-up (Phase 2, commit `a1c2478`)
+
+| Unit | Implemented and verified | Implemented but not verified | Partially implemented | Not implemented | Blocked |
+|---|---|---|---|---|---|
+| **Fingerprint** | 1 | 9 | 5 | 6 | 2 |
+| **Crime** | 0 | 7 | 4 | 10 | 3 |
+| **Checkpoint** | 0 | 8 | 3 | 5 | 1 |
+
+> No percentage is derived from this table. Counts are of assessed feature areas, which are not of
+> equal size, so they must not be converted into a completion figure.
 
 ### 2.1 Fingerprint Unit — Release 1.0 · Unit A
 
 | Field | Value |
 |---|---|
-| **Overall status** | **Not yet verified.** Substantial implementation exists and is evidenced below; completeness against Release 1.0 requirements has **not** been assessed. |
-| **Owner-reported progress** | "approximately 80%" — **Not yet verified.** This figure is recorded as an owner report only. It is **not** adopted as a project fact and must not be cited as measured progress. |
+| **Overall status** | **Assessed 2026-11-06.** The police-clearance workflow is substantially built. **Biometric capture and matching are not implemented server-side at all.** Classification: 1 verified · 9 unverified · 5 partial · 6 not implemented · 2 blocked. |
+| **Owner-reported progress** | "approximately 80%" — **assessed and found neither supportable nor refutable from the repository, and not adopted.** The figure's truth depends entirely on **decision D-18**: if Release 1.0 means the *clearance workflow*, the unit is substantially built; if it means *biometric identification*, a major component does not exist. Still recorded as an owner report only; must not be cited as measured progress. |
 | **Evidence that implementation exists (verified at `a1c2478`)** | `clearance_applications` + `clearance_signed_documents` tables (`backend/server.py:265`, `:281`); endpoints `/api/clearance-applications` (incl. `/approve`, `/signed-document`, `/documents`) and `/api/fingerprint/applications`; role `FingerprintUnit` with modules `{dashboard, people, fingerprint}`; 12-hour review gate armed by a boot-time self-test (`review_lock_armed()`, `backend/server.py:1057`, enforced `:10022`); printable `application.html` and `certificate.html` pinned by `backend/test_print_fit.py` (**executed 2026-11-06 → PASS**) |
-| **Not assessed** | Requirements coverage · completeness of the clearance workflow against owner requirements · biometric/fingerprint capture and matching maturity · report requirements · outstanding defect list |
-| **Known open concerns carried in** | Cross-branch approve / signed-scan writes; unauthenticated upload retrieval; submitter self-approval; `Citizenship` review-gate exemption (see §6) |
-| **Next step** | Repository assessment of actual implementation status and outstanding work — **requires owner approval to start** |
+| **Phase 2 findings (verified by code reading at `a1c2478`)** | **Biometrics are not stored server-side.** Captures live in browser `localStorage` under `sentinelBiometrics` (`index.html:2698-2725`); matching is client-side **string** comparison (`matchPersonByFingerprint`, `index.html:4526`); the USB scanner bridge it calls (`http://127.0.0.1:<port>/scan`, `ws://localhost:<port>/biometrics`, `index.html:4773-5183`) **has no code in this repository**; the server's `total_biometrics_logged` metric counts clearance applications, not biometrics. **No rejection path exists** — the API can only move an application to `Approved`. **No separation of duties** — the submitter may approve their own application. 21 gaps catalogued as FG-01…FG-21. |
+| **Not assessed** | Runtime behaviour of any of the above — 23 suites remain unrunnable |
+| **Security findings confirmed present** | C-1 (unauthenticated document retrieval) · H-2a (cross-branch approve **and** signed-scan — neither route performs a branch check) · M-3 (self-approval; `Citizenship` and admin bypass of the 12-hour gate) · M-7 (unvalidated applicant/guardian uploads) · identifier collision risk on `FP-`/`CL-` millisecond ids |
+| **New decisions raised** | **D-18** (is Release 1.0 clearance-only or real biometrics? — scanner, SDK, bridge ownership, template storage) · **D-19** (rejection path: who, reason codes, applicant notification) |
+| **Next step** | Owner answers **D-18** and **D-19**; see `assessment/FINGERPRINT_UNIT_GAP_ANALYSIS.md` for the close-out order. **No work authorised.** |
 
 ### 2.2 Crime Unit — Release 1.0 · Unit B
 
 | Field | Value |
 |---|---|
-| **Overall status** | **Not yet verified.** Core data model and case workspace exist; the Release 1.0 requirement set (full operations **including advanced reports**) is **undefined and unassessed**. |
+| **Overall status** | **Assessed 2026-11-06.** Case registration, the case workspace, participant listing and evidence upload exist. **Case assignment, investigation workflow, suspect lifecycle, chain of custody, closure control and advanced reporting do not exist.** Classification: 0 verified · 7 unverified · 4 partial · 10 not implemented · 3 blocked. **This is the largest body of outstanding work in Release 1.0.** |
 | **Evidence that implementation exists (verified at `a1c2478`)** | `crime_cases` (`backend/server.py:292`), `crime_incidents` (`:374`), `suspect_alerts` (`:299`), `case_evidence` (`:309`); endpoints `/api/crime-cases`, `/api/crimes`, `/api/suspect-alerts`, `/api/cid/analytics`; role `CIDUnit` with modules `{dashboard, people, cid, crimes}`; three-tab CID case workspace (Case Details · Participants & Suspect Linkage · Evidence & Media) documented in `README.md`; branch-scoped crime writes via `require_branch_write_scope(..., 'crime')` (`:9081`) and branch-scoped single-case reads via `require_record_branch_scope(..., 'crime', ...)` (`:8283`) |
-| **Advanced reports** | **Not defined.** `/api/cid/analytics` exists, but no requirement specification for "advanced reports" exists in the repository. Blocked on **decision D-14**. |
-| **Not assessed** | Requirements · workflows · user roles and permissions for Crime Unit operations · report definitions · case lifecycle/status model · evidence chain-of-custody requirements · integration points · outstanding defect list |
-| **Open modelling question** | Relationship between `crime_cases` (CID case) and `crime_incidents` (station incident file) is undocumented — **decision D-15** |
+| **Advanced reports** | **Assessed: a basic dashboard exists; advanced reporting does not.** `cid_crime_analytics(c)` (`:6132-6172`) produces 7 fixed metrics and 5 fixed charts with **no date filter, no filter of any kind, no export, no drill-down, no trend over time, and no branch scoping** (the builder takes no `user`, so branch-scoped officers receive **national** figures). 18 candidate report types derivable from existing columns are catalogued for owner selection in `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` §12. Still blocked on **decision D-14**. |
+| **Phase 2 findings (verified by code reading at `a1c2478`)** | **No case-assignment model of any kind** (`grep assigned_to\|investigator\|assignee\|officer_in_charge` → **0** hits). **Four competing status vocabularies**: `CASE_STATUSES` (7, `:1716`), `CRIME_STATUSES` (5, `:1708`), the case-workspace `<select>` (4, `index.html:1730`), and free text accepted by `PATCH /api/crime-cases/<id>` — no state machine, no transition rules. **`suspect_alerts` has no `branch_id` column**, and `GET /api/suspect-alerts` (`:8425`) applies **no filter at all** — every officer nationwide reads every suspect, victim and witness listing. **Three write paths bypass branch isolation**: case PATCH (`:9581`), evidence POST (`:9092`), suspect-alert POST (`:9172`). `case_id` is `'CID-2026-' + COUNT(*)+8` (`:9083`) — hard-coded year, global counter, race-prone. **No dedicated Crime Unit test suite exists.** |
+| **Open modelling question — now analysed** | **D-15.** `crime_cases` and `crime_incidents` have **no foreign key and no shared identifier**, and no code path reads one while writing the other. They are **not duplicates**: `crime_incidents` is a station intake record (victim block, severity, `incident_at`), `crime_cases` is a CID investigation file (participants, unbounded evidence). Three options with risks are set out in `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` §2.3. **Still the owner's decision.** |
+| **Requirements proposal** | `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` — covers all ten required areas (registration · assignment · investigation workflow · suspect management · evidence · status & progression · responsibilities & permissions · search & filtering · advanced reports & statistics · audit history). **PROPOSED, NOT APPROVED.** Every requirement is either traced to existing code or marked `[NEEDS OWNER APPROVAL]`; none was invented. |
+| **New decisions raised** | **D-21** (CID role structure; who assigns cases) · **D-22** (investigation workflow) · **D-23** (legal rules for suspect listing) · **D-24** (evidence chain of custody) · **D-25** (authoritative status vocabulary and transitions) · **D-26** (search filters, sort, pagination) |
 | **Scope guard** | **Must not** be reduced to basic case registration to meet a date (`PROJECT_CONTEXT.md` §3.2, §15.5) |
-| **Next step** | Document requirements, workflows, roles, permissions and reports **before** implementation — **requires owner approval** |
+| **Next step** | Owner reviews the requirements proposal and answers **D-14** and **D-15** first — the unit **cannot be sized** until both are answered. **No work authorised.** |
 
 ### 2.3 Checkpoint Unit — Release 1.0 · Unit C
 
 | Field | Value |
 |---|---|
-| **Overall status** | **Not yet verified.** The owner reports it as already implemented; that report is **unverified**. |
-| **Owner-reported status** | "already implemented" — **Not yet verified.** |
+| **Overall status** | **Assessed 2026-11-06.** Screening **capture** is built and is the most thorough intake form in the system. **Location isolation fails open for the canonical role, and there is no post-flag workflow.** Classification: 0 verified · 8 unverified · 3 partial · 5 not implemented · 1 blocked. |
+| **Owner-reported status** | "already implemented" — **assessed and partially contradicted.** The unit can *record* a stop very well; it cannot yet be trusted to *contain* that record, and it cannot record the operational response to a flag. |
 | **Evidence that implementation exists (verified at `a1c2478`)** | `checkpoint_events` table (`backend/server.py:316`); `/api/checkpoint-events`; unified `checkpoint_officer` role plus legacy `CheckpointSouth`/`East`/`West`, all with modules `{dashboard, checkpoints}` and one shared label (`ROLE_LABELS`, `:1816`); branch-scoped writes via `require_branch_write_scope(..., 'checkpoint')` (`:9219`); location scoping documented in `README.md` (`scope` + `visible_locations` on read, rejection of out-of-location writes); `backend/test_checkpoint_roles_audit.py` exists |
-| **Required verification (none performed)** | Workflows · permissions · security · branch and location isolation · integration with the Central Person Registry and suspect alerts · report/print requirements · defect list |
-| **Known open concern carried in** | Clearing a checkpoint officer's `location_scope` reportedly widens them to all checkpoints (historical finding M-2) — **not re-verified** |
-| **Next step** | Formal verification pass — **requires owner approval to start** |
+| **Phase 2 findings (verified by code reading at `a1c2478`)** | **Historical finding M-2 is confirmed, and it is worse than reported.** `ROLE_LOCATION_SCOPE[ROLE_CHECKPOINT_OFFICER] = ''` (`:1922`) and `checkpoint_scope()` returns `… or ''` (`:2990`); both call sites guard with `if scope:`, so a blank scope applies **no filter** — the canonical `checkpoint_officer` role **reads every location** (`:8460`) **and may write to any location** (`:9301`). The in-code comment states the opposite intent. Perversely, the **legacy** `CheckpointSouth/East/West` roles are **safer**. `location_scope` is also not mandatory at user creation. **Reads are never filtered by `branch_id`** — only by location string, via a six-way `OR`/`ILIKE` match across three columns that encode one fact. **`screening_result` and `action_taken` are server-computed** with two possible values each (`:9305-9306`): an officer cannot record a detention, refusal, referral, false match or handover, and "Supervisor contacted" is a string that notifies nobody. No `PATCH`, no single-event read route, no vehicle linkage on the event. |
+| **Security findings confirmed present** | **M-2** (scope fail-open, read **and** write — reclassified **HIGH** in the remediation list) · **H-2b** (posting fail-open) · **C-1** (traveller photographs and ID scans retrievable without authentication) · **M-7** (unvalidated traveller/guardian uploads) |
+| **Hard dependency** | The unit's entire value rests on `suspect_alerts`, which has **no branch column** and **no lifecycle** — an alert is written as `'Active alert'` and never changes, so a person cleared by CID keeps flagging at every checkpoint indefinitely. The post-flag workflow cannot be built before the Crime Unit's suspect lifecycle. |
+| **Critical coverage gap** | **No test suite asserts that a `checkpoint_officer` with a blank `location_scope` is denied.** The suites are silent precisely where the control fails. The navigation suites assert what the **UI hides**, which cannot prove what the **server refuses**. |
+| **New decisions raised** | **D-20** (fixed South/East/West catalogue vs named district checkpoints) · **D-27** (what outcomes an officer must be able to record, and the authorised post-flag procedure) · **D-28** (must a stop record the vehicle?) |
+| **Next step** | Owner answers **D-20** and **D-27**; see `assessment/CHECKPOINT_UNIT_GAP_ANALYSIS.md` §11 for the close-out order. **No work authorised.** |
 
 ### 2.4 Airport Unit — POSTPONED to CID Release 1.1
 
@@ -77,7 +108,24 @@ Rules governing this file: `PROJECT_CONTEXT.md` §14.3.
 
 ## 3. Completed and verified work
 
-**Completed and verified in this documentation session (2026-11-06):**
+**Completed in the Phase 2 assessment session (2026-11-06, commit `a1c2478`):**
+
+| Item | Evidence |
+|---|---|
+| CID Release 1.0 technical and functional assessment of all three units, with all ten required reporting items per unit | `assessment/CID_TECHNICAL_ASSESSMENT.md` |
+| Every assessed feature classified against the five-value scale; roll-up published | §2.0 above; deliverable 1 §1 |
+| Fingerprint Unit gap analysis — 15 existing capabilities, 21 gaps (FG-01…FG-21), test-gap table, close-out order | `assessment/FINGERPRINT_UNIT_GAP_ANALYSIS.md` |
+| Crime Unit requirements **proposal** covering all ten required areas, with the `crime_cases` ↔ `crime_incidents` analysis and an 18-item advanced-report menu | `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` |
+| Checkpoint Unit gap analysis — 17 existing capabilities, 17 gaps (G-01…G-17) | `assessment/CHECKPOINT_UNIT_GAP_ANALYSIS.md` |
+| Security re-verification: **23 findings** (3 CRITICAL, 10 HIGH, 7 MEDIUM, 3 LOW), each with severity, file+endpoint, evidence, impact, remediation and a required verification test; static findings separated from runtime-historical ones | `assessment/SECURITY_REMEDIATION_PRIORITY.md` |
+| All **eight** headline concerns of the PR #23 audit re-checked against current code — **all eight still present**; concern #3 (fail-open scope) found **wider** than reported | Deliverable 1 §6 |
+| Decision register reviewed and extended: D-01…D-17 carried forward, **D-18…D-29 raised**; grouped into blocking / can-wait / legal-operational / recommended-option-with-risks | `assessment/DECISION_REGISTER_RECOMMENDATIONS.md` |
+| Effort estimated in **engineering days** (never percentages) across 40+ work packages, with a dependency graph, three chokepoints, two critical chains, and a proposed development order | `assessment/DEPENDENCIES_AND_ESTIMATES.md` |
+| Verdict delivered on the proposed 10-day sprint | Deliverable 7/8 §7 |
+| Runnable checks re-executed at `a1c2478` | `--ui-check` → exit 0 (build `sentinel-branch-crud-1-e7c41b90`); `test_print_fit.py` → PASS |
+| **No application code, schema, configuration, dependency or deployment artefact changed** | `git status` — changes confined to `assessment/`, `PROJECT_STATUS.md`, `CHANGELOG.md` |
+
+**Completed and verified in the Phase 1 documentation session (2026-11-06):**
 
 | Item | Evidence |
 |---|---|
@@ -103,25 +151,35 @@ correctness* of that prior work has **not** been re-verified at this baseline.
 
 **None.** No implementation work is authorised or under way.
 
-The current activity is documentation only, and it is complete as of 2026-11-06.
+Phase 2 (assessment) is complete as of 2026-11-06. The project is **stopped, awaiting owner
+approval** and the fifteen decisions that block Release 1.0.
 
 ---
 
 ## 5. Work not started
 
-| Item | Blocked on |
-|---|---|
-| Repository assessment of the three CID units (actual implementation status and outstanding work) | Owner approval — this is the agreed next session |
-| Crime Unit requirements, workflows, roles, permissions and **advanced report definitions** | Owner approval + **decision D-14** |
-| Checkpoint Unit verification pass (workflows, permissions, security, integration) | Owner approval |
-| Fingerprint Unit completeness assessment against requirements | Owner approval |
-| Detailed implementation schedule and task order | Owner approval **after** the repository assessment |
-| Remediation of any security finding | Owner approval; explicitly excluded from this documentation task |
-| Versioned database migrations; removal of boot-time migration side effects | Owner approval |
-| Dependency manifests (`requirements.txt`, `package.json`), CI configuration | Owner approval |
-| Retirement/rewrite of the two obsolete SQLite-era test harnesses | Owner approval |
-| Environment separation (Development / Staging / Production) | Owner approval + decisions D-01, D-02, D-07, D-08, D-09 |
-| Backup, restore, rollback and monitoring procedures | Owner approval + decisions D-08, D-09 |
+> Updated by Phase 2. Items completed by the assessment have been removed; everything below is still
+> not started, and **none of it is authorised**.
+
+| Item | Work package | Blocked on |
+|---|---|---|
+| **Dependency manifests + a runnable test environment** (23 of 25 suites still cannot execute) | WP-01 | Owner approval — **this is the single highest-leverage item in the project** |
+| Remediation of the 3 CRITICAL findings (C-1, C-2, C-3) | WP-03, WP-04, WP-05 | Owner approval; D-03 for the password policy |
+| Fail-closed branch scope (shared control behind 10 call sites) | WP-06 | Owner approval |
+| Fail-closed checkpoint location scope | WP-07 | Owner approval; **D-20** |
+| Record-scope checks on the five unscoped write paths | WP-08 | Owner approval |
+| Security regression suite (~30 named tests, none of which exist) | WP-15 | WP-01 |
+| Session lifecycle, admin guards, authentication auditing | WP-10…WP-12 | Owner approval; **D-08**, D-09 |
+| Versioned database migrations; removal of boot-time migration side effects | WP-16 | Owner approval — **gates all schema work** |
+| `suspect_alerts.branch_id` (the only Release 1.0 access-control gap needing DDL) | WP-17 | WP-16; D-05 |
+| Fingerprint rejection path and status model | WP-22 | **D-19** |
+| Crime Unit: incident↔case link, assignment, status machine, investigation log, suspect lifecycle, chain of custody, search, advanced reports, test suite | WP-27…WP-35 | **D-14, D-15, D-21…D-26** |
+| Checkpoint: configurable catalogue, branch read filtering, outcome recording, post-flag workflow | WP-36…WP-41 | **D-20, D-27**; WP-31 |
+| Biometric capture programme (scanner, SDK, bridge service, template storage, matching) | WP-45 | **D-18** — **unestimable until answered** |
+| Detailed implementation schedule and task order | — | Owner approval **after** the blocking decisions are answered |
+| Retirement/rewrite of the two obsolete SQLite-era test harnesses | — | Owner approval |
+| Environment separation (Development / Staging / Production); TLS topology | WP-20 | Owner approval + decisions D-01, D-02, D-07, D-08, D-09 |
+| Backup, restore, rollback and monitoring procedures | WP-44 | Owner approval + decisions D-08, D-09 |
 
 ---
 
@@ -130,8 +188,21 @@ The current activity is documentation only, and it is complete as of 2026-11-06.
 > **Source:** the earlier deployment audit (`DEPLOYMENT_AUDIT.proposed.md`, PR #23, audited revision
 > `381545c` — the immediate **parent** of the current baseline commit `a1c2478`).
 > **These are historical audit findings, not automatically current defects.** The "Status at `a1c2478`"
-> column records only what this documentation session could establish **without running the
-> application**, since running the full suite required installing dependencies, which was out of scope.
+> column records only what could be established **without running the application**, since running the
+> full suite required installing dependencies, which was out of scope in both phases.
+>
+> **Updated 2026-11-06 by the Phase 2 security review.** Several items the audit could only report at
+> runtime are now **statically confirmed** (notably **H-4** and **H-5**), and **six findings new to
+> this assessment** were added (**N-1…N-6**). The full register — 24 findings, each with severity,
+> affected file and endpoint, evidence, impact, remediation and a **required verification test** — is
+> `assessment/SECURITY_REMEDIATION_PRIORITY.md`. **The audit's identifiers are preserved exactly**; a
+> numbering conflict found while drafting is reported in that document §0.2 rather than silently
+> resolved, and PR #23 itself remains untouched.
+>
+> **Current totals: 3 CRITICAL · 10 HIGH · 8 MEDIUM · 3 LOW = 24 findings. Zero verified as fixed.**
+> Two carried findings were re-rated by this assessment without changing their identifiers:
+> **M-2 up to HIGH** (it affects the canonical role and permits writes) and **H-6 down to MEDIUM**
+> (data-integrity impact rather than unauthorised access).
 
 ### 6.1 Security blockers — Critical
 
@@ -147,23 +218,34 @@ The current activity is documentation only, and it is complete as of 2026-11-06.
 |---|---|---|---|
 | **H-2a** | Branch-level access-control failure: cross-branch write/approve on `/approve`, `/signed-document`, `/persons/<id>/documents` | **Still present at code level.** None of these three routes calls `require_record_branch_scope()` | Static: routes at `:8152`, `:8997`, `:9032`; call sites only at `:4281`, `:8244`, `:8283` |
 | **H-2b** | Branch scope **fails open** when an officer's posting does not resolve to a registered branch | **Still present.** `branch_scope_view()` returns `None` (= unrestricted) when `resolve_posting_branch()` finds nothing | Static: `backend/server.py:2661-2694` |
-| **H-3** | Sessions never expire; password reset does not revoke existing sessions | **Partially confirmed statically.** `sessions(token, user_id, created_at)` has **no expiry column**; the only `Max-Age` in the codebase is `Max-Age=0` on logout. Reset-revocation behaviour **not re-verified** (needs a running system) | Static: `backend/server.py:446`, `:8688` |
-| **H-5** | Administrator self-demotion causing permanent lockout | **Not re-verified** — requires a running system | — |
-| **H-4** | No login throttling/lockout; authentication events not audited | **Not re-verified**; `audit_events` schema contains no authentication-specific structure | Static: `backend/server.py:450` |
-| **H-6** | Registration/identifier generation races producing spurious `409`s | **Not re-verified** — requires concurrent runtime testing | — |
-| **H-7** | Incomplete and mutable audit trail | **Partially confirmed statically.** `audit_events` has no immutability mechanism, no IP/user-agent/session id, no before/after values | Static: `backend/server.py:450` |
-| **H-8** | No HTTPS; no `Secure` cookie; token duplicated into `localStorage` | **Not re-verified at runtime.** No TLS or reverse-proxy configuration exists in the repository | Static: `git ls-files` |
+| **H-3** | Sessions never expire; password reset does not revoke existing sessions | **Fully confirmed statically (Phase 2).** `sessions(token, user_id, created_at)` has **no expiry column** (`:446-449`) and `require_auth()` performs no age check (`:4004-4030`). Reset-revocation: the **only** two `DELETE FROM sessions` statements are logout (`:3998`) and the **self-service** password change (`:8759`); the administrative reset path (`:9638-9730`) has **none** | Static: `:446`, `:3976`, `:4004`, `:8759`, `:9638` |
+| **H-5** | Administrator self-demotion causing permanent lockout | **Now confirmed statically (Phase 2).** No last-admin guard and no self-demotion guard exist anywhere; `PATCH /api/admin/users/<id>` also changes `password_hash`, `role` and `active` **without revoking sessions**, and deactivation leaves the session row intact so it **revives on reactivation** (`require_auth` filters on `active=1` at auth time only) | Static: `:9638-9730`, `:4004-4030` |
+| **H-4** | No login throttling/lockout; authentication events not audited | **Now confirmed statically (Phase 2).** `POST /api/login` (`:8664-8678`) calls `audit()` on **neither** the success nor the failure path, and no rate-limit, backoff or lockout implementation exists anywhere in the codebase; logout (`:8680`) is also unaudited | Static: `:8664`, `:8680`, `:4032` |
+| **H-6** | Registration/identifier generation races producing spurious `409`s | **Mechanism confirmed statically (Phase 2); the race itself not reproduced.** `case_id = 'CID-2026-' + COUNT(*)+8` (`:9083`) is a read-then-write global counter **with a hard-coded year**; `FP-`/`CL-`/`CP-` ids are the last 8 digits of epoch ms (`:9066`, `:9319`). **Re-rated MEDIUM** by this assessment | Static: `:9066`, `:9083`, `:9319` |
+| **H-7** | Incomplete and mutable audit trail | **Fully confirmed statically (Phase 2).** `audit_events` has no immutability mechanism, no IP/user-agent/session id and no before/after values — e.g. `audit(c, user, 'UPDATE', 'crime_case', cid)` (`:9591`) records *that* a case changed, not *what* changed. Authentication events are absent entirely (H-4) | Static: `:450-454`, `:4032-4035`, `:9591` |
+| **H-8** | No HTTPS; no `Secure` cookie; token duplicated into `localStorage` | **Confirmed statically (Phase 2).** Zero matches for `ssl.`/`wrap_socket`/HTTPS listener in `backend/server.py`; the session cookie is set `HttpOnly; SameSite=Lax` **without `Secure`** (`:8677`); no reverse-proxy, Dockerfile or systemd artefact exists in the repository. Whether production terminates TLS elsewhere is **[NOT VERIFIED]** | Static: `:8677`, `git ls-files` |
 
 ### 6.3 Security blockers — Medium (selected, carried forward)
 
 | ID | Finding | Status at `a1c2478` |
 |---|---|---|
-| **M-2** | Clearing a checkpoint officer's `location_scope` widens them to every checkpoint | **Not re-verified** |
-| **M-3** | The 12-hour review gate is bypassable by the submitter; no separation of duties | **Not re-verified**; blocked on decisions D-06 and D-12 |
-| **M-11** | Migrations are unversioned boot-time side effects | **Still present.** Base DDL + `ADDED_COLUMNS` run at startup; no `schema_migrations` table anywhere | 
+| **M-2** | Clearing a checkpoint officer's `location_scope` widens them to every checkpoint | **Confirmed statically (Phase 2) and found wider than reported — re-rated HIGH.** `ROLE_LOCATION_SCOPE[ROLE_CHECKPOINT_OFFICER] = ''` (`:1922`) and `checkpoint_scope()` returns `… or ''` (`:2990`); both call sites guard with `if scope:`, so a blank scope applies **no filter on reads (`:8460`) and none on writes (`:9301`)**. The in-code comment states the opposite intent. The **legacy** South/East/West roles are safer |
+| **M-3** | The 12-hour review gate is bypassable by the submitter; no separation of duties | **Confirmed statically (Phase 2).** `bypassed = is_admin_user(user) or citizenship_wait_exempt(app_row)` (`:9052`) skips **both** gates; the `purpose` that triggers the `Citizenship` exemption is supplied by the submitter. The approve route never compares approver to `created_by`. **There is also no reject path at all.** Remains blocked on decisions **D-06**, **D-12** and the new **D-19** |
+| **M-11** | Migrations are unversioned boot-time side effects | **Still present (re-confirmed Phase 2).** Base DDL + `ADDED_COLUMNS` run at startup; no `schema_migrations` table anywhere. **This gates every schema change in the plan** (WP-16) | 
 | **M-12** | No backup, restore, retention, monitoring or DB-aware health check | **Still present.** No such artefacts in the repository |
-| **M-10** | Stale SQLite-era artefacts and missing dependency manifests | **Still present.** `backend/database.py`, `backend/migrate_rbac.py`, `backend/audit_instant_approvals.py`, `backend/test_server.py`, `backend/test_conduct_frontend.mjs`; no `requirements.txt` / `package.json` |
+| **M-10** | Stale SQLite-era artefacts and missing dependency manifests | **Still present (re-confirmed Phase 2).** `backend/database.py`, `backend/migrate_rbac.py`, `backend/audit_instant_approvals.py`, `backend/test_server.py`, `backend/test_conduct_frontend.mjs`; no `requirements.txt` / `package.json`. **This is the direct cause of 23 of 25 suites being unrunnable**, and therefore of the project's inability to verify any fix |
 | **M-8** | Database access is superuser, unencrypted, unpooled | **Partially confirmed.** `.env.example` defaults to `SENTINEL_DB_USER=postgres`; no `sslmode`, no pooling configuration |
+
+### 6.3b Security findings **new in this assessment** (not in the PR #23 audit)
+
+| ID | Finding | Severity | Status at `a1c2478` |
+|---|---|---|---|
+| **N-1** | `GET /api/suspect-alerts` (`:8425`) applies **no scoping of any kind** — every CID and checkpoint officer nationwide reads every suspect, victim, witness and complainant listing. `suspect_alerts` **has no `branch_id` column**, so this cannot be fixed without DDL | **HIGH** | **Confirmed [STATIC]** |
+| **N-2** | Three Crime Unit write paths bypass branch isolation: `PATCH /api/crime-cases/<id>` (`:9581`, which also accepts **free-text** status), `POST .../evidence` (`:9092`), `POST /api/suspect-alerts` (`:9172`) | **HIGH** | **Confirmed [STATIC]** |
+| **N-3** | `cid_crime_analytics(c)` (`:6132`) and `cid_fingerprint_analytics(c)` (`:6071`) take **no `user`**, so branch-scoped officers receive **national** aggregates; only `cid_checkpoint_analytics(c, user)` (`:6176`) is scoped | MEDIUM | **Confirmed [STATIC]** |
+| **N-4** | `Access-Control-Allow-Origin: *` on every JSON response (`:7773`) | LOW | **Confirmed [STATIC]** |
+| **N-5** | No CSP, `X-Frame-Options`, `X-Content-Type-Options` or HSTS anywhere | LOW | **Confirmed [STATIC]** |
+| **N-6** | Documents stored as JSON blobs in TEXT columns (`applicant_docs`, `guardian_docs`, `traveler_docs`) — no per-document authorization, retention or integrity hash. This is the structural reason C-1 is hard to fix well | LOW *(structural)* | **Confirmed [STATIC]** |
 
 ### 6.4 Known non-security defects
 
@@ -171,7 +253,10 @@ The current activity is documentation only, and it is complete as of 2026-11-06.
 |---|---|
 | `backend/test_server.py` — SQLite-era harness targeting retired storage | **Obsolete; expected to fail.** Must not be run on a machine with database credentials in the environment |
 | `backend/test_conduct_frontend.mjs` — spawns the server with the retired `SENTINEL_DB` setting | **Obsolete; expected to fail** |
-| Full defect inventory for the three CID units | **Not yet verified** — produced by the pending repository assessment |
+| Full defect inventory for the three CID units | **Produced 2026-11-06.** Fingerprint FG-01…FG-21 · Checkpoint G-01…G-17 · Crime X-1…X-6 plus the gap tables in the requirements proposal. See the `assessment/` deliverables |
+| `case_id` hard-codes the year `2026` (`:9083`) — cases created in 2027 will be mislabelled | **Confirmed [STATIC]** (finding H-6) |
+| Four competing case-status vocabularies with no state machine | **Confirmed [STATIC]** — blocked on decision **D-25** |
+| Three columns encode one checkpoint location fact, requiring a six-way `OR`/`ILIKE` match beneath a security control | **Confirmed [STATIC]** (gap G-14) |
 
 ### 6.5 Deliberate counter-record (accuracy)
 
@@ -184,19 +269,43 @@ Remediation must target that path specifically and must not regress the correct 
 
 ## 7. Test results
 
-### 7.1 Executed in this session (2026-11-06, commit `a1c2478`)
+### 7.1 Executed (2026-11-06, commit `a1c2478`) — re-run in the Phase 2 session
 
 | Check | Result |
 |---|---|
 | `python3 backend/server.py --ui-check` | **PASS** — exit 0; build `sentinel-branch-crud-1-e7c41b90`; serving `/home/user/sentinel-police-management/index.html`; checkout `arena/6303ef2f-sentinel-police-management @ a1c2478`; `Actions column: yes` |
 | `python3 backend/test_print_fit.py` | **PASS** — `ALL PRINT TEMPLATE TESTS PASSED` (A4 print contract, blueprint fidelity, emblem placement, DOM bindings, single-page height budgets) |
 
-### 7.2 Not executed in this session
+### 7.2 Not executed
 
-**24 of the 25 test files were not run.** Reason: they require `psycopg2`, `pgserver` and/or `jsdom`,
-none of which are installed in this environment, and **installing dependencies was explicitly out of
-scope for this documentation task**. Per `PROJECT_CONTEXT.md` §14.2.4, these are reported as
-**not run**, not as passing.
+**23 of the 25 test files were not run** (24 counting `test_print_fit.py` as the sole executed suite;
+`--ui-check` is not a suite). Reason: they require `psycopg2-binary`, `pgserver` and/or `jsdom@26`,
+none of which are installed, and **installing dependencies was explicitly out of scope for both the
+documentation task and the assessment**. Per `PROJECT_CONTEXT.md` §14.2.4, these are reported as
+**not run**, never as passing.
+
+**Consequence, stated plainly:** the project currently **cannot demonstrate that any feature works**,
+beyond the A4 print contract and the served-UI identity check. This is the direct effect of finding
+**M-10** (no dependency manifests), and it is why `assessment/DEPENDENCIES_AND_ESTIMATES.md` makes
+**WP-01 — a runnable test environment — the first item of any sprint**.
+
+### 7.2b Test-coverage map produced by Phase 2 *(by keyword analysis across all 25 files)*
+
+| Unit | Coverage | Notes |
+|---|---|---|
+| **Fingerprint** | Well covered **on paper** | `test_review_gate.py` (37 refs), `test_branch_scope.py` (28), `test_clearance_rbac_ui.mjs` (26), `test_approval_flow.mjs` (20), `test_field_level_rbac.py` (8), `test_print_fit.py` |
+| **Checkpoint** | Well covered **on paper** | `test_sidebar_navigation.mjs` (86), `test_checkpoint_roles_audit.py` (76), `test_frontend_session.mjs` (57), `test_officer_profile_locations.py` (34), branch-management suites (29/26) |
+| **Crime** | **No dedicated suite exists** | Incidental references only (9/7/5/3/3); the 40 hits in `test_server.py` are in an **obsolete** SQLite-era harness |
+
+**Proven coverage gaps (verified by inspection, not inferred):**
+
+| Gap | Evidence |
+|---|---|
+| Nothing tests branch scoping on `/approve` or `/signed-document` | `grep -c "approve\|signed-document" backend/test_branch_scope.py` → **0** |
+| No suite fetches `/uploads/<file>` anonymously | searched all 25 files → **0** |
+| No suite asserts a `checkpoint_officer` with a **blank** `location_scope` is denied | searched all 25 files → **0** — the suites are silent exactly where the control fails |
+| No suspect-alert isolation test, no self-approval test, no upload-validation test, no concurrency test | searched all 25 files → **0** |
+| The navigation suites assert what the **UI hides**, which cannot prove what the **server refuses** | suite design |
 
 ### 7.3 Test inventory at `a1c2478` (verified by file listing)
 
@@ -227,9 +336,9 @@ SQLite-era harnesses"** remains accurate.
 |---|---|
 | **Continued development** | **Proceed** — with synthetic data only, and no implementation work until the owner approves the assessment and schedule |
 | **Dedicated staging (synthetic data)** | **Not ready.** No environment separation, no dependency manifests, no deployment configuration, no TLS configuration exist in the repository |
-| **Controlled pilot with real police data** | **NOT READY.** Blocked by the unresolved Critical findings C-1, C-2, C-3 and High findings H-2a/H-2b (all confirmed present at code level) |
-| **Production** | **NOT READY.** Additionally blocked by unversioned migrations, absent backup/restore/rollback procedures, and absent monitoring |
-| **Zero-downtime upgrades** | **Must not be promised.** Schema migrations are unversioned boot-time side effects (`PROJECT_CONTEXT.md` §2.6, §11.1). The first production deployment may require a planned maintenance window |
+| **Controlled pilot with real police data** | **NOT READY.** Blocked by 3 CRITICAL (C-1, C-2, C-3) and 10 HIGH findings — including **M-2** (checkpoint scope fail-open on the canonical role, read **and** write) and **N-1** (nationwide unscoped suspect-alert read), both confirmed at code level |
+| **Production** | **NOT READY.** Additionally blocked by unversioned migrations (**M-11**), absent backup/restore/rollback procedures and monitoring (**M-12**), absent transport security in the repository (**H-8**), and the inability to run 23 of 25 test suites (**M-10**) |
+| **Zero-downtime upgrades** | **Must not be promised.** Re-confirmed by Phase 2: single-process `ThreadingHTTPServer`, DDL executed at application startup, no migration versioning, no rollback path, no deployment artefact in the repository. **No downtime claim can be made until WP-16 and WP-20 are complete and rehearsed (WP-44).** The first production deployment may require a planned maintenance window |
 
 **No deployment of any kind has been performed, and no environment was modified, in this session.**
 
@@ -237,32 +346,67 @@ SQLite-era harnesses"** remains accurate.
 
 ## 9. Current task
 
-**Task:** Establish the permanent project documentation baseline for CID Release 1.0 — create
-`PROJECT_CONTEXT.md`, `PROJECT_STATUS.md`, `RELEASE_PLAN.md` and `CHANGELOG.md`; record the verified
-repository state; and record the status of the earlier security audit.
+**Task (Phase 2):** Technical and functional assessment of CID Release 1.0 — the Fingerprint, Crime
+and Checkpoint units: existing functionality, actual implementation status, roles and permissions,
+workflows, database tables and relationships, API endpoints and frontend components, existing tests
+and their results, missing functionality, security weaknesses and integration dependencies; a Crime
+Unit requirements **proposal**; a security re-verification; decision-register recommendations;
+dependencies, estimates and a proposed development order; and a verdict on the proposed 10-day sprint.
 
-**Status:** **Complete** as of 2026-11-06.
+**Status:** **Complete** as of 2026-11-06. Seven deliverables in `assessment/` (§13).
 
 **Constraints honoured:** no application code, database schema, configuration, dependency or
-deployment artefact was changed; no feature was implemented; no defect was fixed; no branch was merged;
-no existing documentation was deleted or overwritten.
+deployment artefact was changed; no feature was implemented; no defect was fixed; no branch was
+merged; no existing documentation was deleted; **PR #23 and its audit history were not modified**; no
+progress percentage was invented; items that could not be verified are labelled **not run** or
+**[NOT VERIFIED]**; and no legal or operational policy was decided on the owner's behalf.
+
+**Phase 1 (documentation baseline — `PROJECT_CONTEXT.md`, `RELEASE_PLAN.md`, `CHANGELOG.md` and this
+file) remains complete** as of the same date.
 
 ---
 
 ## 10. Next approved task
 
-**Next task:** A **repository assessment** of CID Release 1.0 — establishing the actual implementation
-status and the outstanding work for the Fingerprint, Crime and Checkpoint units — followed by a
-delivery-planning session.
+**Next task:** **None is approved.** The project is **stopped, awaiting owner review of the Phase 2
+assessment**, owner answers to the blocking decisions, and explicit approval of a delivery plan. The
+agent must not begin implementation, remediation or scheduling work until the owner approves.
 
-**Approval state:** **Awaiting project owner approval.** The agent must not begin it, or any
-implementation work, until the owner approves.
+**Decision load:** **30 decisions are open** — D-01…D-17 carried forward plus **D-18…D-29** raised by
+this assessment. **Fifteen block Release 1.0.** Full grouping (blocking / can wait / legal-operational
+/ recommended option with risks) is in `assessment/DECISION_REGISTER_RECOMMENDATIONS.md`.
 
-**Owner inputs needed before or during that session:** the decisions registered in
-`PROJECT_CONTEXT.md` Appendix A, most urgently **D-14** (definition of Crime Unit advanced reports),
-**D-15** (`crime_cases` vs `crime_incidents`), **D-12/D-06** (separation of duties and the
-`Citizenship` exemption), **D-13/D-16** (visibility of out-of-scope modules, including Airport), and
-**D-17** (status of the PR #23 audit).
+**Answer these three first — nothing can be sized until they are settled:**
+
+| ID | Question | What it unblocks |
+|---|---|---|
+| **D-18** | Does Fingerprint Release 1.0 mean the **clearance workflow**, or **real biometric capture**? | Whether the owner's "~80%" is broadly right or badly wrong; whether a scanner SDK, bridge service and template store must be built (**unestimable** until answered) |
+| **D-14** | Which **advanced reports** are in scope — of the 18 candidates derived from existing columns? | The Crime Unit's size; whether new schema is needed for time-to-closure and per-investigator metrics |
+| **D-15** | Are `crime_cases` and `crime_incidents` **one workflow or two**? | The Crime Unit data model, both UIs, the status vocabulary and every report |
+
+**Then:** **D-03**, **D-08 (session half)**, **D-12**, **D-06** to let the security fixes be
+*finished*; then **D-25**, **D-21**, **D-26**, **D-19**, **D-20**, **D-27**, **D-22**, **D-13/D-16**
+to let the functional work be specified. Start the legal track (**D-04**, **D-05**, **D-23**,
+**D-24**, **D-01**, **D-09**) **in parallel now**, because of its lead time.
+
+### 10.1 Verdict on the proposed 10-day sprint
+
+> **A 10-day sprint cannot deliver Release 1.0.** The assessed remaining work is **≈ 144–292
+> engineering days** (excluding any biometric programme, offline operation and IdP/MFA). Three facts
+> make the 10-day framing impossible *as a release*, independently of effort: fifteen blocking
+> decisions are unanswered; **nothing can currently be verified** (23 of 25 suites unrunnable); and
+> 3 CRITICAL plus 10 HIGH security findings are open.
+>
+> **What 10 days can deliver** — with three developers, a strong and genuinely valuable sprint:
+> **WP-01** (runnable test environment) → **WP-03/WP-04/WP-09** (default credentials, password
+> hashing, upload validation) → **WP-06** (fail-closed branch scope) → **WP-08** (record scope on the
+> unscoped write paths), with **WP-05** (authenticated document retrieval) as the stretch item and
+> **WP-15** (security regression suite) begun. **This is Security Wave 1, and it must be named that
+> way** — not "Release 1.0".
+>
+> This is **not** a counter-proposal of a delivery date. The owner approves the schedule, after the
+> blocking decisions are answered. Reasoning and the full work-package catalogue:
+> `assessment/DEPENDENCIES_AND_ESTIMATES.md` §7.
 
 ---
 
@@ -277,9 +421,30 @@ dates. The implementation order and schedule are established **after** the repos
 **only** with owner approval. All planned CID Release 1.0 features must be completed and verified even
 if the date moves. Security, testing and data integrity are never sacrificed for a date.
 
+**Phase 2 addendum (2026-11-06).** The assessment has now answered the question the proposal implies.
+**Ten days is not a Release 1.0 window** — see §10.1 and `assessment/DEPENDENCIES_AND_ESTIMATES.md`
+§7. It *is* a realistic window for **Security Wave 1 plus test enablement**, which is a worthwhile
+and high-leverage sprint. The 2026-11-15 checkpoint therefore remains useful as a **review point**,
+and is still **not** a production launch deadline. **No date has been adopted or committed.**
+
 ---
 
-## 12. Status-document conventions
+## 12. Phase 2 assessment deliverables
+
+| # | Deliverable | File |
+|---|---|---|
+| 1 | CID Release 1.0 technical and functional assessment — all three units, ten required items each, with the five-value classification and the re-verification of the audit's eight headline concerns | `assessment/CID_TECHNICAL_ASSESSMENT.md` |
+| 2 | Fingerprint Unit gap analysis — 15 existing capabilities (F-01…F-15), 21 gaps (FG-01…FG-21), test-gap table, close-out order | `assessment/FINGERPRINT_UNIT_GAP_ANALYSIS.md` |
+| 3 | Crime Unit requirements **proposal** — all ten required areas, the `crime_cases` ↔ `crime_incidents` analysis with three costed options, and an 18-item advanced-report menu. **PROPOSED, NOT APPROVED** | `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` |
+| 4 | Checkpoint Unit gap analysis — 17 existing capabilities (CP-01…CP-17), 17 gaps (G-01…G-17) | `assessment/CHECKPOINT_UNIT_GAP_ANALYSIS.md` |
+| 5 | Security remediation priority list — 24 findings with severity, file+endpoint, evidence, impact, remediation and a required verification test; static separated from runtime-historical | `assessment/SECURITY_REMEDIATION_PRIORITY.md` |
+| 6 | Decision register recommendations — 30 open decisions grouped into blocking / can wait / legal-operational / recommended option with risks | `assessment/DECISION_REGISTER_RECOMMENDATIONS.md` |
+| 7 | Dependencies and realistic implementation estimates — effort bands in **engineering days**, dependency graph, three chokepoints, two critical chains | `assessment/DEPENDENCIES_AND_ESTIMATES.md` §1–§4, §6 |
+| 8 | Proposed development order, and the 10-day sprint verdict | `assessment/DEPENDENCIES_AND_ESTIMATES.md` §5 and §7 |
+
+---
+
+## 13. Status-document conventions
 
 - **"Not yet verified"** — the item has not been assessed at this baseline. It is not a progress claim.
 - **"Still present at code level"** — confirmed by reading the code at `a1c2478`; a runtime
@@ -287,4 +452,15 @@ if the date moves. Security, testing and data integrity are never sacrificed for
 - **"Not re-verified"** — a historical finding that this session could not check without running the
   application.
 - **Percentages** are recorded only when measured, with the measurement method stated. Owner-reported
-  or prior-session figures are quoted and labelled as such.
+  or prior-session figures are quoted and labelled as such. **The Phase 2 assessment produced no
+  percentage of any kind**; effort is expressed only in engineering-day ranges.
+- **Evidence classes used by the Phase 2 deliverables:** **[STATIC]** (confirmed by reading the code
+  at `a1c2478` on 2026-11-06) · **[RUNTIME-2026-11-06]** (actually executed this session — only
+  `--ui-check` and `test_print_fit.py`) · **[RUNTIME-HISTORICAL]** (reported by the PR #23 audit at
+  `381545c`; prior evidence, **not** re-reproduced) · **[NOT VERIFIED]**.
+- **Five-value feature classification:** *Implemented and verified* · *Implemented but not verified* ·
+  *Partially implemented* · *Not implemented* · *Blocked*. "Verified" requires an executed check, and
+  only **one** feature area currently qualifies.
+- **Security identifiers:** `C-n`/`H-n`/`M-n` are inherited from the PR #23 audit and are **never
+  reassigned**; `N-n` marks findings new to this assessment. Where this assessment re-rates a carried
+  finding's severity, the identifier is kept and the change is stated.
