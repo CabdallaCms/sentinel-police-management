@@ -15,14 +15,16 @@ Rules governing this file: `PROJECT_CONTEXT.md` §14.3.
 | **Project name** | Sentinel Police Management System |
 | **Repository** | `CabdallaCms/sentinel-police-management` |
 | **Current release** | **CID Release 1.0** |
-| **Current project phase** | **Phase 2 complete — CID Release 1.0 technical and functional assessment delivered. Awaiting owner decisions and approval of a delivery plan.** No implementation work is authorised. |
+| **Current project phase** | **Phase 3 complete — CID Release 1.0 requirements and architecture package delivered. Awaiting owner review, the remaining blocking decisions, and explicit approval before any application change.** No implementation work is authorised. |
 | **Current Git branch** | `arena/6303ef2f-sentinel-police-management` |
 | **Current commit hash** | `a1c2478262776e9f20b4c3ad806eaa86adc27792` (`a1c2478`) |
 | **Commit date / subject** | 2026-10-27 17:13:20 +0000 — *"Branch Management: full CRUD (edit/deactivate) + legacy placement cleanup"* |
-| **Last verified commit** | `a1c2478262776e9f20b4c3ad806eaa86adc27792` — verified 2026-11-06 by repository inspection; identical to `origin/main` at that time. Phase 2 assessed this same commit; **no application file was modified in either phase** |
+| **Last verified commit** | `a1c2478262776e9f20b4c3ad806eaa86adc27792` — verified 2026-11-06 by repository inspection; identical to `origin/main` at that time. Phases 2 and 3 assessed this same commit; **no application file was modified in any phase** |
 | **Build identity (verified)** | `sentinel-branch-crud-1-e7c41b90` (`python3 backend/server.py --ui-check` → exit 0) |
-| **Last update date** | **2026-11-06** (Phase 2 — CID Release 1.0 assessment; supersedes the Phase 1 documentation-baseline update of the same date) |
-| **Assessment deliverables** | `assessment/` — seven documents, indexed in §13 |
+| **Last update date** | **2026-11-06** (Phase 3 — requirements and architecture package; supersedes the Phase 2 assessment update and the Phase 1 baseline of the same date) |
+| **Assessment deliverables** | `assessment/` — seven Phase 2 documents, indexed in §12 |
+| **Requirements and architecture deliverables** | `requirements/` (5), `architecture/` (2), `planning/` (1) and root `DECISION_REGISTER.md` — ten Phase 3 documents, indexed in §14 |
+| **Release 1.0 scope (owner-confirmed 2026-11-06)** | Fingerprint Unit **including genuine biometric capture and matching** (**D-18 = BOTH**) · Crime Unit full operations including advanced reports (**D-14** catalogue approved as a starting point) · Checkpoint Unit existing functionality plus gaps · shared CID capabilities. **Airport Unit excluded → Release 1.1** (**D-16**) |
 
 ---
 
@@ -42,6 +44,14 @@ Rules governing this file: `PROJECT_CONTEXT.md` §14.3.
 > `pgserver`, `jsdom@26`; installing them was out of scope), so almost everything that works is
 > recorded as *Implemented but **not** verified*. That is a statement about the project's evidence,
 > not a criticism of the code.
+>
+> **Phase 3 addendum (2026-11-06).** Owner decision **D-18 = BOTH** means the Fingerprint rows below
+> are measured against a **smaller** scope than Release 1.0 now requires. Genuine biometric capture,
+> template storage, 1:1 verification and 1:N identification are **Not implemented** — the system
+> stores no biometric data server-side and its "matching" is string comparison
+> (`index.html:4526`), with a fallback that returns an arbitrary person by rotating a cursor
+> (`index.html:4573`). The owner-reported "~80% complete" figure for this unit is therefore **not
+> applicable** to the approved scope. See `requirements/FINGERPRINT_UNIT_REQUIREMENTS.md` §0.
 
 ### 2.0 Classification roll-up (Phase 2, commit `a1c2478`)
 
@@ -59,7 +69,7 @@ Rules governing this file: `PROJECT_CONTEXT.md` §14.3.
 | Field | Value |
 |---|---|
 | **Overall status** | **Assessed 2026-11-06.** The police-clearance workflow is substantially built. **Biometric capture and matching are not implemented server-side at all.** Classification: 1 verified · 9 unverified · 5 partial · 6 not implemented · 2 blocked. |
-| **Owner-reported progress** | "approximately 80%" — **assessed and found neither supportable nor refutable from the repository, and not adopted.** The figure's truth depends entirely on **decision D-18**: if Release 1.0 means the *clearance workflow*, the unit is substantially built; if it means *biometric identification*, a major component does not exist. Still recorded as an owner report only; must not be cited as measured progress. |
+| **Owner-reported progress** | "approximately 80%" — **assessed and found neither supportable nor refutable from the repository, and not adopted.** **D-18 is now closed as BOTH** (clearance *and* genuine biometric capture and matching), so the figure is **definitively not applicable** to Release 1.0 scope: biometric storage, template generation, 1:1 verification and 1:N identification do not exist. Retained here as an owner report only; it must not be cited as measured progress. |
 | **Evidence that implementation exists (verified at `a1c2478`)** | `clearance_applications` + `clearance_signed_documents` tables (`backend/server.py:265`, `:281`); endpoints `/api/clearance-applications` (incl. `/approve`, `/signed-document`, `/documents`) and `/api/fingerprint/applications`; role `FingerprintUnit` with modules `{dashboard, people, fingerprint}`; 12-hour review gate armed by a boot-time self-test (`review_lock_armed()`, `backend/server.py:1057`, enforced `:10022`); printable `application.html` and `certificate.html` pinned by `backend/test_print_fit.py` (**executed 2026-11-06 → PASS**) |
 | **Phase 2 findings (verified by code reading at `a1c2478`)** | **Biometrics are not stored server-side.** Captures live in browser `localStorage` under `sentinelBiometrics` (`index.html:2698-2725`); matching is client-side **string** comparison (`matchPersonByFingerprint`, `index.html:4526`); the USB scanner bridge it calls (`http://127.0.0.1:<port>/scan`, `ws://localhost:<port>/biometrics`, `index.html:4773-5183`) **has no code in this repository**; the server's `total_biometrics_logged` metric counts clearance applications, not biometrics. **No rejection path exists** — the API can only move an application to `Approved`. **No separation of duties** — the submitter may approve their own application. 21 gaps catalogued as FG-01…FG-21. |
 | **Not assessed** | Runtime behaviour of any of the above — 23 suites remain unrunnable |
@@ -346,67 +356,75 @@ SQLite-era harnesses"** remains accurate.
 
 ## 9. Current task
 
-**Task (Phase 2):** Technical and functional assessment of CID Release 1.0 — the Fingerprint, Crime
-and Checkpoint units: existing functionality, actual implementation status, roles and permissions,
-workflows, database tables and relationships, API endpoints and frontend components, existing tests
-and their results, missing functionality, security weaknesses and integration dependencies; a Crime
-Unit requirements **proposal**; a security re-verification; decision-register recommendations;
-dependencies, estimates and a proposed development order; and a verdict on the proposed 10-day sprint.
+**Task (Phase 3):** Produce a complete, realistic and technically consistent **requirements and
+architecture package** for CID Release 1.0 — Fingerprint, Crime and Checkpoint units plus the shared
+CID capabilities — covering deliverables A–H of the Phase 3 brief and a revised implementation plan
+with estimates.
 
-**Status:** **Complete** as of 2026-11-06. Seven deliverables in `assessment/` (§13).
+**Status:** **Complete** as of 2026-11-06. Ten documents delivered (§14), plus updates to this file
+and `CHANGELOG.md`.
 
-**Constraints honoured:** no application code, database schema, configuration, dependency or
-deployment artefact was changed; no feature was implemented; no defect was fixed; no branch was
-merged; no existing documentation was deleted; **PR #23 and its audit history were not modified**; no
-progress percentage was invented; items that could not be verified are labelled **not run** or
-**[NOT VERIFIED]**; and no legal or operational policy was decided on the owner's behalf.
+**Owner decisions closed in the Phase 3 brief:** **D-18 = BOTH** (clearance *and* genuine biometric
+capture and matching — this **overrode** the Phase 2 recommendation of clearance-only and moved
+WP-45 into Release 1.0 scope); **D-14 = use the proposed report catalogue as the starting point**;
+**D-16 = Airport Unit excluded from Release 1.0 → Release 1.1**.
 
-**Phase 1 (documentation baseline — `PROJECT_CONTEXT.md`, `RELEASE_PLAN.md`, `CHANGELOG.md` and this
-file) remains complete** as of the same date.
+**Constraints honoured:** no application source code, database schema, migration, configuration or
+dependency was changed; nothing was deployed and no production system was contacted; no branch was
+merged and no release was opened; **PR #23 and branch `arena/8834f56d-…` were not touched**; no
+existing documentation was deleted — Phase 2 documents are **superseded in place**, not removed; no
+progress percentage was invented; no test was claimed to pass that was not executed; and no legal or
+operational policy was decided on the owner's behalf.
+
+**Phases 1 and 2 remain complete** as of the same date.
 
 ---
 
 ## 10. Next approved task
 
-**Next task:** **None is approved.** The project is **stopped, awaiting owner review of the Phase 2
-assessment**, owner answers to the blocking decisions, and explicit approval of a delivery plan. The
-agent must not begin implementation, remediation or scheduling work until the owner approves.
+**Next task:** **None is approved.** The project is **stopped, awaiting owner review of the Phase 3
+requirements and architecture package**, owner answers to the remaining blocking decisions, and
+explicit approval before **any** application change.
 
-**Decision load:** **30 decisions are open** — D-01…D-17 carried forward plus **D-18…D-29** raised by
-this assessment. **Fifteen block Release 1.0.** Full grouping (blocking / can wait / legal-operational
-/ recommended option with risks) is in `assessment/DECISION_REGISTER_RECOMMENDATIONS.md`.
+**Decision load:** **41 decisions are open; 24 block Release 1.0.** Three are now **closed**
+(D-18, D-14, D-16) and **14 are new** (D-30…D-43), raised by the Phase 3 requirements and
+architecture work. The canonical register is **`DECISION_REGISTER.md`** (root), which supersedes
+`assessment/DECISION_REGISTER_RECOMMENDATIONS.md`.
 
-**Answer these three first — nothing can be sized until they are settled:**
+**Immediate sign-off requested — analysis complete, only a decision is needed:**
 
-| ID | Question | What it unblocks |
+| ID | Question | Recommendation |
 |---|---|---|
-| **D-18** | Does Fingerprint Release 1.0 mean the **clearance workflow**, or **real biometric capture**? | Whether the owner's "~80%" is broadly right or badly wrong; whether a scanner SDK, bridge service and template store must be built (**unestimable** until answered) |
-| **D-14** | Which **advanced reports** are in scope — of the 18 candidates derived from existing columns? | The Crime Unit's size; whether new schema is needed for time-to-closure and per-investigator metrics |
-| **D-15** | Are `crime_cases` and `crime_incidents` **one workflow or two**? | The Crime Unit data model, both UIs, the status vocabulary and every report |
+| **D-15** | `crime_cases` ↔ `crime_incidents` | **Option A** — keep both, link explicitly via a `case_incidents` join table, one case to many incidents. **Do not merge** |
+| **D-14a** | Which of the 24 catalogued reports are in Release 1.0? | Tier 1 now; Tier 2 with prerequisites; Tier 3 after the subsystem lands |
+| **D-25** | Case status vocabulary | `CASE_STATUSES` (7) for cases + transition table; keep `CRIME_STATUSES` for incidents |
+| **D-03** | Password hashing | stdlib PBKDF2-HMAC-SHA256, ≥600,000 iterations — no new dependency |
+| **D-08** | Session policy | Split from RPO/RTO; decide the session half now |
+| **D-20** | Checkpoint catalogue | Data-driven from `police_branches`, **in the same change as** the fail-closed fix |
+| **D-13** | Out-of-scope module visibility | Hide via `ROLE_MODULES` **and** verify the API gate by test |
 
-**Then:** **D-03**, **D-08 (session half)**, **D-12**, **D-06** to let the security fixes be
-*finished*; then **D-25**, **D-21**, **D-26**, **D-19**, **D-20**, **D-27**, **D-22**, **D-13/D-16**
-to let the functional work be specified. Start the legal track (**D-04**, **D-05**, **D-23**,
-**D-24**, **D-01**, **D-09**) **in parallel now**, because of its lead time.
+**Then, with the longest lead times, start immediately and in parallel:** the **biometric
+procurement track** (**D-31** scanner, **D-32** bridge-service ownership, **D-33** matching engine
+and template format, **D-35** fingers captured) and the **legal track** (**D-04**, **D-05**,
+**D-23**, **D-24**, **D-27**). Neither is engineering work, and **neither can be shortened by adding
+developers.**
 
-### 10.1 Verdict on the proposed 10-day sprint
+### 10.1 Verdict on the proposed 10-day sprint *(revised after D-18)*
 
-> **A 10-day sprint cannot deliver Release 1.0.** The assessed remaining work is **≈ 144–292
-> engineering days** (excluding any biometric programme, offline operation and IdP/MFA). Three facts
-> make the 10-day framing impossible *as a release*, independently of effort: fifteen blocking
-> decisions are unanswered; **nothing can currently be verified** (23 of 25 suites unrunnable); and
-> 3 CRITICAL plus 10 HIGH security findings are open.
+> **Unchanged in conclusion, worse in magnitude.** The assessed remaining work is now
+> **≈ 257–506 engineering days** (was ≈144–292), because D-18 brought the biometric programme into
+> scope — **+58–114 days**, excluding hardware procurement, the bridge service if built in-house
+> (+15–30) and accuracy measurement (+5–15). The gap is roughly **26–50×** ten days.
 >
-> **What 10 days can deliver** — with three developers, a strong and genuinely valuable sprint:
-> **WP-01** (runnable test environment) → **WP-03/WP-04/WP-09** (default credentials, password
-> hashing, upload validation) → **WP-06** (fail-closed branch scope) → **WP-08** (record scope on the
-> unscoped write paths), with **WP-05** (authenticated document retrieval) as the stretch item and
-> **WP-15** (security regression suite) begun. **This is Security Wave 1, and it must be named that
-> way** — not "Release 1.0".
+> **What 10 days can honestly buy** (3 developers ≈ 30 engineering days): WP-01 test environment ·
+> **WP-45g — remove the code that fabricates biometric matches** · WP-03 default credentials ·
+> WP-04 password hashing · WP-09 upload validation · and a start on WP-05 authenticated document
+> access and WP-06 fail-closed branch scope. **≈ 17–34 engineering days.** This closes two of three
+> Critical findings, removes an active safety defect, and makes the rest of the programme
+> verifiable. **It is Security Wave 1 plus test enablement — it is not Release 1.0 and must not be
+> described as such.**
 >
-> This is **not** a counter-proposal of a delivery date. The owner approves the schedule, after the
-> blocking decisions are answered. Reasoning and the full work-package catalogue:
-> `assessment/DEPENDENCIES_AND_ESTIMATES.md` §7.
+> **No production date is committed.** Full reasoning: `planning/IMPLEMENTATION_ROADMAP.md` §11.
 
 ---
 
@@ -426,6 +444,13 @@ if the date moves. Security, testing and data integrity are never sacrificed for
 §7. It *is* a realistic window for **Security Wave 1 plus test enablement**, which is a worthwhile
 and high-leverage sprint. The 2026-11-15 checkpoint therefore remains useful as a **review point**,
 and is still **not** a production launch deadline. **No date has been adopted or committed.**
+
+**Phase 3 addendum (2026-11-06).** Owner decision **D-18 = BOTH** increased Release 1.0 scope. The
+revised estimate is **≈ 257–506 engineering days**, and the project's true critical path now runs
+through **procurement** (scanner, SDK, bridge service, matching engine) and **legal** (retention,
+DPIA, detention framework) — **not** through code. Engineering time and owner review/approval time
+are estimated **separately** in `planning/IMPLEMENTATION_ROADMAP.md` §6 and §7. **No 10-day
+production release is promised, and no date has been adopted or committed.**
 
 ---
 
@@ -464,3 +489,39 @@ and is still **not** a production launch deadline. **No date has been adopted or
 - **Security identifiers:** `C-n`/`H-n`/`M-n` are inherited from the PR #23 audit and are **never
   reassigned**; `N-n` marks findings new to this assessment. Where this assessment re-rates a carried
   finding's severity, the identifier is kept and the change is stated.
+- **Requirement identifiers (Phase 3):** `FPR-` Fingerprint · `CRR-` Crime · `CKR-` Checkpoint ·
+  `ARCH-` architecture · `SR-` security · `RPT-` reporting · `AC-` acceptance criteria. They are
+  distinct from capability IDs (`CP-`), gap IDs (`FG-`, `G-`) and security finding IDs.
+- **Decision identifiers are never reused or renumbered.** D-01…D-29 keep the meanings recorded in
+  `PROJECT_CONTEXT.md` Appendix A and the Phase 2 register; Phase 3 extends the sequence from D-30.
+  Closed decisions are retained with their answer and consequences, and an **overridden agent
+  recommendation is recorded as overridden** (see D-18), never quietly dropped.
+- **A recommendation is a proposal, not a decision.** Where no recommendation is offered, the
+  question is legal, operational or a command matter: engineering can implement any answer but must
+  not choose it.
+
+---
+
+## 14. Phase 3 requirements and architecture deliverables
+
+All created 2026-11-06 on `arena/6303ef2f-sentinel-police-management`. **Documentation only — no
+application file was touched.**
+
+| Brief item | Document | Contents |
+|---|---|---|
+| **A** | `requirements/FINGERPRINT_UNIT_REQUIREMENTS.md` | Scope per **D-18 = BOTH**. Separates image acquisition · template generation · 1:1 verification · 1:N identification · thresholds and human review · false match and failed capture · device integration and fallback. States what is **retained** (bridge protocol, server identity engine, clearance workflow, review gate), **redesigned** (storage, matching, status model, identifiers) and **external** (scanner, SDK, bridge service, matching engine). Adds FPR-901/902 — removal of browser-stored biometrics and of the rotating-cursor fallback that fabricates identifications |
+| **B** | `requirements/CRIME_UNIT_REQUIREMENTS.md` | Per workflow: actors and permissions, preconditions, steps, required data, status transitions, exceptions and rejection paths, audit events, acceptance criteria. **Supersedes** `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` (retained) |
+| **B** | `requirements/CRIME_REPORT_CATALOGUE.md` | **D-14** catalogue reviewed and completed: 18 reviewed + 6 added = **24 reports**. Per report: purpose, sources, filters, grouping, output fields, permissions and **whether it is generatable from the planned model** (8 buildable from existing columns, 16 gated on other work). Plus reporting safeguards and the final selection for sign-off |
+| **C** | `architecture/CRIME_DATA_MODEL_DECISION.md` | Four options analysed. **Recommends Option A** — separate, explicitly linked, one case to many incidents. Covers operational meaning, relationships, identifiers, history and migration implications, and the defects to fix irrespective of the choice |
+| **D** | `requirements/CHECKPOINT_UNIT_REQUIREMENTS.md` | Five corrections with testable acceptance criteria: blank-scope canonical role · cross-location read/write · operations and incident recording · detention / referral / false-match workflows · legacy↔canonical consistency |
+| **E** | `architecture/SYSTEM_ARCHITECTURE.md` | Current and target architecture, role-permission matrix, branch/location authorization model, document and attachment access model, audit requirements, API boundaries, biometric hardware/software boundary, and how the three units share data without over-granting |
+| **F** | `requirements/SECURITY_REQUIREMENTS.md` | All 24 findings converted to **36 requirements** (SR-01…SR-31, SR-90…SR-94) with severity, correction, executing verification method and release-blocking flag. **27 are release-blocking** |
+| **G** | `DECISION_REGISTER.md` *(root, canonical)* | **Supersedes** `assessment/DECISION_REGISTER_RECOMMENDATIONS.md` (retained). 3 closed · 41 open · 24 blocking · 14 new (D-30…D-43), with recommendations, evidence, cost of delay and 5 named blockers |
+| **H** | `requirements/RELEASE_ACCEPTANCE_CRITERIA.md` | Measurable gates across functional completeness, role/branch isolation, biometric correctness and safety, data protection, testing, backup/recovery, deployment readiness and operational documentation. **Exactly 2 of 115 criteria are met today** (AC-T4 and AC-T10), both by executed checks |
+| **§4** | `planning/IMPLEMENTATION_ROADMAP.md` | Revised work packages with dependencies, deliverables, estimates and risks. **≈ 257–506 engineering days.** Engineering time is separated from owner review/approval time and from procurement/legal lead time. No production date committed |
+
+**Superseded but retained** (nothing was deleted): `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md`
+→ deliverable B · `assessment/DECISION_REGISTER_RECOMMENDATIONS.md` → deliverable G ·
+`assessment/DEPENDENCIES_AND_ESTIMATES.md` → the roadmap.
+
+---

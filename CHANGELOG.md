@@ -28,6 +28,98 @@ Structured history of significant changes to this repository.
 
 ---
 
+## 2026-11-06 — CID Release 1.0 (pre-development) — Requirements and architecture package (Phase 3)
+
+**Documentation only. No application source code, database schema, migration, configuration or
+dependency was changed. Nothing was deployed, no production system was contacted, no branch was
+merged, and no release was opened.**
+
+### Change description
+
+Completed the owner-authorised Phase 3 requirements and architecture package for CID Release 1.0,
+against commit `a1c2478`. Added three new directories — `requirements/`, `architecture/`,
+`planning/` — containing nine documents, plus the canonical `DECISION_REGISTER.md` at the repository
+root.
+
+**Owner decisions recorded as closed in the Phase 3 brief:**
+
+- **D-18 = BOTH.** The Fingerprint Unit must deliver the clearance / identity-review workflow **and**
+  genuine biometric capture and matching. This **overrode** the Phase 2 recommendation of a
+  clearance-only Release 1.0, and moved work package **WP-45** — previously excluded from the
+  estimate as unestimable — into Release 1.0 scope.
+- **D-14 = use the proposed report catalogue as the starting point**, reviewed, completed and
+  documented for approval.
+- **D-16 = Airport Unit excluded from Release 1.0** → Release 1.1.
+
+Deliverables added:
+
+- `requirements/FINGERPRINT_UNIT_REQUIREMENTS.md` — biometric requirements separated into image
+  acquisition, template generation, 1:1 verification, 1:N identification, thresholds and human
+  review, false match and failed capture, and device integration with fallback. States what is
+  retained, what is redesigned, and what requires external hardware or software.
+- `requirements/CRIME_UNIT_REQUIREMENTS.md` — supersedes
+  `assessment/CRIME_UNIT_REQUIREMENTS.proposed.md` (retained, not deleted).
+- `requirements/CRIME_REPORT_CATALOGUE.md` — 18 proposed reports reviewed and 6 added (24 total),
+  each assessed for whether it is generatable from the planned model.
+- `architecture/CRIME_DATA_MODEL_DECISION.md` — four options analysed; recommends keeping
+  `crime_cases` and `crime_incidents` separate and explicitly linked (one case to many incidents).
+  **The tables were not merged.**
+- `requirements/CHECKPOINT_UNIT_REQUIREMENTS.md` — five corrections with testable acceptance criteria.
+- `architecture/SYSTEM_ARCHITECTURE.md` — context and components, role-permission matrix,
+  branch/location authorization model, document access model, audit requirements, API boundaries,
+  biometric hardware/software boundary, and the cross-unit data-sharing rules.
+- `requirements/SECURITY_REQUIREMENTS.md` — the 24 findings converted to 34 requirements, each with
+  severity, correction, an executing verification method and a release-blocking flag; 27 are
+  release-blocking.
+- `DECISION_REGISTER.md` (root, canonical) — supersedes
+  `assessment/DECISION_REGISTER_RECOMMENDATIONS.md` (retained). 3 closed, 41 open, 24 blocking,
+  14 new (D-30…D-43).
+- `requirements/RELEASE_ACCEPTANCE_CRITERIA.md` — measurable gates across eight areas.
+- `planning/IMPLEMENTATION_ROADMAP.md` — revised estimate of **≈ 257–506 engineering days** (was
+  ≈144–292), with engineering time separated from owner review/approval time and from
+  procurement/legal lead time.
+
+Updated: `PROJECT_STATUS.md` (§1 identification, §2 caveat, §9 current task, §10 next approved task,
+§11 schedule note, new §14 deliverable index, extended §13 conventions) and this file.
+
+### Affected modules
+
+**None.** Documentation only. `git diff --stat a1c2478` against `backend/`, `index.html`,
+`application.html`, `certificate.html`, `scripts/` and `images/` is empty.
+
+### Database migrations
+
+**None.** No schema change was made, proposed-as-applied, or executed. Schema changes recommended by
+the architecture documents are **proposals requiring owner approval** and are explicitly sequenced
+behind a versioned-migration mechanism that does not yet exist (finding M-11).
+
+### Tests performed
+
+- `python3 backend/server.py --ui-check` → **exit 0**, build `sentinel-branch-crud-1-e7c41b90`.
+- `python3 backend/test_print_fit.py` → **PASS**.
+- **The remaining 23 test suites were NOT RUN.** They require `psycopg2-binary`, `pgserver` and/or
+  `jsdom@26`, none of which are installed, and installing dependencies was outside the authorisation
+  for this phase. They are recorded as **not run**, never as passing.
+- No runtime security testing or penetration testing was performed. All findings referenced in this
+  package were established by **static inspection**, which is explicitly **not** proof of runtime
+  security.
+
+### Notable correction recorded in this entry
+
+A draft of the Checkpoint requirements cited **D-27**, **D-28** and **D-29** with meanings taken from
+working memory rather than from the register. The authoritative register was re-read and the
+citations were corrected before commit: **D-27** is the authorised post-flag procedure (detain /
+refuse / refer / release / false match), **D-28** is checkpoint vehicle linkage, and **D-29** is
+dependency management and supply chain. The genuinely new checkpoint operation/shift question was
+assigned the new identifier **D-43**. No existing decision identifier was renumbered.
+
+### Commit reference
+
+Recorded at commit time on branch `arena/6303ef2f-sentinel-police-management`. **PR #23 and branch
+`arena/8834f56d-sentinel-police-management` were not modified.**
+
+---
+
 ## 2026-11-06 — CID Release 1.0 (pre-development) — Technical and functional assessment (Phase 2)
 
 **Assessment only. No application change. No feature implemented, no defect fixed, no dependency
