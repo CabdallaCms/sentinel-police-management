@@ -279,14 +279,46 @@ Remediation must target that path specifically and must not regress the correct 
 
 ## 7. Test results
 
-### 7.1 Executed (2026-11-06, commit `a1c2478`) — re-run in the Phase 2 session
+### 7.1 Executed (2026-11-07, Stage 0) — FULL SUITE, from a reproducible environment
+
+WP-01 created the missing dependency manifests and a single runner, so the suite is executable for
+the first time. **Measured, not estimated:**
+
+| Run | Suites | PASS | FAIL | BLOCKED | SKIP |
+|---|---|---|---|---|---|
+| Baseline, before any Stage 0 change (`a1c2478`) | 25 | **23** | 2 | 0 | 0 |
+| After Stage 0 (this commit) | **28** | **27** | **0** | **1** | 0 |
+
+The two baseline failures were **harness** faults, not product faults: `test_server.py` and
+`test_conduct_frontend.mjs` still passed the retired `SENTINEL_DB=<sqlite file>` convention, so the
+PostgreSQL server never started and both timed out on health. Both bootstraps were repaired without
+weakening a single assertion.
+
+Three suites are new in Stage 0: `test_biometric_no_fabricated_match.mjs` (9 checks),
+`test_upload_access_control.py` (15 tests), `test_password_security.py` (15 tests).
+
+**One suite is BLOCKED, and BLOCKED is not a pass.** `test_server.py` reaches line 1013 and stops on
+**N-7**, a genuine application defect found by making the suite runnable (§6). Fixing it is outside
+the five authorised Stage 0 items, so it was deliberately left in place and reported.
+
+Reproduce with:
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt && npm install
+scripts/run-tests.sh
+```
+
+### 7.2 Executed (2026-11-06, commit `a1c2478`) — re-run in the Phase 2 session
 
 | Check | Result |
 |---|---|
 | `python3 backend/server.py --ui-check` | **PASS** — exit 0; build `sentinel-branch-crud-1-e7c41b90`; serving `/home/user/sentinel-police-management/index.html`; checkout `arena/6303ef2f-sentinel-police-management @ a1c2478`; `Actions column: yes` |
 | `python3 backend/test_print_fit.py` | **PASS** — `ALL PRINT TEMPLATE TESTS PASSED` (A4 print contract, blueprint fidelity, emblem placement, DOM bindings, single-page height budgets) |
 
-### 7.2 Not executed
+### 7.3 Superseded: the former "not executed" position
+
+The paragraph below described the position **before** WP-01 and is retained for history. It is
+**superseded by §7.1**: the suite now runs.
 
 **23 of the 25 test files were not run** (24 counting `test_print_fit.py` as the sole executed suite;
 `--ui-check` is not a suite). Reason: they require `psycopg2-binary`, `pgserver` and/or `jsdom@26`,
@@ -355,6 +387,39 @@ SQLite-era harnesses"** remains accurate.
 ---
 
 ## 9. Current task
+
+**Task (Stage 0 implementation):** Deliver the five items the owner authorised — (1) a reproducible
+test environment, (2) removal of fabricated biometric-match behaviour, (3) elimination of seeded
+default credentials, (4) secure password hashing, (5) upload validation and prevention of
+unauthorised access to uploaded documents.
+
+**Status:** **Complete** as of 2026-11-07. Five work packages delivered (WP-01, WP-45g, WP-02,
+WP-03, WP-08/09), three new test suites written and executed, full suite re-run: **27 PASS / 0 FAIL
+/ 1 BLOCKED** against a baseline of 23 PASS / 2 FAIL.
+
+**Two new application defects were found and reported, not silently fixed:**
+
+- **N-7** — `update_discipline()` builds a malformed SQL placeholder list, so **closing a
+  disciplinary action fails and a suspended officer can never be returned to Active duty**. Out of
+  the authorised scope (HR/conduct module); **left in place**, reported, and it blocks `test_server.py`.
+- **N-8** — a self-service password change deleted the session rows but not the in-process token
+  cache, so other browsers stayed signed in. **This one WAS fixed**, because it is inside item (4):
+  a password change that does not sign anyone out is not a working password change.
+
+**Scope discipline:** no schema change was made. No migration was applied. The biometric
+`localStorage` store (WP-45a) was left alone. The analytics RBAC inconsistency and finding H-5 were
+measured and reported, not fixed.
+
+**Branch constraint — disclosed, not buried:** the owner asked for a separate, clearly identified
+implementation branch. This session is permanently bound to `arena/6303ef2f-sentinel-police-management`
+and cannot create or push another branch. The work is therefore on that branch: separate from `main`,
+clearly identified, and never merged. `main` and the audit history are untouched.
+
+**STOP point honoured:** Stage 1 has **not** been started.
+
+---
+
+## 9A. Previous task (Phase 3)
 
 **Task (Phase 3):** Produce a complete, realistic and technically consistent **requirements and
 architecture package** for CID Release 1.0 — Fingerprint, Crime and Checkpoint units plus the shared

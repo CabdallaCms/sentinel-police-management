@@ -14,7 +14,7 @@ Identity matching tiers (used by /api/persons/resolve and every unit route):
 
 Replace demo authentication before any operational deployment.
 """
-import datetime, decimal, hashlib, json, os, re, secrets, signal, socket, subprocess, sys, time
+import base64, datetime, decimal, hashlib, hmac, json, os, re, secrets, signal, socket, subprocess, sys, time
 # `--ui-check` only inspects files, so it must work in an environment without
 # the PostgreSQL driver (a bare `python3 backend/server.py --ui-check` on a
 # machine where the venv is not active). Every other entry point needs it.
@@ -3301,22 +3301,26 @@ def init_db():
     # password (idempotent — we only re-tag it on first run).
     if c.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
         seeds = [
-            ('admin',       'Officer A. Hassan',     ROLE_ADMIN,           'Central HQ',      None,                 'ChangeMe123!', 'ADM-101'),
-            ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,                'ChangeMe123!', 'FP-102'),
-            ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,                 'ChangeMe123!', 'AP-201'),
-            ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,                'ChangeMe123!', 'CID-301'),
-            ('hr.officer',  'Officer S. Warsame',    ROLE_HR,              'HR Directorate',   None,                'ChangeMe123!', 'HR-401'),
+            ('admin',       'Officer A. Hassan',     ROLE_ADMIN,           'Central HQ',      None,  'ADM-101'),
+            ('fp.officer',  'Officer H. Xasan',      ROLE_FINGERPRINT,     'Fingerprint Unit', None,  'FP-102'),
+            ('ap.officer',  'Officer S. Cabdi',      ROLE_AIRPORT,         'Airport Control', None,   'AP-201'),
+            ('cid.officer', 'Officer M. Nuur',       ROLE_CID,             'CID Unit',         None,  'CID-301'),
+            ('hr.officer',  'Officer S. Warsame',    ROLE_HR,              'HR Directorate',   None,  'HR-401'),
             # Checkpoint officers: ONE unified role. The checkpoint itself is
             # the posting data (branch label + location_scope), never a role.
-            ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_OFFICER, 'South Checkpoint',  'South', 'ChangeMe123!', 'CP-501'),
-            ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_OFFICER, 'East Checkpoint',   'East',  'ChangeMe123!', 'CP-502'),
-            ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_OFFICER, 'West Checkpoint',   'West',  'ChangeMe123!', 'CP-503'),
-            ('chief',       'Gen. C. Warsame',       ROLE_CHIEF,           'Police HQ / Command', None,             'ChangeMe123!', 'CMD-901'),
+            ('cp.south',    'Officer F. Cali',       ROLE_CHECKPOINT_OFFICER, 'South Checkpoint',  'South', 'CP-501'),
+            ('cp.east',     'Officer A. Maxamed',    ROLE_CHECKPOINT_OFFICER, 'East Checkpoint',   'East',  'CP-502'),
+            ('cp.west',     'Officer N. Yuusuf',     ROLE_CHECKPOINT_OFFICER, 'West Checkpoint',   'West',  'CP-503'),
+            ('chief',       'Gen. C. Warsame',       ROLE_CHIEF,           'Police HQ / Command', None,  'CMD-901'),
         ]
-        for u, dn, role, branch, scope, pw, badge in seeds:
+        issued = []
+        for u, dn, role, branch, scope, badge in seeds:
+            pw = bootstrap_password_for(u)
+            issued.append((u, pw))
             c.execute('INSERT INTO users(username,display_name,role,branch,location_scope,'
                       'badge_number,password_hash) VALUES(%s,%s,%s,%s,%s,%s,%s)',
-                      (u, dn, role, branch, scope, badge, password_hash(pw)))
+                      (u, dn, role, branch, scope, badge, hash_password(pw)))
+        report_bootstrap_credentials(issued)
     if c.execute('SELECT COUNT(*) FROM persons').fetchone()[0] == 0:
         c.execute('''INSERT INTO persons(person_id,full_name,first_name,second_name,third_name,fourth_name,
             national_id,date_of_birth,phone,mother_name,residence,occupation,passport_id)
@@ -3358,8 +3362,171 @@ def init_db():
                    'Flagged match','Supervisor contacted',admin_id,'2026-08-30 08:42:00'))
     c.commit(); c.close()
 
+# ---- password hashing -------------------------------------------------------
+# WP-03 / SR-03 (finding C-3). Passwords were stored as a bare, unsalted,
+# single-round SHA-256 digest:
+#
+#     def password_hash(value): return hashlib.sha256(value.encode()).hexdigest()
+#
+# That is a plain encoding of the password, not a password hash. It is
+# GPU-crackable at billions of guesses per second, and because it is unsalted,
+# two officers with the same password have the same digest and the whole table
+# falls to one rainbow-table lookup. Login also compared it with a SQL
+# equality test, so the comparison was not constant-time either.
+#
+# Replaced with PBKDF2-HMAC-SHA256 per decision D-03 (standard library only —
+# no new dependency, which matters because this system has no package manifest
+# in production and no vetted supply chain yet; see D-29).
+#
+# Stored format (single TEXT column, no schema change required):
+#     pbkdf2_sha256$<iterations>$<base64 salt>$<base64 derived key>
+PASSWORD_ALGORITHM = 'pbkdf2_sha256'
+# OWASP Password Storage Cheat Sheet recommends >= 600,000 iterations for
+# PBKDF2-HMAC-SHA256 (2023 guidance). Overridable upward for a hardened
+# deployment; never silently downward below the floor.
+PASSWORD_ITERATIONS = max(600_000, int(os.environ.get('SENTINEL_PBKDF2_ITERATIONS', '600000')))
+PASSWORD_SALT_BYTES = 16
+
+
+def hash_password(value, *, iterations=None, salt=None):
+    """Derive a salted, iterated PBKDF2-HMAC-SHA256 hash for `value`."""
+    iterations = int(iterations or PASSWORD_ITERATIONS)
+    salt = salt if salt is not None else secrets.token_bytes(PASSWORD_SALT_BYTES)
+    derived = hashlib.pbkdf2_hmac('sha256', (value or '').encode('utf-8'), salt, iterations)
+    return '%s$%d$%s$%s' % (PASSWORD_ALGORITHM, iterations,
+                            base64.b64encode(salt).decode('ascii'),
+                            base64.b64encode(derived).decode('ascii'))
+
+
+def _is_legacy_sha256(stored):
+    """True for the pre-WP-03 unsalted 64-hex SHA-256 digest."""
+    return (isinstance(stored, str) and len(stored) == 64
+            and all(ch in '0123456789abcdefABCDEF' for ch in stored))
+
+
+def verify_password(value, stored):
+    """Constant-time password check. Accepts the new format and, for upgrade
+    purposes only, the legacy unsalted SHA-256 digest."""
+    if not stored or not isinstance(stored, str):
+        return False
+    parts = stored.split('$')
+    if len(parts) == 4 and parts[0] == PASSWORD_ALGORITHM:
+        try:
+            iterations = int(parts[1])
+            salt = base64.b64decode(parts[2], validate=True)
+            expected = base64.b64decode(parts[3], validate=True)
+        except Exception:
+            return False
+        if iterations <= 0 or not salt or not expected:
+            return False
+        derived = hashlib.pbkdf2_hmac('sha256', (value or '').encode('utf-8'), salt, iterations)
+        return hmac.compare_digest(derived, expected)
+    if _is_legacy_sha256(stored):
+        # Legacy row written before WP-03. Accepted once so the officer is not
+        # locked out, then immediately re-hashed by upgrade_password_hash().
+        legacy = hashlib.sha256((value or '').encode('utf-8')).hexdigest()
+        return hmac.compare_digest(legacy, stored.lower())
+    return False
+
+
+def password_needs_upgrade(stored):
+    """True when `stored` is not a current-strength hash and should be
+    rewritten after a successful authentication."""
+    if not stored or not isinstance(stored, str):
+        return True
+    parts = stored.split('$')
+    if len(parts) == 4 and parts[0] == PASSWORD_ALGORITHM:
+        try:
+            return int(parts[1]) < PASSWORD_ITERATIONS
+        except Exception:
+            return True
+    return True
+
+
+def upgrade_password_hash(conn, user_id, plaintext, stored):
+    """Transparently re-hash a legacy / weak hash after a correct password was
+    supplied. This is what lets an existing database migrate with no DDL and
+    no forced reset: the row is upgraded the next time the officer signs in."""
+    if not password_needs_upgrade(stored):
+        return False
+    try:
+        conn.execute('UPDATE users SET password_hash=%s WHERE id=%s',
+                     (hash_password(plaintext), int(user_id)))
+        conn.commit()
+        return True
+    except Exception:
+        # An upgrade failure must never block a valid sign-in.
+        return False
+
+
+# Deliberately NOT re-exported under the old name `password_hash`: every call
+# site was migrated to hash_password() / verify_password() so that a future
+# edit cannot accidentally reintroduce a verifiable-by-equality digest.
+
+
+# ---- first-run bootstrap credentials ----------------------------------------
+# WP-02 / SR-02 (finding C-2). Every seeded account used to be created with the
+# SAME hard-coded password, 'ChangeMe123!', which was additionally printed on
+# the login screen and auto-filled by the demo buttons. Nine accounts —
+# including `admin` and `chief` — were therefore publicly known credentials
+# the moment the service was reachable.
+#
+# Now: no default password exists anywhere in the source tree.
+#   * SENTINEL_BOOTSTRAP_PASSWORD set  -> used for the seeded accounts. This is
+#     the deliberate, explicit path (automated tests, a scripted install).
+#   * not set                          -> a DIFFERENT cryptographically random
+#     password is generated per account and reported ONCE, so the operator must
+#     read it from the server console or the 0600 credential file.
+#
+# The credential file is written with owner-only permissions and is intended to
+# be deleted by the operator after the first sign-in.
+BOOTSTRAP_PASSWORD_ENV = 'SENTINEL_BOOTSTRAP_PASSWORD'
+BOOTSTRAP_CREDENTIALS_FILE = os.environ.get(
+    'SENTINEL_BOOTSTRAP_CREDENTIALS_FILE',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bootstrap-credentials.txt'))
+
+
+def bootstrap_password_for(username):
+    """Return the first-run password for a seeded account.
+
+    Never returns a value that is constant across installations unless the
+    operator explicitly supplied one through the environment.
+    """
+    explicit = os.environ.get(BOOTSTRAP_PASSWORD_ENV)
+    if explicit:
+        return explicit
+    # 32 hex characters = 128 bits of entropy, unique per account.
+    return 'Sx-' + secrets.token_hex(16)
+
+
+def report_bootstrap_credentials(issued):
+    """Disclose first-run credentials exactly once, to the console and to an
+    owner-only file. Does nothing when the operator supplied the password."""
+    if not issued or os.environ.get(BOOTSTRAP_PASSWORD_ENV):
+        # The operator already knows the password they chose; never echo it.
+        return
+    lines = [
+        'SENTINEL FIRST-RUN CREDENTIALS - shown once, store them now',
+        'Generated %s' % datetime.datetime.now().isoformat(timespec='seconds'),
+        'Change every password after first sign-in, then delete this file.',
+        '',
+    ]
+    lines += ['  %-12s %s' % (u, pw) for u, pw in issued]
+    text = '\n'.join(lines) + '\n'
+    try:
+        fd = os.open(BOOTSTRAP_CREDENTIALS_FILE,
+                     os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+            fh.write(text)
+        target = BOOTSTRAP_CREDENTIALS_FILE
+    except OSError as exc:
+        target = 'could not be written (%s)' % exc
+    sys.stderr.write('\n' + '=' * 72 + '\n' + text
+                     + 'Saved to: %s\n' % target + '=' * 72 + '\n\n')
+    sys.stderr.flush()
+
+
 # ---- helpers ----------------------------------------------------------------
-def password_hash(value): return hashlib.sha256(value.encode()).hexdigest()
 def rowdict(row): return dict(row) if row else None
 
 
@@ -3936,13 +4103,79 @@ def parse_multipart(handler):
             fields[nm.group(1)] = content.decode('utf-8','replace')
     return fields, files
 
-def save_upload(f):
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+# WP-09 / SR-15 (finding M-7). save_upload() used to accept ANY file of ANY
+# size: the extension was copied straight from the client onto disk, with no
+# allow-list and no cap. Nine call sites used it directly (clearance documents,
+# person documents, conduct attachments, avatars), so a .svg, .html or .xhtml
+# could be stored and later served from the same origin as the application —
+# stored-XSS against an authenticated officer — and a single huge POST could
+# fill the disk.
+#
+# The allow-list below is the union of what the UI actually offers: scans and
+# photographs (raster images) plus PDF. Deliberately excluded: .svg and .html
+# (script-bearing), and every archive / office / executable format, none of
+# which the UI uploads.
+UPLOAD_ALLOWED_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.pdf'}
+# Default ceiling for the unlabelled call sites. The stricter per-feature caps
+# (OFFICER_MAX_UPLOAD_BYTES = 5 MB) still apply where they are used; the signed
+# clearance scan has its own larger, explicit limit.
+UPLOAD_MAX_BYTES = SIGNED_APPLICATION_MAX_UPLOAD_BYTES  # 20 MB
+
+# Magic-number prefixes. The extension alone is attacker-controlled, so the
+# bytes are checked too: a file must actually BE the type it claims.
+UPLOAD_MAGIC = (
+    (b'\xff\xd8\xff', {'.jpg', '.jpeg'}),
+    (b'\x89PNG\r\n\x1a\n', {'.png'}),
+    (b'GIF87a', {'.gif'}),
+    (b'GIF89a', {'.gif'}),
+    (b'%PDF-', {'.pdf'}),
+    (b'II*\x00', {'.tif', '.tiff'}),
+    (b'MM\x00*', {'.tif', '.tiff'}),
+)
+
+
+def _content_matches_extension(content, ext):
+    """True when the file's leading bytes are consistent with `ext`."""
+    if ext == '.webp':
+        return len(content) >= 12 and content[:4] == b'RIFF' and content[8:12] == b'WEBP'
+    for prefix, exts in UPLOAD_MAGIC:
+        if ext in exts and content.startswith(prefix):
+            return True
+    return False
+
+
+def save_upload(f, allowed_exts=None, label='File', max_bytes=None):
+    """Validate and persist an uploaded file.
+
+    Rejects anything outside the allow-list, anything over the size cap, and
+    anything whose content does not match its claimed type. Raises ValueError,
+    which the request handlers already translate into HTTP 400.
+    """
+    allowed = allowed_exts or UPLOAD_ALLOWED_EXTS
+    limit = int(max_bytes or UPLOAD_MAX_BYTES)
+    content = f.get('content') or b''
     base = re.sub(r'[^A-Za-z0-9._-]+', '_', os.path.basename(f['filename'])) or 'file'
+    # Only the FINAL extension counts. 'invoice.pdf.html' is an .html file.
     ext = os.path.splitext(base)[1].lower()
+    if ext not in allowed:
+        raise ValueError('%s must be one of %s (got %s)'
+                         % (label, ', '.join(sorted(allowed)), ext or 'no extension'))
+    if not content:
+        raise ValueError('%s is empty' % label)
+    if len(content) > limit:
+        raise ValueError('%s exceeds the %dMB limit' % (label, limit // (1024 * 1024)))
+    if not _content_matches_extension(content, ext):
+        raise ValueError('%s content does not match its %s extension' % (label, ext))
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     stored = 'f_' + secrets.token_hex(8) + ext
-    with open(os.path.join(UPLOAD_DIR, stored), 'wb') as out:
-        out.write(f['content'])
+    path = os.path.join(UPLOAD_DIR, stored)
+    with open(path, 'wb') as out:
+        out.write(content)
+    # Never executable, and not world-readable on a shared host.
+    try:
+        os.chmod(path, 0o640)
+    except OSError:
+        pass
     return {'path': '/uploads/' + stored, 'name': base}
 
 def session_token_from_cookie(handler):
@@ -3986,6 +4219,25 @@ def create_session(user_id):
     finally:
         c.close()
     return token
+
+
+def revoke_user_sessions(conn, user_id, keep_token=None):
+    """Revoke every session for `user_id`, optionally keeping one token.
+
+    WP-03 / finding N-8. The self-service password change used to run a bare
+    `DELETE FROM sessions WHERE user_id=... AND token<>...`, which removed the
+    database rows but left the in-process TOKENS cache untouched. Because
+    require_auth() consults TOKENS BEFORE the sessions table, every other
+    browser stayed authenticated until the server restarted — so changing a
+    password did not actually sign anyone out, which is exactly what a victim
+    does first after a credential compromise.
+    """
+    user_id = int(user_id)
+    for token, owner in list(TOKENS.items()):
+        if owner == user_id and token != keep_token:
+            TOKENS.pop(token, None)
+    conn.execute('DELETE FROM sessions WHERE user_id=%s AND token<>%s',
+                 (user_id, keep_token or ''))
 
 
 def destroy_session(token):
@@ -4369,7 +4621,10 @@ def save_upload_validated(f, allowed_exts, label, required=False):
     if len(f['content']) > OFFICER_MAX_UPLOAD_BYTES:
         raise ValueError(f'{label} exceeds the '
                          f'{OFFICER_MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit')
-    return save_upload(f)
+    # The stricter per-feature allow-list and cap are re-applied inside
+    # save_upload(), which also verifies the content matches the extension.
+    return save_upload(f, allowed_exts=allowed_exts or None, label=label,
+                       max_bytes=OFFICER_MAX_UPLOAD_BYTES)
 
 
 def station_view(row):
@@ -7779,7 +8034,7 @@ class API(BaseHTTPRequestHandler):
         if not self.head_only:
             self.wfile.write(out)
 
-    def send_file(self, path, ctype, immutable=False):
+    def send_file(self, path, ctype, immutable=False, extra_headers=None):
         try:
             with open(path,'rb') as f: data = f.read()
         except OSError:
@@ -7803,6 +8058,8 @@ class API(BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             self.send_header('Pragma', 'no-cache')
             self.send_header('Expires', '0')
+        for key, value in (extra_headers or []):
+            self.send_header(key, value)
         self.end_headers()
         if not self.head_only:
             self.wfile.write(data)
@@ -7912,12 +8169,35 @@ class API(BaseHTTPRequestHandler):
         if p.path in ('/application.html','/certificate.html'):
             return self.send_file(os.path.join(UI_DIR, p.path.lstrip('/')), 'text/html; charset=utf-8')
         if p.path.startswith('/uploads/'):
+            # WP-08 / SR-01 (finding C-1). This route used to serve every
+            # uploaded file to ANY anonymous caller: passport scans, applicant
+            # photographs, guardian identity documents and case evidence were
+            # readable without a session. Authentication is now mandatory.
+            #
+            # KNOWN REMAINING GAP (documented, not silently accepted): any
+            # AUTHENTICATED officer can still read any upload, including one
+            # belonging to another branch. Per-file branch authorisation needs
+            # a document->record ownership link, which does not exist today
+            # because documents are stored as JSON blobs inside the owning row
+            # (finding N-6). That is a schema change and is therefore NOT made
+            # here. See the Stage 0 report and test_upload_access_control.py,
+            # which asserts this exposure explicitly so it cannot be forgotten.
+            try:
+                require_auth(self)
+            except PermissionError:
+                return self.send_json(401, {'error': 'Authentication required'})
             name = os.path.basename(p.path)
             ext = os.path.splitext(name)[1].lower()
             ctype = {'.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png',
                      '.gif':'image/gif','.webp':'image/webp','.tif':'image/tiff',
                      '.tiff':'image/tiff','.pdf':'application/pdf'}.get(ext,'application/octet-stream')
-            return self.send_file(os.path.join(UPLOAD_DIR, name), ctype)
+            # Stored documents must never be interpreted as markup by the
+            # browser, and must not be sniffed into something executable.
+            return self.send_file(os.path.join(UPLOAD_DIR, name), ctype, extra_headers=[
+                ('X-Content-Type-Options', 'nosniff'),
+                ('Content-Disposition', 'inline; filename="%s"' % name),
+                ('Content-Security-Policy', "default-src 'none'; sandbox"),
+            ])
         # Brand assets for the printable templates — the police emblem used as
         # both the letterhead logo and the page watermark. '/static/images/x'
         # and '/images/x' resolve to the project-root images/ folder.
@@ -8663,9 +8943,22 @@ class API(BaseHTTPRequestHandler):
                 p = p._replace(path=canonical_api_path(p.path))
             if p.path == '/api/login':
                 data = body_json(self); c = get_db_connection()
-                u = c.execute('SELECT * FROM users WHERE username=%s AND password_hash=%s AND active=1',
-                              (data.get('username'), password_hash(data.get('password','')))).fetchone()
-                if not u:
+                # WP-03 / SR-03: the password is no longer part of the SQL
+                # predicate. A salted hash cannot be matched by equality, so
+                # the row is fetched by username and the secret is checked in
+                # constant time by verify_password().
+                supplied = data.get('password', '') or ''
+                u = c.execute('SELECT * FROM users WHERE username=%s AND active=1',
+                              (data.get('username'),)).fetchone()
+                if u and verify_password(supplied, u['password_hash']):
+                    # Transparent upgrade of a legacy / weaker hash, so an
+                    # existing database needs no DDL and no forced reset.
+                    upgrade_password_hash(c, u['id'], supplied, u['password_hash'])
+                else:
+                    if not u:
+                        # Spend comparable work on an unknown username so the
+                        # response time does not disclose which accounts exist.
+                        verify_password(supplied, hash_password(secrets.token_hex(16)))
                     c.close()
                     self.send_json(401,{'error':'Invalid username or password'}); return
                 posting = posting_scope_status(c, rowdict(u))
@@ -8742,22 +9035,22 @@ class API(BaseHTTPRequestHandler):
                 new_password = str(data.get('new_password') or '')
                 row = c.execute('SELECT id,password_hash FROM users WHERE id=%s',
                                 (int(user['id']),)).fetchone()
-                if not row or row['password_hash'] != password_hash(current):
+                if not row or not verify_password(current, row['password_hash']):
                     raise ValueError('Current password is incorrect')
                 if len(new_password) < 6:
                     raise ValueError('New password must be at least 6 characters')
                 if new_password == current:
                     raise ValueError('New password must differ from the current password')
                 c.execute('UPDATE users SET password_hash=%s WHERE id=%s',
-                          (password_hash(new_password), int(user['id'])))
+                          (hash_password(new_password), int(user['id'])))
                 audit(c, user, 'UPDATE', 'user_password', str(user['id']),
                       'self-service password change')
                 # Sign out every OTHER browser for this account; the session
-                # that changed the password stays signed in.
+                # that changed the password stays signed in. This must clear
+                # the in-memory token cache too (finding N-8).
                 token = (self.headers.get('Authorization', '') or '').replace('Bearer ', '') \
                     or session_token_from_cookie(self)
-                c.execute('DELETE FROM sessions WHERE user_id=%s AND token<>%s',
-                          (int(user['id']), token or ''))
+                revoke_user_sessions(c, user['id'], keep_token=token)
                 c.commit(); c.close()
                 self.send_json(200, {'ok': True, 'password_changed': True})
                 return
@@ -9163,7 +9456,7 @@ class API(BaseHTTPRequestHandler):
                     raise ValueError(f'badge_number "{badge}" is already assigned to another officer')
                 c.execute('''INSERT INTO users(username,display_name,role,branch,location_scope,
                         badge_number,password_hash,active) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)''',
-                    (username, display_name, role, branch, scope, badge, password_hash(password),
+                    (username, display_name, role, branch, scope, badge, hash_password(password),
                      1 if data.get('active', True) else 0))
                 new = rowdict(c.execute('SELECT * FROM users WHERE username=%s', (username,)).fetchone())
                 audit(c, user, 'CREATE', 'user', str(new['id']), username)
@@ -9714,7 +10007,7 @@ class API(BaseHTTPRequestHandler):
                 if data.get('password'):
                     if len(str(data['password'])) < 6:
                         raise ValueError('password must be at least 6 characters')
-                    sets['password_hash'] = password_hash(str(data['password']))
+                    sets['password_hash'] = hash_password(str(data['password']))
                 if sets:
                     columns = list(sets.keys())
                     values = [sets[col] for col in columns]

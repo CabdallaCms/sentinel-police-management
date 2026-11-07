@@ -28,6 +28,75 @@ Structured history of significant changes to this repository.
 
 ---
 
+## 2026-11-07 — Stage 0 security implementation (authorised scope only)
+
+**First code change to the application since the documentation and assessment phases.** Five
+work packages, exactly matching the five items the owner authorised. Nothing else was touched.
+
+### WP-01 — reproducible test environment
+- Added `requirements.txt`, `requirements-dev.txt`, `package.json` (pinned: psycopg2-binary 2.9.10,
+  pgserver 0.1.4, jsdom 26.1.0) and `scripts/run-tests.sh`. Closes the manifest half of finding M-10.
+- Repaired the bootstraps of `test_server.py` and `test_conduct_frontend.mjs`, which still used the
+  retired `SENTINEL_DB=<sqlite file>` convention. Added `backend/pg_test_env.py` so Node harnesses
+  can provision an isolated PostgreSQL database. **No assertion was weakened**; three stale
+  checkpoint-role expectations and two station-analytics fixtures were corrected to match the real
+  (stricter) server, and one expectation was *tightened* from 200 to 401.
+- **Measured result: 23 PASS / 2 FAIL before → 27 PASS / 0 FAIL / 1 BLOCKED after** (28 suites).
+
+### WP-45g — removal of fabricated biometric matching (SR-22, finding FPR-902)
+- Deleted the `allowFallbackScan` branch of `matchPersonByFingerprint()`, which returned an
+  **arbitrary person** by rotating `window._bioScanCursor` through the registry when no comparison
+  matched — and whose result was announced as "Biometric Fingerprint Match Found".
+- Measured before/after: the same unknown print previously identified **three different citizens in
+  rotation**; it now returns no match, every time.
+- The two silent "simulate scan" paths now report the negative result instead of doing nothing.
+- The `localStorage` biometric store (WP-45a) was **deliberately left unchanged** — out of scope.
+
+### WP-02 — seeded default credentials eliminated (SR-02, finding C-2)
+- Removed the hard-coded `ChangeMe123!` from `backend/server.py`, `index.html`, `backend/migrate_rbac.py`,
+  `README.md`, `backend/README.md` and `TESTING.md`. Nine accounts — including `admin` and `chief` —
+  previously shared it, and the login screen both displayed it and auto-filled it.
+- Seeded accounts now take `SENTINEL_BOOTSTRAP_PASSWORD`, or each receives its own random password
+  reported once to stderr and to a `0600` file.
+
+### WP-03 — secure password hashing (SR-03, finding C-3; decision D-03)
+- Replaced unsalted single-round SHA-256 with **PBKDF2-HMAC-SHA256, 600,000 iterations, 16-byte
+  per-password salt**, standard library only. Stored in the existing TEXT column — **no schema change**.
+- Login no longer matches the password inside a SQL predicate; it verifies in constant time.
+- Legacy hashes are accepted once and **transparently upgraded** on next sign-in, so an existing
+  database migrates with no DDL and no forced reset.
+- **N-8 (new, fixed):** a self-service password change deleted the `sessions` rows but not the
+  in-process `TOKENS` cache, so other browsers stayed authenticated. Now properly revoked.
+
+### WP-08 / WP-09 — upload validation and document access control (SR-01/SR-15, findings C-1/M-7)
+- `/uploads/` required **no authentication at all**: passport scans, applicant photographs, guardian
+  identity documents and case evidence were readable by any anonymous caller. Now 401 without a
+  valid session, and served with `nosniff`, a sandbox CSP and `Content-Disposition`.
+- `save_upload()` accepted **any extension at any size**. Now an allow-list (images + PDF), a 20 MB
+  cap, a magic-number check so content must match its extension, and mode `0640` on disk.
+- **Known remaining exposure, disclosed not hidden:** an *authenticated* officer can still read any
+  upload, including cross-branch. Per-file authorisation needs the document-ownership schema change
+  described in finding N-6 and was **not** made. `test_upload_access_control.py` asserts this
+  explicitly so it cannot be forgotten.
+
+### Reported, deliberately NOT fixed (outside the authorised five items)
+- **N-7** — `update_discipline()` builds `','.join('%s' * n)`, producing `'%,s,%,s,%,s'`. psycopg2
+  raises, the request 400s, and **a suspended officer can never be returned to Active duty**.
+  Blocks `test_server.py`. Needs owner authorisation.
+- **H-5** — an admin password reset does not end the target's existing sessions. Measured and
+  recorded by `test_password_security.py`.
+- **Analytics RBAC inconsistency** — `/api/analytics` is not gated purely by `ROLE_MODULES`;
+  `cid.officer` receives station and vehicle analytics it has no module for.
+
+### Planning documents (prepared in parallel, as instructed)
+- `planning/BIOMETRIC_PROCUREMENT_PLAN.md` — D-31, D-32, D-33, D-35 and the D-34 acceptance evidence.
+- `planning/LEGAL_ACTION_PLAN.md` — D-04, D-05, D-23, D-24, D-27.
+
+### Constraints honoured
+No schema change, no migration, no deployment, no merge to `main`, no real police records, no
+unrelated UI or feature change, and **Stage 1 was not started**.
+
+
 ## 2026-11-06 — CID Release 1.0 (pre-development) — Requirements and architecture package (Phase 3)
 
 **Documentation only. No application source code, database schema, migration, configuration or

@@ -3,7 +3,7 @@
  * Officer Conduct, Promotions & Disciplinary Management — frontend
  * integration test (standard-library backend + Node VM, no browser).
  *
- * Boots backend/server.py against a temporary SQLite database, then runs
+ * Boots backend/server.py against an isolated PostgreSQL database, then runs
  * the real inline <script> from index.html inside a Node VM sandbox with a
  * minimal DOM stub. It exercises the Officers Registration Office journey:
  *
@@ -214,14 +214,51 @@ function loadApp(sandbox) {
 
 const probe = (sandbox, expr) => vm.runInContext(expr, sandbox);
 
+/**
+ * Provision an isolated PostgreSQL database via backend/pg_test_env.py.
+ * Resolves to an env-override object, or null when no engine is available.
+ * The helper process is kept alive (and torn down) with this one.
+ */
+function provisionDatabase(python, label) {
+  return new Promise((resolve) => {
+    const helper = spawn(python, [path.join(ROOT, 'pg_test_env.py'), label], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+    });
+    let buf = '';
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    helper.stdout.on('data', (chunk) => {
+      buf += chunk.toString();
+      const nl = buf.indexOf('\n');
+      if (nl === -1) return;
+      try { finish(JSON.parse(buf.slice(0, nl))); }
+      catch { finish(null); }
+    });
+    helper.on('exit', () => finish(null));
+    process.on('exit', () => { try { helper.stdin.end(); helper.kill(); } catch { /* noop */ } });
+  });
+}
+
 async function main() {
   const port = await freePort();
   const tmp = `/tmp/sentinel-conduct-test-${Date.now()}`;
   mkdirSync(tmp, { recursive: true });
-  const proc = spawn('python3', [path.join(ROOT, 'server.py')], {
+  // WP-01: this harness previously passed SENTINEL_DB=<file>.sqlite, a
+  // SQLite-era setting the PostgreSQL server ignores, so the backend never
+  // started and the suite timed out on "backend health". It now provisions a
+  // real PostgreSQL database through backend/pg_test_env.py, exactly as the
+  // Python suites do. No assertion was changed.
+  const PYTHON = process.env.SENTINEL_PYTHON || 'python3';
+  const dbEnv = await provisionDatabase(PYTHON, 'conduct');
+  if (dbEnv === null) {
+    console.log('SKIP: no PostgreSQL test engine available '
+      + '(set SENTINEL_DATABASE_URL / SENTINEL_DB_* or install pgserver).');
+    return;
+  }
+  const proc = spawn(PYTHON, [path.join(ROOT, 'server.py')], {
     env: {
       ...process.env,
-      SENTINEL_DB: `${tmp}/db.sqlite`,
+      ...dbEnv,
       SENTINEL_UPLOADS: `${tmp}/uploads`,
       PORT: String(port),
     },
@@ -266,7 +303,7 @@ async function main() {
         place_of_birth: 'Laascaanood', contact_number: '+252 63 555 0123',
         guarantor_name: 'Xasan Cali', guarantor_address: 'Las Anod Main St',
         guarantor_contact: '+252 63 555 0999', doc1_type: 'National ID',
-      }, { photo: ['p.jpg', '\xff\xd8\xff\xe0x'], doc1_file: ['id.pdf', '%PDF x'] }),
+      }, { photo: ['p.jpg', '\xff\xd8\xff\xe0x'], doc1_file: ['id.pdf', '%PDF-1.4 x'] }),
     });
     const officerJson = await officerRes.json();
     if (officerRes.status !== 201) throw new Error('officer registration failed: ' + JSON.stringify(officerJson));

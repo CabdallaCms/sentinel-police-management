@@ -565,9 +565,20 @@ Then open `http://localhost:8001` (the backend serves the UI and the API togethe
 
 ### Demo accounts (development only)
 
-Nine demo users are seeded automatically on first run — one per role — all with
-password `ChangeMe123!`. This makes it easy to exercise the role-based access
-control and location-isolated checkpoints:
+Nine accounts are seeded automatically on first run — one per role — so the
+role-based access control and the location-isolated checkpoints can be
+exercised. **There is no default password.**
+
+* If `SENTINEL_BOOTSTRAP_PASSWORD` is set, every seeded account is created with
+  that password.
+* If it is not set, each account gets its OWN cryptographically random
+  password. They are printed once to the server's standard error and written
+  to `backend/bootstrap-credentials.txt` with owner-only (`0600`) permissions.
+  Read them, change them, then delete that file.
+
+Until WP-02 these nine accounts — including `admin` and `chief` — all shared
+the hard-coded password `ChangeMe123!`, which was additionally printed on the
+login screen and auto-filled by the role shortcut buttons (finding C-2).
 
 | Username     | Role                | Scope / Module             |
 |--------------|---------------------|----------------------------|
@@ -776,9 +787,9 @@ data.** It currently uses:
 
 - **psycopg2 + PostgreSQL** — a real engine, but with development-grade
   connection defaults and no TLS/credential-management hardening yet
-- **Development authentication** — a single hard-coded demo login (`admin` / `ChangeMe123!`), in-memory session tokens, and unsalted SHA-256 password hashing
+- **Development authentication** — database-backed session tokens with an in-process cache. Passwords are hashed with PBKDF2-HMAC-SHA256 (600,000 iterations, per-password salt) as of WP-03; the previous unsalted single-round SHA-256 storage (finding C-3) is still accepted once per account and transparently upgraded on the next successful sign-in. Session expiry (finding H-3) and authentication throttling (finding H-4) are still NOT implemented
 - **No HTTPS** — traffic is plain HTTP
-- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and the departmental analytics endpoints (`/api/cid/analytics`, `/api/officers/analytics`, `/api/vehicles/analytics`, `/api/stations/analytics`) still surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix for the executive dashboard and programmatic consumers (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The hard-coded demo logins and the unsigned `ChangeMe123!` default password are still in use.
+- **Role- and location-based permissions partially implemented** — the server now enforces role-based access control for the operational modules (System Admin / Fingerprint Unit / Airport Control / CID / Checkpoint South·East·West) and location isolation for Checkpoint users, and the departmental analytics endpoints (`/api/cid/analytics`, `/api/officers/analytics`, `/api/vehicles/analytics`, `/api/stations/analytics`) still surface summary metrics, crime distribution, checkpoint volumes, fleet status, roster/HR badges and the station deployment matrix for the executive dashboard and programmatic consumers (the legacy executive aggregation remains available to admins at `/api/admin/analytics`). The shared default password has been removed (WP-02); seeded accounts now take their password from `SENTINEL_BOOTSTRAP_PASSWORD` or receive a random one each.
 - **No production deployment** configuration
 - **No evidence file security** or chain-of-custody storage
 - **No backup service** or disaster-recovery process

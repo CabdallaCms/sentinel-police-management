@@ -1,0 +1,11 @@
+# Sentinel CID — runtime dependencies (WP-01).
+#
+# The backend is otherwise Python standard library only. Pinned exactly so a
+# clean environment is reproducible; see TESTING.md for the install steps.
+#
+# NOTE: psycopg2-binary ships prebuilt wheels and is the right choice for
+# development and test. For a production deployment, build `psycopg2` from
+# source against the system libpq instead (the binary wheel is explicitly not
+# recommended by upstream for production use). That decision belongs with the
+# deployment work package (WP-20 / D-01, D-02) and is NOT made here.
+psycopg2-binary==2.9.10

@@ -1,0 +1,22 @@
+# Sentinel CID — development and test dependencies (WP-01).
+#
+# Install:
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements-dev.txt
+#   npm install
+#   scripts/run-tests.sh
+#
+# Before WP-01, no manifest existed anywhere in the repository and 23 of 25
+# test suites could not be executed (finding M-10). These pins are what made
+# the suite runnable.
+-r requirements.txt
+
+# Provisions a throwaway PostgreSQL cluster for the test harnesses, so no
+# developer machine needs a preinstalled server and no test ever touches a
+# real database.
+pgserver==0.1.4
+
+# Transitive dependencies of pgserver, pinned for reproducibility.
+fasteners==0.20
+platformdirs==4.14.5
+psutil==7.2.2

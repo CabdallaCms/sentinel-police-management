@@ -8,3 +8,8 @@ __pycache__/
 .env
 .venv/
 node_modules/
+
+# WP-01 — local test environment (never committed)
+.test-logs/
+package-lock.json
+backend/bootstrap-credentials.txt

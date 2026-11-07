@@ -1349,7 +1349,7 @@ body.dark-mode .cert-lock-note,body[data-theme="dark"] .cert-lock-note{backgroun
       </div>
     </form>
     <div style="margin-top:18px;border-top:1px solid #eef1f6;padding-top:14px">
-      <small style="color:var(--muted);font-size:12px;font-weight:700;display:block;margin-bottom:6px">Quick demo accounts · password ChangeMe123!</small>
+      <small style="color:var(--muted);font-size:12px;font-weight:700;display:block;margin-bottom:6px">Role shortcuts · fills the username only</small>
       <div class="demo-grid" id="demoAccounts"></div>
     </div>
   </div>
@@ -4523,7 +4523,17 @@ function wireStationLocationDefaults(stationSelectId,prefix){
 }
 
 // ============================ identity: unified + biometric matching ============================
-function matchPersonByFingerprint(queryOrFile,draft,allowFallbackScan=false){
+// SECURITY (WP-45g / FPR-902 / SR-22): this function must NEVER invent an
+// identification. It previously accepted an `allowFallbackScan` flag which,
+// when no comparison matched, returned an ARBITRARY person by rotating
+// `window._bioScanCursor` through the registry — and the caller presented the
+// result as "Biometric Fingerprint Match Found". At a checkpoint that is a
+// wrongful-identification path. The flag and the fallback are removed; the
+// only possible outcomes are a real comparison hit or null.
+//
+// This remains STRING matching on identifiers, not biometric matching. Genuine
+// template comparison is WP-45a..f and is NOT implemented.
+function matchPersonByFingerprint(queryOrFile,draft){
   const list=db.people||[];
   if(!list.length)return null;
   const q=normTxt(queryOrFile||'');
@@ -4569,14 +4579,8 @@ function matchPersonByFingerprint(queryOrFile,draft,allowFallbackScan=false){
       if(byName)return byName;
     }
   }
-  // 4. Live scanner / attached print fallback against Central Person Registry
-  if(allowFallbackScan){
-    const captured=list.filter(p=>resolveFingerprintInfo(p,p).status==='captured');
-    const pool=captured.length?captured:list;
-    const idx=(window._bioScanCursor||0)%pool.length;
-    window._bioScanCursor=(idx+1);
-    return pool[idx]||list[0];
-  }
+  // 4. No comparison matched. Return null — never a guess, never a rotation
+  //    through the registry, never a nearest neighbour.
   return null;
 }
 function biometricControlHTML(prefix){
@@ -4635,7 +4639,7 @@ function handleFingerprintUpload(prefix,input){
   const stEl=document.getElementById(prefix+'-fpStatus');
   if(stEl)stEl.value='captured';
   const draft=(prefix!=='off'&&prefix!=='central')?readIdentity(prefix):null;
-  const matched=matchPersonByFingerprint(f.name,draft,true);
+  const matched=matchPersonByFingerprint(f.name,draft);
   const sig=matched?(resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id)):('BIO-SCAN-'+f.name.replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,10));
   const codeEl=document.getElementById(prefix+'-fpCode');
   if(codeEl)codeEl.value=sig;
@@ -4659,7 +4663,7 @@ function handleFingerprintCodeInput(prefix,value){
   }
   if(stEl&&stEl.value!=='captured')stEl.value='captured';
   const draft=(prefix!=='off'&&prefix!=='central')?readIdentity(prefix):null;
-  const matched=matchPersonByFingerprint(v,draft,false);
+  const matched=matchPersonByFingerprint(v,draft);
   if(matched){
     triggerRealTimeFingerprintCatch(prefix,matched,v);
   }else if(alertEl){
@@ -4671,11 +4675,22 @@ function simulateBiometricScan(prefix){
   const codeEl=document.getElementById(prefix+'-fpCode');
   const draft=(prefix!=='off'&&prefix!=='central')?readIdentity(prefix):null;
   const typed=codeEl?codeEl.value.trim():'';
-  const matched=matchPersonByFingerprint(typed,draft,true);
+  const matched=matchPersonByFingerprint(typed,draft);
   if(matched){
     const sig=resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id);
     if(codeEl)codeEl.value=sig;
     triggerRealTimeFingerprintCatch(prefix,matched,sig);
+    return;
+  }
+  // WP-45g: no match is a RESULT and must be shown. Previously this returned
+  // silently, which combined with the removed fallback would leave the officer
+  // with no feedback at all.
+  const alertEl=document.getElementById(prefix+'-fpAlert');
+  if(alertEl){
+    alertEl.className='match-banner warn show';
+    alertEl.innerHTML='<small>No match in the Central Person Registry'
+      +(typed?` for <code>${esc(typed)}</code>`:'')
+      +'. No identity has been assigned — enter the identity manually or re-capture.</small>';
   }
 }
 function handleFingerprintStatusChange(prefix,status){
@@ -4692,7 +4707,7 @@ function handleFingerprintStatusChange(prefix,status){
 function handleCentralFingerprintFile(input){
   const f=input&&input.files&&input.files[0];
   if(!f)return;
-  const matched=matchPersonByFingerprint(f.name,null,true);
+  const matched=matchPersonByFingerprint(f.name,null);
   const sig=matched?(resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id)):f.name;
   const codeEl=document.getElementById('centralFpCode');
   if(codeEl)codeEl.value=sig;
@@ -4718,7 +4733,7 @@ function handleCentralFpCodeSearch(value){
     renderPeople();
     return;
   }
-  const matched=matchPersonByFingerprint(v,null,false);
+  const matched=matchPersonByFingerprint(v,null);
   if(matched){
     window._highlightedPersonId=matched.id;
     paintBiometricCatchAlert(alertBox,matched,v);
@@ -4732,8 +4747,19 @@ function handleCentralFpCodeSearch(value){
 function simulateCentralBiometricScan(){
   const codeEl=document.getElementById('centralFpCode');
   const q=(codeEl&&codeEl.value.trim())||(document.getElementById('personSearch')?.value.trim())||'';
-  const matched=matchPersonByFingerprint(q,null,true);
-  if(!matched)return;
+  const matched=matchPersonByFingerprint(q,null);
+  if(!matched){
+    // WP-45g: report the negative result instead of returning silently.
+    window._highlightedPersonId='';
+    const alertBox=document.getElementById('centralBioAlert');
+    if(alertBox){
+      alertBox.className='match-banner warn show';
+      alertBox.innerHTML='<small>No biometric match in the Central Person Registry'
+        +(q?` for <code>${esc(q)}</code>`:'')+'.</small>';
+    }
+    renderPeople();
+    return;
+  }
   const sig=resolveFingerprintInfo(matched,matched).hash||('BIO-'+matched.id);
   if(codeEl)codeEl.value=sig;
   window._centralBioQuery=sig;
@@ -5719,7 +5745,7 @@ function applyHardwareCapture(prefix,capture){
     window._centralBioQuery=sig;
     const clearBtn=document.getElementById('centralFpClearBtn');
     if(clearBtn)clearBtn.style.display='';
-    const matched=matchPersonByFingerprint(sig,null,false);
+    const matched=matchPersonByFingerprint(sig,null);
     const alertBox=document.getElementById('centralBioAlert');
     if(matched){
       window._highlightedPersonId=matched.id;
@@ -5742,7 +5768,7 @@ function applyHardwareCapture(prefix,capture){
   const stEl=document.getElementById(prefix+'-fpStatus');
   if(stEl)stEl.value='captured';
   const draft=prefix!=='off'?readIdentity(prefix):null;
-  const matched=matchPersonByFingerprint(sig,draft,false);
+  const matched=matchPersonByFingerprint(sig,draft);
   if(matched){
     triggerRealTimeFingerprintCatch(prefix,matched,sig);
   }else{
@@ -5834,7 +5860,7 @@ function localResolveIdentity(d){
   const nat=normTxt(d.national),pass=normTxt(d.passport),mom=normTxt(d.mother),dob=normTxt(d.dob),pob=normTxt(d.pob),fp=normTxt(d.fingerprint);
   const parts=[normTxt(d.first),normTxt(d.second),normTxt(d.third),normTxt(d.fourth)];
   if(fp){
-    const bp=matchPersonByFingerprint(fp,d,false);
+    const bp=matchPersonByFingerprint(fp,d);
     if(bp)return{matched:true,biometric:true,tier:1,person:bp,suggestions:[],reason:`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${bp.id}`};
   }
   let p=db.people.find(x=>nat&&normTxt(x.nationalId)===nat)||db.people.find(x=>pass&&normTxt(x.passportId)===pass);
@@ -5862,7 +5888,7 @@ function localResolveIdentity(d){
 }
 async function resolveIdentity(d){
   if(d&&d.fingerprint){
-    const bp=matchPersonByFingerprint(d.fingerprint,d,false);
+    const bp=matchPersonByFingerprint(d.fingerprint,d);
     if(bp)return{matched:true,biometric:true,tier:1,person:bp,suggestions:[],reason:`⚡ Biometric Fingerprint Match Found — Linked to Central Person Record #${bp.id}`};
   }
   if(serverOn){try{return await api('/api/persons/resolve',{method:'POST',body:JSON.stringify(identityServer(d))})}catch(e){return{tier:-1,matched:false,reason:'Identity lookup unavailable: '+e.message}}}
@@ -6931,7 +6957,7 @@ function renderPeople(){
   const bioQ=normTxt(window._centralBioQuery||(document.getElementById('centralFpCode')?.value||''));
   // If the text search looks like a biometric template (e.g. BIO-P0001), also check biometric match
   if(q&&/^bio[-_]/i.test(q)){
-    const bm=matchPersonByFingerprint(q,null,false);
+    const bm=matchPersonByFingerprint(q,null);
     if(bm){
       window._highlightedPersonId=bm.id;
       paintBiometricCatchAlert(document.getElementById('centralBioAlert'),bm,q.toUpperCase());
@@ -9140,9 +9166,14 @@ function renderDemoAccounts(){
     `<button type="button" data-u="${a.username}"><b>${a.label}</b><small>${a.username} · ${a.detail}</small></button>`
   ).join('');
   el.querySelectorAll('button').forEach(b => b.onclick = () => {
+    // SECURITY (WP-02 / SR-02, finding C-2): this used to fill in the shared
+    // default password 'ChangeMe123!' and submit the form, so anyone who could
+    // load the page was one click away from an admin session. The shortcut now
+    // fills the username only; the officer must supply their own password.
     document.getElementById('loginUser').value = b.dataset.u;
-    document.getElementById('loginPassword').value = 'ChangeMe123!';
-    document.getElementById('loginForm').dispatchEvent(new Event('submit', {cancelable:true}));
+    const pw = document.getElementById('loginPassword');
+    pw.value = '';
+    pw.focus();
   });
 }
 renderDemoAccounts();

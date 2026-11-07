@@ -318,7 +318,7 @@ def run_api_suite(base):
         db.commit()
         # The migrated row behaves like any other checkpoint officer.
         db.execute("UPDATE users SET password_hash=%s WHERE id=%s",
-                   (backend.password_hash(PASSWORD), legacy_west))
+                   (backend.hash_password(PASSWORD), legacy_west))
         db.commit()
     finally:
         db.close()

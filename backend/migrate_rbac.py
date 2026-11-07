@@ -71,7 +71,12 @@ ROLE_LOCATION_SCOPE = {
     'CheckpointEast':  'East',
     'CheckpointWest':  'West',
 }
-DEFAULT_PASSWORD = 'ChangeMe123!'  # dev seed only — change for any real deploy
+# WP-02 / SR-02 (finding C-2): this script used to hard-code the password
+# 'ChangeMe123!' for every demo account it created. There is no default any
+# more — the operator must supply one explicitly, or no accounts are created.
+# (This script is a pre-PostgreSQL legacy artefact, see finding M-10; it is
+# not imported or executed by the application or by any test.)
+DEFAULT_PASSWORD = os.environ.get('SENTINEL_BOOTSTRAP_PASSWORD') or None
 
 DEMO_USERS = (
     # (username, display_name, role, branch, location_scope, password)
@@ -88,7 +93,14 @@ DEMO_USERS = (
 
 
 def password_hash(value):
-    return hashlib.sha256(value.encode()).hexdigest()
+    """Delegates to the server's PBKDF2 implementation (WP-03 / SR-03).
+
+    This used to be a bare unsalted SHA-256 digest, which would have written
+    legacy-format hashes straight back into a migrated database.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import server
+    return server.hash_password(value)
 
 
 def has_table(c, name):
@@ -187,6 +199,11 @@ def main():
                               (role, branch, scope, display_name, row['id']))
                     print(f'  ~ refreshed demo user {username} ({role})')
                 else:
+                    if not password:
+                        # WP-02 / SR-02: refuse to invent a credential.
+                        print(f'  ! skipped {username}: set SENTINEL_BOOTSTRAP_PASSWORD '
+                              f'to create demo accounts')
+                        continue
                     c.execute('INSERT INTO users(username,display_name,role,branch,'
                               'location_scope,password_hash,active) '
                               'VALUES(?,?,?,?,?,?,1)',
@@ -207,7 +224,7 @@ def main():
             for username, display_name, role, branch, scope, _ in DEMO_USERS:
                 scope_label = scope or branch
                 print(f'  - {username:14s} {role:18s} ({scope_label})')
-            print('All demo passwords are: ChangeMe123!')
+            print('Demo passwords were taken from SENTINEL_BOOTSTRAP_PASSWORD.')
             print()
             print('chief_commander permissions: ' + ', '.join(CHIEF_COMMANDER_PERMISSIONS))
             return 0

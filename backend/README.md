@@ -36,8 +36,10 @@ The API runs on `http://localhost:8001`.
 
 ## Demo accounts
 
-Eight demo users are seeded automatically on first run — one per role — all with
-password `ChangeMe123!`:
+Nine accounts are seeded automatically on first run — one per role. **There is
+no default password**: set `SENTINEL_BOOTSTRAP_PASSWORD` to choose one, or let
+the server generate a different random password per account and report it once
+to stderr and to `backend/bootstrap-credentials.txt` (mode `0600`).
 
 | Username     | Role                | Scope / Module             |
 |--------------|---------------------|----------------------------|

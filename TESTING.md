@@ -4,12 +4,58 @@ Branch: `arena/554b1a25-sentinel-police-management`. Do not merge until UAT is a
 Restart the backend and hard-refresh the browser when testing this branch.
 Use a test database and synthetic identities/documents only.
 
+## Running the whole suite (WP-01)
+
+Until WP-01 there was no dependency manifest anywhere in the repository and
+23 of the 25 suites could not be executed at all. The environment is now
+reproducible from two pinned manifests, and one script runs everything:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+npm install
+
+scripts/run-tests.sh            # everything
+scripts/run-tests.sh py         # Python suites only
+scripts/run-tests.sh node       # Node suites only
+scripts/run-tests.sh branch     # only suites matching 'branch'
+```
+
+The runner provisions a throwaway PostgreSQL cluster per suite via `pgserver`,
+so no developer machine needs a preinstalled server and **no test ever touches
+an operational database**. Logs land in `.test-logs/` (override with
+`SENTINEL_TEST_LOGDIR`).
+
+It reports four outcomes: `PASS`, `FAIL`, `SKIP` (a prerequisite is missing)
+and `BLOCKED`. **BLOCKED is not a pass** — it marks a suite that cannot run
+because of a known defect outside the current authorised scope, and the reason
+is printed with it. The script exits non-zero for a blocked suite unless
+`SENTINEL_ALLOW_BLOCKED=1`.
+
+### Credentials for the test suite
+
+The product no longer ships a default password (WP-02). `scripts/run-tests.sh`
+exports `SENTINEL_BOOTSTRAP_PASSWORD=ChangeMe123!` so the seeded accounts have a
+known throwaway password. **If you run a suite directly, export it yourself:**
+
+```sh
+SENTINEL_BOOTSTRAP_PASSWORD='ChangeMe123!' \
+  .venv/bin/python backend/test_branch_scope.py
+```
+
+Without it the server generates a random password per account and every login
+in the suite correctly fails with 401. `backend/test_password_security.py` is
+the exception: it deliberately unsets the variable to test the random path.
+
+Node suites that boot the backend need the virtualenv interpreter:
+`SENTINEL_PYTHON="$PWD/.venv/bin/python"` (the runner exports this too).
+
 ## Focused automated regressions
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install psycopg2-binary pgserver
-npm install --no-save --package-lock=false jsdom@26
+.venv/bin/pip install -r requirements-dev.txt
+npm install
 
 node backend/test_form_improvements.mjs
 node backend/test_shell_workflow_integration.mjs
@@ -32,6 +78,11 @@ node backend/test_clearance_rbac_ui.mjs
 node backend/test_reverse_sequence_ui.mjs
 node backend/test_branch_management_ui.mjs
 .venv/bin/python -m pytest backend/test_branch_management_crud.py -q
+
+# Stage 0 security suites
+.venv/bin/python backend/test_upload_access_control.py
+.venv/bin/python backend/test_password_security.py
+node backend/test_biometric_no_fabricated_match.mjs
 ```
 
 The linked-record suite **always** provisions isolated PostgreSQL. Review-gate,
@@ -281,7 +332,7 @@ All three suites cover their own provisioning: `test_station_actions.py` uses co
 available; never point them at operational data.
 
 ### Officer UAT checklist
-1. **SystemAdmin (`admin` / `ChangeMe123!`) → Police Stations → Registered stations.**
+1. **SystemAdmin (`admin`) → Police Stations → Registered stations.**
    - The table shows the **Actions** column with **View** and **Edit** on every row.
    - **View**: the drawer shows the station code, name, Region → District → Village, operational
      status, tier, phone, cell capacity, commander/deputy, notes, officer count, vehicle count and the
@@ -611,7 +662,7 @@ plus the `#Not recorded` fallback for a row with no badge, the three profile
 endpoints, and the Commander's `403 read_only_role` firewall on all of them.
 
 ### Officer UAT checklist
-1. Sign in as `fp.officer` (`ChangeMe123!`): the header avatar shows `OH`, and
+1. Sign in as `fp.officer`: the header avatar shows `OH`, and
    clicking anywhere on the name / avatar block opens **Officer profile** with
    `Badge #FP-102`. Change the display name — the header updates at once; pick a
    gold avatar preset — the header initials change; upload a JPG/PNG — the
@@ -629,7 +680,7 @@ endpoints, and the Commander's `403 read_only_role` firewall on all of them.
 4. As `fp.officer`, approve a clearance application with a signed scan, then open
    **Dashboard** without reloading: the KPI cards and the activity feed already
    show the new approval.
-5. Sign in as `chief` (`ChangeMe123!`): the identity block still opens the
+5. Sign in as `chief`: the identity block still opens the
    profile, but it is marked view-only and all three endpoints answer
    `403 read_only_role`.
 
@@ -671,7 +722,7 @@ the generic endpoint.
 2. Open the officer’s **Edit** drawer: the role shows *Checkpoint Officer* and the posting is
    pre-selected in the cascade. Switch the role to *Fingerprint Unit*: the Checkpoint field is
    replaced by Station / Branch / Unit; switch back and the checkpoint list returns.
-3. Sign in as `cp.south` (`ChangeMe123!`): the header reads *Checkpoint Officer · South Checkpoint*
+3. Sign in as `cp.south`: the header reads *Checkpoint Officer · South Checkpoint*
    and the checkpoint register shows only South screenings.
 4. Open **Persons → any person → Audit history**: the tab lists the identity’s events newest first
    with the acting officer and badge. As `fp.officer` open a person with a clearance application:
@@ -724,7 +775,7 @@ this branch (`?v=` stamps and the UI build marker were republished as
   `UPDATE police_branch` audit row.
 
 ### Manual verification
-1. Sign in as `admin` (`ChangeMe123!`) → **Administration → Branch Management**. The table lists
+1. Sign in as `admin` → **Administration → Branch Management**. The table lists
    every branch with **Status** and **Actions**; a row whose District is blank shows the amber
    *Unassigned district* badge and the reason under its name.
 2. **Actions → Edit** on a bare `East Checkpoint` row: rename it to `East Lasanod Checkpoint`,
