@@ -1,7 +1,14 @@
 # Owner Decision Sheet
 
-**Date:** 7 November 2026 · **Commit:** `389787b` · **Status:** **AWAITING DECISIONS — nothing implemented**
+**Date:** 7 November 2026 · **Revised:** 8 November 2026 · **Status:** **AWAITING DECISIONS — nothing implemented**
 **Detail:** `P0_TECHNICAL_CLARIFICATION.md` (exact diffs and tests) · `P0_WORK_PACKAGES.md` (full packages)
+**Addendum:** `OWNER_DECISION_SHEET_ADDENDUM.md` (adds A-16a) · `REFERENCE_DATA_SCOPE_ANALYSIS.md` (**A-18 revised**)
+
+> **8 Nov 2026 — A-18 revised, §6.** The earlier A-18 asked you to approve eight police stations
+> with their tiers and cell capacities. **Station management is HQ's responsibility, not a CID
+> Release 1.0 decision, and that request is withdrawn.** A-18 now asks only which reference data
+> production initialization creates for CID. **No station data is deleted or modified.**
+> Scope of this release: Fingerprint, Crime, Checkpoint (1.0) and Airport (Phase 2 / 1.1).
 
 > `backend/server.py` is **byte-identical** to commit `e7263d7` —
 > sha256 `a8211f4f…b3b9fc`, verified after the testing described below.
@@ -186,34 +193,56 @@ manually.
 
 ---
 
-## 6. A-18 — Keep reference stations and branches in production mode
+## 6. A-18 — Reference data created by production initialization *(REVISED 8 Nov 2026)*
 
-**Question:** Should the 8 police stations, the police branches and the checkpoint locations still be
-created in production mode, or are they also demonstration data?
+> **REVISED after the owner's scope correction.** The previous version asked you to approve eight
+> police stations with their tiers and cell capacities. **That request has been withdrawn.** Station
+> management is an HQ responsibility and was never a CID Release 1.0 decision — it reached this
+> sheet through a scope error on my part, explained in `REFERENCE_DATA_SCOPE_ANALYSIS.md` §1.
+> **No station list, tier or capacity requires your approval.**
+
+**Question:** For production initialization, should the system create **only `police_branches`** —
+the reference data the CID authorization model and all four CID units require — and create **no
+stations and no checkpoint-location rows**, leaving station provisioning to HQ?
 
 **Options**
-- **(a)** Keep them — they are operational reference data.
-- **(b)** Exclude them; the administrator creates all of them.
-- **(c)** Keep branches and locations, exclude stations.
+- **(a)** `police_branches` only (15 rows). No stations, no `locations` rows. HQ provisions stations.
+- **(b)** `police_branches` plus one placeholder station, so the Crime Unit works out of the box.
+- **(c)** Status quo — seed branches, locations and all eight stations.
 
-**Recommended: (a) — but this is your call, not mine.** These are real Somaliland locations
-(Ceerigaabo, Laascaanood, Burao, Caynabo, Oodweyne, Buuhoodle, Badhan, Adhi Cadeeye) with tiers and
-cell capacities, and the checkpoint `location_scope` values (`South`/`East`/`West`) are wired into
-the role model — removing them would break checkpoint officer scoping until re-created.
+**Recommended: (a).** Verified dependency position:
 
-**I cannot verify the station list is operationally correct.** If any station, tier or cell capacity
-is wrong or no longer exists, choose **(b)** and supply the real list.
+| Reference data | Required by CID? | Verdict |
+|---|---|---|
+| `police_branches` | **Yes — all four units.** Every CID table carries `branch_id REFERENCES police_branches(id)`, and branch-scope authorization resolves postings against it | **Create** |
+| `locations` (3 rows) | **No. The table is never read** — no `SELECT`, no `/api/locations` endpoint. Checkpoint scoping uses the `CHECKPOINT_LOCATIONS` constant (`server.py:1649`) | **Do not create** |
+| `police_stations` (8 rows) | Only the **Crime Unit**, and only that **≥1 row exists** — not which ones. `crime_incidents.station_id` is `NOT NULL` | **HQ provisions — out of CID scope** |
+
+**(b) recreates finding S-13 in another table** — a fictional station in an operational police
+database, appearing in every station report and capacity figure, with incidents filed against a
+station that does not exist. **(c)** is what produced the scope error.
+
+**Nothing is deleted.** The `police_stations` table, the `locations` table and every existing row
+stay exactly as they are — three foreign keys point at `police_stations`, two of them `NOT NULL`.
+This decision changes only what a *new production database* creates.
 
 **Consequences**
-- *Security:* Neutral.
-- *Operational:* (a) is usable immediately. (b) requires data entry before first use and will break
-  checkpoint scoping until branches exist.
-- *Legal:* Low, provided the list is accurate. **Inaccurate station records in an operational system
-  are a data-quality problem that propagates into every report.**
+- *Security:* No fictional operational records; consistent with A-16 and A-17.
+- *Operational:* **The Crime Unit cannot record incidents until HQ provisions stations and HR
+  registers officers** (dependencies HQ-1/2/3). A sequencing constraint for the go-live checklist,
+  not a defect. Fingerprint and Checkpoint are unaffected.
+- *Legal:* Avoids fabricated station and detention-capacity records in an operational police system.
 
-**Reversible:** **Yes** for code. Rows already created would need manual removal.
+**Reversible:** **Yes** for the code. No rows are deleted under any option, so there is nothing to
+restore.
 
-**Affects:** P0-WP-3 acceptance criterion AC-8.
+**Affects:** P0-WP-3 · acceptance criterion **AC-8 rewritten** (production: `police_branches` = 15,
+`police_stations` = 0, `locations` = 0; demonstration mode unchanged) · no change to the 7–9.5 day
+P0 estimate.
+
+**Out of CID scope, documented not decided:** HQ-1…HQ-6 in `REFERENCE_DATA_SCOPE_ANALYSIS.md` §3 —
+including that `crime_incidents` hard-requires both a station **and** a registered officer, and
+that station tier, cell capacity, commander and operational status have no CID function at all.
 
 ---
 
@@ -293,7 +322,7 @@ reconciliation (a short, enumerable list).
 | **A-11a** | Also revoke on deactivation | **(a)** — optional | Yes | — |
 | **A-16** | Flag demo seeding, default off | **(a)** | Yes | } |
 | **A-17** | Production = admin only | **(a)** | Yes² | } 2–3 |
-| **A-18** | Keep reference stations/branches | **(a)** — your call | Yes² | } |
+| **A-18** | **Branches only; HQ provisions stations** *(revised)* | **(a)** | Yes | } |
 | **A-19** | Bootstrap password variable | **(b)** + warning | Yes | } |
 | **A-13** | Interim alert withdrawal | **(a)** approve now | Code yes, data partly | 2–3 |
 | | | | **Total** | **7–9.5** |

@@ -1,7 +1,13 @@
 # Owner Decision Sheet — Addendum
 
-**Date:** 7 November 2026 · **Commit:** `05bac05` · **Status:** **AWAITING DECISIONS**
-**Parent:** `OWNER_DECISION_SHEET.md` (unchanged) · `P0_TECHNICAL_CLARIFICATION.md` (unchanged)
+**Date:** 7 November 2026 · **Revised:** 8 November 2026 · **Status:** **AWAITING DECISIONS**
+**Parent:** `OWNER_DECISION_SHEET.md` (A-18 revised) · `P0_TECHNICAL_CLARIFICATION.md` (unchanged)
+**Revision:** `REFERENCE_DATA_SCOPE_ANALYSIS.md` — **C-1 withdrawn, A-18 rescoped**
+
+> **8 Nov 2026 — correction.** C-1 asked you to approve eight police stations, their tiers and their
+> cell capacities. **That was outside CID scope and is withdrawn.** C-1 also contained a factual
+> error: it claimed the three `locations` rows were "load-bearing" for checkpoint authorization.
+> **They are not — nothing reads that table.** Both are corrected in C-1 below.
 
 > Answers to the four confirmations requested before the eight decisions are recorded.
 > **One of them raises a ninth decision, A-16a — please record it alongside the other eight.**
@@ -15,44 +21,52 @@ which would split the record.
 
 ---
 
-## C-1. The eight reference stations under A-18 — exact current values
+## C-1. ~~The eight reference stations under A-18~~ — **WITHDRAWN**
 
-Read from `backend/server.py:3287–3298`. These are what A-18 keeps or excludes.
+> **Superseded on 8 November 2026 by the owner's scope correction.** Station management is an HQ
+> responsibility and is not a CID Release 1.0 decision. **The request for your approval of the
+> eight stations, their tiers and their cell capacities is withdrawn.**
 
-| # | `station_id` | Name | Code | Region | District | Village | **Tier** | **Cells** |
-|---|---|---|---|---|---|---|---|---|
-| 1 | ST-001 | Ceerigaabo Central Station | SAN-C-01 | Sanaag | Ceerigaabo | Ceerigaabo | **Regional HQ** | **24** |
-| 2 | ST-002 | Badhan Station | SAN-C-02 | Sanaag | Badhan | Badhan | **District HQ** | **12** |
-| 3 | ST-003 | Caynabo Station | SOO-C-03 | Sool | Caynabo | Caynabo | **District HQ** | **10** |
-| 4 | ST-004 | Las Anod Station | SOO-C-01 | Sool | Laascaanood | Laascaanood | **Regional HQ** | **20** |
-| 5 | ST-005 | Burao Station | TOG-C-01 | East Togdheer | Burao | Burao | **Regional HQ** | **24** |
-| 6 | ST-006 | Oodweyne Station | TOG-C-02 | East Togdheer | Oodweyne | Oodweyne | **District HQ** | **12** |
-| 7 | ST-007 | Buuhoodle Station | ETG-C-03 | East Togdheer | Buuhoodle | **Widh Widh** | **Outpost** | **6** |
-| 8 | ST-008 | Adhi Cadeeye Outpost | SOO-C-02 | Sool | Laascaanood | Adhi Cadeeye | **Checkpoint** | **4** |
+I asked you to validate a station list, station tiers and **cell capacities**. Cell capacity is
+detention capacity — a custody and HQ matter with no CID function. It should never have been in a
+CID decision sheet. Root cause and full dependency analysis:
+**`REFERENCE_DATA_SCOPE_ANALYSIS.md`**.
 
-**Total cell capacity: 112.** Tiers: 3 Regional HQ · 3 District HQ · 1 Outpost · 1 Checkpoint.
+### A factual error in the withdrawn C-1, corrected
 
-### The other reference data A-18 also covers
+The withdrawn text said:
 
-| Kind | Rows | Detail |
-|---|---|---|
-| `police_branches` | **15** | 3 branches × 5 unit types (`fingerprint`, `crime`, `checkpoint`, `airport`, `police_station`): **Buuhoodle Branch** (East Togdheer/Buuhoodle), **Lasanod Branch** (Sool/Laascaanood), **Erigavo Branch** (Sanaag/Ceerigaabo). Idempotent — `ON CONFLICT DO NOTHING` |
-| `locations` | **3** | `South` → South Checkpoint · `East` → East Checkpoint · `West` → West Checkpoint, kind `Checkpoint` |
+> *"The three `locations` rows are load-bearing. `South`/`East`/`West` are wired into
+> `ROLE_LOCATION_SCOPE` and checkpoint scoping. Excluding them would break checkpoint officer
+> authorization until recreated."*
 
-### Points to check before you answer A-18
+**That was wrong.** The `locations` **table is never read by any code.**
 
-1. **Code inconsistency, not a defect:** ST-007 Buuhoodle uses prefix **`ETG-`** while ST-005/ST-006
-   in the same region use **`TOG-`**. Probably a typo in the original seed. Say which is correct and
-   I will align it.
-2. **ST-007 village is `Widh Widh`, not `Buuhoodle`** — the only station whose village differs from
-   its district. Intentional?
-3. **The three `locations` rows are load-bearing.** `South`/`East`/`West` are wired into
-   `ROLE_LOCATION_SCOPE` and checkpoint scoping. **Excluding them would break checkpoint officer
-   authorization until recreated** — so option (b) should still keep `locations` in practice; that
-   is what option **(c)** exists for.
-4. **I cannot verify operational accuracy.** Whether these eight stations exist, whether the tiers
-   are right, and whether cell capacities are current are facts only you can confirm. If any is
-   wrong, choose **(b)** or **(c)** and supply the real list.
+| Evidence | Finding |
+|---|---|
+| `CREATE TABLE … locations` | `server.py:227` |
+| Only writes | `server.py:3274`, `3278` — the seed |
+| **Reads** | **none** — no `SELECT … FROM locations` anywhere |
+| `/api/locations` endpoint | **does not exist**, backend or SPA |
+| What actually drives scoping | `CHECKPOINT_LOCATIONS = ('South','East','West')`, a constant at `server.py:1649` |
+
+I inferred the dependency from the column names without grepping for a read. A regression test
+(`test_checkpoint_scoping_works_without_location_rows`) is specified so the claim is proven, not
+assumed, next time.
+
+### What replaces C-1
+
+**A-18 is revised** — see `OWNER_DECISION_SHEET.md` §6. The question is now CID-scoped only:
+create `police_branches` (required by all four CID units and by branch authorization), create **no**
+stations and **no** `locations` rows, and leave station provisioning to HQ. **No station list
+requires your approval.**
+
+**Verified CID dependency on stations:** exactly one — `crime_incidents.station_id` is
+`NOT NULL REFERENCES police_stations(id)` (`server.py:376`), so the **Crime Unit** needs *a* station
+to exist, but not any particular one. Fingerprint, Checkpoint and Airport have no station
+dependency at all. Recorded as **HQ-1** in the out-of-scope register.
+
+**Nothing is deleted.** The station table and every existing row stay untouched.
 
 ---
 
@@ -245,7 +259,7 @@ never seen to fail proves nothing.
 | A-16 | Flag demo seeding, default off | (a) |
 | **A-16a** | **NEW — strict mode validation, startup announcement, contamination refusal** | **(a) all three guards** |
 | A-17 | Production = admin only | (a) |
-| A-18 | Keep reference stations/branches | (a) — your call; see C-1 notes 1–4 |
+| **A-18** | **REVISED — `police_branches` only; HQ provisions stations.** Station list, tiers and cell capacities **withdrawn** from your approval | **(a)** |
 | A-19 | Bootstrap password variable | (b) + warning |
 | A-13 | Interim alert withdrawal | (a) approve now |
 
