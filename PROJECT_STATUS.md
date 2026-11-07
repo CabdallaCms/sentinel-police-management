@@ -287,7 +287,13 @@ the first time. **Measured, not estimated:**
 | Run | Suites | PASS | FAIL | BLOCKED | SKIP |
 |---|---|---|---|---|---|
 | Baseline, before any Stage 0 change (`a1c2478`) | 25 | **23** | 2 | 0 | 0 |
-| After Stage 0 (this commit) | **28** | **27** | **0** | **1** | 0 |
+| After Stage 0 (`e7263d7`) | 28 | **27** | **0** | **1** | 0 |
+| After the security triage (`595ec3b`, 7 Nov 2026) | **29** | **28** | **0** | **1** | **0** |
+
+The 29th suite is `backend/test_document_branch_authorization.py`, added by the triage task. It runs
+15 checks: **11 execute and pass**; 4 skip with an explicit notice naming migration **M-01**,
+because they assert branch authorization that does not exist yet. A suite-level PASS here means *no
+regression* — it does **not** mean cross-branch document access is safe. **S-01 is open.**
 
 The two baseline failures were **harness** faults, not product faults: `test_server.py` and
 `test_conduct_frontend.mjs` still passed the retired `SENTINEL_DB=<sqlite file>` convention, so the
@@ -297,9 +303,18 @@ weakening a single assertion.
 Three suites are new in Stage 0: `test_biometric_no_fabricated_match.mjs` (9 checks),
 `test_upload_access_control.py` (15 tests), `test_password_security.py` (15 tests).
 
-**One suite is BLOCKED, and BLOCKED is not a pass.** `test_server.py` reaches line 1013 and stops on
-**N-7**, a genuine application defect found by making the suite runnable (§6). Fixing it is outside
-the five authorised Stage 0 items, so it was deliberately left in place and reported.
+**One suite is BLOCKED, and BLOCKED is not a pass.** `test_server.py` stops on **N-7**, a genuine
+application defect found by making the suite runnable (§6). Fixing it is outside the five
+authorised Stage 0 items, so it was deliberately left in place and reported.
+
+> **Correction (7 Nov 2026).** The Stage 0 statement that N-7 was the *only* reason this suite was
+> blocked was **incomplete**. Running the suite to exhaustion found **four additional faults ahead
+> of N-7**, all test-only: invalid PDF/PNG fixtures rejected by Stage 0's own magic-number check, a
+> call to the renamed `password_hash` helper, a stale station count, and a `chief` token reused
+> after logout. The last of these had been passing only because of the N-8 defect Stage 0 fixed —
+> so its failure is **evidence the N-8 fix works**. All four are corrected in `595ec3b`, and
+> **N-7 is now the sole remaining blocker** (verified by applying the one-line fix temporarily:
+> `ALL BACKEND TESTS PASSED`, then reverted). See `security/REMEDIATION_PLAN.md` §5.
 
 Reproduce with:
 
@@ -387,6 +402,69 @@ SQLite-era harnesses"** remains accurate.
 ---
 
 ## 9. Current task
+
+**Task (Stage 0 closure and security triage — investigation and design only):** investigate,
+document, design and test the remaining security issues. **No application code may be changed and
+no migration may be executed.** Stop and wait for owner approval.
+
+**Status:** **Complete and awaiting approval** as of 2026-11-07.
+
+### 9.0 R-1 — RESOLVED by the owner (7 Nov 2026)
+
+> **Question:** does any operational database exist that predates Stage 0 (`e7263d7`) and therefore
+> still holds the retired shared credential `ChangeMe123!`?
+>
+> **Owner's answer: NO.** Sentinel has never had an operational database before `e7263d7`. Only
+> temporary development and test databases have existed.
+
+**Consequences, recorded:**
+
+| # | Consequence |
+|---|---|
+| 1 | **No emergency credential rotation is required.** `security/CREDENTIAL_ROTATION_PROCEDURE.md` is retained as **contingency**, not deleted |
+| 2 | Finding **S-06** is downgraded from "release-blocking if any environment exists" to **High, applies to the next installation** |
+| 3 | The original **P0.1** work package (rotation assessment) is **discharged**; it is replaced by **P0-WP-3** (production initialization) |
+| 4 | **The risk relocates, it does not disappear.** The first database that matters is the next one created |
+
+**Verification of "no shared defaults in new installations" — executed, 15/15 passing**
+(`backend/test_password_security.py`, tests 01–05): no default constant in source; nine distinct
+random passwords; `ChangeMe123!` refused; credentials disclosed once to a `0600` file.
+
+**Two new findings were raised by this verification:**
+
+- **S-12** — `SENTINEL_BOOTSTRAP_PASSWORD` returns the same value for **every** username, so one
+  environment variable gives all nine seeded accounts **the same password**, with no warning.
+- **S-13** — the first run seeds demonstration **data** into any empty database: 3 fictional
+  persons with national IDs, 2 crime cases, 1 clearance application, 1 checkpoint event, and
+  **1 `'Active alert'` suspect alert** which — because of **S-03** — **can never be cleared**.
+  There is no production initialization mode.
+
+Both are remediated by **P0-WP-3** (`security/P0_WORK_PACKAGES.md` §4) and documented in
+`security/PRODUCTION_INITIALIZATION.md`.
+
+### 9.0b Deliverables of this task
+
+`security/SECURITY_ISSUE_REGISTER.md` (S-01…S-13) · `MIGRATION_PROPOSAL_DOCUMENT_OWNERSHIP.md`
+(M-01) · `DOCUMENT_AUTHORIZATION_TEST_DESIGN.md` (T-01…T-73) · `CREDENTIAL_ROTATION_PROCEDURE.md` ·
+`SUSPECT_ALERT_LIFECYCLE.md` (M-02) · `REMEDIATION_PLAN.md` · `P0_WORK_PACKAGES.md` ·
+`PRODUCTION_INITIALIZATION.md` · `planning/D23_LEGAL_ACTION_BRIEF.md` ·
+`backend/test_document_branch_authorization.py`.
+
+**Correction issued against the Stage 0 report:** it stated `test_server.py` was blocked by N-7
+alone. That was **incomplete**. Running the suite to exhaustion found **four additional test-only
+faults** ahead of N-7 (stale fixtures, a renamed helper, a stale count, and a token reused after
+logout). All four are corrected. **N-7 is now the sole remaining blocker**, verified by temporarily
+applying the one-line fix — the suite then reported `ALL BACKEND TESTS PASSED` — and reverting it
+(`server.py` byte-identical, sha256 verified).
+
+**Measured suite state: 28 PASS / 0 FAIL / 1 BLOCKED / 0 SKIP.**
+
+**STOP point honoured:** no application code was changed, no migration was run, Stage 1 has **not**
+been started.
+
+---
+
+### 9.1 Previous task — Stage 0 implementation (complete)
 
 **Task (Stage 0 implementation):** Deliver the five items the owner authorised — (1) a reproducible
 test environment, (2) removal of fabricated biometric-match behaviour, (3) elimination of seeded

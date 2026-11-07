@@ -1,8 +1,23 @@
 # Credential Rotation Procedure — existing databases
 
-**Date:** 7 November 2026 · **Status:** **PROCEDURE — NOT EXECUTED**
+**Date:** 7 November 2026 · **Status:** **CONTINGENCY — NOT REQUIRED, NOT EXECUTED**
 **Addresses:** S-06 (existing databases still hold `ChangeMe123!` credentials)
 **Applies to:** any database created before commit `e7263d7`
+
+> ### R-1 (7 November 2026): this procedure is NOT required
+>
+> The owner has confirmed that **Sentinel has never had an operational database before `e7263d7`**.
+> Only temporary development and test databases have existed. **There is nothing to rotate, and no
+> emergency.** §2 ("decide whether this applies") is answered: **it does not.**
+>
+> **This document is retained, not deleted**, for three reasons:
+> 1. If a forgotten environment surfaces, the procedure is ready.
+> 2. §4 (rotating via the API, never by direct SQL) and §6 (terminating all sessions) are the
+>    correct references for **any** future credential change, including routine ones.
+> 3. It records the analysis behind the decision.
+>
+> **The live successor to this document is `PRODUCTION_INITIALIZATION.md`** — R-1 moves the risk
+> from databases that exist to the first one that will.
 
 > Nothing in this document has been run. No credential was changed, no database was contacted.
 

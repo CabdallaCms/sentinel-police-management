@@ -19,6 +19,12 @@ governs**.
 | New decisions raised by the Phase 3 requirements and architecture work | **14** (D-30…D-43) |
 | **Open** | **41** (D-01…D-13, D-15, D-17, D-19…D-43, incl. D-03b) |
 | **Release-blocking and open** | **24** |
+| **Operational approvals resolved** (separate `R-*` namespace) | **1** (R-1) |
+
+> **The `D-*` counts above are unchanged by R-1.** Operational approvals raised by the security
+> triage use a separate `R-*` namespace (`security/REMEDIATION_PLAN.md` §3) and are never
+> renumbered into the decision sequence, per convention §7.1. R-1 is recorded in §1 below because
+> it is a closed owner decision with consequences for the requirements.
 
 **The 24 release-blocking open decisions**, so the number is checkable:
 D-03 · D-04 · D-05 · D-06 · D-08 · D-12 · D-15 · D-19 · D-20 · D-21 · D-22 · D-23 · D-24 · D-25 ·
@@ -40,6 +46,7 @@ therefore not counted above.
 | **D-18** | Fingerprint Release 1.0 definition — clearance-only, or genuine biometric capture and matching? | **BOTH.** The unit must deliver the clearance / identity-review workflow **and** genuine biometric capture and matching | **My Phase 2 recommendation of "clearance-only for 1.0" was overridden.** Work package **WP-45**, previously excluded from the estimate as `U` (unestimable), is **now in Release 1.0 scope and must be estimated** — see `planning/IMPLEMENTATION_ROADMAP.md`. Four prerequisites (**D-31 scanner, D-32 bridge service, D-33 matching engine, D-35 fingers captured**) are now on the critical path and are **procurement, not coding**. Eight new biometric security requirements (SR-20…SR-27) become release-blocking. The owner's "~80% complete" figure for this unit is **definitively not applicable** to the approved scope |
 | **D-14** | Definition of Crime Unit "advanced reports" | **Use the proposed catalogue as the starting point**; review, complete and document it for approval | Catalogue reviewed, feasibility-assessed and completed: **18 reviewed + 6 added = 24 reports**, in `requirements/CRIME_REPORT_CATALOGUE.md`. 8 are buildable from existing columns; 16 depend on work already specified. **The final Release 1.0 selection still requires sign-off** — see §2 below |
 | **D-16** | Airport module visibility in the Release 1.0 build | **Airport Unit is excluded from Release 1.0 → Release 1.1** | Airport is out of scope for all Phase 3 requirements. It appears in the architecture only where it already shares a table or route. **The visibility question remains partly open**: exclusion from scope is not the same as hiding the module in the build — see **D-13** |
+| **R-1** *(operational approval, 7 Nov 2026)* | Does any operational database exist that predates Stage 0 (`e7263d7`) and therefore still holds the retired shared credential `ChangeMe123!`? | **NO.** Sentinel has never had an operational database before `e7263d7`. Only temporary development and test databases have existed | **No emergency credential rotation is required** — finding **S-06** is downgraded from "High, release-blocking if any environment exists" to **High, applies to the next installation**. `security/CREDENTIAL_ROTATION_PROCEDURE.md` is **retained as contingency**, not deleted. **The risk relocates rather than disappears:** the first database that matters is the next one created, and that path is defective — see new findings **S-12** (one environment variable gives all nine seeded accounts the same password) and **S-13** (first run seeds demonstration data, including a suspect alert that cannot be cleared). Both are remediated by **P0-WP-3**. The original P0.1 work package (emergency rotation assessment) is **discharged** |
 
 ---
 
@@ -137,11 +144,12 @@ These need only a decision; the work behind them is complete.
 
 | # | Blocker | Why it matters now |
 |---|---|---|
-| **B-1** | **23 of 25 test suites have never been executed.** They require `psycopg2-binary`, `pgserver` and `jsdom@26`, none of which are installed, and installation is outside the current authorization | **Every acceptance criterion in this package depends on executing tests.** Until this is resolved, nothing in Release 1.0 can be *verified*, only *written*. This is the single highest-priority item and it is not a decision — it is an authorization |
+| ~~**B-1**~~ | ~~23 of 25 test suites have never been executed~~ — **RESOLVED by Stage 0 (`e7263d7`)** | Dependencies are pinned in `requirements-dev.txt` / `package.json` and `scripts/run-tests.sh` runs the full set. **Measured on 7 Nov 2026: 28 PASS / 0 FAIL / 1 BLOCKED / 0 SKIP.** The one blocked suite (`test_server.py`) is blocked by exactly one application defect, **N-7**, pending approval A-10 — see `security/REMEDIATION_PLAN.md` §5 |
 | **B-2** | **D-18's four procurement prerequisites (D-31, D-32, D-33, D-35) are outside engineering's control** | The biometric half of Release 1.0 cannot be scheduled until these are answered. No date should be committed before then |
 | **B-3** | **`suspect_alerts` has no `branch_id`** | The only Release 1.0 access-control gap that **cannot be closed without a schema change**, which places it behind the migration framework (SR-18) |
 | **B-4** | **The legal track (D-04, D-05, D-23, D-24, D-27) has the longest lead time in the project** | These are not engineering tasks and will not be accelerated by adding developers. If they start late, they become the critical path |
-| **B-5** | **A rotating-cursor fallback in the SPA returns an arbitrary person as a biometric match** (`index.html:4573`) | At a checkpoint this can produce a **wrongful detention**. Removal (FPR-902 / SR-22) is unconditional and should not wait for any other decision |
+| ~~**B-5**~~ | ~~A rotating-cursor fallback in the SPA returns an arbitrary person as a biometric match~~ — **RESOLVED by Stage 0 (`e7263d7`, WP-45g)** | `allowFallbackScan` and the rotating cursor were removed, 11 call sites de-argumented, no-match banners added. Verified by `test_biometric_no_fabricated_match.mjs` (9/9) **and a negative control** that fails against the pre-fix file. **FPR-901 remains open** — matching is still string comparison, not biometrics |
+| **B-6** *(new)* | **A suspect alert can never be cleared.** No code path changes `alert_status`; the only `UPDATE suspect_alerts` sets `origin` | A person listed in error is flagged at every checkpoint **indefinitely**, with no remedy available to the police themselves. Tracked as **S-03**; the legal decision is **D-23** (`planning/D23_LEGAL_ACTION_BRIEF.md`). An interim administrator withdrawal (approval **A-13**, 2–3 days) can close the acute harm without pre-empting D-23 |
 
 ---
 

@@ -18,12 +18,25 @@ Severity scale: **Critical** (exploitable now, severe harm) · **High** · **Med
 | **S-03** | **Suspect alerts can never be cleared.** `alert_status` is written `'Active alert'` at INSERT and **no code path ever updates it**. A person cleared by CID keeps flagging at every checkpoint, forever. | **High** | **YES** | **OPEN** | Only `UPDATE suspect_alerts` in the codebase is `SET origin=…` (line 3232). No status transition exists. |
 | **S-04** | **Suspect alerts carry no `branch_id`** (N-1), so alerts are unscoped across branches. | **Medium** | **YES** (coupled to S-03) | **OPEN** | `suspect_alerts` DDL line 299 — no branch column |
 | **S-05** | **Analytics RBAC leak** (N-3). `crimes` acts as a skeleton key: `cid.officer` receives vehicle and station analytics it has no module for; the CID bundle is ungated entirely. | **Medium** | No — fix before release, not a gate | **OPEN** | Root cause isolated, §3 |
-| **S-06** | **Existing databases still hold `ChangeMe123!` credentials.** Stage 0 stopped *new* installations being seeded that way; it did not rotate anything already deployed. | **High** *(if any environment exists)* | **YES** if any environment exists | **OPEN — operational** | WP-02 changed seeding only; no row was rewritten |
+| **S-06** | ~~Existing databases still hold `ChangeMe123!`~~ → **R-1 (7 Nov 2026): no operational database has ever existed.** No emergency rotation is required. **Residual:** no documented production initialization exists, so the *next* install is the exposure. | **High** | **No longer** blocking on existing data; **YES** for the first production install | **REDUCED** — rotation discharged, initialization open → **P0-WP-3** | Owner decision R-1; `PRODUCTION_INITIALIZATION.md` |
 | **S-07** | **N-7 — closing a disciplinary action is impossible**, so a suspended officer can never be returned to Active duty. Functional defect with a direct human consequence. | **High** (operational, not security) | **YES** for the HR module | **OPEN** | `server.py:6828`, `','.join('%s' * n)` → `'%,s,%,s,%,s'` |
 | S-08 | No session expiry (H-3) | High | YES | OPEN — not investigated this round | Carried from the Phase 2 register |
 | S-09 | No authentication throttling or auth audit (H-4) | High | YES | OPEN — not investigated this round | Carried |
 | S-10 | Mutable audit log (H-7) | High | YES — needs decision D-04 | OPEN | Carried |
 | S-11 | No TLS (H-8) | High | YES | OPEN — deployment concern | Carried |
+| **S-12** *(new, 7 Nov)* | **One environment variable gives all nine seeded accounts the same password.** `bootstrap_password_for()` returns `SENTINEL_BOOTSTRAP_PASSWORD` **unchanged for every username**; per-account randomness happens only when it is unset. No warning is emitted. The test runner sets it to `ChangeMe123!` by design — an operator copying that into production recreates the defect Stage 0 removed. | **High** | **YES** for the first production install | **OPEN** → **P0-WP-3** | `server.py:3489`; `test_password_security.py::test_05` |
+| **S-13** *(new, 7 Nov)* | **First run seeds demonstration data into any empty database** — 3 fictional persons with national IDs, 2 crime cases, 1 clearance application, 1 checkpoint event, and **1 `'Active alert'` suspect alert**. There is no production mode. Combined with **S-03**, that seeded alert **can never be cleared**. | **High** | **YES** for the first production install | **OPEN** → **P0-WP-3** | `server.py:3302` (accounts), `:3324`+ (data); alert INSERT verified |
+
+### Owner's four tracked items — confirmed still visible and open
+
+Recorded explicitly at the owner's request, so none is lost behind the newer findings:
+
+| ID | Item | State | Next step |
+|---|---|---|---|
+| **S-01** | Cross-branch document authorization | **OPEN — release-blocking** | Migration **M-01**, approvals A-1…A-6; tests already written and skipping until the table exists |
+| **S-02** | Administrator password-reset session revocation | **OPEN — release-blocking** | **P0-WP-2**, approval A-11 |
+| **S-05** | Analytics RBAC leak | **OPEN** | Approval A-12 (P1.5) |
+| **S-03 / S-04** | Suspect-alert lifecycle and branch scope | **OPEN — release-blocking** | Interim withdrawal A-13; migration **M-02** A-7/A-8; blocked on **D-23** (`planning/D23_LEGAL_ACTION_BRIEF.md`) |
 
 ### Closed by Stage 0 (for completeness)
 
@@ -210,7 +223,12 @@ Full chain and the reproducible commands: `REMEDIATION_PLAN.md` §5.
 
 ---
 
-## 5. S-06 — Existing-database credentials
+## 5. S-06 — Credentials: resolved for existing data, open for the first install
+
+> **UPDATE — R-1, 7 November 2026.** The owner has confirmed that **Sentinel has never had an
+> operational database before `e7263d7`**; only temporary development and test databases existed.
+> **No emergency rotation is required.** The subsection below is retained as the contingency
+> analysis. The live part of S-06 is now §5a.
 
 Stage 0 removed the shared default from the **seeding path**. It did not, and could not, change rows
 in a database that already exists. If any environment was ever started before `e7263d7`, its nine
@@ -221,13 +239,45 @@ The Stage 0 upgrade-on-login path rewrites a hash only when the user **successfu
 account nobody uses keeps its weak hash indefinitely — and the weak hash is for a **publicly known
 password**.
 
-Full procedure in `security/CREDENTIAL_ROTATION_PROCEDURE.md`.
+Full procedure in `security/CREDENTIAL_ROTATION_PROCEDURE.md` — **retained as contingency**, in
+case a forgotten environment surfaces.
+
+### 5a. The live residual — the next installation
+
+R-1 removes an emergency. **It relocates the problem rather than removing it:** the first database
+that matters is the next one created, and that path is defective.
+
+**Verified safe (executed, `test_password_security.py` 15/15):** no default password constant in
+source; nine **distinct** random passwords; `ChangeMe123!` refused on every account; credentials
+disclosed once to a `0600` file.
+
+**Verified unsafe — two new findings:**
+
+- **S-12** — `bootstrap_password_for()` (`server.py:3489`) returns `SENTINEL_BOOTSTRAP_PASSWORD`
+  unchanged **for every username**. Set it, and all nine accounts share one password. Silently.
+- **S-13** — the first-run block (`server.py:3302`) seeds nine demonstration personas **and**
+  demonstration records into any empty database, including **one `'Active alert'` suspect alert
+  against a fictional person**. Because of **S-03**, that alert can never be cleared. There is no
+  production initialization mode.
+
+Remediation: **P0-WP-3** (`P0_WORK_PACKAGES.md` §4), approvals **A-16…A-19**. Operator runbook:
+`security/PRODUCTION_INITIALIZATION.md`.
 
 ---
 
 ## 6. Summary of what blocks Release 1.0
 
-Release-blocking and still open: **S-01, S-02, S-03, S-04, S-06** (if any environment exists),
-**S-07** (HR module), plus the carried items **S-08, S-09, S-10, S-11**.
+Release-blocking and still open: **S-01, S-02, S-03, S-04, S-07** (HR module), **S-12, S-13**
+(first production install), plus the carried items **S-08, S-09, S-10, S-11**.
+**S-05** should be fixed before release but is not itself a gate.
+**S-06** is **reduced** by R-1 — no rotation needed; its live residual is S-12/S-13.
 
-**Nothing in this register has been fixed.** This document is investigation and design only.
+| Band | Items | Days |
+|---|---|---|
+| **P0** — approve now | S-07, S-02, (S-06 residual + S-12 + S-13) | **5–6.5** |
+| **P1** — release-blocking | S-01, S-03, S-04, S-05, S-08, S-09 | 23–37 |
+| **P2** — before deployment | S-10 *(D-04)*, S-11, full lifecycle *(D-23)* | 34–57 |
+
+**Nothing in this register has been fixed.** This document is investigation and design only. P0 is
+specified to implementation detail in `P0_WORK_PACKAGES.md` and awaits approvals **A-10, A-11,
+A-16…A-19**.
