@@ -665,7 +665,9 @@ def departmental_analytics_suite():
                      'guardian_third_name': 'B', 'guardian_fourth_name': 'C',
                      'guardian_relationship': 'Father', 'guardian_phone': '+1',
                      'guardian_address': 'X', 'guardian_occupation': 'Worker'}
-        cp_files = {'doc_tr_0': ('t.pdf', b'x'), 'doc_gd_0': ('g.pdf', b'x'),
+        # Fixtures must be real PDFs: save_upload() enforces magic-number
+        # agreement with the file extension (Stage 0, WP-09 / SR-15).
+        cp_files = {'doc_tr_0': ('t.pdf', b'%PDF-1.4 t'), 'doc_gd_0': ('g.pdf', b'%PDF-1.4 g'),
                     'photo': ('p.jpg', b'\xff\xd8\xff\xe0x')}
 
         def stop(token, location, first, second, third, fourth, national_id=None):
@@ -1067,7 +1069,12 @@ def hr_directorate_suite():
                         'contact_phone': '0907111222'})
         assert s == 401, ('HR may read stations but not create them', s, r)
         s, r = request(base, 'GET', '/api/stations', hr)
-        assert s == 200 and len(r['items']) == 8, (s, r)
+        # /api/stations also mirrors police branches in as synthetic
+        # 'Mirrored Branch' rows, so count the real stations explicitly
+        # rather than the whole list.
+        assert s == 200, (s, r)
+        real_stations = [x for x in r['items'] if x['station_tier'] != 'Mirrored Branch']
+        assert len(real_stations) == 8, (len(real_stations), r)
         # a checkpoint officer never reaches the HR register or its analytics
         s, cp = request(base, 'POST', '/api/login',
                         body={'username': 'cp.south', 'password': 'ChangeMe123!'})
@@ -1233,8 +1240,13 @@ def chief_commander_suite():
         s, again = request(base, 'POST', '/api/login',
                            body={'username': 'chief', 'password': 'ChangeMe123!'})
         assert s == 200 and again['user']['read_only'] is True, (s, again)
+        # /api/logout genuinely revokes the old token now (both the sessions
+        # row and the in-process TOKENS cache), so the pre-logout token is
+        # dead and every later call must use the new one.
+        chief = again['token']
         # The dashboard drops quick-registration actions for this role.
         s, d = request(base, 'GET', '/api/dashboard', chief)
+        assert s == 200, (s, d)
         assert d['read_only'] is True and d['can_write'] is False, d
         assert d['quick_actions'] == [], d['quick_actions']
         assert 'view-only' in d['subhead'], d['subhead']
@@ -1842,7 +1854,9 @@ def main():
                     'guardian_third_name': 'B', 'guardian_fourth_name': 'C',
                     'guardian_relationship': 'Father', 'guardian_phone': '+1',
                     'guardian_address': 'X', 'guardian_occupation': 'Worker'}
-        cp_files = {'doc_tr_0': ('t.pdf', b'x'), 'doc_gd_0': ('g.pdf', b'x'),
+        # Real PDF bytes, so that the 400 below is provably the branch-scope
+        # refusal and not the upload magic-number check firing first.
+        cp_files = {'doc_tr_0': ('t.pdf', b'%PDF-1.4 t'), 'doc_gd_0': ('g.pdf', b'%PDF-1.4 g'),
                     'photo': ('p.jpg', b'\xff\xd8\xff\xe0x')}
         s, r = multipart_request(base, '/api/checkpoint-events', tokens['cp.south'],
                                  cp_south, cp_files)
@@ -2619,7 +2633,7 @@ def main():
         try:
             conn.execute("INSERT INTO users(username,display_name,role,branch,password_hash,active) "
                          "VALUES('legacy.fp','Legacy FP','fingerprint_officer','Fingerprint Unit',?,1)",
-                         (sentinel_server.password_hash('ChangeMe123!'),))
+                         (sentinel_server.hash_password('ChangeMe123!'),))
             conn.commit()
         finally:
             conn.close()
@@ -2691,7 +2705,9 @@ def main():
         assert r['officer']['photo_path'] and r['officer']['doc1_path'], r
 
         # Service ID increments across years/records (POL-YYYY-XXXX).
-        s, r2 = new_officer(files={'photo': ('p.png', b'\x89PNG x'), 'doc1_file': ('id2.png', b'\x89PNG x')},
+        # Full 8-byte PNG signature; save_upload() checks the whole prefix.
+        s, r2 = new_officer(files={'photo': ('p.png', b'\x89PNG\r\n\x1a\nx'),
+                                   'doc1_file': ('id2.png', b'\x89PNG\r\n\x1a\nx')},
                             fields={'blood_group': 'A-', 'rank': 'Constable'})
         assert s == 201 and r2['service_id'] == 'POL-2026-0002', (s, r2)
 
