@@ -284,8 +284,9 @@ Remediation: **P0-WP-3** (`P0_WORK_PACKAGES.md` §4), approvals **A-16…A-19**.
 > reaches the same data through `GET /api/persons/<id>`. Full plan:
 > **`AUTHORIZATION_REMEDIATION_PLAN.md`**.
 
-Release-blocking and still open: **S-16a, S-16b, S-14, S-15, S-04** (authorization — all five now proven by execution), **S-01, S-02, S-03,
-S-04, S-07** (HR module), **S-12, S-13** (first production install), plus the carried items
+Release-blocking and still open: **S-16a, S-16b, S-14, S-15, S-04, S-17, S-18** (authorization — all
+now proven by execution), **S-01, S-02, S-03, S-07**, **S-12, S-13** (first production install),
+plus the carried items
 **S-08, S-09, S-10, S-11**, and **H-2b** (checkpoint scope — now proven by execution on all three
 counts: no branch filter, unrecognised locations accepted and stored as fabricated codes, and
 `South` matching `Southwest` by substring).
@@ -300,7 +301,9 @@ counts: no branch filter, unrecognised locations accepted and stored as fabricat
 | **P1** — release-blocking | S-01, S-03, S-04, S-05, S-08, S-09 | 23–37 |
 | **P2** — before deployment | S-10 *(D-04)*, S-11, full lifecycle *(D-23)* | 34–57 |
 
-**Ordering constraint:** **SEC-1 → SEC-2 → SEC-3 → A-18.** Implementing A-18 first would remove the
+**Ordering constraint:** **SEC-0 → SEC-2 → SEC-3 → A-18.** *(Corrected: this line previously read
+"SEC-1 → SEC-2 → SEC-3", which went stale when SEC-1 moved last in revision 3. SEC-1 depends on
+SEC-4 and M-02 Phase A and does not gate A-18.)* Implementing A-18 first would remove the
 `police_station` branch rows, leaving `/api/crimes` with no `WHERE` clause — converting an
 accidental fail-closed into disclosure of the whole crime register.
 
