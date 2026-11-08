@@ -5,6 +5,14 @@
 **Raised by:** the owner's instruction to investigate unresolved-branch behaviour and treat it as a
 release blocker until verified.
 
+> **PARTIALLY SUPERSEDED by `AUTHORIZATION_REMEDIATION_PLAN.md` (revision 2).** The *evidence* in
+> §3–§5 stands unchanged and is the record of the probe. Three things below are out of date:
+> **(1)** §6.3's rollout proposed a **report-only production phase** — withdrawn; per R-1 there is
+> no production database, so enforcement is verified in **staging before production exists**.
+> **(2)** §6.6's 3–5 day estimate bundled the shared three-state helper, which is now costed once
+> as **SEC-0**; S-14's own call-site work is **2–3 d**.
+> **(3)** §5.3 said the person registry was 'not affected' — **wrong**, see **S-16a/S-16b**.
+
 > Nothing implemented. The probe described here was a throwaway read-only harness, run against
 > unmodified code and **deleted**. `backend/server.py` is byte-identical to `e7263d7`
 > (sha256 `a8211f4f…b3b9fc`).
@@ -158,9 +166,16 @@ does not fix Checkpoint; it needs scoping added, not repaired.
 
 ### 5.3 Not affected
 
-`persons`, `officers`, `police_stations`, `vehicles`, `suspect_alerts` carry no `branch_id`
-(`suspect_alerts` is finding **S-04**). They are governed by module and role gates only. Out of
-scope for S-14 — but it means branch isolation does not exist for them at all.
+`officers`, `police_stations`, `vehicles` and `suspect_alerts` carry no `branch_id`
+(`suspect_alerts` is finding **S-04**). They are governed by module and role gates only — branch
+isolation does not exist for them at all.
+
+> **CORRECTION.** This section originally listed `persons` here as "not affected". **That was
+> wrong.** The `persons` *table* has no `branch_id`, but `GET /api/persons/<id>` **attaches four
+> unit registers that do** — and filters none of them. That is **S-16a (Critical)**, found one turn
+> later while investigating Checkpoint. Listing the table as unaffected without checking what the
+> endpoint returned is the same mistake as the `locations` claim: reasoning from schema instead of
+> from the response.
 
 ---
 
@@ -208,17 +223,16 @@ the fail-open alone leaves CID officers seeing zero incidents.
 
 ### 6.3 Backfill and rollout
 
-A fail-closed switch will lock out any account whose posting does not currently resolve. Before
-enforcing:
+> **SUPERSEDED — see `AUTHORIZATION_REMEDIATION_PLAN.md` §4.** This section originally proposed a
+> report-only phase **in production**. That was wrong: it would have deliberately shipped a known
+> exploitable path. Per **R-1** there is no production database, so there is nothing to be
+> backward-compatible with.
 
-1. **Report-only pass.** Log every session whose scope is indeterminate, per user and endpoint. Run
-   until the list stops changing.
-2. **Correct the postings** — administrators fix `users.branch` to match registered branch names
-   (this is PRE-4).
-3. **Enforce.**
-
-Do not skip step 1. The probe shows affected accounts currently *work*, so enforcement without a
-report-only pass turns a silent leak into a silent outage.
+**Replacement:** enforcement is on from the first commit, and compatibility is established in
+**staging** (phases R-C/R-D): load representative accounts plus deliberately broken ones, run a
+read-only diagnostic that reports which accounts *would* be refused, correct the invalid
+assignments (**PRE-4**), then re-run until only the deliberately broken accounts are refused.
+**No guard is ever disabled, and nothing reaches production with a known open path.**
 
 ### 6.4 Longer term — the root cause
 
@@ -248,10 +262,16 @@ pre-fix observations, already recorded.
 
 ### 6.6 Effort
 
-**3–5 days.** Ten call sites, the three-state helper, the `/api/crimes` unit-type correction, eight
-tests, and the report-only pass. **This is new P0 scope** — it was not in the 7–9.5 day estimate.
+> **SUPERSEDED — see `AUTHORIZATION_REMEDIATION_PLAN.md` §7.2.** This figure bundled the shared
+> three-state helper, which is now **SEC-0** and costed once across all packages.
 
-Revised P0: **10–14.5 days.**
+| Package | Content | New work |
+|---|---|---|
+| **SEC-0** | Three-state model, shared by every package | 2–3 d |
+| **SEC-2** | S-14 — the 12 enforcing call sites only | **2–3 d** |
+| SEC-3 | S-15 — `/api/crimes` unit type (was bundled here) | 1–2 d |
+
+Authorization total (SEC-0…SEC-5): **10–16 d**. Total before Release 1.0: **17–25.5 d**.
 
 ---
 

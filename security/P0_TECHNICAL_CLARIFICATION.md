@@ -655,15 +655,29 @@ removing the `police_station` rows makes `/api/crimes` return every incident to 
 Three Critical/High authorization defects were proven by execution **after** §1–§7 were drafted.
 They do not change the P0-WP-1/2/3 diffs, but they **reorder the release** and **block §7**.
 
-| ID | Defect | Severity | Package | Effort |
-|---|---|---|---|---|
-| **S-16** | `GET /api/persons/<id>` returns clearance, airport, alert and checkpoint records with **no module, branch or location filtering**. Reachable by **any authenticated account**, no misconfiguration required | **Critical** | SEC-1 | 2–3 d |
-| **S-14** | Branch-scope authorization **fails open** — `user_branch_scope()` conflates "unrestricted" with "unresolved" | **Critical** | SEC-2 | 3–5 d |
-| **S-15** | `/api/crimes` scopes on `police_station` while records store a `crime` branch id | **High** | SEC-3 | 1–2 d |
-| H-2b | Checkpoint location scope fails open the same way; no branch filtering at all | **High** | SEC-4 | 3–4 d |
-| — | Four paths create station records; crime filing can create its own station | **High** | SS-1 | 1–2 d |
+All four share one root cause: module, branch and checkpoint-location scope each return a falsy
+value for both *"explicitly unrestricted"* and *"cannot determine"*, and every call site reads falsy
+as *"allow"*. They are therefore remediated by **one consolidated model (SEC-0)**, costed once.
 
-**Full plan, call-site inventory and 32-test strategy: `AUTHORIZATION_REMEDIATION_PLAN.md`.**
+| ID | Defect | Severity | Package | New work |
+|---|---|---|---|---|
+| — | **Unified authorization model** — three states (`UNRESTRICTED` / `GRANTED` / `INDETERMINATE`) across module, branch and location; no fallback to unrestricted | — | **SEC-0** | **2–3 d** |
+| **S-16a** | `GET /api/persons/<id>` attaches clearance, airport, alert and checkpoint records with **no module, branch or location filtering**. **No precondition** | **Critical** | SEC-1 | 2–3 d |
+| **S-16b** | `/linked-records`, `/documents`, `/audit-history` apply module + location but **no branch** filtering | **High** | SEC-1 | *(in SEC-1)* |
+| **S-14** | Branch scope fails open — 12 enforcing call sites | **Critical** | SEC-2 | 2–3 d |
+| **S-15** | `/api/crimes` scopes on `police_station` while records store a `crime` branch id | **High** | SEC-3 | 1–2 d |
+| H-2b | Checkpoint location scope fails open identically; no branch filtering at all | **High** | SEC-4 | 2–3 d |
+| — | Staging diagnostics + assignment correction | — | SEC-5 | 1–2 d |
+| — | Four paths create station records; crime filing can create its own station | **High** | **SS-1 — separate, awaiting owner approval** | 1–2 d |
+
+**Shared identity is preserved.** The `persons` row itself stays readable by every authenticated
+session — only the attached unit arrays are filtered. Checkpoint officers do not hold the `people`
+module yet legitimately need person lookup for intake, so requiring it would break operations.
+
+**Full plan, endpoint matrix and 44-test strategy: `AUTHORIZATION_REMEDIATION_PLAN.md` (revision 2).**
+Enforcement is implemented and verified **in staging before production exists** — there is no
+report-only production phase, because per R-1 there is no production database to be compatible
+with.
 
 ### Effect on §7 (reference-data initialization)
 
@@ -681,8 +695,9 @@ confirmed before A-18.
 | | Before | **Now** |
 |---|---|---|
 | P0-WP-1/2/3 | 7–9.5 d | 7–9.5 d |
-| Authorization packages (SEC-1…4, SS-1) | — | **10–16 d** |
-| **Total before Release 1.0** | 7–9.5 d | **17–25.5 d** |
+| Authorization (SEC-0…SEC-5) | — | **10–16 d** |
+| SS-1 station safeguards *(separate, pending approval)* | — | 1–2 d |
+| **Total before Release 1.0** | 7–9.5 d | **17–25.5 d** (+1–2 d with SS-1) |
 
 ---
 
