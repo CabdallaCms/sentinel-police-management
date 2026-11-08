@@ -1,10 +1,10 @@
 # Owner Decision Sheet — Addendum
 
-**Date:** 7 November 2026 · **Revised:** 8 November 2026 · **Status:** **AWAITING DECISIONS**
+**Date:** 5 November 2026 (revised) · **Status:** **AWAITING DECISIONS**
 **Parent:** `OWNER_DECISION_SHEET.md` (A-18 revised) · `P0_TECHNICAL_CLARIFICATION.md` (unchanged)
 **Revision:** `REFERENCE_DATA_SCOPE_ANALYSIS.md` — **C-1 withdrawn, A-18 rescoped**
 
-> **8 Nov 2026 — correction.** C-1 asked you to approve eight police stations, their tiers and their
+> **5 Nov 2026 — correction.** C-1 asked you to approve eight police stations, their tiers and their
 > cell capacities. **That was outside CID scope and is withdrawn.** C-1 also contained a factual
 > error: it claimed the three `locations` rows were "load-bearing" for checkpoint authorization.
 > **They are not — nothing reads that table.** Both are corrected in C-1 below.
@@ -23,7 +23,7 @@ which would split the record.
 
 ## C-1. ~~The eight reference stations under A-18~~ — **WITHDRAWN**
 
-> **Superseded on 8 November 2026 by the owner's scope correction.** Station management is an HQ
+> **Superseded on 5 November 2026 by the owner's scope correction.** Station management is an HQ
 > responsibility and is not a CID Release 1.0 decision. **The request for your approval of the
 > eight stations, their tiers and their cell capacities is withdrawn.**
 

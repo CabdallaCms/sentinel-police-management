@@ -500,10 +500,153 @@ currently creates nine users and a suspect alert. A test never seen to fail prov
 
 ---
 
-## 7. Limits of this clarification
+## 7. Reference-data initialization — exact change *(added 5 Nov 2026)*
+
+Specifies the A-18 outcome inside **P0-WP-3**. Answers the owner's question 5.
+**Nothing here is implemented.**
+
+### 7.1 What changes
+
+Three edits inside `init_db()`. **No schema change. No `DROP`. No `ALTER`. No `DELETE`.**
+
+**Change 1 — seed only the four CID branch unit types.**
+
+```python
+# BEFORE (server.py:3266-3272) — 15 rows: 4 CID unit types + police_station
+for branch_name, region, district in DEFAULT_POLICE_BRANCHES:
+    for unit_type in BRANCH_UNIT_TYPES:
+        c.execute('''INSERT INTO police_branches(name,region,district,unit_type)
+                     VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
+                  (branch_name, region, district, unit_type))
+
+# AFTER — 12 rows. `police_station` is HQ's unit type, not a CID one, and
+# seeding it creates a latent station-fabrication path: THREE code paths
+# (server.py:4700, 4724, 9145) auto-INSERT a police_stations row from such a
+# branch, with a hard-coded 'District HQ' tier and no contact phone.
+# See HQ_PROVISIONING_AND_READINESS.md section 0.
+CID_BRANCH_UNIT_TYPES = ('fingerprint', 'crime', 'checkpoint', 'airport')
+for branch_name, region, district in DEFAULT_POLICE_BRANCHES:
+    for unit_type in CID_BRANCH_UNIT_TYPES:
+        c.execute('''INSERT INTO police_branches(name,region,district,unit_type)
+                     VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
+                  (branch_name, region, district, unit_type))
+```
+
+In demonstration mode the loop keeps using the full `BRANCH_UNIT_TYPES`, so the existing fixture —
+and the ~22 suites that rely on it — is unchanged.
+
+**Change 2 — stop seeding `locations`.** Wrap `server.py:3274-3281` in the demo-mode guard. The
+**table is retained**; nothing reads it (`REFERENCE_DATA_SCOPE_ANALYSIS.md` §1).
+
+**Change 3 — stop seeding the eight stations.** Wrap `server.py:3283-3300` in the demo-mode guard.
+The **table and schema are retained unchanged**, and the existing
+`IF COUNT(*) == 0` guard already prevented it from touching a populated table.
+
+All three sit inside the single `demo_seeding_enabled()` branch introduced by P0-WP-3 (§3), so the
+production path simply does not execute them.
+
+### 7.2 Resulting first-run state
+
+| Table | Production | Demonstration |
+|---|---|---|
+| `police_branches` | **12** | 15 |
+| `police_stations` | **0** | 8 |
+| `locations` | **0** | 3 |
+| `officers` | 0 | 0 |
+| `users` | 1 (`admin`) | 9 |
+| `persons`, `crime_cases`, `clearance_applications`, `checkpoint_events`, `suspect_alerts` | 0 | seeded |
+
+### 7.3 AC-8, rewritten
+
+| | Old AC-8 | **New AC-8** |
+|---|---|---|
+| Production | reference stations and branches **are** created | **`police_branches` = 12 (four CID unit types only); `police_stations` = 0; `locations` = 0** |
+| Demonstration | — | unchanged: 15 / 8 / 3 |
+| Schema | — | **`police_stations` and `locations` tables still exist, unaltered** |
+| Existing data | — | **no row deleted or modified in any mode** |
+
+### 7.4 Tests — `backend/test_production_init.py`
+
+```python
+def test_production_creates_cid_branch_reference_data(self):
+    """All four CID units FK to police_branches; CID scoping resolves
+    against the 'crime' rows (MODULE_UNIT_TYPES maps cid -> crime)."""
+    self.assertEqual(self.count('police_branches'), 12)
+    self.assertEqual(
+        sorted({r['unit_type'] for r in self.rows('police_branches')}),
+        ['airport', 'checkpoint', 'crime', 'fingerprint'])
+
+def test_production_seeds_no_police_station_branch_rows(self):
+    """The police_station unit type is HQ's. Seeding it would also create a
+    latent station-fabrication path via resolve_station_with_branch()."""
+    self.assertEqual(
+        self.count("police_branches WHERE unit_type='police_station'"), 0)
+
+def test_production_creates_no_stations(self):
+    """Station provisioning is HQ's (HQ-1). Catches BOTH the removed seed
+    and any auto-mirrored row, since it asserts on the table, not the seed."""
+    self.assertEqual(self.count('police_stations'), 0)
+
+def test_production_creates_no_location_rows(self):
+    self.assertEqual(self.count('locations'), 0)
+
+def test_station_and_location_tables_still_exist(self):
+    """5a: schema preserved. Three FKs depend on police_stations, two of
+    them NOT NULL -- the table must exist even while empty."""
+    for table in ('police_stations', 'locations'):
+        self.assertIsNotNone(self.table_exists(table), table)
+
+def test_checkpoint_scoping_works_without_location_rows(self):
+    """NEGATIVE CONTROL for my earlier incorrect claim that the three
+    locations rows were load-bearing. Scoping reads CHECKPOINT_LOCATIONS,
+    a constant -- a checkpoint officer must still scope correctly with the
+    table empty."""
+
+def test_initialization_does_not_modify_existing_reference_data(self):
+    """5b: re-running init_db() against a populated database changes
+    nothing. Seed a station and a branch, re-run, assert both byte-identical."""
+
+def test_demo_mode_still_seeds_full_reference_data(self):
+    db = self.fresh(env={'SENTINEL_SEED_DEMO_DATA': '1'})
+    self.assertEqual(db.count('police_branches'), 15)
+    self.assertEqual(db.count('police_stations'), 8)
+    self.assertEqual(db.count('locations'), 3)
+```
+
+**Pre-change control.** Every one of these except the last must be run against **today's** code and
+**fail** — a default initialization currently creates 15 branches, 8 stations and 3 locations. A
+test never seen to fail proves nothing.
+
+`test_production_creates_no_stations` is deliberately written against the **table**, not against the
+seed block, so it also catches a station arriving by any other route.
+
+### 7.5 Coverage of the owner's question 5
+
+| Requirement | Test |
+|---|---|
+| 5a — station table and schema preserved | `test_station_and_location_tables_still_exist` |
+| 5b — existing data not deleted or modified | `test_initialization_does_not_modify_existing_reference_data` |
+| 5c — no fictional or placeholder stations | `test_production_creates_no_stations`, `test_production_seeds_no_police_station_branch_rows` |
+| 5d — only CID-required branch data | `test_production_creates_cid_branch_reference_data` |
+| 5e — no `locations` seeding | `test_production_creates_no_location_rows`, `test_checkpoint_scoping_works_without_location_rows` |
+| Demo mode intact | `test_demo_mode_still_seeds_full_reference_data` |
+
+### 7.6 Effort
+
+**Inside P0-WP-3 (2–3 d).** Three guarded edits plus eight tests; **no change to the 7–9.5 day P0
+total.** Fully reversible — restoring the seed restores the previous behaviour, and no option
+deletes data.
+
+---
+
+## 8. Limits of this clarification
 
 - **P0-WP-1 and P0-WP-2 are verified by execution. P0-WP-3 is not** — it describes code that does
-  not exist. Its tests are specified, not run.
+  not exist. Its tests are specified, not run. **This includes everything in §7.**
+- **§7's auto-mirror finding is read from source, not demonstrated.** Three paths
+  (`server.py:4700`, `4724`, `9145`) auto-create a `police_stations` row from a `police_station`
+  branch; `test_production_creates_no_stations` asserts on the table so it catches all three, but
+  it has not been run.
 - The diffs are **proposals**. Line numbers are correct at `389787b` and will drift.
 - **Completing all three does not make the system deployable.** S-01, S-05, S-08, S-09, S-10 and
   S-11 remain open.

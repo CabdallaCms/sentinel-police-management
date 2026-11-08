@@ -1,9 +1,10 @@
 # Reference Data — CID Scope Analysis
 
-**Date:** 8 November 2026 · **Commit:** `9853683` · **Status:** **ANALYSIS — NOT IMPLEMENTED**
+**Date:** 5 November 2026 · **Commit:** `9853683` · **Status:** **ANALYSIS — NOT IMPLEMENTED**
 **Raised by:** the owner's scope correction — station management is an HQ responsibility, not a CID
 Release 1.0 decision
 **Revises:** A-18 in `OWNER_DECISION_SHEET.md` · C-1 in `OWNER_DECISION_SHEET_ADDENDUM.md`
+**Extended by:** `HQ_PROVISIONING_AND_READINESS.md` — which **corrects option (a) from 15 branch rows to 12**, after finding that the three `police_station` branch rows auto-mirror into fabricated station records. Read that correction before acting on §4 or §5 below.
 
 **Current CID scope, as stated by the owner:**
 
