@@ -28,6 +28,7 @@ Severity scale: **Critical** (exploitable now, severe harm) · **High** · **Med
 | **S-13** *(new, 7 Nov)* | **First run seeds demonstration data into any empty database** — 3 fictional persons with national IDs, 2 crime cases, 1 clearance application, 1 checkpoint event, and **1 `'Active alert'` suspect alert**. There is no production mode. Combined with **S-03**, that seeded alert **can never be cleared**. | **High** | **YES** for the first production install | **OPEN** → **P0-WP-3** | `server.py:3302` (accounts), `:3324`+ (data); alert INSERT verified |
 | **S-14** *(new)* | **Branch-scope authorization fails open.** `user_branch_scope()` returns `None` both for a deliberately unrestricted session (admin / Chief) **and** for an officer whose posting is empty, misspelled, unknown or ambiguous. Every call site then skips the `WHERE branch_id=…` filter, and `require_record_branch_scope()` returns early. **Proven by execution:** an officer posted to `Zzz Nowhere Posting` listed records from every branch (3 vs 1), opened another branch's record (**200** where a correctly-posted officer got **403**), and **filed a new record into another branch** (**201**, landed in branch 11). | **CRITICAL** | **YES** | **OPEN** — release blocker | `BRANCH_SCOPE_FAIL_OPEN.md` §3, probes P1–P4; `server.py:2790`, `2742`, `8465`, `8481`, `8524`, `8544`, `8563`, `8837` |
 | **S-15** *(new)* | **`/api/crimes` scopes on the wrong unit type.** The list filters on `user_branch_scope(…, 'police_station')` (`server.py:8837`) while `register_crime()` stores a **`crime`** branch id (`server.py:5288`). Measured on one CID session: `/api/crime-cases` → `branch_id=2`, `/api/crimes` → `branch_id=5`; the id sets are disjoint. **Fails closed today** (a posted CID officer sees zero incidents) but **becomes a total disclosure of the crime register if A-18 removes the `police_station` branch rows first.** | **High** | **YES** — ordering constraint on A-18 | **OPEN** | `BRANCH_SCOPE_FAIL_OPEN.md` §4, probe P5 |
+| **S-16** *(new)* | **`GET /api/persons/<id>` returns unit records with no module, branch or location filtering.** The route is deliberately not module-gated (`server.py:8374`), yet the handler attaches four unit registers — `clearance_applications`, `airport_passengers`, `suspect_alerts`, `checkpoint_events` — each an unfiltered `WHERE person_id=%s` (`:8449–8461`). **Proven by execution:** `cp.south` (modules `['checkpoints','dashboard']`) was refused `/api/clearance-applications` with **401** yet received clearance application `FP-40964580` from `/api/persons/<id>` (**200**); and a **correctly posted** Fingerprint officer scoped to branch 1, whose scoped list excluded the record and whose direct fetch returned **403**, received it through this endpoint. The sibling `/linked-records` filters correctly (`units_returned=[]`), proving the omission. | **CRITICAL** | **YES** | **OPEN** — release blocker | `AUTHORIZATION_REMEDIATION_PLAN.md` §0, probes Q1–Q4 |
 
 ### Owner's four tracked items — confirmed still visible and open
 
@@ -269,17 +270,29 @@ Remediation: **P0-WP-3** (`P0_WORK_PACKAGES.md` §4), approvals **A-16…A-19**.
 
 ## 6. Summary of what blocks Release 1.0
 
-Release-blocking and still open: **S-01, S-02, S-03, S-04, S-07** (HR module), **S-12, S-13**
-(first production install), plus the carried items **S-08, S-09, S-10, S-11**.
+> **⚠ Reordered.** Three authorization defects — **S-16, S-14, S-15** — were proven by execution
+> and now sit **ahead of the original P0**. Two are Critical and one of them, **S-16, needs no
+> misconfiguration at all**: a correctly configured officer refused at the front door with 403
+> reaches the same data through `GET /api/persons/<id>`. Full plan:
+> **`AUTHORIZATION_REMEDIATION_PLAN.md`**.
+
+Release-blocking and still open: **S-16, S-14, S-15** (authorization, proven), **S-01, S-02, S-03,
+S-04, S-07** (HR module), **S-12, S-13** (first production install), plus the carried items
+**S-08, S-09, S-10, S-11**, and **H-2b** (checkpoint scope).
 **S-05** should be fixed before release but is not itself a gate.
 **S-06** is **reduced** by R-1 — no rotation needed; its live residual is S-12/S-13.
 
 | Band | Items | Days |
 |---|---|---|
-| **P0** — approve now | S-07, S-02, (S-06 residual + S-12 + S-13) | **5–6.5** |
+| **SEC** — authorization, proven, **first** | S-16 *(SEC-1)*, S-14 *(SEC-2)*, S-15 *(SEC-3)*, H-2b *(SEC-4)*, station safeguards *(SS-1)* | **10–16** |
+| **P0** — approve now | S-07, S-02, (S-06 residual + S-12 + S-13) | 5–6.5 *(7–9.5 with A-11a/A-13)* |
 | **P1** — release-blocking | S-01, S-03, S-04, S-05, S-08, S-09 | 23–37 |
 | **P2** — before deployment | S-10 *(D-04)*, S-11, full lifecycle *(D-23)* | 34–57 |
 
+**Ordering constraint:** **SEC-1 → SEC-2 → SEC-3 → A-18.** Implementing A-18 first would remove the
+`police_station` branch rows, leaving `/api/crimes` with no `WHERE` clause — converting an
+accidental fail-closed into disclosure of the whole crime register.
+
 **Nothing in this register has been fixed.** This document is investigation and design only. P0 is
 specified to implementation detail in `P0_WORK_PACKAGES.md` and awaits approvals **A-10, A-11,
-A-16…A-19**.
+A-16…A-19**; the SEC packages await approval of `AUTHORIZATION_REMEDIATION_PLAN.md`.

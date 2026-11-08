@@ -644,16 +644,52 @@ seed block, so it also catches a station arriving by any other route.
 **Inside P0-WP-3 (2–3 d).** Three guarded edits plus nine tests. Fully reversible — restoring the
 seed restores the previous behaviour, and no option deletes data.
 
-**⚠ Blocked by S-14.** This change must not ship before the branch-scope fail-open is fixed:
+**⚠ Blocked by S-14 and S-15 (see §8).** This change must not ship before the branch-scope fail-open is fixed:
 removing the `police_station` rows makes `/api/crimes` return every incident to every CID officer
 (`BRANCH_SCOPE_FAIL_OPEN.md` §4). S-14 adds **3–5 days**, taking P0 to **10–14.5 days**.
 
 ---
 
-## 8. Limits of this clarification
+## 8. Authorization defects discovered after this clarification was written
+
+Three Critical/High authorization defects were proven by execution **after** §1–§7 were drafted.
+They do not change the P0-WP-1/2/3 diffs, but they **reorder the release** and **block §7**.
+
+| ID | Defect | Severity | Package | Effort |
+|---|---|---|---|---|
+| **S-16** | `GET /api/persons/<id>` returns clearance, airport, alert and checkpoint records with **no module, branch or location filtering**. Reachable by **any authenticated account**, no misconfiguration required | **Critical** | SEC-1 | 2–3 d |
+| **S-14** | Branch-scope authorization **fails open** — `user_branch_scope()` conflates "unrestricted" with "unresolved" | **Critical** | SEC-2 | 3–5 d |
+| **S-15** | `/api/crimes` scopes on `police_station` while records store a `crime` branch id | **High** | SEC-3 | 1–2 d |
+| H-2b | Checkpoint location scope fails open the same way; no branch filtering at all | **High** | SEC-4 | 3–4 d |
+| — | Four paths create station records; crime filing can create its own station | **High** | SS-1 | 1–2 d |
+
+**Full plan, call-site inventory and 32-test strategy: `AUTHORIZATION_REMEDIATION_PLAN.md`.**
+
+### Effect on §7 (reference-data initialization)
+
+**§7 is blocked by SEC-2 and SEC-3.** Removing the `police_station` branch rows makes
+`user_branch_scope(c, user, 'police_station')` unresolvable, so `/api/crimes` drops its `WHERE`
+clause entirely and returns **every crime incident to every CID officer**. Today the same mismatch
+fails *closed* (a posted CID officer sees zero incidents), so **shipping §7 first converts a
+functional bug into a total disclosure.**
+
+Required ordering: **SEC-1 → SEC-2 → SEC-3 → §7 (A-18)**, with PRE-3 (authoritative branch list)
+confirmed before A-18.
+
+### Revised totals
+
+| | Before | **Now** |
+|---|---|---|
+| P0-WP-1/2/3 | 7–9.5 d | 7–9.5 d |
+| Authorization packages (SEC-1…4, SS-1) | — | **10–16 d** |
+| **Total before Release 1.0** | 7–9.5 d | **17–25.5 d** |
+
+---
+
+## 9. Limits of this clarification
 
 - **P0-WP-1 and P0-WP-2 are verified by execution. P0-WP-3 is not** — it describes code that does
-  not exist. Its tests are specified, not run. **This includes everything in §7.**
+  not exist. Its tests are specified, not run. **This includes everything in §7, and every remediation in §8.**
 - **§7's auto-mirror finding is read from source, not demonstrated.** Three paths
   (`server.py:4700`, `4724`, `9145`) auto-create a `police_stations` row from a `police_station`
   branch; `test_production_creates_no_stations` asserts on the table so it catches all three, but
