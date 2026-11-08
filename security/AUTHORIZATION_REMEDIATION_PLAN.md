@@ -518,8 +518,14 @@ instead of documenting it as unfixable.
   whose own endpoints *do* enforce branch, so the leak is unambiguous.
 - **H-2b is now PROVEN**: a checkpoint officer at the matching location but a different branch reads
   the record from the **owning endpoint**. Previously a code-read inference.
-- **Still code-read only:** `/documents` and `/audit-history` (T-42, T-43), and checkpoint findings
-  (c) unknown-location and (d) substring matching (T-31, T-33). **Not probed.** Must fail pre-fix.
+- **RESOLVED 5 Nov 2026 — the last four code-read items were executed** (`OWNER_DECISION_SHEET_AUTHORIZATION.md`
+  §6). `/documents` and `/audit-history` **leak cross-branch** (an Erigavo officer receives a
+  Buuhoodle application's 4 documents and its clearance audit events in full); an unrecognised
+  checkpoint location is **accepted and stored** as `'atlantis'`; and `South` **does** match
+  `Southwest`. T-31, T-33, T-42, T-43 are evidence-backed, not speculative.
+- **S-15 is now the ONLY finding in this package still resting on code reading.** It is derived
+  from the branch-id disjunction and the absent write-scope call; it currently fails *closed*.
+  **Decision D-6** asks whether to probe it before implementation — I recommend yes.
 - **Fixtures in the four-register probe were seeded with SQL**, not filed through the intake
   endpoints; only the authorization measurements were real HTTP. One record per register; no
   pagination or ordering coverage.
