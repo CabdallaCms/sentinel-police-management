@@ -56,12 +56,18 @@ Sites 2 and 3 produce the same shape (`notes` reading `'Mirrored from branch N (
 different ways.** Leaving them in the production seed would let the system manufacture station
 records with a fabricated tier — precisely what you ruled out of CID scope.
 
-**Correction to A-18 option (a): seed only the four CID unit types — 12 rows, not 15.**
+**Correction to A-18 option (a): seed only the CID unit types, not all five.**
+
+> **Superseded again on review.** This section originally concluded **12 rows** (the four CID unit
+> types). The owner then established that **Airport is Release 1.1**, so its three rows are not
+> required either. **Option (a) is now 9 rows** — see `RELEASE_1_0_REFERENCE_DATA.md` §1. The
+> reasoning below about `police_station` stands unchanged; only the Airport rows moved.
 
 | | Rows | Unit types |
 |---|---|---|
 | Current seed | 15 | fingerprint, crime, checkpoint, airport, **police_station** |
-| **Revised (a)** | **12** | fingerprint, crime, checkpoint, airport |
+| Interim (a) | 12 | fingerprint, crime, checkpoint, airport |
+| **Final (a)** | **9** | fingerprint, crime, checkpoint |
 
 This is not a cosmetic trim. It is what makes "no fictional stations" true rather than aspirational.
 It also matches the seed loop's own comment, which already claims to seed branches *"for each CID
@@ -398,14 +404,14 @@ Confirming each item you listed, with the one qualification from the top of this
 | 5a | **Preserve the existing station table and its schema** | **CONFIRMED.** No `DROP`, no `ALTER`, no change to `police_stations`. Three FKs point at it (two `NOT NULL`); the Crime Unit and the entire officer register depend on it. The table is created by `CREATE TABLE IF NOT EXISTS` exactly as today |
 | 5b | **Preserve existing station data** | **CONFIRMED.** No row is deleted or modified. The seed is already guarded by `IF COUNT(*) == 0`, so it never touches a populated table, and the API exposes no delete path at all (§1.4) |
 | 5c | **Avoid creating fictional or placeholder stations** | **CONFIRMED — with the correction in §0.** Requires (i) removing the 8-station seed **and** (ii) excluding the 3 `police_station` branch rows, which would otherwise auto-mirror into fabricated station records. Option (b) — one placeholder station — remains rejected |
-| 5d | **Seed only CID-required branch reference data** | **CONFIRMED, revised to 12 rows** — 3 branches × 4 CID unit types (`fingerprint`, `crime`, `checkpoint`, `airport`). The `police_station` unit type is HQ's and is excluded |
+| 5d | **Seed only CID-required branch reference data** | **CONFIRMED, revised to 9 rows** — 3 branches × the 3 Release 1.0 unit types (`fingerprint`, `crime`, `checkpoint`). `police_station` is HQ's; `airport` is Release 1.1 |
 | 5e | **No `locations` seeding** | **CONFIRMED.** Table retained, never populated — nothing reads it (`REFERENCE_DATA_SCOPE_ANALYSIS.md` §1) |
 
 ### 5.1 Production first-run state
 
 | Table | Rows | Why |
 |---|---|---|
-| `police_branches` | **12** | CID reference data — all four units FK to it; CID scoping resolves against the `crime` rows |
+| `police_branches` | **9** | Release 1.0 CID reference data; CID scoping resolves against the `crime` rows. Airport deferred to 1.1 |
 | `police_stations` | **0** | HQ provisions via the existing interface (PRE-1) |
 | `locations` | **0** | Never read by anything |
 | `officers` | **0** | HR provisions (PRE-2) |

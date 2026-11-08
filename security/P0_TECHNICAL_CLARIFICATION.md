@@ -519,14 +519,16 @@ for branch_name, region, district in DEFAULT_POLICE_BRANCHES:
                      VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
                   (branch_name, region, district, unit_type))
 
-# AFTER — 12 rows. `police_station` is HQ's unit type, not a CID one, and
+# AFTER — 9 rows. `police_station` is HQ's unit type, not a CID one, and
 # seeding it creates a latent station-fabrication path: THREE code paths
 # (server.py:4700, 4724, 9145) auto-INSERT a police_stations row from such a
 # branch, with a hard-coded 'District HQ' tier and no contact phone.
 # See HQ_PROVISIONING_AND_READINESS.md section 0.
-CID_BRANCH_UNIT_TYPES = ('fingerprint', 'crime', 'checkpoint', 'airport')
+# Airport is Release 1.1 and its branch_id FK is nullable, so it is not
+# seeded in 1.0. Add it at 1.1 behind gates G-1..G-3.
+RELEASE_1_0_BRANCH_UNIT_TYPES = ('fingerprint', 'crime', 'checkpoint')
 for branch_name, region, district in DEFAULT_POLICE_BRANCHES:
-    for unit_type in CID_BRANCH_UNIT_TYPES:
+    for unit_type in RELEASE_1_0_BRANCH_UNIT_TYPES:
         c.execute('''INSERT INTO police_branches(name,region,district,unit_type)
                      VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING''',
                   (branch_name, region, district, unit_type))
@@ -549,7 +551,7 @@ production path simply does not execute them.
 
 | Table | Production | Demonstration |
 |---|---|---|
-| `police_branches` | **12** | 15 |
+| `police_branches` | **9** | 15 |
 | `police_stations` | **0** | 8 |
 | `locations` | **0** | 3 |
 | `officers` | 0 | 0 |
@@ -560,7 +562,7 @@ production path simply does not execute them.
 
 | | Old AC-8 | **New AC-8** |
 |---|---|---|
-| Production | reference stations and branches **are** created | **`police_branches` = 12 (four CID unit types only); `police_stations` = 0; `locations` = 0** |
+| Production | reference stations and branches **are** created | **`police_branches` = 9 (Release 1.0 unit types only); `police_stations` = 0; `locations` = 0** |
 | Demonstration | — | unchanged: 15 / 8 / 3 |
 | Schema | — | **`police_stations` and `locations` tables still exist, unaltered** |
 | Existing data | — | **no row deleted or modified in any mode** |
@@ -568,13 +570,19 @@ production path simply does not execute them.
 ### 7.4 Tests — `backend/test_production_init.py`
 
 ```python
-def test_production_creates_cid_branch_reference_data(self):
-    """All four CID units FK to police_branches; CID scoping resolves
-    against the 'crime' rows (MODULE_UNIT_TYPES maps cid -> crime)."""
-    self.assertEqual(self.count('police_branches'), 12)
+def test_production_creates_release_1_0_branch_reference_data(self):
+    """The three Release 1.0 units FK to police_branches; CID scoping
+    resolves against the 'crime' rows (MODULE_UNIT_TYPES maps cid -> crime)."""
+    self.assertEqual(self.count('police_branches'), 9)
     self.assertEqual(
         sorted({r['unit_type'] for r in self.rows('police_branches')}),
-        ['airport', 'checkpoint', 'crime', 'fingerprint'])
+        ['checkpoint', 'crime', 'fingerprint'])
+
+def test_production_seeds_no_airport_branch_rows(self):
+    """Airport is Release 1.1; airport_passengers.branch_id is nullable and
+    no 1.0 role holds the airport module."""
+    self.assertEqual(
+        self.count("police_branches WHERE unit_type='airport'"), 0)
 
 def test_production_seeds_no_police_station_branch_rows(self):
     """The police_station unit type is HQ's. Seeding it would also create a
@@ -627,15 +635,18 @@ seed block, so it also catches a station arriving by any other route.
 | 5a — station table and schema preserved | `test_station_and_location_tables_still_exist` |
 | 5b — existing data not deleted or modified | `test_initialization_does_not_modify_existing_reference_data` |
 | 5c — no fictional or placeholder stations | `test_production_creates_no_stations`, `test_production_seeds_no_police_station_branch_rows` |
-| 5d — only CID-required branch data | `test_production_creates_cid_branch_reference_data` |
+| 5d — only CID-required branch data | `test_production_creates_release_1_0_branch_reference_data`, `test_production_seeds_no_airport_branch_rows` |
 | 5e — no `locations` seeding | `test_production_creates_no_location_rows`, `test_checkpoint_scoping_works_without_location_rows` |
 | Demo mode intact | `test_demo_mode_still_seeds_full_reference_data` |
 
 ### 7.6 Effort
 
-**Inside P0-WP-3 (2–3 d).** Three guarded edits plus eight tests; **no change to the 7–9.5 day P0
-total.** Fully reversible — restoring the seed restores the previous behaviour, and no option
-deletes data.
+**Inside P0-WP-3 (2–3 d).** Three guarded edits plus nine tests. Fully reversible — restoring the
+seed restores the previous behaviour, and no option deletes data.
+
+**⚠ Blocked by S-14.** This change must not ship before the branch-scope fail-open is fixed:
+removing the `police_station` rows makes `/api/crimes` return every incident to every CID officer
+(`BRANCH_SCOPE_FAIL_OPEN.md` §4). S-14 adds **3–5 days**, taking P0 to **10–14.5 days**.
 
 ---
 

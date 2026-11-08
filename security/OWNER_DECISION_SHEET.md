@@ -5,6 +5,13 @@
 **Addendum:** `OWNER_DECISION_SHEET_ADDENDUM.md` (adds A-16a) · `REFERENCE_DATA_SCOPE_ANALYSIS.md` (**A-18 revised**)
 **HQ / readiness:** `HQ_PROVISIONING_AND_READINESS.md` — station & officer provisioning, branch authorization, Crime Unit prerequisites
 
+> **⚠ BLOCKING — `BRANCH_SCOPE_FAIL_OPEN.md`.** Branch authorization **fails open**: an officer
+> whose posting does not resolve reads every branch's records and can file into another branch.
+> **Proven by execution** (403 for a correctly-posted officer vs 200/201 for an unresolved one, same
+> database, same run). Logged as **S-14 (Critical)**. **A-18 must not be implemented until S-14 is
+> fixed** — removing the `police_station` branch rows would make `/api/crimes` disclose every crime
+> incident to every CID officer. P0 revised to **10–14.5 days**.
+>
 > **5 Nov 2026 — A-18 revised, §6.** The earlier A-18 asked you to approve eight police stations
 > with their tiers and cell capacities. **Station management is HQ's responsibility, not a CID
 > Release 1.0 decision, and that request is withdrawn.** A-18 now asks only which reference data
@@ -202,40 +209,46 @@ manually.
 > sheet through a scope error on my part, explained in `REFERENCE_DATA_SCOPE_ANALYSIS.md` §1.
 > **No station list, tier or capacity requires your approval.**
 
-> **5 Nov 2026 — option (a) corrected.** Option (a) previously said "`police_branches` only
-> (15 rows)". **That would not have delivered zero stations.** The 15 rows include three of unit
-> type `police_station`, and `resolve_station_with_branch()` (`server.py:4668`) **auto-creates a
-> `police_stations` row** from such a branch — with a hard-coded `'District HQ'` tier and no contact
-> phone. Option (a) is now **12 rows: the four CID unit types only.**
-> Detail: `HQ_PROVISIONING_AND_READINESS.md` §0.
+> **Option (a) corrected twice.** It first read "15 rows", then "12 rows". It is now **9 rows**.
+> — *Correction 1:* the 15 rows include three of unit type `police_station`, which **auto-mirror
+> into fabricated station records** via three code paths (`server.py:4700`, `4724`, `9145`).
+> — *Correction 2:* Airport is **Release 1.1**, so its three rows are not required in 1.0.
+> Detail: `HQ_PROVISIONING_AND_READINESS.md` §0 and `RELEASE_1_0_REFERENCE_DATA.md` §1.
 
-**Question:** For production initialization, should the system create **only the CID
-`police_branches` rows** — the reference data the CID authorization model and all four CID units
-require — and create **no stations and no checkpoint-location rows**, leaving station provisioning
-to HQ?
+**Question:** For production initialization, should the system create **only the branch records the
+three Release 1.0 CID units require** — and create no stations, no checkpoint-location rows and no
+Airport branches — leaving station provisioning to HQ and Airport branches to Release 1.1?
 
 **Options**
-- **(a)** `police_branches` for the **four CID unit types only — 12 rows** (`fingerprint`, `crime`,
-  `checkpoint`, `airport`). No `police_station` branch rows, no stations, no `locations` rows.
-  HQ provisions stations through the existing Register-station interface.
-- **(b)** `police_branches` plus one placeholder station, so the Crime Unit works out of the box.
-- **(c)** Status quo — 15 branch rows, 3 locations and all eight stations.
+- **(a)** `police_branches` for the **three Release 1.0 unit types — 9 rows** (`fingerprint`,
+  `crime`, `checkpoint`). No Airport rows, no `police_station` rows, no stations, no `locations`
+  rows. HQ provisions stations through the existing Register-station interface.
+- **(b)** **12 rows** — as (a) plus the three Airport branches, pre-created for Release 1.1.
+- **(c)** `police_branches` plus one placeholder station, so the Crime Unit works out of the box.
+- **(d)** Status quo — 15 branch rows, 3 locations and all eight stations.
+
+**Airport, verified:** `airport_passengers.branch_id` is **nullable**; no Release 1.0 role holds the
+`airport` module; nothing requires a row per unit type (`BRANCH_UNIT_TYPES` is a validation
+vocabulary only); the table is empty in 1.0. **Airport branch records are not technically required
+in Release 1.0.**
 
 **Recommended: (a).** Verified dependency position:
 
 | Reference data | Required by CID? | Verdict |
 |---|---|---|
-| `police_branches` — CID unit types | **Yes — all four units.** Every CID table carries `branch_id REFERENCES police_branches(id)`, and CID sessions are scoped against the **`crime`** rows (`MODULE_UNIT_TYPES` maps `cid → crime`) | **Create — 12 rows** |
-| `police_branches` — `police_station` type | **No.** HQ's unit type, and it auto-mirrors into fabricated station records | **Do not create** |
+| `police_branches` — `fingerprint`, `crime`, `checkpoint` | **Yes — the three Release 1.0 units.** Every CID table carries `branch_id REFERENCES police_branches(id)`, and CID sessions scope against the **`crime`** rows (`MODULE_UNIT_TYPES` maps `cid → crime`) | **Create — 9 rows** |
+| `police_branches` — `airport` | **Not in 1.0.** Nullable FK, no 1.0 role holds the module, table empty | **Defer to 1.1** behind gates G-1…G-3 |
+| `police_branches` — `police_station` | **No.** HQ's unit type, and it auto-mirrors into fabricated station records | **Do not create** |
 | `locations` (3 rows) | **No. The table is never read** — no `SELECT`, no `/api/locations` endpoint. Checkpoint scoping uses the `CHECKPOINT_LOCATIONS` constant (`server.py:1649`) | **Do not create** |
 | `police_stations` (8 rows) | Only the **Crime Unit**, and only that **≥1 row exists** — not which ones. `crime_incidents.station_id` is `NOT NULL` | **HQ provisions — out of CID scope** |
 
-**(b) recreates finding S-13 in another table** — a fictional station in an operational police
+**(b)** is defensible — three inert rows — but creates records for an unspecified release from
+unverified names. **(c) recreates finding S-13 in another table** — a fictional station in an operational police
 database, appearing in every station report and capacity figure. **And it is worse than it looks:**
 crime file numbers are built from the station code (`CRM-<year>-<CODE>-NNNN`,
 `new_crime_file_number()`), and `file_number` is the permanent, citable case reference. A
 placeholder station would stamp a fabricated code into real case references, unfixable afterwards.
-**(c)** is what produced the scope error.
+**(d)** is what produced the scope error.
 
 **Nothing is deleted.** The `police_stations` table, the `locations` table and every existing row
 stay exactly as they are — three foreign keys point at `police_stations`, two of them `NOT NULL`.
@@ -251,9 +264,18 @@ This decision changes only what a *new production database* creates.
 **Reversible:** **Yes** for the code. No rows are deleted under any option, so there is nothing to
 restore.
 
-**Affects:** P0-WP-3 · acceptance criterion **AC-8 rewritten** (production: `police_branches` = **12**,
+**⚠ ORDERING CONSTRAINT — this decision cannot be implemented first.** `/api/crimes` scopes on
+`user_branch_scope(…, 'police_station')` (`server.py:8837`) while `register_crime()` stores a
+**`crime`** branch id (`server.py:5288`). Measured on one CID session: `/api/crime-cases` scope
+`branch_id=2`, `/api/crimes` scope `branch_id=5`. Today those never match, so a posted CID officer
+sees **zero** incidents — broken, but closed. **Remove the `police_station` rows and the scope
+becomes `None`, which means *no filter*: every CID officer sees every crime incident.**
+**S-14 must be fixed before A-18 ships.** See `BRANCH_SCOPE_FAIL_OPEN.md` §4.
+
+**Affects:** P0-WP-3 · acceptance criterion **AC-8 rewritten** (production: `police_branches` = **9**,
 `police_stations` = 0, `locations` = 0; demonstration mode unchanged at 15 / 8 / 3) · exact diffs
-and eight tests in `P0_TECHNICAL_CLARIFICATION.md` §7 · no change to the 7–9.5 day P0 estimate.
+and tests in `P0_TECHNICAL_CLARIFICATION.md` §7 · **blocked by S-14** · P0 total revised to
+**10–14.5 days**.
 
 **Go-live prerequisites this creates** (`HQ_PROVISIONING_AND_READINESS.md` §4) — data entry in an
 interface that already exists, **no engineering effort**:
@@ -262,16 +284,24 @@ interface that already exists, **no engineering effort**:
 |---|---|---|
 | PRE-1 | Register ≥ 1 real police station | **HQ** (System Administrator) |
 | PRE-2 | Register ≥ 1 officer at that station | **HR Directorate** |
-| PRE-3 | Confirm the three CID branch names and placements | **CID deployment authority** |
+| PRE-3 | **Obtain the authoritative CID branch list** (B-a…B-g) | **CID deployment authority** |
 | PRE-4 | Ensure each CID user's posting text resolves to one `crime` branch | System Administrator |
 | PRE-5 | Confirm station codes before first use — permanently embedded in crime file numbers | **HQ** |
 
-**PRE-3 is inside CID scope and does need your confirmation.** The three branch names
-(Buuhoodle / Lasanod / Erigavo) are hard-coded developer defaults with no documented authority, and
-branch names are the matching keys for CID branch scoping — an unresolvable posting yields *no
-scope* rather than *denied*.
+**PRE-3 is inside CID scope, is a prerequisite rather than a follow-up, and does need your
+action.** The three names (Buuhoodle / Lasanod / Erigavo) are hard-coded developer defaults with no
+documented authority, and **I am not treating them as approved production data.** Branch names are
+the matching keys for CID scoping, so a wrong list means a cross-branch leak today (S-14) or locked
+-out officers after the fix. The exact information to request, and a template that does not ask the
+authority merely to rubber-stamp the current names, is in `RELEASE_1_0_REFERENCE_DATA.md` §2.
 
-**Out of CID scope, documented not decided:** HQ-1…HQ-6 in `REFERENCE_DATA_SCOPE_ANALYSIS.md` §3 —
+**Fabricated station codes in official case references** — `file_number` is
+`CRM-<year>-<station code>-NNNN` and is permanent. Four paths can currently produce a station with a
+valid-looking code and no contact phone, including `register_crime()` itself. Guards **G-a…G-d** and
+six tests are specified in `RELEASE_1_0_REFERENCE_DATA.md` §3.3; they touch `register_crime()`, so
+they are a separate recommendation for your approval, not part of A-18.
+
+**Out of CID scope, documented not decided:** HQ-1…HQ-9 in `HQ_PROVISIONING_AND_READINESS.md` §6 —
 including that `crime_incidents` hard-requires both a station **and** a registered officer, and
 that station tier, cell capacity, commander and operational status have no CID function at all.
 
@@ -353,7 +383,7 @@ reconciliation (a short, enumerable list).
 | **A-11a** | Also revoke on deactivation | **(a)** — optional | Yes | — |
 | **A-16** | Flag demo seeding, default off | **(a)** | Yes | } |
 | **A-17** | Production = admin only | **(a)** | Yes² | } 2–3 |
-| **A-18** | **Branches only; HQ provisions stations** *(revised)* | **(a)** | Yes | } |
+| **A-18** | **9 branch rows (1.0 units only); HQ provisions stations** *(revised)* — **blocked by S-14** | **(a)** | Yes | } |
 | **A-19** | Bootstrap password variable | **(b)** + warning | Yes | } |
 | **A-13** | Interim alert withdrawal | **(a)** approve now | Code yes, data partly | 2–3 |
 | | | | **Total** | **7–9.5** |
