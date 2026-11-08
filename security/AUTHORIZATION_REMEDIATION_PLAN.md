@@ -37,7 +37,7 @@ S-14, S-16a, S-16b, H-2b and the checkpoint findings are **one defect class in s
 | **S-16a** | `/api/persons/<id>` — no module, branch or location filter | **Critical** | **None** | **Executed — 4/4 registers** |
 | **S-16b** | `/linked-records`, `/documents`, `/audit-history` — no branch filter | **High** | **None** | **Executed** (linked-records); documents/audit code-read |
 | **S-14** | Branch scope, 12 enforcing call sites | **Critical** | A posting that does not resolve | Executed (P1–P5) |
-| **S-15** | `/api/crimes` unit-type mismatch | **High** | None (currently fails closed) | Code-read + schema |
+| **S-15** | `/api/crimes` unit-type mismatch | **High** | None (fails closed when posting resolves) | **Executed — scenarios A–E** |
 | **H-2b** | Checkpoint — branch never filtered, location fail-open | **High** | **None** | **Executed** (same-location/other-branch officer) |
 | **S-04** | `suspect_alerts` — no branch column, no filter anywhere | **High** | **None** | **Executed** |
 | **H-2b** | Checkpoint location scope | **High** | An empty `location_scope` |
@@ -523,9 +523,12 @@ instead of documenting it as unfixable.
   Buuhoodle application's 4 documents and its clearance audit events in full); an unrecognised
   checkpoint location is **accepted and stored** as `'atlantis'`; and `South` **does** match
   `Southwest`. T-31, T-33, T-42, T-43 are evidence-backed, not speculative.
-- **S-15 is now the ONLY finding in this package still resting on code reading.** It is derived
-  from the branch-id disjunction and the absent write-scope call; it currently fails *closed*.
-  **Decision D-6** asks whether to probe it before implementation — I recommend yes.
+- **RESOLVED — S-15 has now been executed** (`S15_EXECUTION_VERIFICATION.md`, 5 Nov 2026,
+  scenarios A–E). **Every finding in this package is now measured; none rests on code reading.**
+  The probe also found **three new defects — S-17 (NULL branch accepted), S-18 (cross-branch write
+  accepted), S-19 (file numbers encode the station region)** — and proved the A-18 blocker by
+  moving posted officers from 0 rows to 8 (all) when the `police_station` branch rows were deleted
+  in a disposable database. **SEC-3 is not safe to ship without SEC-2 and a write guard.**
 - **Fixtures in the four-register probe were seeded with SQL**, not filed through the intake
   endpoints; only the authorization measurements were real HTTP. One record per register; no
   pagination or ordering coverage.
