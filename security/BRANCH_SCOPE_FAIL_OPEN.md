@@ -5,7 +5,7 @@
 **Raised by:** the owner's instruction to investigate unresolved-branch behaviour and treat it as a
 release blocker until verified.
 
-> **PARTIALLY SUPERSEDED by `AUTHORIZATION_REMEDIATION_PLAN.md` (revision 2).** The *evidence* in
+> **PARTIALLY SUPERSEDED by `AUTHORIZATION_REMEDIATION_PLAN.md` (revision 3).** The *evidence* in
 > §3–§5 stands unchanged and is the record of the probe. Three things below are out of date:
 > **(1)** §6.3's rollout proposed a **report-only production phase** — withdrawn; per R-1 there is
 > no production database, so enforcement is verified in **staging before production exists**.
@@ -271,7 +271,7 @@ pre-fix observations, already recorded.
 | **SEC-2** | S-14 — the 12 enforcing call sites only | **2–3 d** |
 | SEC-3 | S-15 — `/api/crimes` unit type (was bundled here) | 1–2 d |
 
-Authorization total (SEC-0…SEC-5): **10–16 d**. Total before Release 1.0: **17–25.5 d**.
+Authorization total (SEC-0…SEC-5 + M-02 Phase A): **11–17.5 d**. Total before Release 1.0: **18–27 d**.
 
 ---
 

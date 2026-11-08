@@ -667,6 +667,8 @@ as *"allow"*. They are therefore remediated by **one consolidated model (SEC-0)*
 | **S-14** | Branch scope fails open — 12 enforcing call sites | **Critical** | SEC-2 | 2–3 d |
 | **S-15** | `/api/crimes` scopes on `police_station` while records store a `crime` branch id | **High** | SEC-3 | 1–2 d |
 | H-2b | Checkpoint location scope fails open identically; no branch filtering at all | **High** | SEC-4 | 2–3 d |
+| **S-04** | `suspect_alerts` has **no branch column and no branch filter anywhere** — an out-of-branch CID officer reads the alert from its own endpoint. **Proven by execution.** Requires an additive schema change | **High** *(raised from Medium)* | **M-02 Phase A** + SEC-1 | **1–1.5 d** |
+| S-03 | Alerts can never be updated or withdrawn — **no such endpoint exists**. Not an authorization gap; a missing capability | High | M-02 lifecycle (**blocked on D-23**) | *not in authorization scope* |
 | — | Staging diagnostics + assignment correction | — | SEC-5 | 1–2 d |
 | — | Four paths create station records; crime filing can create its own station | **High** | **SS-1 — separate, awaiting owner approval** | 1–2 d |
 
@@ -674,7 +676,10 @@ as *"allow"*. They are therefore remediated by **one consolidated model (SEC-0)*
 session — only the attached unit arrays are filtered. Checkpoint officers do not hold the `people`
 module yet legitimately need person lookup for intake, so requiring it would break operations.
 
-**Full plan, endpoint matrix and 44-test strategy: `AUTHORIZATION_REMEDIATION_PLAN.md` (revision 2).**
+**Full plan: `AUTHORIZATION_REMEDIATION_PLAN.md` (revision 3).** Four-register execution evidence:
+`S16_REGISTER_VERIFICATION.md`. Per-endpoint authorization and test mapping:
+`ENDPOINT_AUTHORIZATION_INVENTORY.md`. Alert ownership architecture: `SUSPECT_ALERT_OWNERSHIP.md`.
+Station safeguard options: `SS1_STATION_SAFEGUARD_OPTIONS.md`.
 Enforcement is implemented and verified **in staging before production exists** — there is no
 report-only production phase, because per R-1 there is no production database to be compatible
 with.
@@ -687,17 +692,18 @@ clause entirely and returns **every crime incident to every CID officer**. Today
 fails *closed* (a posted CID officer sees zero incidents), so **shipping §7 first converts a
 functional bug into a total disclosure.**
 
-Required ordering: **SEC-1 → SEC-2 → SEC-3 → §7 (A-18)**, with PRE-3 (authoritative branch list)
-confirmed before A-18.
+Required ordering: **SEC-0 → SEC-2 → SEC-3 → §7 (A-18)**, with PRE-3 (authoritative branch list)
+confirmed before A-18. **SEC-1 moved to last** in revision 3: it now depends on SEC-4 (shared
+checkpoint scope fix) and on M-02 Phase A (alert `branch_id`). It does not gate A-18.
 
 ### Revised totals
 
 | | Before | **Now** |
 |---|---|---|
 | P0-WP-1/2/3 | 7–9.5 d | 7–9.5 d |
-| Authorization (SEC-0…SEC-5) | — | **10–16 d** |
+| Authorization (SEC-0…SEC-5 **+ M-02 Phase A**) | — | **11–17.5 d** |
 | SS-1 station safeguards *(separate, pending approval)* | — | 1–2 d |
-| **Total before Release 1.0** | 7–9.5 d | **17–25.5 d** (+1–2 d with SS-1) |
+| **Total before Release 1.0** | 7–9.5 d | **18–27 d** (+1–2 d with SS-1) |
 
 ---
 

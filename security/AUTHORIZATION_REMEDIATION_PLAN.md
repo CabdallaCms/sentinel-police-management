@@ -2,7 +2,16 @@
 
 **Date:** 5 November 2026 (date conflict unresolved — `RELEASE_1_0_REFERENCE_DATA.md` §5)
 **Commit:** `8ea2f9b` · **Status:** **PLAN — NOTHING IMPLEMENTED — AWAITING APPROVAL**
-**Revision 2.** Supersedes the first version. Changes: S-16 promoted to its own critical package and
+**Revision 3.** Supersedes revisions 1 and 2.
+**What changed in revision 3** (your second review): S-16b is now **proven by execution on all four
+linked registers** rather than inferred — see `S16_REGISTER_VERIFICATION.md`; suspect-alert ownership
+has an architecture and a schema answer — see `SUSPECT_ALERT_OWNERSHIP.md`; the M-01 report-only
+proposal is flagged prohibited; SS-1's three options are set out in full in
+`SS1_STATION_SAFEGUARD_OPTIONS.md`; and a consolidated endpoint inventory is in
+`ENDPOINT_AUTHORIZATION_INVENTORY.md`. **The dependency order changed as a result of the
+measurements: SEC-1 is now the last package, not the first.** Totals moved 10–16 d → **11–17.5 d**.
+
+**Revision 2 changes, retained:** S-16 promoted to its own critical package and
 fully scoped; one consolidated authorization model (SEC-0); **report-only production phase removed**;
 endpoint verification expanded to list / direct-ID / linked / read / write / update; shared identity
 explicitly separated from protected unit records; SS-1 kept separate with G-b's operational impact
@@ -23,12 +32,14 @@ determine", and every call site reads that falsy value as "allow".**
 S-14, S-16a, S-16b, H-2b and the checkpoint findings are **one defect class in several places**, which is why
 §3 replaces them with a single model rather than patching ten call sites independently.
 
-| Finding | Where | Severity | Precondition to exploit |
-|---|---|---|---|
-| **S-16a** | `/api/persons/<id>` — no module, branch or location filter | **Critical** | **None** |
-| **S-16b** | `/linked-records`, `/documents`, `/audit-history` — no branch filter | **High** | **None** |
-| **S-14** | Branch scope, 12 enforcing call sites | **Critical** | A posting that does not resolve |
-| **S-15** | `/api/crimes` unit-type mismatch | **High** | None (currently fails closed) |
+| Finding | Where | Severity | Precondition | Evidence |
+|---|---|---|---|---|
+| **S-16a** | `/api/persons/<id>` — no module, branch or location filter | **Critical** | **None** | **Executed — 4/4 registers** |
+| **S-16b** | `/linked-records`, `/documents`, `/audit-history` — no branch filter | **High** | **None** | **Executed** (linked-records); documents/audit code-read |
+| **S-14** | Branch scope, 12 enforcing call sites | **Critical** | A posting that does not resolve | Executed (P1–P5) |
+| **S-15** | `/api/crimes` unit-type mismatch | **High** | None (currently fails closed) | Code-read + schema |
+| **H-2b** | Checkpoint — branch never filtered, location fail-open | **High** | **None** | **Executed** (same-location/other-branch officer) |
+| **S-04** | `suspect_alerts` — no branch column, no filter anywhere | **High** | **None** | **Executed** |
 | **H-2b** | Checkpoint location scope | **High** | An empty `location_scope` |
 
 ---
@@ -209,7 +220,7 @@ open authorization path.**
 | Phase | Where | Action | Exit criterion |
 |---|---|---|---|
 | **R-A** | Development | Implement SEC-0; unit-test the decision matrix in isolation | All three dimensions return the correct state for every input class |
-| **R-B** | Development | Implement SEC-1…SEC-4 against SEC-0; enforcement **on from the first commit** | 44 tests (§5) pass; each seen to fail pre-fix |
+| **R-B** | Development | Implement SEC-1…SEC-4 against SEC-0; enforcement **on from the first commit** | 46 tests (§5) pass; each seen to fail pre-fix |
 | **R-C** | **Staging** | Load representative accounts — one per role, plus deliberately broken ones (empty posting, unknown branch, ambiguous name, empty `location_scope`) | Diagnostic report lists every INDETERMINATE account |
 | **R-D** | **Staging** | Correct the invalid assignments (**PRE-4**); re-run | **Zero** INDETERMINATE results for intended-valid accounts; the deliberately broken ones still 403 |
 | **R-E** | Staging | Full regression + the §5 suite | 34 suites green, no skips |
@@ -274,7 +285,7 @@ It never disables a guard and never runs in production.
 E-11 is **A only** by design (§2.3): identity search stays open to every authenticated session.
 A test asserts it **keeps working** for a checkpoint officer — the regression guard for point 5.
 
-### 5.3 The 44 tests
+### 5.3 The 46 tests
 
 **`test_authorization_model.py`** — SEC-0 in isolation (10)
 
@@ -331,7 +342,7 @@ A test asserts it **keeps working** for a checkpoint officer — the regression 
 | T-34 | `test_admin_sees_all_locations` | **control** |
 | T-35 | `test_checkpoint_officer_can_still_record` | **control** — normal intake unaffected |
 
-**`test_person_detail_authorization.py`** — S-16 (9)
+**`test_person_detail_authorization.py`** — S-16 + alert ownership (11)
 
 | ID | Test | Asserts |
 |---|---|---|
@@ -343,10 +354,13 @@ A test asserts it **keeps working** for a checkpoint officer — the regression 
 | T-41 | `test_linked_records_filters_by_branch` | S-16b |
 | T-42 | `test_documents_filters_by_branch` | S-16b |
 | T-43 | `test_audit_history_filters_by_branch` | S-16b |
-| T-44 | `test_alerts_gated_by_module_only_is_documented` | asserts `cid`-module gating **and** that alerts are *not* branch-filtered, pinning the S-04 gap so it cannot be silently forgotten |
+| T-44 | `test_alert_content_is_branch_scoped` | **rewritten in rev 3.** Was "pin the S-04 gap"; now asserts a cross-branch CID officer is refused alert *content* (requires M-02 Phase A) |
+| T-45 | `test_alert_flag_stays_national` | **control, safety-critical** — a checkpoint officer with **no** `cid` module still gets `Flagged match` for an out-of-branch suspect. Fails if the fix over-restricts |
+| T-46 | `test_null_alert_branch_is_refused_not_all` | `branch_id IS NULL` ⇒ `INDETERMINATE` ⇒ refuse. Never "all branches" |
 
-T-10, T-20, T-34, T-35, T-39, T-40 are controls. T-44 deliberately pins a **known remaining gap**
-rather than asserting a fiction.
+T-10, T-20, T-34, T-35, T-39, T-40, **T-45** are controls. **T-44 no longer pins a gap** — rev 2
+accepted the alert register as unfixable; rev 3 fixes it via M-02 Phase A, so the test asserts the
+corrected behaviour instead. See `SUSPECT_ALERT_OWNERSHIP.md`.
 
 ### 5.4 Suites
 
@@ -366,6 +380,10 @@ rather than asserting a fiction.
 
 **Unchanged in content, and still awaiting your approval.** Not merged into any SEC package and not
 a dependency of any of them.
+
+> **Full options analysis — including operational consequences, affected workflows and the
+> recommendation — is in `SS1_STATION_SAFEGUARD_OPTIONS.md` (your review point 4).** The summary
+> below is retained for continuity.
 
 ### 6.1 The four station-creation paths
 
@@ -419,12 +437,13 @@ SS-1 proceeds without your explicit approval.**
 
 ```
 SEC-0  unified authorization model  (built ONCE)
-  ├── SEC-1  S-16   person endpoints        ──┐
-  ├── SEC-2  S-14   branch call sites       ──┤
-  │     └── SEC-3   S-15  crime consistency  │
-  └── SEC-4  H-2b   checkpoint              ──┤
-                                              └── SEC-5  staging diagnostics (R-C/R-D)
-                                                     └── A-18  (also needs PRE-3)
+  ├── SEC-2  S-14  branch call sites ── SEC-3  S-15 crime consistency ──┐
+  ├── SEC-4  H-2b  checkpoint ──────────────────────┬──────────────────┤
+  │                                                 │                  │
+  └── M-02 Phase A  suspect_alerts.branch_id ───────┴── SEC-1 ─────────┤
+                                                   (S-16a/b + alerts)  │
+                                                                       └── SEC-5 staging (R-C/R-D)
+                                                                              └── A-18 (+ PRE-3)
 SS-1   station safeguards — INDEPENDENT, awaiting approval
 ```
 
@@ -433,12 +452,13 @@ SS-1   station safeguards — INDEPENDENT, awaiting approval
 | Pkg | Content | Severity | **New work** | Depends on |
 |---|---|---|---|---|
 | **SEC-0** | Three-state model, `authorize()`, `enforce()`, `scope_clause()`, T-01…T-10 | — | **2–3 d** | — |
-| **SEC-1** | **S-16a + S-16b** — PE-1 filtering; branch filtering on PE-2…PE-4; T-36…T-44 | **Critical** | **2–3 d** | SEC-0 |
+| **M-02-A** | `suspect_alerts.branch_id` column + backfill + record branch on write | **Critical** | **1–1.5 d** | SEC-0 |
+| **SEC-1** | **S-16a + S-16b** — PE-1 filtering; branch filtering on PE-2…PE-4; alert read scoping; T-36…T-46 | **Critical** | **2–3 d** | SEC-0, **SEC-4**, **M-02-A** |
 | **SEC-2** | **S-14** — 12 enforcing call sites on SEC-0; T-11…T-22 | **Critical** | **2–3 d** | SEC-0 |
 | **SEC-3** | **S-15** — `/api/crimes` unit type, crime write guard; T-23…T-27 | High | **1–2 d** | SEC-0, SEC-2 |
 | **SEC-4** | **Checkpoint** CP-2…CP-6 (CP-1 is now SEC-0); T-28…T-35 | High | **2–3 d** | SEC-0 |
 | **SEC-5** | Staging diagnostic + assignment correction (R-C/R-D) | — | **1–2 d** | SEC-1…4 |
-| | **Authorization total** | | **10–16 d** | |
+| | **Authorization total** | | **11–17.5 d** | |
 | **SS-1** | Station safeguards G-a…G-d | High | **1–2 d** | *(independent — approval)* |
 | **P0-WP-1** | N-7 / S-07 | High | 1.5 d | — |
 | **P0-WP-2** | H-5 / S-02 session revocation | High | 1.5–2 d | — |
@@ -449,17 +469,23 @@ checkpoint `''` fix are **all in SEC-0 and costed once**. The first version cost
 *including* the helper and separately costed CP-1, which duplicated it. SEC-2 is now 2–3 d because
 it is call-site work only, and SEC-4 dropped from 3–4 d to 2–3 d for the same reason.
 
+**Revision 3 adds 1–1.5 d and nothing else.** That is M-02 Phase A — a schema change that did not
+exist in the plan before, because until the four registers were actually measured the alert gap was
+recorded as "cannot be fixed" rather than costed. SEC-1's own estimate is **unchanged at 2–3 d**:
+the alert read-scoping is the same branch clause already being added to the other three arrays, so
+it is **not re-counted**. Full shared-mechanism audit: `ENDPOINT_AUTHORIZATION_INVENTORY.md` §5.1.
+
 ### 7.3 Totals
 
 | | Previous | **Revised** |
 |---|---|---|
-| Authorization (SEC-0…SEC-5) | 10–16 d | **10–16 d** |
+| Authorization (SEC-0…SEC-5 **+ M-02 Phase A**) | 10–16 d | **11–17.5 d** |
 | P0-WP-1/2/3 | 7–9.5 d | 7–9.5 d |
 | SS-1 *(separate, pending approval)* | 1–2 d | 1–2 d |
-| **Before Release 1.0** | 17–25.5 d | **17–25.5 d + 1–2 d if SS-1 approved** |
+| **Before Release 1.0** | 17–25.5 d | **18–27 d + 1–2 d if SS-1 approved** |
 
-Unchanged in total, but now with the model built once and SEC-5 (staging) explicitly funded instead
-of an unfunded report-only production phase.
+The increase is **entirely** M-02 Phase A. It is the price of actually fixing the alert register
+instead of documenting it as unfixable.
 
 ### 7.4 Release blockers
 
@@ -470,7 +496,8 @@ of an unfunded report-only production phase.
 | **S-14** | **Critical** | Release 1.0 | SEC-2 + T-11…T-22 |
 | **S-15** | High | Release 1.0 **and A-18** | SEC-3 + T-23…T-27 |
 | **H-2b** | High | Release 1.0 | SEC-4 + T-28…T-35 |
-| **S-04** | Medium | alert branch isolation | pinned by T-44; needs the S-04 schema change |
+| **S-04** | **High** *(raised)* | alert branch isolation, CID authorization completeness | **M-02 Phase A** + SEC-1 + T-44…T-46 |
+| **S-03** | High | alert correction/withdrawal | **not in authorization scope** — needs M-02 lifecycle + D-23 |
 | **PRE-3** | — | A-18 | CID deployment authority |
 
 **A-18 remains on hold.**
@@ -479,18 +506,27 @@ of an unfunded report-only production phase.
 
 ## 8. Limits and disclosures
 
-- **Nothing implemented.** Both probes deleted; `server.py` unchanged; 28 PASS / 0 FAIL / 1 BLOCKED.
-- **The 44 tests are specified, not written.**
-- **S-16's `airport`, `alerts` and `checkpoints` arrays were not separately measured** — only
-  `clearance` was demonstrated (probes Q2, Q4). The other three are the same unfiltered
-  `WHERE person_id=%s` in the same handler. Stated as structurally identical, **not** as proven.
-- **S-16b was established by reading `linked_person_records()`, `person_document_records()` and
-  `person_audit_history()`**, confirming each applies module and checkpoint filters and **no branch
-  filter**. Not probed. T-41…T-43 must fail pre-fix.
-- **Checkpoint findings (c) unknown-location and (d) substring matching are from code reading**, not
-  from a probe. T-31 and T-33 must fail pre-fix.
-- **`suspect_alerts` cannot be branch-filtered** — the column does not exist (S-04). T-44 pins the
-  gap deliberately.
+- **Nothing implemented.** All three probes deleted; `server.py` sha256 `a8211f4f…b3b9fc` unchanged;
+  28 PASS / 0 FAIL / 1 BLOCKED.
+- **The 46 tests are specified, not written.**
+- **RESOLVED in rev 3 — all four registers measured.** Revision 2 disclosed that only the
+  `clearance` array had been demonstrated and the other three were "structurally identical, not
+  proven". They have now been measured individually through the real endpoint:
+  `S16_REGISTER_VERIFICATION.md`. They are **not** identical — they fail in three different ways,
+  and the differences changed the dependency order.
+- **S-16b is now PROVEN**, on `clearance_applications` and `airport_passengers` — the two registers
+  whose own endpoints *do* enforce branch, so the leak is unambiguous.
+- **H-2b is now PROVEN**: a checkpoint officer at the matching location but a different branch reads
+  the record from the **owning endpoint**. Previously a code-read inference.
+- **Still code-read only:** `/documents` and `/audit-history` (T-42, T-43), and checkpoint findings
+  (c) unknown-location and (d) substring matching (T-31, T-33). **Not probed.** Must fail pre-fix.
+- **Fixtures in the four-register probe were seeded with SQL**, not filed through the intake
+  endpoints; only the authorization measurements were real HTTP. One record per register; no
+  pagination or ordering coverage.
+- **`suspect_alerts` branch-filtering now has an answer** — it requires a schema change (M-02 Phase
+  A). Rev 2 recorded it as unfixable and pinned the gap; that was premature.
+- **Your review named the airport register `airport_movements`; the table is `airport_passengers`.**
+  Same register; recording it so the test plan and schema agree.
 - **The previous revision proposed a report-only production phase.** That was wrong — it would have
   shipped known-exploitable defects into production. Removed and replaced by staging phases R-C/R-D.
 - **SEC-5's duration depends on how many accounts need correcting**, which is an operational

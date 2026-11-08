@@ -7,6 +7,27 @@
 > **Nothing in this document has been run.** No DDL was executed, no table was created, no data was
 > written. The SQL below is a proposal for review.
 
+> ## ⛔ OWNER RULING — §7 PHASE B1 IS UNAPPROVED AND PROHIBITED FOR PRODUCTION
+>
+> **Recorded 5 November 2026.** The owner reviewed the authorization remediation plan and
+> **rejected report-only enforcement in production as a pattern**, on the grounds that it
+> knowingly leaves a vulnerability exposed while logging it.
+>
+> §7 Phase **B1** of this document (*"authorize, log what would have been denied, **serve the
+> file anyway**"*) is that same pattern. It is therefore:
+>
+> * **UNAPPROVED** — it must not be implemented as written;
+> * **PROHIBITED for production** until a revised rollout is approved;
+> * **permitted in staging only**, as a read-only diagnostic, in line with
+>   `AUTHORIZATION_REMEDIATION_PLAN.md` §4 phases R-C/R-D.
+>
+> The rest of M-01 — the `documents` table, the ownership model, the backfill and the
+> enforcement logic — is **unaffected** by this ruling.
+>
+> **The original §7 text is left intact below, not rewritten.** This proposal has its own
+> decision history and editing it in place would conceal what was proposed and when. The
+> correction is recorded here and again at §7.
+
 ---
 
 ## 1. The problem this solves
@@ -243,8 +264,20 @@ def authorize_document(c, user, doc):
 | **B2** | Review the report-only log. Zero unexpected denials → proceed. | — |
 | **B3** | Enforce. | flag off |
 
-**I strongly recommend B1.** The failure mode of getting this wrong is an officer unable to open a
-case document during an operation. Report-only mode converts that risk into a log line.
+> **⛔ SUPERSEDED BY OWNER RULING — see the banner at the top of this document.**
+> Phase **B1** as written below is **unapproved and prohibited for production**. The
+> recommendation that follows is the original text, retained for the record, and **must not be
+> acted on**. The approved equivalent is a **staging** compatibility exercise with enforcement
+> never disabled (`AUTHORIZATION_REMEDIATION_PLAN.md` §4, phases R-C/R-D).
+
+~~**I strongly recommend B1.** The failure mode of getting this wrong is an officer unable to open a
+case document during an operation. Report-only mode converts that risk into a log line.~~
+
+**Replacement recommendation.** The operational risk B1 was guarding against is real — an officer
+locked out of a case document mid-operation. The answer is to find those cases in **staging**,
+against representative accounts and deliberately broken ones, and fix the ownership data before
+enforcement reaches production. Per **R-1** there is no production document corpus yet, so there is
+nothing to be backward-compatible with.
 
 ---
 
