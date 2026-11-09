@@ -1302,7 +1302,9 @@ latter, and every place where speed was traded away is stated rather than hidden
 | Revision 1 content commit | `d1d1eb6ba1c7617d39b1ecdbf42eb95819f02aa4` |
 | Revision 1 metadata commit | `76c77a0fb25f5cb2815c984f3b2a7b19c1d5494a` |
 | **Revision 2 content commit** (the owner decisions) | `c4bfa8645f2da897cb69032d95b528ae1e755090` |
-| **HEAD before revision 2** | `76c77a0fb25f5cb2815c984f3b2a7b19c1d5494a` |
+| Revision 2 metadata commit | `061101417a90d652106569dda135db23b50c3a29` |
+| **Revision 3 content commit** (D-23.6 + the D-21 sheet) | `bfa912ab74d51434f90bae8f00446d71c4347673` |
+| **HEAD before revision 3** | `061101417a90d652106569dda135db23b50c3a29` |
 
 Every hash above was read back with `git rev-parse` **after** the commit it names and written in
 by a follow-up metadata commit — a commit cannot contain its own hash, and no hash in this
