@@ -1029,7 +1029,7 @@ latter, and every place where speed was traded away is stated rather than hidden
 | Branch | `arena/6303ef2f-sentinel-police-management` |
 | HEAD before this work | `28e68eea93d7d0268c635326dbf88b4356793c2e` |
 | `origin/main` | `a1c2478262776e9f20b4c3ad806eaa86adc27792` — **unchanged** |
-| This programme's content commit | _recorded by the follow-up metadata commit; a commit cannot contain its own hash_ |
+| This programme's content commit | `d1d1eb6ba1c7617d39b1ecdbf42eb95819f02aa4` — read back with `git rev-parse` after committing, then written here by a follow-up metadata commit (a commit cannot contain its own hash) |
 | `backend/server.py` | sha256 `a8211f4f2222e46f14047f5e4ff3135dd43472f0f8c98578d06293708bb3b9fc` |
 
 ### 8.2 Compliance
