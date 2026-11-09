@@ -408,7 +408,8 @@ dependencies and release impact. No decision has been altered or taken on your b
 |---|---|
 | Branch | `arena/6303ef2f-sentinel-police-management` |
 | Revision 1 commit | `c5bfb61` |
-| **Revision 2 content commit** | _recorded in the follow-up metadata commit — see below_ |
+| **Revision 2 content commit** | **`cc33f1a`** (full: `cc33f1a84a4946ada237a480e55c0b2fd4e37a2d`) — carries both changed files |
+| **Revision 2 metadata commit** | the commit that writes this hash into this table; it changes **only** this line and §7.3. A commit cannot contain its own hash, so the content was committed first and recorded second. The content commit was **not** amended, which would have invalidated the hash printed above. |
 | `origin/main` | **`a1c2478` — unchanged** |
 | `backend/server.py` | sha256 `a8211f4f2222e46f14047f5e4ff3135dd43472f0f8c98578d06293708bb3b9fc` |
 | Working tree | clean at commit time |
@@ -451,6 +452,7 @@ done this** — it changes historical metadata and is your call.
 | Owner decisions unchanged | ✔ — one *classification* change (D-4b), flagged in §6, decision untouched |
 | `PROJECT_STATUS.md`, `DECISION_REGISTER.md` | ✔ **not modified** |
 | Temporary probes | ✔ all five deleted |
+| Working tree and suite verified at the content commit | ✔ tree clean; 28 PASS · 0 FAIL · 1 BLOCKED re-run immediately before `cc33f1a` |
 
 ## 7.4 Documentation files changed in revision 2
 
