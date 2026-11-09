@@ -857,7 +857,7 @@ gate A-13), **D-23.1** (police), **D-04 / A-6** (legal — gates S-10), **A-1…
 | Revision 1 | content | `c5bfb61` |
 | Revision 2 | content | `cc33f1a` |
 | **Revision 2** | **metadata** | **`80573d1`** — recorded here, as you required |
-| **Revision 3** | **content** | _placeholder — replaced with the verified hash by the metadata commit; never printed before it exists_ |
+| **Revision 3** | **content** | **`b81ceb7`** (full: `b81ceb78657582edfe057f89a609770ee6b1808c`) — carries all three changed files |
 | Revision 3 | metadata | the commit that writes the revision 3 content hash into this table; its own hash is reported in the delivery message and recorded in the next revision |
 
 > **Why one hash per revision is always recorded one step late.** A commit's hash is a digest of
