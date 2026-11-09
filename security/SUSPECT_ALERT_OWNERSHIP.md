@@ -1,3 +1,27 @@
+> ## ✅ OWNERSHIP DECISIONS RECORDED — 9 November 2026
+>
+> **D-1a — approved:** *"Explicitly stored branch ownership for every suspect alert."* Rules
+> **R1–R5** below stand in full: owner written at `INSERT`, **stored never derived**,
+> `branch_id IS NULL` ⇒ `INDETERMINATE` ⇒ content refused, creation refused when the creator's
+> branch is unresolved, ownership unchanged by case reassignment.
+>
+> **D-4 — approved:** *"Phase A ownership-only migration. Alert lifecycle management remains
+> separate."* **M-02-A is unblocked at 1–1.5 d.**
+>
+> **D-7 — approved:** fail-closed migration with a **manual review worklist**; unresolved rows are
+> **never defaulted** to a branch.
+>
+> **D-3 — Option A:** detailed alert content is **strictly branch-scoped**. Out-of-branch ⇒ 403.
+>
+> **⚠️ D-1b — OVERRIDDEN:** the owner decided **not** to disclose the owning branch in national
+> warnings. **Any part of this document that assumes the branch name is returned as a routing hint
+> is superseded on that point.** The warning remains a boolean plus an escalation instruction, and
+> **what that instruction contains is new open decision D-1c.**
+>
+> **Implementation remains unauthorized.**
+
+---
+
 # Suspect alert ownership and authorization — architecture
 
 **Date:** 5 November 2026

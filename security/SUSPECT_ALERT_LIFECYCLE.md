@@ -1,3 +1,30 @@
+> ## ⚠️ PARTIALLY DECIDED — 9 November 2026 · **A-13 IS STILL BLOCKED**
+>
+> **D-4 — approved:** Phase A is **ownership-only**; **alert lifecycle management remains
+> separate** and stays out of Release 1.0 under D-23.
+>
+> **D-4b — approved with a changed authority model:** *"Crime Unit officers may create suspect
+> records and alerts. Only the authorized Crime Unit supervisor may withdraw national alerts.
+> SystemAdmin must not receive this authority automatically."*
+>
+> * **A-13 is re-scoped from 2–3 d to 4–6.25 d** and now needs a **stored permission grant and
+>   its own migration**.
+> * The authority is a **new, explicitly granted permission `alerts:withdraw`** — **no existing
+>   role may stand in for the Crime Unit supervisor**, including `ROLE_ADMIN` (excluded by the
+>   decision) and `ROLE_CHIEF` (a reporting role, never a CID command post).
+> * Withdrawal is **branch-scoped** consistent with D-3 Option A: a holder may withdraw only
+>   alerts owned by their **own** branch; an unresolved owner **refuses**.
+> * **Withdrawal is not amendment.** **D-4c — whether an officer may edit an existing alert — is
+>   recorded UNRESOLVED at the owner's instruction.** No edit capability may be designed or built.
+>
+> **⛔ Still blocking A-13:** **D-23.6** (the terminal state vocabulary — A-13 writes one
+> permanent value) and **D-21** (who the Crime Unit supervisor is). **D-23.5 is only partially
+> answered:** *withdraw* is settled; *clear*, *reopen* and *suspend* are not.
+>
+> **Implementation remains unauthorized.**
+
+---
+
 # Suspect Alert Lifecycle — specification
 
 **Date:** 7 November 2026 · **Status:** **SPECIFICATION — NOT IMPLEMENTED**

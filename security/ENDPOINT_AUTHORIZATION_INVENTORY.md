@@ -1,3 +1,26 @@
+> ## 📌 EXTENDED — identifier ceilings moved, 9 November 2026
+>
+> This document remains authoritative for **E-1…E-26** and **T-01…T-46**. Later work extended both
+> sequences; the entries live in `security/SECURITY_REMEDIATION_PROGRAMME.md` and are listed here
+> so no identifier is minted twice.
+>
+> | Range | Where defined | Subject |
+> |---|---|---|
+> | **E-27…E-36** | Programme §1.1 | Officer/station registers, analytics surfaces, login, logout, password, admin PATCH |
+> | **E-37, E-38** | Programme §1.1 | **Do not exist yet** — created by **D-4b**: the withdraw route and the permission grant/revoke path |
+> | **T-47…T-56** | Programme §2.8 | S-05 / S-20, incl. four positive controls |
+> | **T-57…T-64** | Programme §2.9 | S-08 session expiry |
+> | **T-65…T-68** | Programme §2.10 | S-02 admin reset revocation |
+> | **T-69…T-77** | Programme §2.11–§2.12 | S-09 throttling and audit; `Secure` cookie |
+> | **T-78…T-81** | Programme §2.6 | **A-13 under D-4b** — SystemAdmin refused, cross-branch refused, NULL owner refused, non-status field rejected |
+> | **T-82…T-85** | Programme §2.16 | **SS-1 under D-5** — fabricated station refused on both paths, registered station still works |
+> | **TLS-1…TLS-10** | `S08_S09_EXECUTION_VERIFICATION.md` §5.2 | TLS acceptance |
+>
+> **Current ceilings: findings S-20 · endpoints E-38 · tests T-85 · work items W-78.**
+> **Grep for the maximum before minting any new identifier.**
+
+---
+
 # Consolidated endpoint authorization inventory
 
 **Date:** 5 November 2026

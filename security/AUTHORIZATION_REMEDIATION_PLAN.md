@@ -1,3 +1,21 @@
+> ## ✅ GATING DECISIONS RECORDED — 9 November 2026
+>
+> All eight owner decisions are approved (`DECISION_REGISTER.md` §1A). **D-3 = Option A** fixes
+> SEC-0 at the three-state model, which unblocks **SEC-0 → SEC-2 → SEC-3 → SEC-4 → M-02-A →
+> SEC-1 → SEC-5**. **D-5** makes **SS-1 mandatory**. **D-4b** re-scopes **A-13 to 4–6.25 d**.
+>
+> **The authoritative costings and sequencing are now
+> `security/SECURITY_REMEDIATION_PROGRAMME.md` §3 and §4** (total **40–63.75 d**, derived from
+> work items W-01…W-78). The package analysis and the 46 tests below remain valid and are
+> unchanged; only the totals and the A-13/SS-1 scope moved.
+>
+> **SS-1 (§6) is no longer awaiting approval** — see the D-5 banner in
+> `security/SS1_STATION_SAFEGUARD_OPTIONS.md`.
+>
+> **Implementation remains unauthorized.**
+
+---
+
 # Security Remediation Plan — Authorization (revised)
 
 **Date:** 5 November 2026 (date conflict unresolved — `RELEASE_1_0_REFERENCE_DATA.md` §5)

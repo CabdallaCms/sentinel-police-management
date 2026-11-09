@@ -1,3 +1,25 @@
+> ## ✅ D-5 DECIDED — 9 November 2026
+>
+> **Owner's answer, verbatim: "Crime Unit officers select existing registered police stations.
+> They cannot create stations."**
+>
+> This **mandates guard G-b** — `register_crime()` (`:5294`) and `register_officer()` (`:4828`)
+> must resolve an existing registered station or refuse; neither may create one. **SS-1 is
+> therefore no longer optional: it is a mandatory package at 1–1.5 d**
+> (`security/SECURITY_REMEDIATION_PROGRAMME.md` §4, Wave 5), with tests **T-82…T-85**.
+>
+> **The decision does not state whether guards G-a and G-c, or the operator remedy message that
+> distinguishes option (iii) from option (ii), are also in scope.** That residual is raised as
+> **new decision D-5a** (+0.25–0.5 d) and **has not been assumed either way**. The options below
+> are preserved exactly as they were put to the owner.
+>
+> **PRE-5 remains mandatory regardless** — a wrong station code cannot be corrected once stamped
+> into a `CRM-<year>-<code>-NNNN` file number.
+>
+> **Implementation remains unauthorized.**
+
+---
+
 # SS-1 — station creation safeguards: options in full
 
 **Date:** 5 November 2026

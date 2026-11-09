@@ -8,6 +8,34 @@
 > **This document plans work. It does not perform it.** No application code, schema, migration or
 > production configuration has been changed. The approval gate is §7.
 
+> ## ✅ REVISION 2 — THE EIGHT OWNER DECISIONS ARE RECORDED (9 November 2026)
+>
+> All eight outstanding owner decisions were approved. Their exact recorded wording is in
+> `DECISION_REGISTER.md` §1A and `OWNER_DECISION_PACKAGE_R1.md` §0. **Revision 1 of this document
+> is preserved below and amended in place; no option, consequence or estimate has been deleted.**
+>
+> **Three things changed materially, and only these three:**
+>
+> 1. **D-4b changed A-13's authority model.** Withdrawal is **not** administrator-only. Only the
+>    authorized Crime Unit supervisor may withdraw, and **SystemAdmin must not receive the
+>    authority automatically.** A-13 therefore needs a **stored, explicitly granted permission**
+>    and **a migration it did not previously need**. **A-13: 2–3 d → 4–6.25 d.**
+> 2. **D-5 approved SS-1's core guard.** Station fabrication stops. **SS-1 moves from optional
+>    into the mandatory programme: +1–1.5 d.**
+> 3. **D-1b was overridden** (the owner declined branch disclosure). The payload loses the routing
+>    hint; **new decision D-1c** records the escalation-route question this creates.
+>
+> **Corrected total: 40 – 63.75 days** (was 37–59). Arithmetic in §3.3.
+>
+> **Still not buildable: A-13**, because **D-23.6** has not fixed the terminal state vocabulary,
+> and because the holder of the supervisor authority cannot be identified from the data model
+> until **D-21** is answered. **No supervisor role or permission has been invented to paper over
+> this** — see §2.6.
+>
+> **Implementation remains unauthorized.** This revision is planning only.
+
+---
+
 ## 0. Repository state — read directly from Git, not typed from memory
 
 | Item | Value |
@@ -51,6 +79,13 @@ document was typed by hand or predicted.**
 | **E-34** | `/api/logout` | POST | **S-08** | Revokes only the presented token |
 | **E-35** | `/api/me/password` | POST | **S-02** *(control)* | Correctly revokes other sessions |
 | **E-36** | `/api/admin/users/<id>` | PATCH | **S-02** | Writes `password_hash`; **never revokes sessions** |
+
+**Endpoints that do not exist yet and are created by the owner's decisions (revision 2):**
+
+| # | Endpoint | Method | Decision | Required authorization |
+|---|---|---|---|---|
+| **E-37** | `/api/suspect-alerts/<id>/withdraw` | POST | **D-4b** | Explicitly granted `alerts:withdraw` **and** SEC-0 `GRANTED` for the alert's owning branch. `INDETERMINATE` refuses. **`role == 'SystemAdmin'` alone must be refused** |
+| **E-38** | `/api/admin/users/<id>/permissions` | POST / DELETE | **D-4b** | Administrator, audited. Grants or revokes `alerts:withdraw`. Separate from E-37 so that granting and using the authority are distinct, separately auditable acts |
 
 ---
 
@@ -205,8 +240,16 @@ police_branches(id) ON DELETE SET NULL;` plus an index. Backfill from `crime_cas
 where resolvable, otherwise a **worklist — never defaulted**. Record the branch on write; refuse
 creation when the creator's branch is unresolved.
 
-**(3) Dependencies.** **SEC-0**; gated by owner decisions **D-1a**, **D-4** and **D-7**. Must
-precede **SEC-1**.
+**(3) Dependencies.** **SEC-0**; gated by owner decisions **D-1a**, **D-4** and **D-7** — **all
+three approved on 9 Nov 2026, so M-02-A is unblocked.** Must precede **SEC-1**.
+
+> **D-1b consequence (overridden recommendation).** The owner declined to disclose the owning
+> branch in national warnings. The alert response payload must therefore **omit the branch name**,
+> and the `Flagged match` response carries a boolean plus an escalation instruction only. **The
+> escalation instruction is not derivable from the alert record**, so what it should contain is
+> now open decision **D-1c**. M-02-A may proceed without it; the payload text cannot be finalised
+> until D-1c is answered. **No routing hint may be added on the assumption that D-1c will permit
+> one.**
 
 **(4) Mandatory before production.** **Yes**, and before staging.
 
@@ -229,19 +272,72 @@ PATCH, PUT, DELETE or withdraw route exists** (E-17 is an endpoint that does not
 listed person is flagged at every checkpoint in the country, indefinitely, and **nobody — including
 an administrator — can clear it.**
 
-**(2) Required change.** Build **A-13**: one endpoint that sets a terminal status, requires a
-mandatory reason, writes an audit event with the actor, and stops the national flag firing.
-**Authorization must be a named permission (e.g. `alerts:withdraw`), not `role == 'SystemAdmin'`** —
-see `OWNER_DECISION_PACKAGE_R1.md` §4 for why, and for the controls against unauthorized withdrawal.
-No schema change beyond M-02 Phase A.
+**(2) Required change — RE-SCOPED BY D-4b, 9 Nov 2026.** Build **A-13**: one endpoint that sets a
+terminal status, requires a mandatory reason, writes an audit event with the actor, and stops the
+national flag firing.
+
+The owner's recorded decision is: *"Crime Unit officers may create suspect records and alerts. Only
+the authorized Crime Unit supervisor may withdraw national alerts. SystemAdmin must not receive
+this authority automatically."* That changes three things:
+
+| | Revision 1 (as planned) | **Revision 2 (as decided)** |
+|---|---|---|
+| Who may withdraw | The administrator, via a named permission | **Only the authorized Crime Unit supervisor** |
+| SystemAdmin | Implicitly the holder | **Explicitly excluded unless separately and deliberately granted** |
+| Schema | *"No schema change beyond M-02 Phase A"* | **A migration is now required** to store the grant |
+
+**The authority must be modelled as a new, explicitly granted permission — `alerts:withdraw` — and
+nothing in the current system may be reused to stand in for it.** This is stated plainly because
+the decision names a role the software does not have:
+
+- **`ROLE_CID` (`:1338`) is flat.** There is no supervisor, no rank, no appointment and no command
+  hierarchy; `users` carries only `role`, `branch`, `location_scope` and `badge_number`.
+- **Therefore no existing role may be treated as "the Crime Unit supervisor."** Not `ROLE_ADMIN`
+  (D-4b excludes it), not `ROLE_CHIEF` (`:1374` — a reporting role, never defined as a CID command
+  post), and not "any `ROLE_CID` user" (that would grant every investigator the power).
+- **The permission is therefore stored and granted per user**, explicitly and enumerably, until
+  **D-21** defines the CID role structure. When D-21 lands, the grant moves to the role **without a
+  second migration** — which is the whole reason for making it a permission rather than a role test.
+
+**Design constraints that follow from the other decisions:**
+
+1. **Branch isolation (D-3 Option A).** The permission is **not** national. A supervisor holding
+   `alerts:withdraw` may withdraw **only alerts owned by their own CID branch**, resolved through
+   SEC-0's `authorize()` exactly like every other alert operation. An unresolved owner
+   (`branch_id IS NULL`) is `INDETERMINATE` and **refuses the withdrawal** — it never falls back to
+   permitting it. A cross-branch withdrawal attempt is a `403`, not a silent no-op.
+2. **Withdrawal is not amendment.** The endpoint sets a terminal status and a reason, and **must
+   not** accept edits to any other alert field. **D-4c — whether an officer may edit an existing
+   alert — is explicitly UNRESOLVED** and no edit capability may be designed, exposed or implied
+   by this route.
+3. **Creation authority is unchanged.** D-4b confirms Crime Unit officers may create suspect
+   records and alerts; that matches current behaviour as constrained by **R4** (creation refused
+   when the creator's branch is unresolved). No new work.
+
+See `OWNER_DECISION_PACKAGE_R1.md` §4 for the full reasoning on why a technical SystemAdmin is not
+a police authority, and for controls **C-1…C-9** against unauthorized withdrawal.
 
 **(3) Dependencies.** **M-02 Phase A** (an alert must have an owner before a scoped withdrawal is
-meaningful); owner decision **D-4b**; **legal decisions D-23.5 and D-23.6** before it is *built*.
+meaningful); **SEC-0** (branch isolation of the withdrawal); the **D-7 migration procedure** (now
+required, for the grant storage); owner decision **D-4b — APPROVED**.
+
+> **A-13 IS STILL NOT BUILDABLE.** Two gates remain, and neither is engineering's to close:
+> **(a) D-23.6** must fix the terminal state vocabulary, because A-13 writes exactly one permanent
+> terminal value and changing it later mislabels every record A-13 wrote and forces a second
+> migration over live alerts. **(b) D-21** must define the CID role structure before the holder of
+> the supervisor authority can be identified from the data model; until then the grant is
+> per-user and administrative. **D-23.5 is now partially answered** — D-4b settles *withdraw*;
+> *clear* and *reopen* remain open and belong to the 1.1 lifecycle.
 
 **(4) Mandatory before production.** **Yes — at the A-13 minimum.** The full six-state lifecycle is
 **not** mandatory and is deferred to 1.1 under D-23.
 
-**(5) Negative tests / acceptance.** A caller without `alerts:withdraw` → `403`. A withdrawal with
+**(5) Negative tests / acceptance.** A caller without `alerts:withdraw` → `403`. **A `SystemAdmin`
+holding every module but no explicit `alerts:withdraw` grant → `403` (T-78 — this is the direct
+test of D-4b and it may never be weakened or skipped).** A permission holder attempting to withdraw
+an **out-of-branch** alert → `403` (T-79). A withdrawal against an alert whose `branch_id IS NULL`
+→ refused, never permitted (T-80). An attempt to modify any non-status field through the withdraw
+route → rejected (T-81, the D-4c guard). A withdrawal with
 no reason → `400`. After withdrawal, `POST /api/checkpoint-events` for that person returns
 `No active alert` — **tested through the real endpoint**, because the checkpoint handler reads
 `suspect_alerts` directly (`:9597`) and a UI-only suppression would not be detected by anything
@@ -249,8 +345,12 @@ else. An audit row exists naming actor, reason and timestamp. A second withdrawa
 is idempotent or refused, not silently duplicated. **Acceptance:** the flag stops, the record
 survives, and who stopped it and why is recoverable.
 
-**(6) Effort: 2–3 d.** **Assumption:** the interim uses the existing permission layer and creates no
-supervisor role. Creating a real supervisor rank is **+4–8 d** and touches every module (D-23.1).
+**(6) Effort: 4–6.25 d** — re-scoped from 2–3 d by D-4b. **Arithmetic:** the original 2.0–3.0
+(W-46…W-50) plus **2.0–3.25** for the authority model the decision requires (W-70…W-74 in §3.1).
+**Assumptions, stated:** the grant is a stored per-user permission, **not** a new role — creating a
+real supervisor **rank** remains **+4–8 d** and touches every module (D-21 / A-3 / D-23.1) and is
+**not** included here; the grant storage is a small additive migration under D-7; and the
+administration path to grant and revoke the permission is a minimal audited endpoint, not a UI.
 
 ---
 
@@ -555,15 +655,20 @@ Sanaag.
 **(2) Required change.** A policy decision first, then possibly code. **Overlaps SS-1** — the same
 fabricated-station problem produces invented codes in official file numbers.
 
-**(3) Dependencies.** **D-5**, and **PRE-5** (station codes confirmed by HQ before first use,
+**(3) Dependencies.** **D-5 — APPROVED 9 Nov 2026** (*"Crime Unit officers select existing
+registered police stations. They cannot create stations"*), so **SS-1 is now a mandatory package
+rather than an optional one**; and **PRE-5** (station codes confirmed by HQ before first use,
 because they are permanent once minted).
 
 **(4) Mandatory before production.** **No** — but **PRE-5 is**, because a wrong code cannot be
 corrected after it is stamped into a file number.
 
-**(5) Negative tests / acceptance.** Covered by SS-1's tests if D-5 is approved.
+**(5) Negative tests / acceptance.** Covered by SS-1's tests **T-82…T-85**, now that D-5 is
+approved.
 
-**(6) Effort:** not separately costed — it is inside SS-1's 1–2 d.
+**(6) Effort:** not separately costed — it is inside SS-1's approved core of **1–1.5 d**
+(W-75…W-78). The residual guards G-a and G-c and the operator remedy message are **+0.25–0.5 d**
+and depend on **D-5a**, which D-5 did not settle.
 
 ---
 
@@ -647,6 +752,15 @@ that is stated too.
 | W-67 | HTTP→HTTPS redirect; bind app to a private interface | 0.25 | 0.75 | SEC-9 | W-66 | ✔ |
 | W-68 | HSTS | 0.25 | 0.5 | SEC-9 | W-66 | ✔ |
 | W-69 | TLS-1…TLS-10 acceptance run in staging | 0.25 | 0.5 | SEC-9 | W-65…68 | ✔ |
+| W-70 | Migration: storage for explicit per-user permission grants (**new — D-4b**) | 0.5 | 1.0 | A-13 | D-7, D-23.6 | ✔ |
+| W-71 | Audited administration path to grant / revoke `alerts:withdraw` | 0.5 | 0.75 | A-13 | W-70 | ✔ |
+| W-72 | Branch-isolate the withdrawal through SEC-0; `INDETERMINATE` refuses | 0.25 | 0.5 | A-13 | W-70, SEC-0 | ✔ |
+| W-73 | T-78…T-80 — SystemAdmin refused, cross-branch refused, NULL owner refused | 0.5 | 0.75 | A-13 | W-71, W-72 | ✔ |
+| W-74 | T-81 — withdraw route rejects any non-status field (D-4c guard) | 0.25 | 0.25 | A-13 | W-72 | ✔ |
+| W-75 | `resolve_station_readonly()` — resolve by code or id, **never create** (G-b) | 0.25 | 0.5 | SS-1 | — | ✔ |
+| W-76 | Wire `register_crime()` (`:5294`) and `register_officer()` (`:4828`) to it | 0.25 | 0.5 | SS-1 | W-75 | ✔ |
+| W-77 | Refusal response naming the administrator remedy | 0.25 | 0.25 | SS-1 | W-76 | ✔ |
+| W-78 | T-82…T-85 — fabricated code refused on both paths; registered station still works | 0.25 | 0.25 | SS-1 | W-76 | ✔ |
 
 ### 3.2 Package totals, summed from the items above
 
@@ -663,15 +777,23 @@ that is stated too.
 | **P0-WP-2** | W-31…W-34 | **1.5** | **2.0** | ✔ | staging |
 | **P0-WP-3** | W-35…W-39 | **2.0** | **3.0** | ✔ | production |
 | **S-01 / M-01** | W-40…W-45 | **11.0** | **18.0** | ✔ | production |
-| **A-13** | W-46…W-50 | **2.0** | **3.0** | ✔ | production |
+| **A-13** | W-46…W-50 **+ W-70…W-74** | **4.0** | **6.25** | ✔ | production |
 | **SEC-6** (S-05 + S-20) | W-51…W-55 | **2.0** | **4.0** | ✔ | production |
 | **SEC-7** (S-08) | W-56…W-60 | **2.0** | **3.0** | ✔ | production |
 | **SEC-8** (S-09) | W-61…W-64 | **2.0** | **3.0** | ✔ | production |
 | **SEC-9** (S-11) | W-65…W-69 | **2.0** | **4.0** | ✔ | production |
+| **SS-1** (D-5, station safeguards) | W-75…W-78 | **1.0** | **1.5** | ✔ *(newly mandatory)* | production |
 
-**Every package total equals the figure previously quoted for it.** The decomposition therefore
-**confirms** the per-package numbers rather than revising them. That is the useful result: the
-earlier error was never in the package estimates, only in how they were added up.
+**Fifteen of the seventeen package totals are unchanged from revision 1.** Only two moved, and
+both moved because the **owner's decisions changed the scope**, not because the estimate was
+re-opened:
+
+| Package | Rev 1 | **Rev 2** | Cause |
+|---|--:|--:|---|
+| **A-13** | 2.0 – 3.0 | **4.0 – 6.25** | **D-4b** requires a supervisor authority model and a grant migration that admin-only withdrawal did not need |
+| **SS-1** | *optional, 1 – 2* | **1.0 – 1.5** *(mandatory)* | **D-5** approved the core guard G-b. The approved scope is narrower than option (iii), so the figure is 1–1.5 not 1–2; the balance moves to the D-5a conditional |
+
+**No other package was touched.** Nothing was re-estimated to absorb the increase.
 
 ### 3.3 The arithmetic
 
@@ -690,30 +812,48 @@ BEFORE STAGING
   min 2+2+1+2+1+2+1+1.5+1.5         = 14.0
   max 3+3+2+3+1.5+3+2+1.5+2         = 21.0        →  14 – 21 days
 
-ADDITIONALLY BEFORE PRODUCTION
+ADDITIONALLY BEFORE PRODUCTION          (revision 2 — two packages re-scoped by the decisions)
   P0-WP-3    2.0 – 3.0
   S-01       11.0 – 18.0
-  A-13       2.0 – 3.0
+  A-13       4.0 – 6.25     ← was 2.0 – 3.0   (D-4b supervisor authority + grant migration)
   SEC-6      2.0 – 4.0
   SEC-7      2.0 – 3.0
   SEC-8      2.0 – 3.0
   SEC-9      2.0 – 4.0
+  SS-1       1.0 – 1.5      ← NEW in the mandatory band (D-5 approved)
   ─────────────────────
-  min 2+11+2+2+2+2+2                = 23.0
-  max 3+18+3+4+3+3+4                = 38.0        →  23 – 38 days
+  min 2+11+4+2+2+2+2+1              = 26.0
+  max 3+18+6.25+4+3+3+4+1.5         = 42.75       →  26 – 42.75 days
 
 TOTAL MANDATORY BEFORE PRODUCTION RELEASE 1.0
-  min 14 + 23 = 37
-  max 21 + 38 = 59                                →  37 – 59 days
+  min 14 + 26    = 40.0
+  max 21 + 42.75 = 63.75                          →  40 – 63.75 days
+                                                     (plan against 40 – 64)
+
+RECONCILIATION TO REVISION 1
+  revision 1 total                                   37   – 59
+  + A-13 re-scope      (4.0 − 2.0) , (6.25 − 3.0)    +2.0 – +3.25
+  + SS-1 now mandatory                               +1.0 – +1.5
+  ─────────────────────────────────────────────────────────────
+  min 37 + 2 + 1       = 40.0
+  max 59 + 3.25 + 1.5  = 63.75                    →  40 – 63.75  ✓ agrees
 ```
+
+**Both routes to the total agree.** The staging band is **unchanged at 14–21 days** — none of the
+eight decisions altered a staging package.
 
 | Scenario | Total |
 |---|---|
-| **All mandatory work** | **37 – 59 days** |
-| If S-05/S-20 (SEC-6) is deferred under a **signed** risk acceptance | 35 – 55 days |
-| Plus SS-1 if D-5 is approved | +1 – 2 days |
+| **All mandatory work** | **40 – 63.75 days** *(plan against 40 – 64)* |
+| If S-05/S-20 (SEC-6) is deferred under a **signed** risk acceptance | 38 – 59.75 days |
+| Plus the D-5a residual guards (G-a, G-c, operator remedy message) | +0.25 – 0.5 days |
 | Plus S-10 if D-04 requires it | +5 – 10 days |
+| Plus a real CID supervisor **rank** if D-21 / A-3 require one | +4 – 8 days *(not in the total; A-13 deliberately avoids it)* |
 | Full M-02 lifecycle, deferred to 1.1 under D-23 | 22 – 35 days *(not in the total)* |
+
+**Unchanged conditionals, restated so they are not lost:** S-09 **+0.5–1 d** if production is
+load-balanced (shared throttle state); M-02-A **+0.5–2 d** if a populated alert database appears.
+Neither is in the headline total, because neither condition is known to hold.
 
 ### 3.4 Overlapping work that must **not** be counted twice
 
@@ -725,11 +865,15 @@ TOTAL MANDATORY BEFORE PRODUCTION RELEASE 1.0
 | 4 | **S-16a and S-16b are both SEC-1** | One package, 2–3 d total |
 | 5 | **SEC-0 is shared by SEC-1, SEC-2, SEC-3, SEC-4** | Costed **once** in SEC-0, never per consumer |
 | 6 | **Session revocation is needed by both S-02 and S-08** | Costed **once** in P0-WP-2 (W-31…W-33). SEC-7 consumes the helper and does not re-cost it |
-| 7 | **S-19 overlaps SS-1** | Not separately costed; inside SS-1's 1–2 d, which is optional |
+| 7 | **S-19 overlaps SS-1** | Not separately costed; inside SS-1's **1–1.5 d**, which is **now mandatory** under D-5 |
 | 8 | **S-08's `last_seen_at` migration uses the D-7 procedure** | The procedure is costed once as a decision, not per migration |
 | 9 | **The 46 tests and the new T-47…T-77** | Each test is costed inside the package that owns it (W-05, W-09, W-13, W-17, W-21, W-25, W-34, W-50, W-55, W-60, W-64, W-69). **No separate testing line** |
 | 10 | **S-01's 15 document tests already exist** | W-45 is *activation*, 1–2 d, not authoring. Authoring was paid during the investigation |
 | 11 | **A-18 is inside P0-WP-3** | W-38, 0.25–0.5 d. It is not a separate package |
+| 12 | **A-13's permission grant vs. a CID supervisor role (D-21 / A-3)** | **Counted once, as a permission (W-70…W-71), never as a role.** The +4–8 d supervisor *rank* is deliberately **excluded** from the total. If D-21 later creates the role, the grant moves to it **without a second migration** — so that work is not paid for twice, and A-13 must not be re-estimated to include it |
+| 13 | **A-13's grant migration vs. the D-7 procedure** | The procedure is costed once as a decision (0 d). W-70 costs only the new storage itself. D-7 now governs **four** migrations and is still not charged per migration |
+| 14 | **SS-1's G-b vs. S-15's station resolution (SEC-3)** | SEC-3 fixes *scope and validation* at crime write; SS-1 fixes *station fabrication* at station resolve. **Adjacent lines, different defects, no shared work** — SEC-3's 1–2 d is unchanged by D-5 |
+| 15 | **D-4c (alert editing) is explicitly NOT costed** | Unresolved by owner instruction. **No line item, no allowance, no hidden provision.** W-74 only *prevents* the withdraw route becoming an edit route |
 
 ### 3.5 Every difference from previous estimates, explained
 
@@ -742,6 +886,10 @@ TOTAL MANDATORY BEFORE PRODUCTION RELEASE 1.0
 | 5 | **Total 37–58 (rev 2) → 37–59 (rev 3)** | Revision 2's total was built on the mis-cited band; revision 3's is `14–21` plus `23–38`. The near-match is arithmetic accident |
 | 6 | **This revision: no package range changed** | The work-item decomposition reproduces every package total exactly (§3.2). **Nothing was adjusted to fit** |
 | 7 | **Two new conditional additions disclosed** | S-09 **+0.5–1 d** if the production deployment is load-balanced (shared throttle state); M-02-A **+0.5–2 d** if a populated alert database appears. Neither is in the headline total, because neither condition is known to hold |
+| 8 | **Revision 2: 37–59 → 40–63.75** | **Caused entirely by two owner decisions, not by re-estimating.** `+2.0–3.25` for A-13 (D-4b: supervisor authority model, grant storage, grant administration, branch isolation of the withdrawal, and the SystemAdmin-refused negative test) and `+1.0–1.5` for SS-1 (D-5 moved it from optional into the mandatory band). `37+2+1 = 40`; `59+3.25+1.5 = 63.75` |
+| 9 | **Why SS-1 is 1–1.5, not the previously published 1–2** | D-5 approved the **core guard G-b** — officers select existing stations and cannot create them. That is narrower than published option (iii). The remaining 0.25–0.5 d (guards G-a and G-c, plus the operator remedy message) is **not deleted** — it moves to the **D-5a** conditional line, so `1.0–1.5 + 0.25–0.5` still reaches the old 1–2 band |
+| 10 | **Why D-3 = Option A added nothing** | Option A was always costed at **0 d** because it falls out of SEC-0's three-state model. The owner chose the option that needed no extra work; had B or C been chosen the total would have risen by 0.5 or 1–1.5 d. **This is a saving that was always assumed, not a new one** |
+| 11 | **Why D-1b being overridden did not reduce the estimate** | The routing hint was never separately costed — it was one field in the M-02-A payload (W-18…W-21). Removing it saves no measurable time, and it **creates** D-1c, whose answer may yet add a small amount. **No reduction has been claimed** |
 
 ---
 
@@ -847,7 +995,7 @@ TOTAL MANDATORY BEFORE PRODUCTION RELEASE 1.0
 | **Rollback** | Revert |
 | **Done when** | T-28…T-35 green, including both positive controls |
 
-#### M-02-A — suspect-alert ownership · 1–1.5 d · **gated by D-1a, D-4, D-7**
+#### M-02-A — suspect-alert ownership · 1–1.5 d · ✅ **UNBLOCKED — D-1a, D-4 and D-7 all approved 9 Nov 2026**
 
 | | |
 |---|---|
@@ -856,7 +1004,7 @@ TOTAL MANDATORY BEFORE PRODUCTION RELEASE 1.0
 | **Migration** | **Yes — additive only.** No column dropped, renamed or retyped; no row deleted |
 | **Automated tests** | T-46a |
 | **Manual tests** | Create an alert as a posted CID officer; confirm the owner is recorded. Attempt creation from an unresolved posting and confirm refusal |
-| **Security acceptance** | No alert exists without an owner; unresolved rows appear on a worklist and are **never defaulted** to a branch |
+| **Security acceptance** | No alert exists without an owner; unresolved rows appear on a worklist and are **never defaulted** to a branch. **Per D-1b the response payload must not carry the owning branch name**; the escalation wording stays a placeholder until **D-1c** is answered |
 | **Rollback** | **Two levers, strict order.** 1) revert the code — no data loss, the column stays and keeps populating. 2) `DROP COLUMN branch_id` — **only** if the column is being abandoned, and **never while enforcement is live** |
 | **Done when** | Every new alert carries an owner and the worklist count is reported |
 
@@ -892,18 +1040,20 @@ TOTAL MANDATORY BEFORE PRODUCTION RELEASE 1.0
 
 ### Wave 5 — production readiness, in parallel
 
-#### SEC-7 — S-08 session lifetime · 2–3 d · **migration (D-7)**
-#### SEC-8 — S-09 throttling and authentication audit · 2–3 d
-#### SEC-9 — S-11 TLS and `Secure` cookie · 2–4 d
-#### A-13 — interim alert withdrawal · 2–3 d · **gated by D-4b, D-23.5, D-23.6**
-#### S-01 / M-01 — document ownership · 11–18 d · **can start after SEC-0, in parallel**
+#### SEC-7 — S-08 session lifetime · 2–3 d · ✅ **UNBLOCKED** — migration procedure approved (D-7)
+#### SEC-8 — S-09 throttling and authentication audit · 2–3 d · ✅ **never gated**
+#### SEC-9 — S-11 TLS and `Secure` cookie · 2–4 d · ✅ **never gated**
+#### A-13 — supervisor alert withdrawal · **4–6.25 d** · ⛔ **STILL BLOCKED — D-23.6, and D-21 for the holder**
+#### SS-1 — station safeguards · **1–1.5 d** · ✅ **UNBLOCKED and now mandatory — D-5 approved**
+#### S-01 / M-01 — document ownership · 11–18 d · ⚠️ **D-7 approved, but the M-01 §7 Phase B1 rollout remains separately PROHIBITED**
 
 | Package | Files / endpoints | Migration | Tests | Rollback | Done when |
 |---|---|---|---|---|---|
 | **SEC-7** | `sessions` DDL (`:446`), `require_auth()` (`:4256`), `create_session()` (`:4209`), `lookup_session()` (`:4191`); E-33, E-34 | **Yes** — additive `last_seen_at` | T-57…T-64 | Revert code; the column may stay unused | The 678-day scenario returns 401 |
 | **SEC-8** | `/api/login` (`:8944`); E-33 | **Yes if** counters are stored in a table/column | T-69…T-76 | Revert code; **lockout state must be cleared on rollback** so nobody stays locked out | 30 failures then the correct password is still refused, and every attempt is audited |
 | **SEC-9** | `Set-Cookie` (`:8971`) plus deployment configuration | None | T-77 + **TLS-1…TLS-10** | Revert the cookie flag; infrastructure rollback is a proxy config change | TLS-1…TLS-10 all pass in staging |
-| **A-13** | `suspect_alerts`, new withdraw route, `POST /api/checkpoint-events` (`:9597`) | None beyond M-02-A | Per §2.6 | Revert the route; withdrawn rows keep their status — **a second migration would be needed to undo them, so do not roll back after live use** | A wrongly listed person can be cleared, audited, by an authorized actor |
+| **A-13** *(re-scoped by D-4b)* | `suspect_alerts`, **new permission-grant storage**, **new audited grant/revoke path**, new withdraw route, `POST /api/checkpoint-events` (`:9597`); SEC-0 `authorize()` for branch isolation | **Yes — additive grant storage**, under the D-7 procedure. *(Revision 1 said "none beyond M-02-A"; D-4b changed this)* | Per §2.6, incl. **T-78** SystemAdmin-without-grant refused, **T-79** cross-branch refused, **T-80** NULL-owner refused, **T-81** non-status field rejected | Revert the route and the grant path; withdrawn rows keep their status — **a second migration would be needed to undo them, so do not roll back after live use** | Only a holder of an explicitly granted `alerts:withdraw`, acting **within their own branch**, can stop a wrongly listed person flagging — and the action names the actor and the reason |
+| **SS-1** *(newly mandatory, D-5)* | `resolve_station_with_branch()` (`:4668`) and a new `resolve_station_readonly()`; `register_crime()` (`:5294`), `register_officer()` (`:4828`) | **None** | **T-82…T-85**, including the positive control that a correctly registered station still files normally | Revert. **Station fabrication returns**, so it must not be left rolled back in a reachable environment | A fabricated station code cannot be created on either path, and therefore cannot reach an official `CRM-<year>-<code>-NNNN` file number (`new_crime_file_number` `:4734`) |
 | **S-01** | `save_upload_validated()` (`:4606`), `/uploads/`, every upload producer, E-8 | **Yes — M-01, the largest** | The 15 prepared cases in enforcement mode | Dual-read period (W-42) exists precisely so code can be reverted without stranding files | That suite runs with **zero skips**, all 15 green |
 
 ### Wave 6 — production initialization
@@ -962,7 +1112,12 @@ result or it is not done.
 - [ ] Airport record creation.
 - [ ] Officer registration and posting.
 - [ ] Disciplinary action opened **and closed**, officer returned to Active duty.
-- [ ] Suspect alert created; if A-13 is approved, withdrawn and the flag confirmed stopped at a real checkpoint stop.
+- [ ] Suspect alert created by a Crime Unit officer (D-4b) with the owning branch recorded; the national warning confirmed to contain **no owning branch name** (D-1b) and the agreed escalation wording (D-1c).
+- [ ] **A-13, when built:** withdrawal performed by a holder of an explicitly granted `alerts:withdraw` **within their own branch**, and the flag confirmed stopped at a real checkpoint stop.
+- [ ] **A `SystemAdmin` with every module but no explicit grant is refused the withdrawal (T-78).** This is the direct test of D-4b and may not be skipped, weakened or marked not-applicable.
+- [ ] A permission holder is refused withdrawal of an **out-of-branch** alert (T-79), and of an alert whose owner is unresolved (T-80).
+- [ ] The withdraw route **rejects any attempt to change a non-status field** (T-81) — alert editing is unresolved under **D-4c** and must not exist.
+- [ ] **SS-1 (D-5):** crime registration and officer registration both **refuse a station code that is not registered** (T-82, T-83), while a correctly registered station still files normally (T-84, T-85). Confirm no fabricated code can reach a `CRM-<year>-<code>-NNNN` file number.
 - [ ] Admin: create a user, reset a password, confirm the target is signed out everywhere.
 - [ ] Each role sees only its own modules in the navigation.
 
@@ -998,8 +1153,10 @@ result or it is not done.
 | **S-10** tamper-evident audit | Conditional on legal decision **D-04 / A-6**. Specifying tests now would invent a requirement |
 | **Full M-02 six-state lifecycle** | Deferred to 1.1 under **D-23**. 22–35 d, excluded from the total |
 | **A CID supervisor role** | +4–8 d, touches every module, and needs **D-23.1** |
-| **SS-1** station safeguards | Optional, awaiting **D-5**. 1–2 d |
+| ~~**SS-1** station safeguards~~ | **NO LONGER EXCLUDED.** D-5 approved 9 Nov 2026 — SS-1 is now a mandatory package in Wave 5 at **1–1.5 d**. The residual guards G-a / G-c and the operator remedy message remain conditional on **D-5a** (+0.25–0.5 d) |
 | **S-19** file-number provenance | Policy first; overlaps SS-1 |
+| **D-4c — alert editing** | **Explicitly unresolved on owner instruction.** No edit or update capability is designed, costed or built. W-74 exists only to stop the withdraw route becoming an edit route |
+| **A CID supervisor rank** | **Deliberately excluded (+4–8 d).** D-4b is satisfied by an explicitly granted permission, not a new rank. The rank question belongs to **D-21 / A-3** |
 | **`/api/crimes/<id>`** | No such route exists today; building one is new functionality, not remediation |
 | **Load-balanced throttle state** | Only if the production topology is multi-instance — flagged in §2.11 as an unverified assumption |
 
@@ -1007,12 +1164,28 @@ result or it is not done.
 
 ## 7. Approval gate
 
-**Nothing in this programme may begin until:**
+**Status of the gate, 9 November 2026.**
 
-1. The owner records the decisions in `OWNER_DECISION_PACKAGE_R1.md` — at minimum **D-3**, which
-   blocks all implementation.
-2. The owner explicitly authorizes implementation. **This document is a plan, not a mandate.**
-3. **D-23.5 and D-23.6** are answered before **A-13** is built, and **PRE-3** before **A-18**.
+| Gate | State |
+|---|---|
+| 1. The owner records the decisions — at minimum **D-3**, which blocked all implementation | ✅ **DONE.** All eight recorded; D-3 = Option A. See `DECISION_REGISTER.md` §1A |
+| 2. The owner explicitly authorizes implementation | ⛔ **NOT GIVEN.** **This document is still a plan, not a mandate.** No code, schema, migration or configuration may be written |
+| 3. **D-23.6** answered before **A-13** is *built* | ⛔ **OUTSTANDING.** D-23.5 is partially answered by D-4b (withdraw only) |
+| 4. **D-21** answered before the supervisor authority can be derived from a role | ⛔ **OUTSTANDING.** Until then the grant is explicit and per-user |
+| 5. **PRE-3** (CID branch list confirmed) before **A-18** | ⛔ **OUTSTANDING** |
+| 6. The **M-01 §7 Phase B1** rollout approved separately | ⛔ **OUTSTANDING — still PROHIBITED for production.** D-7 approved the *procedure*, not that rollout |
+| 7. **SEC-6 (S-05 / S-20)** scheduled, **or** a signed risk acceptance recorded | ⛔ **OUTSTANDING.** Deferring without the signature is not an available option |
+
+**Packages unblocked by the eight decisions** — able to start the moment gate 2 is given:
+**SEC-0** (D-3 = A fixes the three-state model) → **SEC-2**, **SEC-3**, **SEC-4** → **M-02-A**
+(D-1a, D-4, D-7) → **SEC-1** → **SEC-5**; plus **P0-WP-1**, **P0-WP-2** and **SEC-6** which were
+never gated, **SEC-7** (D-7), **SEC-8**, **SEC-9**, and **SS-1** (D-5).
+**Still blocked regardless of gate 2:** **A-13** (D-23.6, D-21), **P0-WP-3/A-18** (PRE-3),
+**S-01/M-01 Phase B1** (separate approval).
+
+**Standing constraint restated:** these are sensitive police records. Where this programme offers a
+choice between a faster path and a correctly isolated, fully accountable one, it recommends the
+latter, and every place where speed was traded away is stated rather than hidden.
 
 **Standing constraint restated:** these are sensitive police records. Where this programme offers a
 choice between a faster path and a correctly isolated, fully accountable one, it recommends the

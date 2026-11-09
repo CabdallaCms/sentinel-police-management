@@ -16,7 +16,9 @@ governs**.
 |---|---|
 | Decisions carried into Phase 3 | 30 (D-01…D-29 incl. D-03b) |
 | **Closed by the owner in the Phase 3 brief** | **3** (D-18, D-14, D-16) |
+| **Closed by the owner, 9 Nov 2026 — authorization series** | **8** (D-3, D-1a, D-1b, D-2, D-4, D-4b, D-5, D-7) — see **§1A** |
 | New decisions raised by the Phase 3 requirements and architecture work | **14** (D-30…D-43) |
+| **New decisions created by the §1A closures** | **3** (D-1c, D-4c, D-5a) — see **§1A.1** |
 | **Open** | **41** (D-01…D-13, D-15, D-17, D-19…D-43, incl. D-03b) |
 | **Release-blocking and open** | **24** |
 | **Operational approvals resolved** (separate `R-*` namespace) | **1** (R-1) |
@@ -33,6 +35,13 @@ D-26 · D-27 · D-31 · D-32 · D-33 · D-34 · D-35 · D-07 · D-43 · D-02.
 **D-14a** (§2) is a **sign-off item under the now-closed D-14**, not a new register entry, and is
 therefore not counted above.
 
+> **The 41 open / 24 release-blocking counts above are unchanged by the §1A closures**, because the
+> authorization series is a separate, unpadded namespace (see the warning in §1A) and was never
+> counted in those totals. The eight closures are nonetheless the most consequential to date:
+> **they unblock the security remediation programme**, which previously could not start at all.
+> Three new decisions (D-1c, D-4c, D-5a) are created, and **D-23.6 remains the one legal answer
+> still required before A-13 can be built**.
+
 > **Zero decisions were closed at the end of Phase 2.** Three are now closed. That is real progress,
 > and the two substantive closures (D-18, D-14) were the two largest estimating unknowns in the
 > project — but they **increased** Release 1.0 scope rather than reducing it.
@@ -47,6 +56,51 @@ therefore not counted above.
 | **D-14** | Definition of Crime Unit "advanced reports" | **Use the proposed catalogue as the starting point**; review, complete and document it for approval | Catalogue reviewed, feasibility-assessed and completed: **18 reviewed + 6 added = 24 reports**, in `requirements/CRIME_REPORT_CATALOGUE.md`. 8 are buildable from existing columns; 16 depend on work already specified. **The final Release 1.0 selection still requires sign-off** — see §2 below |
 | **D-16** | Airport module visibility in the Release 1.0 build | **Airport Unit is excluded from Release 1.0 → Release 1.1** | Airport is out of scope for all Phase 3 requirements. It appears in the architecture only where it already shares a table or route. **The visibility question remains partly open**: exclusion from scope is not the same as hiding the module in the build — see **D-13** |
 | **R-1** *(operational approval, 7 Nov 2026)* | Does any operational database exist that predates Stage 0 (`e7263d7`) and therefore still holds the retired shared credential `ChangeMe123!`? | **NO.** Sentinel has never had an operational database before `e7263d7`. Only temporary development and test databases have existed | **No emergency credential rotation is required** — finding **S-06** is downgraded from "High, release-blocking if any environment exists" to **High, applies to the next installation**. `security/CREDENTIAL_ROTATION_PROCEDURE.md` is **retained as contingency**, not deleted. **The risk relocates rather than disappears:** the first database that matters is the next one created, and that path is defective — see new findings **S-12** (one environment variable gives all nine seeded accounts the same password) and **S-13** (first run seeds demonstration data, including a suspect alert that cannot be cleared). Both are remediated by **P0-WP-3**. The original P0.1 work package (emergency rotation assessment) is **discharged** |
+
+---
+
+## 1A. CLOSED — the eight authorization decisions, recorded 9 November 2026
+
+> **Namespace warning, recorded so these are never confused.** Two `D-*` series exist in this
+> project and they are **different decisions**. This register's series is **zero-padded**
+> (`D-01`…`D-09`, then `D-10`…`D-43`). The authorization series raised by
+> `security/OWNER_DECISION_SHEET_AUTHORIZATION.md` is **unpadded** (`D-1a`, `D-1b`, `D-2`…`D-7`).
+> **`D-5` (station safeguards) is not `D-05` (DPIA sign-off); `D-7` (migration procedure) is not
+> `D-07` (expected scale); `D-4b` is not `D-04` (legal retention).** Per convention §7.1 neither
+> series is renumbered. The eight closures below are all in the **unpadded** series.
+
+**The owner's answers, recorded exactly as given.** Engineering recommendations are shown beside
+them only so that overrides are visible, per convention §7.4.
+
+| ID | Decision | **Owner's answer — as recorded** | Engineering recommendation | Consequence |
+|---|---|---|---|---|
+| **D-3** | Cross-branch CID access to detailed suspect-alert information | **Option A — strict branch access for detailed suspect-alert information** | A | **Matches.** SEC-0 is fixed at the three-state model (`UNRESTRICTED` / `GRANTED` / `INDETERMINATE`). No fourth `EXISTENCE_ONLY` state, no national read role. **0 days.** This was the only decision blocking *all* implementation — **implementation planning is now unblocked** |
+| **D-1a** | Alert ownership | **Explicitly stored branch ownership for every suspect alert** | Approve | **Matches.** Rules R1–R5 stand: owner written at `INSERT`, stored never derived, `NULL` ⇒ `INDETERMINATE`, creation refused when the creator's branch is unresolved, ownership unaffected by case reassignment. Unblocks **M-02-A** |
+| **D-1b** | Does the national warning disclose the owning branch? | **Do not disclose the owning branch in national warnings** | *Yes, disclose* | **OVERRIDDEN — recorded as overridden, not dropped.** The warning stays a boolean plus an escalation instruction. **Consequence:** the screening officer is told to contact a supervisor but is given no routing information, so the escalation route must come from outside the alert payload. **This raises new open decision D-1c** |
+| **D-2** | Alert flag reach | **Authorized checkpoint officers receive a minimal national warning and escalation instruction** | Keep national | **Matches, and narrows it.** The flag stays national; the word *authorized* confirms the warning is delivered to authorized checkpoint officers rather than to any caller. Test **T-45** remains the permanent guard against over-restriction |
+| **D-4** | M-02 Phase A | **Phase A ownership-only migration. Alert lifecycle management remains separate** | Approve | **Matches.** Phase A is additive ownership only: column, index, backfill worklist, write-time ownership, R4 refusal. The six-state lifecycle stays out of Release 1.0 and remains with D-23 |
+| **D-4b** | Authority to withdraw a national alert | **Crime Unit officers may create suspect records and alerts. Only the authorized Crime Unit supervisor may withdraw national alerts. SystemAdmin must not receive this authority automatically** | *Your call* — approve with controls C-1…C-9 | **APPROVED WITH A CHANGED AUTHORITY MODEL.** A-13 is no longer an administrator-only withdrawal. **Scope increased: A-13 moves from 2–3 d to 4–6.25 d** and now requires a stored permission grant, therefore **a migration it previously did not need**. **SystemAdmin is explicitly excluded by default** — this must be enforced by a negative test, not by convention. Creation authority for Crime Unit officers is confirmed and matches current behaviour as constrained by R4 |
+| **D-5** | Station safeguards (SS-1) | **Crime Unit officers select existing registered police stations. They cannot create stations** | (iii) | **APPROVED — mandates guard G-b.** `register_crime()` (`:5294`) and `register_officer()` (`:4828`) must stop fabricating stations. **SS-1 moves from optional into the mandatory programme: +1–1.5 d.** The decision does not state whether guards **G-a** and **G-c** and the operator remedy message are also in scope — **this raises new open decision D-5a** |
+| **D-7** | Migration safety | **Fail-closed migration with a manual review worklist for unresolved ownership** | Approve | **Matches.** Governs **four** migrations, not one: M-02-A, M-01, SEC-7's `last_seen_at`, and now **A-13's permission grant**. Unresolved rows are listed for manual classification and **never defaulted to a branch** |
+
+### 1A.1 New open decisions created by these closures
+
+Raised in the authorization (unpadded) series so they sit beside the decisions that created them.
+
+| ID | Question | Why it is now open | Blocks | Who decides |
+|---|---|---|---|---|
+| **D-1c** | **Given D-1b, what escalation route does the national warning carry?** A fixed national CID contact point, a per-checkpoint standing instruction, a reference number to quote, or no routing at all? | D-2 requires an *escalation instruction* while D-1b withholds the owning branch. The instruction is therefore not derivable from the alert record, and `action_taken = 'Supervisor contacted'` currently tells the officer nothing about **which** supervisor | The alert response payload inside **M-02-A / SEC-1**. Does **not** block the ownership migration itself | Police / command |
+| **D-4c** | **May an officer edit or update an existing suspect alert they created, and if so which fields?** | **Recorded as UNRESOLVED on the owner's explicit instruction.** No edit capability may be assumed, designed or built. Today no update route exists at all; D-4b grants *creation* and supervisor *withdrawal* and is silent on amendment | Any future alert amendment capability. **Not** in Release 1.0 scope while unresolved | Police / command, with legal input via D-23 |
+| **D-5a** | **Does SS-1 also include guards G-a (refuse a station with no contact or no `created_by`) and G-c (refuse a non-`Active` station), and must the refusal message name the administrator remedy?** | D-5 mandates G-b unambiguously. It is consistent with published options **(ii)** and **(iii)**, which differ only in the operator-facing message, and it does not state whether G-a and G-c are included | **+0.25–0.5 d** inside SS-1 only. The approved G-b core proceeds regardless | Owner / operations |
+
+### 1A.2 Decisions these closures did **not** answer
+
+| ID | Still open | Why it is not answered by the eight |
+|---|---|---|
+| **D-23.6** | Are the six alert states correct; is `Cleared` distinct from `Withdrawn`? | **Still blocks A-13 from being built.** A-13 writes exactly one permanent terminal value. If the vocabulary changes afterwards, every record A-13 wrote is mislabelled and needs a second migration over live alert data |
+| **D-23.5** | Who may **clear** and **reopen** an alert? | **Partially answered.** D-4b settles *withdraw* (the authorized Crime Unit supervisor). Clear, reopen and suspend remain open and belong to the 1.1 lifecycle |
+| **D-21** | CID role structure — investigator / supervisor / unit chief | D-4b names an *authorized Crime Unit supervisor*. **No such role exists in the system**, and none has been invented to satisfy the decision. D-21 is the register decision that defines it. Until it is answered, A-13's permission must be granted explicitly per user rather than derived from a role |
+| **A-3** | Does withdrawal require a supervisor rank? | Related to D-21. D-4b implies a supervisor *authority*; whether that is a *rank* with wider consequences is unanswered |
 
 ---
 
@@ -149,7 +203,7 @@ These need only a decision; the work behind them is complete.
 | **B-3** | **`suspect_alerts` has no `branch_id`** | The only Release 1.0 access-control gap that **cannot be closed without a schema change**, which places it behind the migration framework (SR-18) |
 | **B-4** | **The legal track (D-04, D-05, D-23, D-24, D-27) has the longest lead time in the project** | These are not engineering tasks and will not be accelerated by adding developers. If they start late, they become the critical path |
 | ~~**B-5**~~ | ~~A rotating-cursor fallback in the SPA returns an arbitrary person as a biometric match~~ — **RESOLVED by Stage 0 (`e7263d7`, WP-45g)** | `allowFallbackScan` and the rotating cursor were removed, 11 call sites de-argumented, no-match banners added. Verified by `test_biometric_no_fabricated_match.mjs` (9/9) **and a negative control** that fails against the pre-fix file. **FPR-901 remains open** — matching is still string comparison, not biometrics |
-| **B-6** *(new)* | **A suspect alert can never be cleared.** No code path changes `alert_status`; the only `UPDATE suspect_alerts` sets `origin` | A person listed in error is flagged at every checkpoint **indefinitely**, with no remedy available to the police themselves. Tracked as **S-03**; the legal decision is **D-23** (`planning/D23_LEGAL_ACTION_BRIEF.md`). An interim administrator withdrawal (approval **A-13**, 2–3 days) can close the acute harm without pre-empting D-23 |
+| **B-6** *(new)* | **A suspect alert can never be cleared.** No code path changes `alert_status`; the only `UPDATE suspect_alerts` sets `origin` | A person listed in error is flagged at every checkpoint **indefinitely**, with no remedy available to the police themselves. Tracked as **S-03**; the legal decision is **D-23** (`planning/D23_LEGAL_ACTION_BRIEF.md`). **Partly resolved in principle by D-4b (9 Nov 2026):** withdrawal is approved, but **only the authorized Crime Unit supervisor** may perform it and **SystemAdmin must not receive the authority automatically**. **A-13 is therefore re-scoped from 2–3 days to 4–6.25 days** and now needs a stored permission grant and its own migration. **A-13 still cannot be built until D-23.6 fixes the terminal state vocabulary**, and the holder of the supervisor authority cannot be identified from the data model until **D-21** is answered |
 
 ---
 
@@ -165,3 +219,7 @@ These need only a decision; the work behind them is complete.
    choose it.
 4. **Overridden recommendations are recorded as overridden** (see D-18), not quietly dropped.
 5. **Cost of delay is stated** so that deferral is a visible choice rather than a default.
+6. **Two `D-*` namespaces exist and are never merged.** This register's series is zero-padded
+   (`D-01`…`D-09`, `D-10`…`D-43`). The authorization series from
+   `security/OWNER_DECISION_SHEET_AUTHORIZATION.md` is unpadded (`D-1a`, `D-1b`, `D-2`…`D-7`,
+   plus `D-1c`, `D-4c`, `D-5a`). `D-5 ≠ D-05`, `D-7 ≠ D-07`, `D-4b ≠ D-04`. Quote the exact form.

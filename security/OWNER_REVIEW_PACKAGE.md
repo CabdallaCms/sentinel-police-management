@@ -5,14 +5,23 @@
 **Content commit:** recorded in §7.1 · **Status:** for owner decision.
 **Investigation closed. Implementation unauthorized.**
 
+> **DECISIONS RECORDED, 9 November 2026.** All eight decisions presented in §6 of this document
+> have been approved by the owner. **§6 is preserved unchanged as the record of what was put to
+> them**; the answers are in `DECISION_REGISTER.md` §1A and
+> `security/OWNER_DECISION_PACKAGE_R1.md` §0. Note that **D-1b was overridden** (no branch
+> disclosure) and **D-4b was approved with a changed authority model** (Crime Unit supervisor, not
+> SystemAdmin), which moves the corrected total to **40–63.75 days**.
+>
 > **SUPERSEDED FOR PLANNING, 9 November 2026.** The authoritative remediation plan, work-item
 > estimate and implementation sequence are now **`security/SECURITY_REMEDIATION_PROGRAMME.md`**,
 > and the authoritative owner-decision text is **`security/OWNER_DECISION_PACKAGE_R1.md`**.
 > **Revision 3 remains the evidence and review record** — the finding-by-finding evidence
 > classification (§5), the date reconciliation (§7.2) and the correction history of revisions 1–3
-> exist nowhere else. The totals agree (14–21 before staging, +23–38 before production, 37–59
-> total); where presentation differs, **the programme document is authoritative** because it
-> derives them from individual work items W-01…W-69 rather than from package bands.
+> exist nowhere else. **The totals in this document are the revision-3 record and are no longer
+> current:** the owner's decisions of 9 Nov 2026 raised them to **14–21 before staging, +26–42.75
+> before production, 40–63.75 total** (A-13 re-scoped by **D-4b**, SS-1 made mandatory by
+> **D-5**). **The programme document is authoritative** — it derives the figures from individual
+> work items W-01…W-78 rather than from package bands.
 
 > **Revision 3 corrects six issues you raised against revision 2 and adds execution evidence for
 > four findings that were previously unverified.** The two headline changes:
@@ -140,13 +149,17 @@ S-05 + S-20    2–4     <- moved into this band in revision 3 (§1.3)
  maximum  3+18+3+3+3+4+4 = 38
 ```
 
-| Band | Days |
+> **⚠️ SUPERSEDED BY THE OWNER DECISIONS OF 9 NOV 2026.** The band table below is the
+> **revision-3 record**, retained with the current figures beside each row.
+> `37+2+1 = 40`; `59+3.25+1.5 = 63.75`. Working in `SECURITY_REMEDIATION_PROGRAMME.md` §3.3.
+
+| Band | Days *(revision-3 record → current)* |
 |---|---|
-| Mandatory before staging | **14–21** |
-| Additionally mandatory before production | **+23–38** |
-| **Total mandatory before production Release 1.0** | **37–59** |
-| *Same total if you sign an explicit risk acceptance for S-05/S-20* | *35–55* |
-| Optional / owner-elective — SS-1 | +1–2 |
+| Mandatory before staging | **14–21** *(unchanged)* |
+| Additionally mandatory before production | **+23–38** → **now +26–42.75** |
+| **Total mandatory before production Release 1.0** | **37–59** → **now 40–63.75** |
+| *Same total if you sign an explicit risk acceptance for S-05/S-20* | *35–55* → *now 38–59.75* |
+| Optional / owner-elective — SS-1 | +1–2 → **now mandatory at 1–1.5 (D-5 approved)** |
 | Conditional — S-10 tamper-evident audit (D-04, legal) | +5–10 |
 | Deferrable to 1.1 — full M-02 lifecycle (D-23) | 22–35 |
 

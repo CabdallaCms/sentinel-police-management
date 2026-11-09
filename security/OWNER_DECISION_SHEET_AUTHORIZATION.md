@@ -1,3 +1,29 @@
+> ## ✅ DECIDED — 9 November 2026
+>
+> The eight decisions in this document were approved by the owner. **The original wording, all
+> options and all consequences below are preserved unchanged** as the record of what was offered.
+> **The authoritative record of the answers is `DECISION_REGISTER.md` §1A**, with reasoning and
+> consequences in `security/OWNER_DECISION_PACKAGE_R1.md` §0 and its per-decision OUTCOME boxes.
+>
+> | | Answer |
+> |---|---|
+> | **D-3** | **Option A — strict branch access** for detailed suspect-alert information |
+> | **D-1a** | **Explicitly stored branch ownership** for every suspect alert |
+> | **D-1b** | **Do not disclose the owning branch** in national warnings *(recommendation overridden)* |
+> | **D-2** | **Authorized checkpoint officers receive a minimal national warning and escalation instruction** |
+> | **D-4** | **Phase A ownership-only migration**; alert lifecycle management remains separate |
+> | **D-4b** | **Crime Unit officers may create** suspect records and alerts. **Only the authorized Crime Unit supervisor may withdraw** national alerts. **SystemAdmin must not receive this authority automatically** |
+> | **D-5** | **Crime Unit officers select existing registered police stations. They cannot create stations** |
+> | **D-7** | **Fail-closed migration with a manual review worklist** for unresolved ownership |
+>
+> **Three new decisions arise:** **D-1c** (escalation route, created by D-1b), **D-4c** (alert
+> editing — **recorded UNRESOLVED at the owner's instruction**), **D-5a** (residual station
+> guards). **D-23.6 and D-21 still block A-13.**
+>
+> **Implementation remains unauthorized.**
+
+---
+
 # Owner Decision Sheet — authorization remediation
 
 **Date:** 5 November 2026 · **Status:** for decision · **Nothing implemented**
