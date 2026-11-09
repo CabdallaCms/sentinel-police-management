@@ -1,3 +1,29 @@
+> ## ✅ D-23.6 DECIDED — 9 November 2026 · **FIVE STATES, `Closed` EXCLUDED**
+>
+> **Owner's answer:** use **`Active`, `Suspended`, `Cleared`, `Withdrawn`, `Expired`**.
+> **`Closed` is excluded from alert status.** **`Cleared` and `Withdrawn` are kept separate** —
+> the distinction this document argued for is approved.
+>
+> **The six-state proposal below is preserved unchanged as the record of what was offered.**
+> Where it includes `Closed` — the state table, the diagram at `:83–90`, the transition row at
+> `:111` and the constant at `:175` — **it is superseded on that point only.**
+>
+> **Two corrections to the constant proposed at `:175`:**
+>
+> 1. `Closed` is removed.
+> 2. The first value is **`Active`**, not the legacy literal `'Active alert'` that the proposal
+>    retained. The approved constant is
+>    `ALERT_STATUSES = ('Active', 'Suspended', 'Cleared', 'Withdrawn', 'Expired')`.
+>    **`'Active alert'` is hard-coded in 14 places in `backend/server.py`**, so this requires a
+>    data migration and 14 code-site changes — tracked as package **M-02-B (0.75–1.25 d)**, a
+>    prerequisite of A-13. See `DECISION_REGISTER.md` §1B.1.
+>
+> **Only `Active` and `Withdrawn` are reachable in Release 1.0.** `Suspended`, `Cleared` and
+> `Expired` are defined so that A-13 never has to be re-migrated — **no transition to them is
+> built or approved**. `Expired` additionally needs **D-23.3** (maximum lifetime), still open.
+
+---
+
 > ## ⚠️ PARTIALLY DECIDED — 9 November 2026 · **A-13 IS STILL BLOCKED**
 >
 > **D-4 — approved:** Phase A is **ownership-only**; **alert lifecycle management remains
@@ -17,9 +43,11 @@
 > * **Withdrawal is not amendment.** **D-4c — whether an officer may edit an existing alert — is
 >   recorded UNRESOLVED at the owner's instruction.** No edit capability may be designed or built.
 >
-> **⛔ Still blocking A-13:** **D-23.6** (the terminal state vocabulary — A-13 writes one
-> permanent value) and **D-21** (who the Crime Unit supervisor is). **D-23.5 is only partially
-> answered:** *withdraw* is settled; *clear*, *reopen* and *suspend* are not.
+> **⛔ Still blocking A-13: exactly one decision — D-21** (who the Crime Unit supervisor is).
+> **D-23.6 is now CLOSED** (see the banner above): the terminal value A-13 writes is **`Withdrawn`**.
+> **D-23.5 remains only partially answered:** *withdraw* is settled; *clear*, *reopen* and
+> *suspend* are not. A decision sheet for D-21 is prepared at
+> `security/OWNER_DECISION_SHEET_D21.md`.
 >
 > **Implementation remains unauthorized.**
 

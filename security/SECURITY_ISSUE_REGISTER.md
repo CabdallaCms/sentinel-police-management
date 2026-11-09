@@ -290,9 +290,11 @@ Remediation: **P0-WP-3** (`P0_WORK_PACKAGES.md` §4), approvals **A-16…A-19**.
 
 > **DECISIONS RECORDED 9 November 2026.** All eight owner decisions are approved
 > (`DECISION_REGISTER.md` §1A). **S-04** is unblocked for remediation (D-1a, D-4, D-7 → M-02-A).
-> **S-03 remains blocked**: D-4b approved withdrawal but **only for the authorized Crime Unit
-> supervisor**, and **D-23.6 must still fix the terminal state vocabulary before A-13 can be
-> built**. **S-19** is now covered by a mandatory SS-1 (D-5). **No finding's severity or
+> **S-03 remains blocked by one decision only**: D-4b approved withdrawal but **only for the
+> authorized Crime Unit supervisor**, and the system cannot yet identify that person — **D-21**
+> (`security/OWNER_DECISION_SHEET_D21.md`). **D-23.6 closed 9 Nov 2026**: five states, `Closed`
+> excluded, A-13 writes **`Withdrawn`**; adopting the approved `Active` spelling adds package
+> **M-02-B** (0.75–1.25 d) because the code stores `'Active alert'` in 14 places. **S-19** is now covered by a mandatory SS-1 (D-5). **No finding's severity or
 > release-blocking status changed**, and no finding was closed by a decision — an owner ruling is
 > not execution evidence.
 >
@@ -334,11 +336,11 @@ original sentence is struck through rather than deleted so the change of positio
 > 23–37 as "the additional work before production" and was wrong by exactly that overlap. **The
 > authoritative, non-overlapping classification and totals are now
 > `SECURITY_REMEDIATION_PROGRAMME.md` §3, which re-derives them from the individual work items
-> W-01…W-78 and tabulates every double-count:
-> **updated 9 Nov 2026 after the owner decisions — 14–21 d before staging, +26–42.75 d before
-> production, 40–63.75 d in total.** The increase over the previously published 37–59 is entirely
+> W-01…W-80 and tabulates every double-count:
+> **updated 9 Nov 2026 after the owner decisions — 14–21 d before staging, +26.75–44 d before
+> production, 40.75–65 d in total.** The increase over the previously published 37–59 is entirely
 > A-13's re-scope under **D-4b** (+2 – 3.25 d) and **SS-1** becoming mandatory under **D-5**
-> (+1 – 1.5 d); no package was re-estimated. These band rows are kept
+> (+1 – 1.5 d), plus **M-02-B** under **D-23.6** (+0.75 – 1.25 d); no package was re-estimated. These band rows are kept
 > unaltered as the historical record of how the work was first grouped.
 
 **Ordering constraint:** **SEC-0 → SEC-2 → SEC-3 → A-18.** *(Corrected: this line previously read

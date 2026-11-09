@@ -18,6 +18,10 @@
 > is superseded on that point.** The warning remains a boolean plus an escalation instruction, and
 > **what that instruction contains is new open decision D-1c.**
 >
+> **D-23.6 — approved 9 Nov 2026:** five alert states — `Active`, `Suspended`, `Cleared`,
+> `Withdrawn`, `Expired`. **`Closed` is excluded.** The stored value becomes **`Active`**, not the
+> legacy `'Active alert'` — a 14-site change tracked as package **M-02-B**.
+>
 > **Implementation remains unauthorized.**
 
 ---

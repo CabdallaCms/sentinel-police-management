@@ -14,9 +14,10 @@
 > | **T-69…T-77** | Programme §2.11–§2.12 | S-09 throttling and audit; `Secure` cookie |
 > | **T-78…T-81** | Programme §2.6 | **A-13 under D-4b** — SystemAdmin refused, cross-branch refused, NULL owner refused, non-status field rejected |
 > | **T-82…T-85** | Programme §2.16 | **SS-1 under D-5** — fabricated station refused on both paths, registered station still works |
+> | **T-86, T-87** | Programme §2.17 | **M-02-B under D-23.6** — old literal gone and the flag still fires; a status outside `ALERT_STATUSES` (incl. `Closed`) refused |
 > | **TLS-1…TLS-10** | `S08_S09_EXECUTION_VERIFICATION.md` §5.2 | TLS acceptance |
 >
-> **Current ceilings: findings S-20 · endpoints E-38 · tests T-85 · work items W-78.**
+> **Current ceilings: findings S-20 · endpoints E-38 · tests T-87 · work items W-80.**
 > **Grep for the maximum before minting any new identifier.**
 
 ---

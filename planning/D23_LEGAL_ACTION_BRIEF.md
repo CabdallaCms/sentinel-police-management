@@ -98,7 +98,7 @@ Engineering cannot proceed on items D-23.1 to D-23.6. They are policy and law, n
 | **D-23.3** | **What is the maximum lifetime of an alert?** | Sets `expires_at`. **Without a number, the column cannot be populated and the expiry job cannot be written.** I will not invent a duration |
 | **D-23.4** | **Must a supervisor confirm an identity match before action is taken at a checkpoint?** | Determines whether the checkpoint flow needs a confirmation step before a stop escalates |
 | **D-23.5** | **Who may clear, withdraw and reopen an alert?** | Determines the transition permission matrix. **⚠️ PARTIALLY ANSWERED 9 Nov 2026 by owner decision D-4b: *"Only the authorized Crime Unit supervisor may withdraw national alerts. SystemAdmin must not receive this authority automatically."* **Withdraw** is settled, branch-scoped, by an explicitly granted `alerts:withdraw` permission. **Clear**, **reopen** and **suspend** remain OPEN and belong to the 1.1 lifecycle. Who the Crime Unit supervisor *is* depends on **D-21** |
-| **D-23.6** *(⛔ **now the single decision blocking A-13** — 9 Nov 2026)* | **Are the six proposed states correct?** `Active`, `Suspended`, `Cleared`, `Withdrawn`, `Expired`, `Closed` | Determines the state machine. In particular: is **`Cleared`** ("no longer of interest") properly distinct from **`Withdrawn`** ("should never have been listed")? I believe it is, and that the distinction matters to the person and to any later complaint — but it is a policy judgement |
+| ~~**D-23.6**~~ *(✅ **CLOSED 9 Nov 2026** — owner approved **five** states: `Active`, `Suspended`, `Cleared`, `Withdrawn`, `Expired`. **`Closed` is excluded from alert status.** `Cleared` and `Withdrawn` are **kept separate**, as this row argued they should be. The question below is preserved as the record of what was asked)* | **Are the six proposed states correct?** `Active`, `Suspended`, `Cleared`, `Withdrawn`, `Expired`, `Closed` | Determines the state machine. In particular: is **`Cleared`** ("no longer of interest") properly distinct from **`Withdrawn`** ("should never have been listed")? I believe it is, and that the distinction matters to the person and to any later complaint — but it is a policy judgement |
 | **D-23.7** | **Does a person have a right to be told they were listed, or de-listed?** | Determines whether a notification obligation exists. Ties to **D-05** |
 
 ### Recommended defaults, if counsel has no contrary view
@@ -112,7 +112,7 @@ Offered so the decision has a starting point, not as a recommendation to skip th
 | D-23.3 | **90 days**, renewable once by a supervisor with a reason | A number counsel can move; it makes the system buildable |
 | D-23.4 | Yes for any action beyond recording the screening | A flag should not by itself authorise detention |
 | D-23.5 | Supervisor clears, withdraws and reopens; officer may suspend | Separates listing from de-listing authority |
-| D-23.6 | Adopt the six states | |
+| ~~D-23.6~~ | ~~Adopt the six states~~ — ✅ **superseded by the owner's answer: five states, `Closed` excluded** | |
 | D-23.7 | Defer to counsel — no engineering default offered | Genuinely a legal question |
 
 ---

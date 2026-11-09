@@ -10,7 +10,8 @@
 > them**; the answers are in `DECISION_REGISTER.md` §1A and
 > `security/OWNER_DECISION_PACKAGE_R1.md` §0. Note that **D-1b was overridden** (no branch
 > disclosure) and **D-4b was approved with a changed authority model** (Crime Unit supervisor, not
-> SystemAdmin), which moves the corrected total to **40–63.75 days**.
+> SystemAdmin). **D-23.6 closed on 9 Nov 2026** with five states (`Closed` excluded), adding
+> package M-02-B. The corrected total is now **40.75–65 days**.
 >
 > **SUPERSEDED FOR PLANNING, 9 November 2026.** The authoritative remediation plan, work-item
 > estimate and implementation sequence are now **`security/SECURITY_REMEDIATION_PROGRAMME.md`**,
@@ -19,9 +20,9 @@
 > classification (§5), the date reconciliation (§7.2) and the correction history of revisions 1–3
 > exist nowhere else. **The totals in this document are the revision-3 record and are no longer
 > current:** the owner's decisions of 9 Nov 2026 raised them to **14–21 before staging, +26–42.75
-> before production, 40–63.75 total** (A-13 re-scoped by **D-4b**, SS-1 made mandatory by
-> **D-5**). **The programme document is authoritative** — it derives the figures from individual
-> work items W-01…W-78 rather than from package bands.
+> before production, 40.75–65 total** (A-13 re-scoped by **D-4b**, SS-1 made mandatory by
+> **D-5**, and **M-02-B** added by **D-23.6**). **The programme document is authoritative** — it
+> derives the figures from individual work items W-01…W-80 rather than from package bands.
 
 > **Revision 3 corrects six issues you raised against revision 2 and adds execution evidence for
 > four findings that were previously unverified.** The two headline changes:
@@ -156,9 +157,9 @@ S-05 + S-20    2–4     <- moved into this band in revision 3 (§1.3)
 | Band | Days *(revision-3 record → current)* |
 |---|---|
 | Mandatory before staging | **14–21** *(unchanged)* |
-| Additionally mandatory before production | **+23–38** → **now +26–42.75** |
-| **Total mandatory before production Release 1.0** | **37–59** → **now 40–63.75** |
-| *Same total if you sign an explicit risk acceptance for S-05/S-20* | *35–55* → *now 38–59.75* |
+| Additionally mandatory before production | **+23–38** → **now +26.75–44** |
+| **Total mandatory before production Release 1.0** | **37–59** → **now 40.75–65** |
+| *Same total if you sign an explicit risk acceptance for S-05/S-20* | *35–55* → *now 38.75–61* |
 | Optional / owner-elective — SS-1 | +1–2 → **now mandatory at 1–1.5 (D-5 approved)** |
 | Conditional — S-10 tamper-evident audit (D-04, legal) | +5–10 |
 | Deferrable to 1.1 — full M-02 lifecycle (D-23) | 22–35 |

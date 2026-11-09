@@ -43,7 +43,8 @@
 | **SS-1 became mandatory** | Previously optional at 1–2 d; now **1–1.5 d** in the programme |
 | **The total moved** | **37–59 d → 40–63.75 d.** `37+2+1 = 40`; `59+3.25+1.5 = 63.75`. Full working in `SECURITY_REMEDIATION_PROGRAMME.md` §3.3 |
 | **Three new decisions appeared** | **D-1c** (escalation route, created by D-1b), **D-4c** (alert editing — recorded unresolved at your instruction), **D-5a** (residual station guards) |
-| **A-13 is still not buildable** | **D-23.6** has not fixed the terminal state vocabulary, and **D-21** has not defined who the Crime Unit supervisor is. **No role or permission has been invented to work around this** |
+| **A-13 is still not buildable** | ~~D-23.6~~ **closed 9 Nov 2026** (five states, `Closed` excluded, A-13 writes `Withdrawn`, adds package **M-02-B 0.75–1.25 d**). **D-21 is now the only decision blocking A-13** — see `security/OWNER_DECISION_SHEET_D21.md`. **No role or permission has been invented to work around this** |
+| **The total moved again** | **40–63.75 → 40.75–65 d**, entirely from D-23.6's **M-02-B**. `40+0.75 = 40.75`; `63.75+1.25 = 65` |
 
 ---
 
@@ -694,16 +695,37 @@ migrated.
 **This is a policy judgement. The brief's author believes `Cleared` and `Withdrawn` are properly
 distinct, and so do I — but neither of us decides it.**
 
-#### ⛔ OUTCOME — **STILL OPEN. This is now the single decision blocking A-13.**
+#### ✅ OUTCOME — recorded 9 November 2026 · **FIVE STATES APPROVED**
 
-The eight approvals did not reach D-23.6, and **A-13 cannot be built without it.** A-13 writes
-exactly **one** permanent terminal value into records that may later be produced to a court or
-challenged by the person listed. If the vocabulary changes afterwards, every record A-13 wrote is
-mislabelled and correcting them requires **a second migration over live alert data**.
+> **Your answer: use `Active`, `Suspended`, `Cleared`, `Withdrawn`, `Expired`. Keep `Cleared` and
+> `Withdrawn` separate. Exclude `Closed` from alert status.**
 
-**This is the cheapest decision on the list and it has the largest scheduling effect** — it needs
-a vocabulary, not analysis. Answering it releases a 4–6.25 d package; leaving it open means
-Release 1.0 ships with alerts that still cannot be corrected, which is blocker **B-6**.
+**This is option (c) — a vocabulary of your own choosing — and it resolves the substantive
+question in favour of the distinction.** `Cleared` ("no longer of interest") and `Withdrawn`
+("should never have been listed") remain separable in the record, which is what a person
+challenging a listing, or a court reviewing one, would need. **`Closed` is dropped**: it described
+the *case*, not the person's alert status, and removing it prevents a case-lifecycle concept
+leaking into a civil-liberties one.
+
+**A-13's terminal value is therefore fixed at `Withdrawn`.** The vocabulary gate is closed.
+
+**One consequence that was not visible when this was put to you, disclosed rather than absorbed:**
+
+> **The approved value is `Active`; the code stores `'Active alert'`** — hard-coded in **14
+> places** in `backend/server.py`, including the column default (`:304`), the creation `INSERT`
+> (`:9499`), the duplicate checks (`:9488`, `:9491`), the national checkpoint lookup (`:9598`) and
+> **seven analytics counters**. The earlier six-state proposal had quietly retained the legacy
+> literal. Adopting your vocabulary therefore needs a data migration plus 14 code sites —
+> **package M-02-B, 0.75–1.25 d**, a prerequisite of A-13. **Programme total 40–63.75 → 40.75–65 d.**
+
+**Only `Active` and `Withdrawn` are reachable in Release 1.0.** `Suspended`, `Cleared` and
+`Expired` are defined now purely so A-13's records never need re-migrating; **no transition to
+them is built or approved**, and `Expired` additionally depends on **D-23.3** (maximum lifetime),
+still open.
+
+> **⛔ A-13 is now blocked by exactly one decision: D-21** — the system still cannot identify the
+> authorized Crime Unit supervisor. A dedicated sheet is prepared:
+> **`security/OWNER_DECISION_SHEET_D21.md`**.
 
 ---
 
@@ -722,14 +744,15 @@ Release 1.0 ships with alerts that still cannot be corrected, which is blocker *
 | **D-4b** | Withdrawal authority | **Crime Unit supervisor only; SystemAdmin not automatic** | **A-13: 2–3 d → 4–6.25 d**, plus a grant migration |
 | **D-5** | Station safeguards | **Select existing stations; cannot create** | **SS-1 now mandatory, 1–1.5 d.** Creates **D-5a** |
 
-**Corrected total: 40 – 63.75 days** (from 37–59). `37+2+1 = 40`; `59+3.25+1.5 = 63.75`.
+**Corrected total: 40.75 – 65 days.** `37+2+1 = 40` (the eight decisions), then `+0.75–1.25` for
+D-23.6's **M-02-B**: `40+0.75 = 40.75`; `63.75+1.25 = 65`.
 
 ### 7.2 Still requiring your decision
 
 | Priority | # | Question | Blocks |
 |---|---|---|---|
-| **1** | **D-23.6** | Are the six alert states correct; is `Cleared` distinct from `Withdrawn`? | **A-13 (4–6.25 d).** The only decision now blocking a costed package |
-| **2** | **D-21** | CID role structure — who *is* the authorized Crime Unit supervisor? | A-13's grant stays explicit and per-user until answered |
+| ~~**1**~~ | ~~**D-23.6**~~ | ✅ **CLOSED 9 Nov 2026** — five states; `Closed` excluded; `Cleared` and `Withdrawn` separate. A-13 writes `Withdrawn`. Adds **M-02-B** (0.75–1.25 d) | — |
+| **1** | **D-21** | **How is the authorized Crime Unit supervisor represented?** Full sheet: `security/OWNER_DECISION_SHEET_D21.md` | **A-13 (4–6.25 d). The ONLY decision now blocking a costed package** |
 | **3** | **D-1c** | What escalation route does the national warning carry, given D-1b? | Alert payload wording in M-02-A / SEC-1 |
 | **4** | **PRE-3** | Confirm the CID branch list *(a confirmation, not a decision)* | **A-18**, therefore P0-WP-3 |
 | **5** | **SEC-6** | Schedule S-05/S-20, **or** sign a risk acceptance | Nothing technically — but deferring without the signature is not an available option |

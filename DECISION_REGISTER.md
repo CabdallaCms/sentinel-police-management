@@ -18,6 +18,7 @@ governs**.
 | **Closed by the owner in the Phase 3 brief** | **3** (D-18, D-14, D-16) |
 | **Closed by the owner, 9 Nov 2026 — authorization series** | **8** (D-3, D-1a, D-1b, D-2, D-4, D-4b, D-5, D-7) — see **§1A** |
 | New decisions raised by the Phase 3 requirements and architecture work | **14** (D-30…D-43) |
+| **Closed by the owner, 9 Nov 2026 — legal/policy** | **1** (D-23.6 — five alert states) — see **§1B** |
 | **New decisions created by the §1A closures** | **3** (D-1c, D-4c, D-5a) — see **§1A.1** |
 | **Open** | **41** (D-01…D-13, D-15, D-17, D-19…D-43, incl. D-03b) |
 | **Release-blocking and open** | **24** |
@@ -97,10 +98,63 @@ Raised in the authorization (unpadded) series so they sit beside the decisions t
 
 | ID | Still open | Why it is not answered by the eight |
 |---|---|---|
-| **D-23.6** | Are the six alert states correct; is `Cleared` distinct from `Withdrawn`? | **Still blocks A-13 from being built.** A-13 writes exactly one permanent terminal value. If the vocabulary changes afterwards, every record A-13 wrote is mislabelled and needs a second migration over live alert data |
+| ~~**D-23.6**~~ | ~~Are the six alert states correct?~~ | ✅ **CLOSED 9 Nov 2026 — see §1B below.** Five states approved; `Closed` excluded; `Cleared` and `Withdrawn` kept separate |
 | **D-23.5** | Who may **clear** and **reopen** an alert? | **Partially answered.** D-4b settles *withdraw* (the authorized Crime Unit supervisor). Clear, reopen and suspend remain open and belong to the 1.1 lifecycle |
 | **D-21** | CID role structure — investigator / supervisor / unit chief | D-4b names an *authorized Crime Unit supervisor*. **No such role exists in the system**, and none has been invented to satisfy the decision. D-21 is the register decision that defines it. Until it is answered, A-13's permission must be granted explicitly per user rather than derived from a role |
 | **A-3** | Does withdrawal require a supervisor rank? | Related to D-21. D-4b implies a supervisor *authority*; whether that is a *rank* with wider consequences is unanswered |
+
+---
+
+## 1B. CLOSED — D-23.6, the suspect-alert status vocabulary (9 November 2026)
+
+**Owner's answer, recorded exactly as given.** Use these five suspect-alert states:
+
+| # | State | In Release 1.0? | Written by |
+|---|---|---|---|
+| 1 | **`Active`** | ✅ Yes | Alert creation (every new alert) |
+| 2 | **`Suspended`** | ❌ 1.1 lifecycle | *(no transition exists in 1.0)* |
+| 3 | **`Cleared`** | ❌ 1.1 lifecycle | *(no transition exists in 1.0)* |
+| 4 | **`Withdrawn`** | ✅ Yes | **A-13 only** — the single terminal transition in Release 1.0 |
+| 5 | **`Expired`** | ❌ 1.1 lifecycle | *(automatic expiry needs **D-23.3**, still open)* |
+
+**Two explicit instructions, recorded:**
+
+1. **"Keep `Cleared` and `Withdrawn` separate."** The record must continue to distinguish
+   *"you are no longer of interest"* (`Cleared`) from *"you should never have been listed"*
+   (`Withdrawn`). This was the substantive question in D-23.6 and it is answered in favour of the
+   distinction.
+2. **"Exclude `Closed` from alert status."** The six-state proposal in
+   `security/SUSPECT_ALERT_LIFECYCLE.md` is **superseded on this point**: `Closed` is no longer an
+   alert status. **The original six-state proposal is preserved in that document** as the record
+   of what was offered.
+
+### 1B.1 Consequence that was not visible when the decision was put
+
+> **⚠️ The approved value is `Active`. The code stores `'Active alert'`.**
+>
+> The literal string `'Active alert'` appears in **14 places** in `backend/server.py`, including
+> the column default (`alert_status TEXT NOT NULL DEFAULT 'Active alert'`, `:304`), the creation
+> `INSERT` (`:9499`), the duplicate checks (`:9488`, `:9491`), the national checkpoint lookup
+> (`:9598`) and **seven analytics counters** (`:6057`, `:6344`, `:6397`, `:6507`, `:6518`,
+> `:7629`, `:7801`). The earlier six-state proposal had quietly kept the legacy literal —
+> `ALERT_STATUSES = ('Active alert', …)` (`SUSPECT_ALERT_LIFECYCLE.md:175`).
+>
+> **Adopting the approved vocabulary therefore requires a data migration and 14 code sites.** This
+> is new, separately costed work: **package M-02-B, 0.75–1.25 d**, a prerequisite of A-13.
+> **Programme total 40–63.75 d → 40.75–65 d.** This is disclosed rather than absorbed.
+
+### 1B.2 What this unblocks, and what it does not
+
+| | |
+|---|---|
+| ✅ **Unblocked** | **A-13's vocabulary gate is closed.** The terminal value it writes is now fixed: **`Withdrawn`** |
+| ⛔ **Still blocking A-13** | **D-21** — the system still cannot identify the authorized Crime Unit supervisor. See `security/OWNER_DECISION_SHEET_D21.md` |
+| ⛔ **Still open** | **D-23.5 residual** — who may *clear*, *reopen* and *suspend*. D-4b settled *withdraw* only |
+| ⛔ **Still open** | **D-23.3** — maximum alert lifetime. **`Expired` cannot be reached until a number exists**; the state is defined but unreachable |
+
+> **A defined state is not an implemented transition.** Four of the five states have **no code
+> path that can reach them** in Release 1.0. The vocabulary is fixed so that A-13 does not have to
+> be migrated later; it does not mean the lifecycle has been built or approved.
 
 ---
 
@@ -143,7 +197,7 @@ These need only a decision; the work behind them is complete.
 
 | ID | Question | Recommendation | Blocks |
 |---|---|---|---|
-| **D-21** | CID role structure — investigator / supervisor / unit chief; who assigns cases; case-level permissions | Add a **CID supervisor** role plus a minimal assignment model (assignee, assigned-by, assigned-at, history). Adopt the capability matrix in `architecture/SYSTEM_ARCHITECTURE.md` §3.2 | Assignment (CRR-3xx), report R-17, the whole permission matrix |
+| **D-21** 🔴 | CID role structure — investigator / supervisor / unit chief; who assigns cases; case-level permissions | Add a **CID supervisor** role plus a minimal assignment model (assignee, assigned-by, assigned-at, history). Adopt the capability matrix in `architecture/SYSTEM_ARCHITECTURE.md` §3.2 | Assignment (CRR-3xx), report R-17, the whole permission matrix. **🔴 NOW ALSO BLOCKS A-13** — since D-23.6 closed, D-21 is the **only** decision standing between the owner and a buildable alert withdrawal. **Decision sheet prepared: `security/OWNER_DECISION_SHEET_D21.md`** |
 | **D-22** | Investigation workflow — mandatory steps, deadlines, supervisory review, inter-branch referral | **Minimum viable:** append-only action log + case timeline. No statutory deadlines until policy says otherwise — but design the log so they can be added without replacing it | CRR-4xx |
 | **D-26** | Required search filters, default sort, pagination | Status, category, branch, date range, severity, assignee, location + keyset pagination. Page size depends on **D-07** | CRR-8xx |
 | **D-43** | Checkpoint **operation / shift** model — types, shift boundaries, mandatory per-shift fields *(new — D-27 governs the post-flag procedure, not shift recording)* | Defer to command; the unit cannot report on operations until answered | `CHECKPOINT_UNIT_REQUIREMENTS.md` §4 |
@@ -203,7 +257,7 @@ These need only a decision; the work behind them is complete.
 | **B-3** | **`suspect_alerts` has no `branch_id`** | The only Release 1.0 access-control gap that **cannot be closed without a schema change**, which places it behind the migration framework (SR-18) |
 | **B-4** | **The legal track (D-04, D-05, D-23, D-24, D-27) has the longest lead time in the project** | These are not engineering tasks and will not be accelerated by adding developers. If they start late, they become the critical path |
 | ~~**B-5**~~ | ~~A rotating-cursor fallback in the SPA returns an arbitrary person as a biometric match~~ — **RESOLVED by Stage 0 (`e7263d7`, WP-45g)** | `allowFallbackScan` and the rotating cursor were removed, 11 call sites de-argumented, no-match banners added. Verified by `test_biometric_no_fabricated_match.mjs` (9/9) **and a negative control** that fails against the pre-fix file. **FPR-901 remains open** — matching is still string comparison, not biometrics |
-| **B-6** *(new)* | **A suspect alert can never be cleared.** No code path changes `alert_status`; the only `UPDATE suspect_alerts` sets `origin` | A person listed in error is flagged at every checkpoint **indefinitely**, with no remedy available to the police themselves. Tracked as **S-03**; the legal decision is **D-23** (`planning/D23_LEGAL_ACTION_BRIEF.md`). **Partly resolved in principle by D-4b (9 Nov 2026):** withdrawal is approved, but **only the authorized Crime Unit supervisor** may perform it and **SystemAdmin must not receive the authority automatically**. **A-13 is therefore re-scoped from 2–3 days to 4–6.25 days** and now needs a stored permission grant and its own migration. **A-13 still cannot be built until D-23.6 fixes the terminal state vocabulary**, and the holder of the supervisor authority cannot be identified from the data model until **D-21** is answered |
+| **B-6** *(new)* | **A suspect alert can never be cleared.** No code path changes `alert_status`; the only `UPDATE suspect_alerts` sets `origin` | A person listed in error is flagged at every checkpoint **indefinitely**, with no remedy available to the police themselves. Tracked as **S-03**; the legal decision is **D-23** (`planning/D23_LEGAL_ACTION_BRIEF.md`). **Partly resolved in principle by D-4b (9 Nov 2026):** withdrawal is approved, but **only the authorized Crime Unit supervisor** may perform it and **SystemAdmin must not receive the authority automatically**. **A-13 is therefore re-scoped from 2–3 days to 4–6.25 days** and now needs a stored permission grant and its own migration. **D-23.6 is now CLOSED (§1B)** — the terminal value A-13 writes is fixed at **`Withdrawn`**, and adopting the approved `Active` spelling adds package **M-02-B (0.75–1.25 d)**. **A-13 is now blocked by exactly one decision: D-21**, because the system still cannot identify the authorized Crime Unit supervisor — see `security/OWNER_DECISION_SHEET_D21.md` |
 
 ---
 

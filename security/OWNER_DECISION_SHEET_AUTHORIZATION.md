@@ -18,7 +18,9 @@
 >
 > **Three new decisions arise:** **D-1c** (escalation route, created by D-1b), **D-4c** (alert
 > editing — **recorded UNRESOLVED at the owner's instruction**), **D-5a** (residual station
-> guards). **D-23.6 and D-21 still block A-13.**
+> guards). **D-23.6 closed 9 Nov 2026** (five states, `Closed` excluded, A-13 writes
+> `Withdrawn`, adds package M-02-B). **D-21 is now the only decision blocking A-13** —
+> `security/OWNER_DECISION_SHEET_D21.md`.
 >
 > **Implementation remains unauthorized.**
 

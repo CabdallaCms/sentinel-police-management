@@ -5,8 +5,8 @@
 > SEC-1 → SEC-5**. **D-5** makes **SS-1 mandatory**. **D-4b** re-scopes **A-13 to 4–6.25 d**.
 >
 > **The authoritative costings and sequencing are now
-> `security/SECURITY_REMEDIATION_PROGRAMME.md` §3 and §4** (total **40–63.75 d**, derived from
-> work items W-01…W-78). The package analysis and the 46 tests below remain valid and are
+> `security/SECURITY_REMEDIATION_PROGRAMME.md` §3 and §4** (total **40.75–65 d**, derived from
+> work items W-01…W-80; **D-23.6** closed 9 Nov 2026 and added package **M-02-B**). The package analysis and the 46 tests below remain valid and are
 > unchanged; only the totals and the A-13/SS-1 scope moved.
 >
 > **SS-1 (§6) is no longer awaiting approval** — see the D-5 banner in
