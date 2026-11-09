@@ -5,6 +5,15 @@
 **Content commit:** recorded in §7.1 · **Status:** for owner decision.
 **Investigation closed. Implementation unauthorized.**
 
+> **SUPERSEDED FOR PLANNING, 9 November 2026.** The authoritative remediation plan, work-item
+> estimate and implementation sequence are now **`security/SECURITY_REMEDIATION_PROGRAMME.md`**,
+> and the authoritative owner-decision text is **`security/OWNER_DECISION_PACKAGE_R1.md`**.
+> **Revision 3 remains the evidence and review record** — the finding-by-finding evidence
+> classification (§5), the date reconciliation (§7.2) and the correction history of revisions 1–3
+> exist nowhere else. The totals agree (14–21 before staging, +23–38 before production, 37–59
+> total); where presentation differs, **the programme document is authoritative** because it
+> derives them from individual work items W-01…W-69 rather than from package bands.
+
 > **Revision 3 corrects six issues you raised against revision 2 and adds execution evidence for
 > four findings that were previously unverified.** The two headline changes:
 >

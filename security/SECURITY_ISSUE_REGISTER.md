@@ -288,6 +288,12 @@ Remediation: **P0-WP-3** (`P0_WORK_PACKAGES.md` §4), approvals **A-16…A-19**.
 > reaches the same data through `GET /api/persons/<id>`. Full plan:
 > **`AUTHORIZATION_REMEDIATION_PLAN.md`**.
 
+> **Remediation planning for every row in this register is specified in
+> `SECURITY_REMEDIATION_PROGRAMME.md` §2** (root cause, affected endpoints, required change,
+> dependencies, mandatory-before-production, negative tests, effort), and the decisions that gate
+> it in `OWNER_DECISION_PACKAGE_R1.md`. **This register remains the authoritative list of findings,
+> severities and evidence classes.**
+
 Release-blocking and still open: **S-16a, S-16b, S-14, S-15, S-04, S-17, S-18** (authorization — all
 now proven by execution), **S-01, S-02, S-03, S-07**, **S-12, S-13** (first production install),
 plus the carried items
@@ -318,7 +324,9 @@ original sentence is struck through rather than deleted so the change of positio
 > **S-04** appears in P1 at 4–6 d *and* in the SEC band as **M-02-A** at 1–1.5 d, and **S-05**
 > appears in P1 while also being tracked separately. Revision 2 of the owner-review package quoted
 > 23–37 as "the additional work before production" and was wrong by exactly that overlap. **The
-> authoritative, non-overlapping classification and totals are `OWNER_REVIEW_PACKAGE.md` §1.1–§1.2:
+> authoritative, non-overlapping classification and totals are now
+> `SECURITY_REMEDIATION_PROGRAMME.md` §3, which re-derives them from the individual work items
+> W-01…W-69 and tabulates every double-count:
 > 14–21 d before staging, +23–38 d before production, 37–59 d in total.** These band rows are kept
 > unaltered as the historical record of how the work was first grouped.
 
