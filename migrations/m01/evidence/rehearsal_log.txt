@@ -1,0 +1,102 @@
+workspace: /tmp/m01_rehearsal_4hlhydpg
+
+=== starting throwaway pgserver cluster ===
+cluster up: postgresql://postgres:@/postgres?host=/tmp/m01_rehearsal_4hlhydpg/pgdata
+
+=== building the ORIGIN database (Sentinel schema) ===
+socket dir: /tmp/m01_rehearsal_4hlhydpg/pgdata
+$ /home/user/sentinel-police-management/.venv/bin/python -c import sys; sys.path.insert(0,"backend"); import server; server.init_db(); print("init_db OK")
+init_db OK
+
+=== seeding the rehearsal fixture ===
+uploads dir now holds 16 files
+
+=== STEP 0 — backup, restore, VERIFY ===
+$ /home/user/sentinel-police-management/.venv/lib/python3.11/site-packages/pgserver/pginstall/bin/pg_dump -d postgresql://postgres:@/m01_origin?host=/tmp/m01_rehearsal_4hlhydpg/pgdata -f /tmp/m01_rehearsal_4hlhydpg/origin.sql
+pg_dump written: /tmp/m01_rehearsal_4hlhydpg/origin.sql (67450 bytes)
+restore completed into the copy
+origin tables   : 21  total rows 61
+restored tables : 21  total rows 61
+VERIFICATION    : PASS - identical
+
+=== STEP 1 — documents table + indexes ON THE RESTORED COPY ===
+indexes created:
+documents_pkey
+idx_documents_branch
+idx_documents_owner
+idx_documents_station
+idx_documents_stored_name
+foreign keys (confdeltype r = RESTRICT):
+documents_branch_id_fkey|r
+documents_station_id_fkey|r
+documents_uploaded_by_fkey|r
+documents_user_id_fkey|r
+
+=== STEPS 2 & 3 — backfill and reconciliation ===
+$ /home/user/sentinel-police-management/.venv/bin/python /home/user/sentinel-police-management/migrations/m01/m01_backfill.py --dsn host=/tmp/m01_rehearsal_4hlhydpg/pgdata port=5432 user=postgres dbname=m01_restored --uploads /tmp/m01_rehearsal_4hlhydpg/uploads --json-out /home/user/sentinel-police-management/migrations/m01/evidence/reconciliation.json --i-confirm-this-is-a-restored-copy
+{
+  "discovered": 16,
+  "approved": 12,
+  "held": 4,
+  "insertable": 9,
+  "orphans": [
+    "f_inc_2.jpg",
+    "f_orphan_never_referenced.pdf"
+  ],
+  "collisions": {
+    "f_shared_dup.pdf": [
+      "crime_incidents.evidence1_path#902",
+      "crime_incidents.evidence2_path#901"
+    ]
+  },
+  "by_visibility": {
+    "branch": 8,
+    "self": 1
+  },
+  "held_by_visibility": {
+    "station": 3,
+    "national": 1
+  },
+  "by_source": {
+    "clearance_applications.applicant_docs": 3,
+    "clearance_applications.applicant_photo": 1,
+    "clearance_signed_documents.file_path": 1,
+    "checkpoint_events.traveler_docs": 1,
+    "checkpoint_events.traveler_photo": 1,
+    "case_evidence.file_path": 1,
+    "crime_incidents.evidence1_path": 2,
+    "crime_incidents.evidence2_path": 1,
+    "officers.photo_path": 1,
+    "officers.doc1_path": 1,
+    "officer_conduct_actions.documents": 1,
+    "persons.photo_path": 1,
+    "users.avatar_path": 1
+  },
+  "missing_columns": [],
+  "malformed_json": [
+    {
+      "table": "clearance_applications",
+      "field": "applicant_docs",
+      "pk": 903,
+      "raw": "{not valid json"
+    }
+  ],
+  "inserted": 9,
+  "documents_rowcount": 9
+}
+
+STEP 3 REACHED — HARD STOP. Step 4 classification is a human act.
+
+=== POST-CHECKS ===
+  documents rows: 9
+  by visibility: branch=8
+self=1
+  held classes present (must be 0): 0
+  source rows mutated? clearance_applications: 4
+
+=== A-1 condition 5 proof: no source record and no file modified ===
+  source tables after backfill vs restored baseline: IDENTICAL
+  uploaded files (16) sha256 set: IDENTICAL
+
+=== A-1 condition 1 proof: RESTRICT actually blocks a delete ===
+  DELETE refused as required: Command '['/home/user/sentinel-police-management/.venv/lib/python3.11/site-packages/pgserver/pginstall/bin/psql', '-d', 'postgresql://postgres:@/m01_restored?host=/tmp/m01_rehearsal_4hlhydpg/pgdata', 

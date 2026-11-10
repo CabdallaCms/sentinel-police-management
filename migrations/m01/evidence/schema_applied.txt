@@ -1,0 +1,10 @@
+documents_pkey
+idx_documents_branch
+idx_documents_owner
+idx_documents_station
+idx_documents_stored_name
+
+documents_branch_id_fkey|r
+documents_station_id_fkey|r
+documents_uploaded_by_fkey|r
+documents_user_id_fkey|r

@@ -1,0 +1,84 @@
+{
+  "discovered": 16,
+  "approved": 12,
+  "held": 4,
+  "insertable": 9,
+  "unclassified": [
+    {
+      "inv": 1,
+      "table": "clearance_applications",
+      "field": "applicant_docs",
+      "visibility": "branch",
+      "status": "approved",
+      "pk": 902,
+      "ref": "FP-REH-0002",
+      "scope": null,
+      "stored_path": "/uploads/f_missing_from_disk.pdf",
+      "stored_name": "f_missing_from_disk.pdf",
+      "byte_size": null,
+      "sha256": null,
+      "on_disk": false
+    }
+  ],
+  "dangling": [
+    {
+      "inv": 1,
+      "table": "clearance_applications",
+      "field": "applicant_docs",
+      "visibility": "branch",
+      "status": "approved",
+      "pk": 902,
+      "ref": "FP-REH-0002",
+      "scope": null,
+      "stored_path": "/uploads/f_missing_from_disk.pdf",
+      "stored_name": "f_missing_from_disk.pdf",
+      "byte_size": null,
+      "sha256": null,
+      "on_disk": false
+    }
+  ],
+  "orphans": [
+    "f_inc_2.jpg",
+    "f_orphan_never_referenced.pdf"
+  ],
+  "collisions": {
+    "f_shared_dup.pdf": [
+      "crime_incidents.evidence1_path#902",
+      "crime_incidents.evidence2_path#901"
+    ]
+  },
+  "by_visibility": {
+    "branch": 8,
+    "self": 1
+  },
+  "held_by_visibility": {
+    "station": 3,
+    "national": 1
+  },
+  "by_source": {
+    "clearance_applications.applicant_docs": 3,
+    "clearance_applications.applicant_photo": 1,
+    "clearance_signed_documents.file_path": 1,
+    "checkpoint_events.traveler_docs": 1,
+    "checkpoint_events.traveler_photo": 1,
+    "case_evidence.file_path": 1,
+    "crime_incidents.evidence1_path": 2,
+    "crime_incidents.evidence2_path": 1,
+    "officers.photo_path": 1,
+    "officers.doc1_path": 1,
+    "officer_conduct_actions.documents": 1,
+    "persons.photo_path": 1,
+    "users.avatar_path": 1
+  },
+  "missing_columns": [],
+  "malformed_json": [
+    {
+      "table": "clearance_applications",
+      "field": "applicant_docs",
+      "pk": 903,
+      "raw": "{not valid json"
+    }
+  ],
+  "inserted": 9,
+  "documents_rowcount": 9
+}
